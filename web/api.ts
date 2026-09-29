@@ -16,7 +16,7 @@ export async function api<T = any>(method: string, path: string, body?: unknown)
   return data
 }
 
-export type SavorEvent = { type: string; projectId?: string; threadId?: string }
+export type SavorEvent = { type: string; projectId?: string; threadId?: string; title?: string; body?: string }
 type Listener = (e: SavorEvent) => void
 const listeners = new Set<Listener>()
 

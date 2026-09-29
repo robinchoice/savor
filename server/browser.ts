@@ -1,14 +1,18 @@
 import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 import type { ServerResponse } from 'node:http'
-import { chromium, type Browser, type CDPSession, type Page } from 'playwright-core'
+import { chromium, type BrowserContext, type CDPSession, type Page } from 'playwright-core'
 import { openStream } from './events.js'
+import { HOME } from './store.js'
 
-// One headless page per thread. Agent and user share it: the agent drives it through MCP tools,
+// One headless page per thread inside a persistent browser profile per project, so logins in the
+// preview survive restarts. Agent and user share the page: the agent drives it through MCP tools,
 // the UI shows its screencast and forwards the user's clicks and keystrokes.
 
 interface Session { page: Page; cdp: CDPSession; errors: string[]; frame: string | null; viewers: Set<ServerResponse> }
 
-let browser: Promise<Browser> | null = null
+const profiles = new Map<string, Promise<BrowserContext>>()
 const sessions = new Map<string, Session>()
 export const VIEWPORT = { width: 1280, height: 800 }
 
@@ -27,6 +31,27 @@ function executable() {
   return found
 }
 
+function profile(projectId: string) {
+  let ctx = profiles.get(projectId)
+  if (!ctx) {
+    const exe = executable()
+    // Snap-confined Chromium can't write to hidden folders like ~/.savor.
+    const root = exe.startsWith('/snap/') ? path.join(os.homedir(), 'snap', 'chromium', 'common', 'savor-profiles') : path.join(HOME, 'browser')
+    ctx = chromium.launchPersistentContext(path.join(root, path.basename(projectId)), {
+      executablePath: exe,
+      headless: true,
+      viewport: VIEWPORT,
+      // Leave SIGINT/SIGTERM to Node so Ctrl+C still stops the daemon; the browser exits with it.
+      handleSIGINT: false,
+      handleSIGTERM: false,
+      handleSIGHUP: false,
+    })
+    ctx.catch(() => profiles.delete(projectId))
+    profiles.set(projectId, ctx)
+  }
+  return ctx
+}
+
 function session(tid: string) {
   const s = sessions.get(tid)
   if (!s) throw new Error('No preview open. Call open_browser first.')
@@ -35,15 +60,15 @@ function session(tid: string) {
 
 const broadcast = (s: Session, data: string) => s.viewers.forEach((v) => v.write(`data: ${data}\n\n`))
 
-export async function open(tid: string, url: string) {
+export async function open(projectId: string, tid: string, url: string) {
   let s = sessions.get(tid)
   if (!s) {
-    browser ??= chromium.launch({ executablePath: executable() })
-    const page = await (await browser).newPage({ viewport: VIEWPORT })
+    const page = await (await profile(projectId)).newPage()
     const cdp = await page.context().newCDPSession(page)
     const created: Session = { page, cdp, errors: [], frame: null, viewers: new Set() }
     page.on('console', (m) => m.type() === 'error' && created.errors.push(m.text()))
     page.on('pageerror', (e) => created.errors.push(e.message))
+    page.on('close', () => sessions.get(tid) === created && sessions.delete(tid))
     cdp.on('Page.screencastFrame', ({ data, sessionId }) => {
       created.frame = data
       broadcast(created, data)
@@ -116,6 +141,25 @@ export const fill = (tid: string, ref: string, value: string) =>
 export const press = (tid: string, key: string) => act(tid, (p) => p.keyboard.press(key))
 export const scroll = (tid: string, dy: number) => act(tid, (p) => p.mouse.wheel(0, dy))
 export const navigate = (tid: string, url: string) => act(tid, (p) => p.goto(url, { waitUntil: 'domcontentloaded' }))
+
+// Real keystrokes, optionally into a control first (fill replaces the value instead).
+export const type = (tid: string, text: string, ref?: string) =>
+  act(tid, async (p) => {
+    if (ref) await p.click(target(ref), { timeout: 5000 })
+    await p.keyboard.type(text, { delay: 10 })
+  })
+
+// Coordinate-based mouse input for canvases, drag handles and other things without a ref.
+export const pointer = (tid: string, action: 'click' | 'dblclick' | 'move' | 'down' | 'up', x: number, y: number) =>
+  act(tid, async (p) => {
+    if (action === 'click') await p.mouse.click(x, y)
+    if (action === 'dblclick') await p.mouse.dblclick(x, y)
+    if (action === 'move') await p.mouse.move(x, y)
+    if (action === 'down' || action === 'up') {
+      await p.mouse.move(x, y)
+      await p.mouse[action]()
+    }
+  })
 
 // ---- user input from the UI (coordinates in page CSS pixels) ----
 

@@ -1,12 +1,13 @@
 import { render } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
-import { Coffee, FolderOpen, Files as FilesIcon, Layers, MessageSquare, Moon, Plus, Server, SlidersHorizontal, Sun, Workflow as WorkflowIcon, ChevronDown, Smartphone } from 'lucide-preact'
+import { Coffee, FolderOpen, Files as FilesIcon, Layers, MessageSquare, Moon, Plus, Server, SlidersHorizontal, Sun, Workflow as WorkflowIcon, ChevronDown, Smartphone, Bell, BellOff } from 'lucide-preact'
 import { api, connectEvents, go, Unauthorized, useApi, useEvent, type Me, type Project } from './api'
 import { Conversations } from './Conversations'
 import { FilesView } from './Files'
 import { Workflows } from './Workflows'
 import { Settings, Devices, Pair } from './Settings'
 import { ProcessesPopover } from './Processes'
+import { useNotifications, useNotificationToggle } from './notify'
 import './style.css'
 
 function useRoute() {
@@ -46,6 +47,7 @@ function App() {
       (e) => setMe(e instanceof Unauthorized ? false : null),
     )
   }, [])
+  useNotifications(route[2] === 't' ? route[3] : undefined, projects)
   useEffect(() => {
     if (projects?.length && route[0] !== 'p' && route[0] !== 'devices') go(`/p/${projects[0].id}`)
   }, [projects, route[0]])
@@ -85,6 +87,7 @@ function App() {
 
 function TopBar({ projects, active, me, setMe, theme, toggleTheme }: { projects: Project[]; active?: Project; me: Me; setMe: (m: Me) => void; theme: string; toggleTheme: () => void }) {
   const [menu, setMenu] = useState<'projects' | 'account' | null>(null)
+  const [canNotify, notifyOn, toggleNotify] = useNotificationToggle()
   const toggleAwake = async () => setMe({ ...me, ...(await api('POST', '/awake', { on: !me.awake })) })
 
   return (
@@ -135,6 +138,11 @@ function TopBar({ projects, active, me, setMe, theme, toggleTheme }: { projects:
           {menu === 'account' && (
             <div class="menu right" onClick={() => setMenu(null)}>
               <div class="menu-label">{me.origin === 'local' ? 'Signed in on this computer' : `Remote device · ${me.device}`}</div>
+              {canNotify && (
+                <button onClick={toggleNotify}>
+                  {notifyOn ? <Bell size={15} /> : <BellOff size={15} />} Notifications {notifyOn ? 'on' : 'off'}
+                </button>
+              )}
               {me.origin === 'local' && <a href="#/devices">Devices & remote access</a>}
             </div>
           )}

@@ -53,21 +53,39 @@ function buildServer(p: Project, tid: string) {
 
   server.registerTool(
     'send_acknowledgement_message',
-    { description: 'Tell the user you received their input and are starting work. Send before long work.', inputSchema: { text: z.string().min(1) } },
-    async ({ text }) => ok({ id: agents.post(p, tid, { kind: 'ack', text, modelInfo: modelInfo() }).id }),
+    {
+      description: 'Tell the user you received their input and are starting work. One per input; retrying with the same text is safe.',
+      inputSchema: { text: z.string().min(1) },
+    },
+    async ({ text }) => {
+      const r = agents.request(tid)
+      if (r.ack && r.ack.text !== text) throw new Error('This request already has a different acknowledgement message.')
+      r.ack ??= { text, id: agents.post(p, tid, { kind: 'ack', text, modelInfo: modelInfo() }).id }
+      return ok({ id: r.ack.id })
+    },
   )
 
   server.registerTool(
     'send_user_requested_message',
-    { description: 'Send an extra message the user explicitly asked for (e.g. requested progress updates). Not for unsolicited updates.', inputSchema: { text: z.string().min(1) } },
-    async ({ text }) => ok({ id: agents.post(p, tid, { kind: 'update', text, modelInfo: modelInfo() }).id }),
+    {
+      description:
+        'Send an extra message the user explicitly asked for (e.g. requested progress updates). Not for unsolicited updates. Use a different idempotencyKey per distinct message; reuse key and text when retrying.',
+      inputSchema: { idempotencyKey: z.string().regex(/^[\w-]{1,100}$/), text: z.string().min(1) },
+    },
+    async ({ idempotencyKey, text }) => {
+      const r = agents.request(tid)
+      const prev = r.updates.get(idempotencyKey)
+      if (prev && prev.text !== text) throw new Error(`idempotencyKey ${idempotencyKey} was already used with different text.`)
+      if (!prev) r.updates.set(idempotencyKey, { text, id: agents.post(p, tid, { kind: 'update', text, modelInfo: modelInfo() }).id })
+      return ok({ id: r.updates.get(idempotencyKey)!.id })
+    },
   )
 
   server.registerTool(
     'send_conclusion_message',
     {
       description:
-        'Deliver the one final result for the current request. Questions block: end your turn afterwards. Suggestions are follow-up prompts in the user’s voice. Commits are full git hashes created this turn.',
+        'Deliver the one final result for the current request. Questions block: end your turn afterwards. Suggestions are follow-up prompts in the user’s voice. Commits are full git hashes created this turn. Retry with identical content only.',
       inputSchema: {
         text: z.string().optional(),
         questions: z.array(z.object({ title: z.string(), body: z.string().default(''), options: z.array(z.string()).max(8) })).max(10).optional(),
@@ -77,7 +95,14 @@ function buildServer(p: Project, tid: string) {
     },
     async ({ text, questions, suggestions, commits }) => {
       if (!text && !questions?.length) throw new Error('Provide text, questions, or both.')
+      const r = agents.request(tid)
+      const key = JSON.stringify([text, questions, suggestions, commits])
+      if (r.conclusion) {
+        if (r.conclusion.key !== key) throw new Error('This request already has a conclusion. Finish your turn and wait for new input.')
+        return ok({ id: r.conclusion.id, note: 'Already delivered. Finish your turn now.' })
+      }
       const msg = agents.post(p, tid, { kind: 'conclusion', text, questions, suggestions, commits, modelInfo: modelInfo() })
+      r.conclusion = { key, id: msg.id }
       if (questions?.length) {
         const decisions = questions.map((q, i) => ({
           id: `${msg.id}-q${i}`,
@@ -95,6 +120,7 @@ function buildServer(p: Project, tid: string) {
       agents.markConcluded(tid, msg.id)
       store.updateThread(p, tid, { unread: true, needsYou: !!questions?.length })
       touchThread()
+      agents.notify(p, tid, questions?.length ? `Needs your input: ${questions[0].title}` : text!)
       return ok({ id: msg.id, note: 'Delivered. Finish your turn now.' })
     },
   )
@@ -238,7 +264,7 @@ function buildServer(p: Project, tid: string) {
   const browserTool = async (fn: () => Promise<string>) => ok(await fn())
 
   server.registerTool('open_browser', { description: 'Show a working web product in the preview beside this conversation.', inputSchema: { url: z.string().url() } }, async ({ url }) => {
-    await browser.open(tid, url)
+    await browser.open(p.id, tid, url)
     store.updateThread(p, tid, { preview: url })
     touchThread()
     emit({ type: 'browser', projectId: p.id, threadId: tid })
@@ -248,6 +274,19 @@ function buildServer(p: Project, tid: string) {
   server.registerTool('browser_click', { description: 'Click a control by ref from browser_inspect.', inputSchema: { ref: z.string() } }, async ({ ref }) => browserTool(() => browser.click(tid, ref)))
   server.registerTool('browser_fill', { description: 'Fill a text field or select an option by ref.', inputSchema: { ref: z.string(), value: z.string() } }, async ({ ref, value }) =>
     browserTool(() => browser.fill(tid, ref, value)),
+  )
+  server.registerTool(
+    'browser_type',
+    { description: 'Type text as real keystrokes, optionally clicking a control (ref) first. Use browser_fill to replace a value instead.', inputSchema: { text: z.string(), ref: z.string().optional() } },
+    async ({ text, ref }) => browserTool(() => browser.type(tid, text, ref)),
+  )
+  server.registerTool(
+    'browser_pointer',
+    {
+      description: 'Mouse input at page coordinates (CSS pixels, viewport 1280×800) for canvases, drag handles and elements without a ref.',
+      inputSchema: { action: z.enum(['click', 'dblclick', 'move', 'down', 'up']), x: z.number(), y: z.number() },
+    },
+    async ({ action, x, y }) => browserTool(() => browser.pointer(tid, action, x, y)),
   )
   server.registerTool('browser_press', { description: 'Press a key, e.g. Enter or Control+A.', inputSchema: { key: z.string() } }, async ({ key }) => browserTool(() => browser.press(tid, key)))
   server.registerTool('browser_scroll', { description: 'Scroll the page vertically by dy pixels.', inputSchema: { dy: z.number() } }, async ({ dy }) => browserTool(() => browser.scroll(tid, dy)))
@@ -268,6 +307,7 @@ function buildServer(p: Project, tid: string) {
       const msg = agents.post(p, tid, { kind: 'approval', approval: { tool: tool_name, input, status: 'pending' } })
       store.updateThread(p, tid, { unread: true, needsYou: true })
       touchThread()
+      agents.notify(p, tid, `Approval needed: ${tool_name}`)
       const allow = await new Promise<boolean>((resolve) => approvals.set(msg.id, resolve))
       return ok(allow ? { behavior: 'allow', updatedInput: input } : { behavior: 'deny', message: 'The user denied this action.' })
     },

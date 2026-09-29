@@ -3,8 +3,8 @@
 A local-first workspace for CLI coding agents. Savor runs Claude Code, Codex, OpenCode, Grok Build or Antigravity in your project folders. You use it from a desktop window, a browser tab or your phone.
 
 - **Projects as tabs**, each with its own color. Badges show which agents are working and which conversations need you.
-- **Conversations**: every task gets its own agent session. You get search, filters (All / Needs you / Working / Unread), colored labels, "Mark as completed" and a "Show completed" toggle.
-- **Message protocol over MCP**: agents send acknowledgements, results, blocking questions, "potential next actions" and commit hashes. Their raw output goes to an activity log (thinking, commands, edits, tool calls, with durations).
+- **Conversations**: every task gets its own agent session. You can send new messages while an agent is working; Claude Code picks them up in the running turn. Turns the agent starts on its own, for example when a background task finishes, show up as working too. You get search, filters (All / Needs you / Working / Unread), colored labels, "Mark as completed" and a "Show completed" toggle.
+- **Message protocol over MCP**: one acknowledgement and one conclusion per input, idempotent updates. Agents send acknowledgements, results, blocking questions, "potential next actions" and commit hashes. Their raw output goes to an activity log (thinking, commands, edits, tool calls, with durations).
 - **Questions**: questions become decision records with options and a free-text answer. You answer them all in one reply.
 - **Agent picker per conversation**: agent, model, reasoning level, fast mode and permissions. You can switch agents mid-conversation, and the new agent gets the visible history handed over.
 - **Image attachments** by picker, paste or drag-and-drop. **@-mentions** for files and workflows. A **git branch switcher**.
@@ -13,8 +13,9 @@ A local-first workspace for CLI coding agents. Savor runs Claude Code, Codex, Op
 - **Workflows**: saved prompts on a cron schedule, which can be chained. Each run starts a new conversation.
 - **Project settings**: `ROLE.md` instructions for every agent, verbosity, pause (skips scheduled runs), color and default agent.
 - **Background processes**: agents register the dev servers they start. Savor watches the PIDs, shows logs and can stop them.
-- **Live preview**: the app the agent built runs in a headless Chromium next to the chat. You see exactly the page the agent controls, and your clicks, typing and scrolling are forwarded to it. The picker lets you point at an element ("make this bigger"), and its selector and styles go along with your next message.
+- **Live preview**: the app the agent built runs in a headless Chromium next to the chat, with a persistent browser profile per project so logins survive restarts. You see exactly the page the agent controls, and your clicks, typing and scrolling are forwarded to it. The picker lets you point at an element ("make this bigger"), and its selector and styles go along with your next message.
 - **Devices**: pair a phone or another computer with a QR code. Each device has its own revocable key. Requests from devices are marked *remote*, and agents treat them with extra care.
+- **Notifications** when an agent finishes, needs an answer or asks for approval, plus an unread count in the tab title and on the app icon.
 - **Keep awake** toggle, dark and light theme.
 
 Everything lives in plain files: `~/.savor/state.json` holds projects, tokens and devices, and each project gets a `.savor/` directory.
@@ -25,7 +26,8 @@ Requirements: Node ≥ 22.12, at least one logged-in agent CLI, and Chromium or 
 
 ```sh
 git clone <repo> savor && cd savor
-npm install          # also builds the web UI
+npm install                          # also builds the web UI
+npx playwright-core install chromium # browser for the preview
 npm start
 ```
 
@@ -57,7 +59,7 @@ Then go to **Devices & remote access** (avatar menu), click **Pair a device** an
 | `SAVOR_HOST` | `127.0.0.1` | Bind address |
 | `SAVOR_PUBLIC_URL` | `http://localhost:$SAVOR_PORT` | Base for links agents post and pairing links |
 | `SAVOR_HOME` | `~/.savor` | Global state |
-| `SAVOR_CHROMIUM` | auto-detect | Browser for the preview |
+| `SAVOR_CHROMIUM` | Playwright Chromium, then system Chrome/Chromium | Browser for the preview |
 | `SAVOR_CLAUDE_BIN`, `SAVOR_CODEX_BIN`, `SAVOR_OPENCODE_BIN`, `SAVOR_GROK_BIN`, `SAVOR_ANTIGRAVITY_BIN` | CLI name | Agent binaries |
 
 Grok Build and Antigravity run a configurable command, because their headless interfaces aren't stable yet. Set it in `~/.savor/state.json` with `"providers": { "grok": { "command": ["grok", "-p", "{prompt}"] } }`. Their stdout becomes the result, and `SAVOR_MCP_URL` points them at Savor's MCP server.

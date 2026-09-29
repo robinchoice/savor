@@ -197,12 +197,12 @@ route('GET', '/projects/:pid/threads/:tid/attachments/:name', (params, _, ctx) =
 route('GET', '/projects/:pid/threads/:tid/browser/stream', async (params, _, ctx) => {
   // After a daemon restart, reopen the thread's last preview on demand.
   const { preview } = store.getThread(project(params), params.tid)
-  if (!browser.has(params.tid) && preview) await browser.open(params.tid, preview).catch(() => {})
+  if (!browser.has(params.tid) && preview) await browser.open(params.pid, params.tid, preview).catch(() => {})
   return browser.watch(params.tid, ctx.res)
 })
 route('POST', '/projects/:pid/threads/:tid/browser/open', async (params, b) => {
   const p = project(params)
-  await browser.open(params.tid, b.url)
+  await browser.open(p.id, params.tid, b.url)
   store.updateThread(p, params.tid, { preview: b.url })
   emit({ type: 'thread', projectId: p.id, threadId: params.tid })
   emit({ type: 'browser', projectId: p.id, threadId: params.tid })

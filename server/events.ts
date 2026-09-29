@@ -1,9 +1,11 @@
 import type { ServerResponse } from 'node:http'
 
 export interface SavorEvent {
-  type: 'message' | 'thread' | 'status' | 'activity' | 'documents' | 'workflows' | 'processes' | 'projects' | 'browser' | 'devices'
+  type: 'message' | 'thread' | 'status' | 'activity' | 'documents' | 'workflows' | 'processes' | 'projects' | 'browser' | 'devices' | 'notify'
   projectId?: string
   threadId?: string
+  title?: string
+  body?: string
 }
 
 export function openStream(res: ServerResponse) {
