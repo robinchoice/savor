@@ -5,28 +5,62 @@ import crypto from 'node:crypto'
 
 export const HOME = process.env.SAVOR_HOME ?? path.join(os.homedir(), '.savor')
 
-export type Provider = 'claude' | 'codex' | 'opencode'
-export interface AgentConfig { provider: Provider; model: string; permissionMode: string }
-export interface Project { id: string; name: string; path: string; agent: AgentConfig }
+export type Provider = 'claude' | 'codex' | 'opencode' | 'grok' | 'antigravity'
+export interface AgentConfig { provider: Provider; model: string; reasoning: string; fast: boolean; permissionMode: string }
+export interface Project {
+  id: string
+  name: string
+  path: string
+  tint: string
+  agent: AgentConfig
+  verbosity: 'low' | 'medium' | 'high'
+  paused: boolean
+}
 export interface Question { title: string; body: string; options: string[] }
+export type Origin = 'local' | 'remote'
 export interface Message {
   id: string
   ts: string
-  kind: 'user' | 'ack' | 'update' | 'conclusion' | 'trace' | 'error' | 'approval'
+  kind: 'user' | 'ack' | 'update' | 'conclusion' | 'error' | 'approval'
   text?: string
+  images?: string[]
   questions?: Question[]
+  decisionIds?: string[]
   suggestions?: string[]
   commits?: string[]
   approval?: { tool: string; input: unknown; status: 'pending' | 'allowed' | 'denied' }
+  modelInfo?: AgentConfig
+  workTiming?: { startedAt: string; finishedAt: string }
+  origin?: Origin
+  device?: string
 }
 export interface Thread {
   id: string
-  label: string | null
+  title: string
+  label: { name: string; hue: number } | null
   createdAt: string
-  sessionId: string | null
+  updatedAt: string
+  agent: AgentConfig
+  agentSessions: { provider: Provider; sessionId: string }[]
   preview: string | null
   unread: boolean
+  completed: boolean
+  needsYou: boolean
+  error: string | null
   parentId?: string
+}
+export interface ActivityEvent { id: number; type: 'thinking' | 'command' | 'edit' | 'note'; label: string; time: string; finishedAt?: string }
+export interface Decision {
+  id: string
+  groupId: string
+  threadId: string
+  title: string
+  body: string
+  options: string[]
+  selected: number | null
+  answer: string | null
+  resolved: boolean
+  createdAt: string
 }
 export interface Doc { id: string; title: string; content: string; updatedAt: string }
 export interface Workflow {
@@ -36,6 +70,7 @@ export interface Workflow {
   cron: string | null
   timezone: string
   enabled: boolean
+  next: string[]
   lastRunAt: string | null
 }
 export interface Proc {
@@ -48,11 +83,19 @@ export interface Proc {
   threadId: string
   startedAt: string
 }
+export interface Device { id: string; name: string; tokenHash: string; createdAt: string; lastSeenAt: string | null }
 
-interface State { token: string; mcpToken: string; projects: { id: string; path: string }[] }
+interface State {
+  token: string
+  mcpToken: string
+  projects: { id: string; path: string }[]
+  devices: Device[]
+  providers: Record<string, { command: string[] }>
+}
 
 export const newId = () => crypto.randomUUID().replaceAll('-', '').slice(0, 16)
-const now = () => new Date().toISOString()
+export const now = () => new Date().toISOString()
+export const hash = (s: string) => crypto.createHash('sha256').update(s).digest('hex')
 
 function readJson<T>(file: string, fallback: T): T {
   try {
@@ -69,28 +112,47 @@ function writeJson(file: string, data: unknown) {
   fs.renameSync(tmp, file)
 }
 
+const readJsonl = <T>(file: string): T[] =>
+  fs.existsSync(file)
+    ? fs
+        .readFileSync(file, 'utf8')
+        .split('\n')
+        .filter(Boolean)
+        .map((l) => JSON.parse(l))
+    : []
+
 // ---- global state ----
 
 const stateFile = path.join(HOME, 'state.json')
 
 export function state(): State {
-  const s = readJson<State | null>(stateFile, null)
-  if (s) return s
-  const fresh = { token: crypto.randomBytes(24).toString('hex'), mcpToken: crypto.randomBytes(24).toString('hex'), projects: [] }
-  writeJson(stateFile, fresh)
-  return fresh
+  const s = readJson<Partial<State> | null>(stateFile, null)
+  const full: State = {
+    token: crypto.randomBytes(24).toString('hex'),
+    mcpToken: crypto.randomBytes(24).toString('hex'),
+    projects: [],
+    devices: [],
+    providers: {},
+    ...s,
+  }
+  if (!s) writeJson(stateFile, full)
+  return full
 }
+
+export const saveState = (s: State) => writeJson(stateFile, s)
 
 // ---- projects ----
 
+const TINTS = ['#2878ef', '#e0735a', '#9b6bd6', '#3fa37a', '#d69a2d', '#d6567f', '#4aa3c9']
 const dataDir = (p: { path: string }) => path.join(p.path, '.savor')
+export const defaultAgent = (): AgentConfig => ({ provider: 'claude', model: '', reasoning: 'high', fast: false, permissionMode: 'acceptEdits' })
 
-export function listProjects(): Project[] {
-  return state().projects.flatMap((ref) => {
-    const p = readJson<Project | null>(path.join(ref.path, '.savor', 'project.json'), null)
-    return p ? [{ ...p, path: ref.path }] : []
-  })
+function loadProject(ref: { path: string }): Project | null {
+  const p = readJson<(Partial<Project> & Pick<Project, 'id' | 'name'>) | null>(path.join(ref.path, '.savor', 'project.json'), null)
+  return p && ({ tint: TINTS[0], verbosity: 'medium', paused: false, ...p, agent: { ...defaultAgent(), ...p.agent }, path: ref.path } as Project)
 }
+
+export const listProjects = (): Project[] => state().projects.flatMap((ref) => loadProject(ref) ?? [])
 
 export function getProject(id: string): Project {
   const p = listProjects().find((p) => p.id === id)
@@ -101,23 +163,25 @@ export function getProject(id: string): Project {
 export function addProject(dir: string, name?: string): Project {
   const abs = path.resolve(dir.replace(/^~(?=$|\/)/, os.homedir()))
   fs.mkdirSync(abs, { recursive: true })
-  const existing = readJson<Project | null>(path.join(abs, '.savor', 'project.json'), null)
-  const project: Project = existing ?? {
+  const s = state()
+  const project = loadProject({ path: abs }) ?? {
     id: newId(),
     name: name || path.basename(abs),
     path: abs,
-    agent: { provider: 'claude', model: '', permissionMode: 'acceptEdits' },
+    tint: TINTS[s.projects.length % TINTS.length],
+    agent: defaultAgent(),
+    verbosity: 'medium' as const,
+    paused: false,
   }
   writeJson(path.join(abs, '.savor', 'project.json'), project)
-  const s = state()
   if (!s.projects.some((r) => r.id === project.id)) {
     s.projects.push({ id: project.id, path: abs })
-    writeJson(stateFile, s)
+    saveState(s)
   }
-  return { ...project, path: abs }
+  return project
 }
 
-export function updateProject(id: string, patch: Partial<Pick<Project, 'name' | 'agent'>>): Project {
+export function updateProject(id: string, patch: Partial<Omit<Project, 'id' | 'path'>>): Project {
   const p = { ...getProject(id), ...patch }
   writeJson(path.join(dataDir(p), 'project.json'), p)
   return p
@@ -126,10 +190,16 @@ export function updateProject(id: string, patch: Partial<Pick<Project, 'name' | 
 export function removeProject(id: string) {
   const s = state()
   s.projects = s.projects.filter((r) => r.id !== id)
-  writeJson(stateFile, s)
+  saveState(s)
 }
 
-// ---- threads & messages ----
+export const readRole = (p: Project) => {
+  const file = path.join(dataDir(p), 'ROLE.md')
+  return fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : ''
+}
+export const saveRole = (p: Project, text: string) => fs.writeFileSync(path.join(dataDir(p), 'ROLE.md'), text)
+
+// ---- threads, messages, activity ----
 
 const threadDir = (p: Project, tid: string) => path.join(dataDir(p), 'threads', path.basename(tid))
 
@@ -140,7 +210,7 @@ export function listThreads(p: Project): Thread[] {
     .readdirSync(dir)
     .map((tid) => readJson<Thread | null>(path.join(dir, tid, 'thread.json'), null))
     .filter((t): t is Thread => !!t)
-    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
 }
 
 export function getThread(p: Project, tid: string): Thread {
@@ -149,28 +219,35 @@ export function getThread(p: Project, tid: string): Thread {
   return t
 }
 
-export function createThread(p: Project, init: { label?: string | null; parentId?: string } = {}): Thread {
-  const t: Thread = { id: newId(), label: init.label ?? null, createdAt: now(), sessionId: null, preview: null, unread: false }
+export function createThread(p: Project, init: { title: string; label?: string | null; agent?: AgentConfig; parentId?: string }): Thread {
+  const t: Thread = {
+    id: newId(),
+    title: init.title.slice(0, 300),
+    label: init.label ? { name: init.label, hue: hueFor(init.label) } : null,
+    createdAt: now(),
+    updatedAt: now(),
+    agent: init.agent ?? p.agent,
+    agentSessions: [],
+    preview: null,
+    unread: false,
+    completed: false,
+    needsYou: false,
+    error: null,
+  }
   if (init.parentId) t.parentId = init.parentId
   writeJson(path.join(threadDir(p, t.id), 'thread.json'), t)
   return t
 }
 
+export const hueFor = (s: string) => [...s].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7)
+
 export function updateThread(p: Project, tid: string, patch: Partial<Thread>): Thread {
-  const t = { ...getThread(p, tid), ...patch }
+  const t = { ...getThread(p, tid), ...patch, updatedAt: now() }
   writeJson(path.join(threadDir(p, tid), 'thread.json'), t)
   return t
 }
 
-export function readMessages(p: Project, tid: string): Message[] {
-  const file = path.join(threadDir(p, tid), 'messages.jsonl')
-  if (!fs.existsSync(file)) return []
-  return fs
-    .readFileSync(file, 'utf8')
-    .split('\n')
-    .filter(Boolean)
-    .map((l) => JSON.parse(l))
-}
+export const readMessages = (p: Project, tid: string) => readJsonl<Message>(path.join(threadDir(p, tid), 'messages.jsonl'))
 
 export function appendMessage(p: Project, tid: string, m: Omit<Message, 'id' | 'ts'>): Message {
   const msg = { id: newId(), ts: now(), ...m }
@@ -184,13 +261,49 @@ export function updateMessage(p: Project, tid: string, id: string, patch: Partia
   return msgs.find((m) => m.id === id)!
 }
 
+// Activity is append-only: a start line per event, then a {id, finishedAt} line when it ends.
+export function readActivity(p: Project, tid: string): ActivityEvent[] {
+  const events = new Map<number, ActivityEvent>()
+  for (const e of readJsonl<Partial<ActivityEvent> & { id: number }>(path.join(threadDir(p, tid), 'activity.jsonl')))
+    events.set(e.id, { ...events.get(e.id), ...e } as ActivityEvent)
+  return [...events.values()]
+}
+
+export const appendActivity = (p: Project, tid: string, e: Partial<ActivityEvent> & { id: number }) =>
+  fs.appendFileSync(path.join(threadDir(p, tid), 'activity.jsonl'), JSON.stringify(e) + '\n')
+
+export const attachmentDir = (p: Project, tid: string) => path.join(threadDir(p, tid), 'attachments')
+
+export function saveAttachment(p: Project, tid: string, dataUrl: string): string {
+  const m = dataUrl.match(/^data:image\/(png|jpeg|gif|webp);base64,(.+)$/)
+  if (!m) throw new Error('Only png, jpeg, gif and webp images are supported.')
+  const name = `${newId()}.${m[1] === 'jpeg' ? 'jpg' : m[1]}`
+  fs.mkdirSync(attachmentDir(p, tid), { recursive: true })
+  fs.writeFileSync(path.join(attachmentDir(p, tid), name), Buffer.from(m[2], 'base64'))
+  return name
+}
+
+// ---- decisions ----
+
+const decisionsDir = (p: Project) => path.join(dataDir(p), 'decisions')
+
+export function listDecisions(p: Project, threadId?: string): Decision[] {
+  if (!fs.existsSync(decisionsDir(p))) return []
+  return fs
+    .readdirSync(decisionsDir(p))
+    .map((f) => readJson<Decision>(path.join(decisionsDir(p), f), null as never))
+    .filter((d) => d && (!threadId || d.threadId === threadId))
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))
+}
+
+export const saveDecision = (p: Project, d: Decision) => writeJson(path.join(decisionsDir(p), `${path.basename(d.id)}.json`), d)
+
 // ---- documents (plain markdown files, first line is the title) ----
 
 const docsDir = (p: Project) => path.join(dataDir(p), 'documents')
 
 function readDoc(file: string): Doc {
-  const raw = fs.readFileSync(file, 'utf8')
-  const [first, ...rest] = raw.split('\n')
+  const [first, ...rest] = fs.readFileSync(file, 'utf8').split('\n')
   return {
     id: path.basename(file, '.md'),
     title: first.replace(/^#\s*/, ''),
@@ -235,13 +348,13 @@ export function listWorkflows(p: Project): Workflow[] {
   return fs
     .readdirSync(wfDir(p))
     .filter((f) => f.endsWith('.json'))
-    .map((f) => readJson<Workflow>(path.join(wfDir(p), f), null as never))
+    .map((f) => ({ next: [], ...readJson<Partial<Workflow>>(path.join(wfDir(p), f), null as never) }) as Workflow)
 }
 
 export function getWorkflow(p: Project, id: string): Workflow {
-  const wf = readJson<Workflow | null>(path.join(wfDir(p), `${path.basename(id)}.json`), null)
+  const wf = readJson<Partial<Workflow> | null>(path.join(wfDir(p), `${path.basename(id)}.json`), null)
   if (!wf) throw new NotFound(`workflow ${id}`)
-  return wf
+  return { next: [], ...wf } as Workflow
 }
 
 export function saveWorkflow(p: Project, wf: Partial<Workflow> & { name: string; prompt: string }): Workflow {
@@ -251,6 +364,7 @@ export function saveWorkflow(p: Project, wf: Partial<Workflow> & { name: string;
     cron: null,
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     enabled: true,
+    next: [],
     lastRunAt: null,
     ...prev,
     ...wf,

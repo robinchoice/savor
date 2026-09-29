@@ -15,6 +15,14 @@ const ok = (data: unknown) => ({ content: [{ type: 'text' as const, text: typeof
 
 const approvals = new Map<string, (allow: boolean) => void>()
 
+// "Needs you" = open questions or pending approvals in the thread.
+export function refreshNeedsYou(p: Project, tid: string) {
+  const needsYou =
+    store.listDecisions(p, tid).some((d) => !d.resolved) || store.readMessages(p, tid).some((m) => m.approval?.status === 'pending')
+  store.updateThread(p, tid, { needsYou })
+  emit({ type: 'thread', projectId: p.id, threadId: tid })
+}
+
 export function resolveApproval(p: Project, tid: string, mid: string, allow: boolean) {
   const msg = store.readMessages(p, tid).find((m) => m.id === mid)
   if (!msg?.approval) throw new store.NotFound(`approval ${mid}`)
@@ -22,12 +30,14 @@ export function resolveApproval(p: Project, tid: string, mid: string, allow: boo
   emit({ type: 'message', projectId: p.id, threadId: tid })
   approvals.get(mid)?.(allow)
   approvals.delete(mid)
+  refreshNeedsYou(p, tid)
 }
 
 function buildServer(p: Project, tid: string) {
-  const server = new McpServer({ name: 'savor', version: '0.1.0' })
+  const server = new McpServer({ name: 'savor', version: '0.2.0' })
   const threadUrl = (id: string) => appUrl(`/p/${p.id}/t/${id}`)
   const touchThread = () => emit({ type: 'thread', projectId: p.id, threadId: tid })
+  const modelInfo = () => store.getThread(p, tid).agent
 
   // ---- messages ----
 
@@ -35,7 +45,7 @@ function buildServer(p: Project, tid: string) {
     'set_thread_label',
     { description: 'Set a short 3–6 word label for this conversation. Call first when threadLabel is null.', inputSchema: { label: z.string().min(1).max(80) } },
     async ({ label }) => {
-      store.updateThread(p, tid, { label })
+      store.updateThread(p, tid, { label: { name: label, hue: store.hueFor(label) } })
       touchThread()
       return ok({ label })
     },
@@ -44,13 +54,13 @@ function buildServer(p: Project, tid: string) {
   server.registerTool(
     'send_acknowledgement_message',
     { description: 'Tell the user you received their input and are starting work. Send before long work.', inputSchema: { text: z.string().min(1) } },
-    async ({ text }) => ok({ id: agents.post(p, tid, { kind: 'ack', text }).id }),
+    async ({ text }) => ok({ id: agents.post(p, tid, { kind: 'ack', text, modelInfo: modelInfo() }).id }),
   )
 
   server.registerTool(
     'send_user_requested_message',
     { description: 'Send an extra message the user explicitly asked for (e.g. requested progress updates). Not for unsolicited updates.', inputSchema: { text: z.string().min(1) } },
-    async ({ text }) => ok({ id: agents.post(p, tid, { kind: 'update', text }).id }),
+    async ({ text }) => ok({ id: agents.post(p, tid, { kind: 'update', text, modelInfo: modelInfo() }).id }),
   )
 
   server.registerTool(
@@ -67,9 +77,23 @@ function buildServer(p: Project, tid: string) {
     },
     async ({ text, questions, suggestions, commits }) => {
       if (!text && !questions?.length) throw new Error('Provide text, questions, or both.')
-      const msg = agents.post(p, tid, { kind: 'conclusion', text, questions, suggestions, commits })
-      agents.markConcluded(tid)
-      store.updateThread(p, tid, { unread: true })
+      const msg = agents.post(p, tid, { kind: 'conclusion', text, questions, suggestions, commits, modelInfo: modelInfo() })
+      if (questions?.length) {
+        const decisions = questions.map((q, i) => ({
+          id: `${msg.id}-q${i}`,
+          groupId: msg.id,
+          threadId: tid,
+          ...q,
+          selected: null,
+          answer: null,
+          resolved: false,
+          createdAt: msg.ts,
+        }))
+        decisions.forEach((d) => store.saveDecision(p, d))
+        store.updateMessage(p, tid, msg.id, { decisionIds: decisions.map((d) => d.id) })
+      }
+      agents.markConcluded(tid, msg.id)
+      store.updateThread(p, tid, { unread: true, needsYou: !!questions?.length })
       touchThread()
       return ok({ id: msg.id, note: 'Delivered. Finish your turn now.' })
     },
@@ -77,7 +101,7 @@ function buildServer(p: Project, tid: string) {
 
   // ---- documents ----
 
-  const docUrl = (id: string) => appUrl(`/p/${p.id}/docs/${id}`)
+  const docUrl = (id: string) => appUrl(`/p/${p.id}/files/doc/${id}`)
 
   server.registerTool('list_documents', { description: 'List documents in this project.' }, async () =>
     ok(store.listDocs(p).map(({ id, title, updatedAt }) => ({ id, title, updatedAt, url: docUrl(id) }))),
@@ -115,13 +139,16 @@ function buildServer(p: Project, tid: string) {
     cron: z.string().nullable().optional().describe('5-field cron expression, null for manual runs only'),
     timezone: z.string().optional().describe('IANA timezone, defaults to the host timezone'),
     enabled: z.boolean().optional(),
+    next: z.array(z.string()).optional().describe('IDs of workflows to continue with after this one (a chain)'),
   }
 
-  server.registerTool('list_workflows', { description: 'List workflows (saved prompts, optionally on a cron schedule).' }, async () =>
+  server.registerTool('list_workflows', { description: 'List workflows (saved prompts, optionally scheduled and chained).' }, async () =>
     ok(store.listWorkflows(p).map((wf) => ({ ...wf, url: wfUrl(wf.id) }))),
   )
 
-  server.registerTool('read_workflow', { description: 'Read a workflow.', inputSchema: { id: z.string() } }, async ({ id }) => ok(store.getWorkflow(p, id)))
+  server.registerTool('read_workflow', { description: 'Read a workflow, including the workflows it links to.', inputSchema: { id: z.string() } }, async ({ id }) =>
+    ok(store.getWorkflow(p, id)),
+  )
 
   server.registerTool(
     'create_workflow',
@@ -150,7 +177,7 @@ function buildServer(p: Project, tid: string) {
   )
 
   server.registerTool('run_workflow', { description: 'Run a workflow now in a new conversation.', inputSchema: { id: z.string() } }, async ({ id }) => {
-    const t = runWorkflow(p.id, id)
+    const t = runWorkflow(p.id, id, agents.originOf(tid))
     return ok({ threadId: t.id, url: threadUrl(t.id) })
   })
 
@@ -160,21 +187,23 @@ function buildServer(p: Project, tid: string) {
     'start_conversation',
     { description: 'Start a new conversation in this project with its own agent, e.g. to delegate a separate task.', inputSchema: { prompt: z.string().min(1), label: z.string().optional() } },
     async ({ prompt, label }) => {
-      const t = store.createThread(p, { label, parentId: tid })
+      const t = store.createThread(p, { title: prompt, label, agent: modelInfo(), parentId: tid })
       emit({ type: 'thread', projectId: p.id, threadId: t.id })
-      agents.send(p, t.id, prompt)
+      agents.send(p, t.id, { text: prompt, origin: agents.originOf(tid) })
       return ok({ id: t.id, url: threadUrl(t.id) })
     },
   )
 
   server.registerTool('list_conversations', { description: 'List conversations in this project.' }, async () =>
-    ok(store.listThreads(p).map((t) => ({ id: t.id, label: t.label, createdAt: t.createdAt, busy: agents.isBusy(t.id), url: threadUrl(t.id) }))),
+    ok(
+      store.listThreads(p).map((t) => ({ id: t.id, title: t.title, label: t.label?.name ?? null, completed: t.completed, busy: agents.isBusy(t.id), url: threadUrl(t.id) })),
+    ),
   )
 
   server.registerTool('read_conversation', { description: 'Read the visible messages of a conversation.', inputSchema: { id: z.string() } }, async ({ id }) =>
     ok({
       busy: agents.isBusy(id),
-      messages: store.readMessages(p, id).filter((m) => m.kind !== 'trace').map(({ kind, text, questions, ts }) => ({ kind, text, questions, ts })),
+      messages: store.readMessages(p, id).map(({ kind, text, questions, ts }) => ({ kind, text, questions, ts })),
     }),
   )
 
@@ -194,7 +223,7 @@ function buildServer(p: Project, tid: string) {
       },
     },
     async ({ pid, name, command, cwd, url, log }) => {
-      processes.register(p, { pid, name, command, cwd: cwd ?? p.path, url: url ?? null, log: log ?? null, threadId: tid, startedAt: new Date().toISOString() })
+      processes.register(p, { pid, name, command, cwd: cwd ?? p.path, url: url ?? null, log: log ?? null, threadId: tid, startedAt: store.now() })
       return ok({ registered: pid })
     },
   )
@@ -206,17 +235,14 @@ function buildServer(p: Project, tid: string) {
 
   // ---- product preview ----
 
-  const browserTool = async (fn: () => Promise<string>) => {
-    const out = await fn()
-    emit({ type: 'browser', projectId: p.id, threadId: tid })
-    return ok(out)
-  }
+  const browserTool = async (fn: () => Promise<string>) => ok(await fn())
 
   server.registerTool('open_browser', { description: 'Show a working web product in the preview beside this conversation.', inputSchema: { url: z.string().url() } }, async ({ url }) => {
     await browser.open(tid, url)
     store.updateThread(p, tid, { preview: url })
     touchThread()
-    return browserTool(async () => 'Opened. Use browser_inspect to read the page.')
+    emit({ type: 'browser', projectId: p.id, threadId: tid })
+    return ok('Opened. Use browser_inspect to read the page.')
   })
   server.registerTool('browser_inspect', { description: 'Read the preview: visible text, controls with refs, console errors.' }, async () => browserTool(() => browser.inspect(tid)))
   server.registerTool('browser_click', { description: 'Click a control by ref from browser_inspect.', inputSchema: { ref: z.string() } }, async ({ ref }) => browserTool(() => browser.click(tid, ref)))
@@ -229,11 +255,9 @@ function buildServer(p: Project, tid: string) {
     store.updateThread(p, tid, { preview: url })
     return browserTool(() => browser.navigate(tid, url))
   })
-  server.registerTool('browser_screenshot', { description: 'Capture the preview as an image.' }, async () => {
-    const png = await browser.snapshot(tid)
-    emit({ type: 'browser', projectId: p.id, threadId: tid })
-    return { content: [{ type: 'image' as const, data: png.toString('base64'), mimeType: 'image/png' }] }
-  })
+  server.registerTool('browser_screenshot', { description: 'Capture the preview as an image.' }, async () => ({
+    content: [{ type: 'image' as const, data: (await browser.screenshot(tid)).toString('base64'), mimeType: 'image/png' }],
+  }))
 
   // ---- permission prompts (Claude Code --permission-prompt-tool) ----
 
@@ -242,7 +266,7 @@ function buildServer(p: Project, tid: string) {
     { description: 'Internal: asks the user to approve a tool call.', inputSchema: { tool_name: z.string(), input: z.record(z.string(), z.unknown()), tool_use_id: z.string().optional() } },
     async ({ tool_name, input }) => {
       const msg = agents.post(p, tid, { kind: 'approval', approval: { tool: tool_name, input, status: 'pending' } })
-      store.updateThread(p, tid, { unread: true })
+      store.updateThread(p, tid, { unread: true, needsYou: true })
       touchThread()
       const allow = await new Promise<boolean>((resolve) => approvals.set(msg.id, resolve))
       return ok(allow ? { behavior: 'allow', updatedInput: input } : { behavior: 'deny', message: 'The user denied this action.' })

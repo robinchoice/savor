@@ -1,23 +1,24 @@
 import type { ServerResponse } from 'node:http'
 
-export type SavorEvent =
-  | { type: 'message'; projectId: string; threadId: string }
-  | { type: 'thread'; projectId: string; threadId: string }
-  | { type: 'status'; projectId: string; threadId: string; busy: boolean }
-  | { type: 'documents' | 'workflows' | 'processes' | 'projects'; projectId?: string }
-  | { type: 'browser'; projectId: string; threadId: string }
+export interface SavorEvent {
+  type: 'message' | 'thread' | 'status' | 'activity' | 'documents' | 'workflows' | 'processes' | 'projects' | 'browser' | 'devices'
+  projectId?: string
+  threadId?: string
+}
+
+export function openStream(res: ServerResponse) {
+  res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' })
+  res.write(': connected\n\n')
+  const ping = setInterval(() => res.write(': ping\n\n'), 25_000)
+  res.on('close', () => clearInterval(ping))
+}
 
 const clients = new Set<ServerResponse>()
 
 export function subscribe(res: ServerResponse) {
-  res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' })
-  res.write(': connected\n\n')
+  openStream(res)
   clients.add(res)
-  const ping = setInterval(() => res.write(': ping\n\n'), 25_000)
-  res.on('close', () => {
-    clearInterval(ping)
-    clients.delete(res)
-  })
+  res.on('close', () => clients.delete(res))
 }
 
 export function emit(e: SavorEvent) {

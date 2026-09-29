@@ -8,6 +8,8 @@ export const BIN = {
   claude: process.env.SAVOR_CLAUDE_BIN ?? 'claude',
   codex: process.env.SAVOR_CODEX_BIN ?? 'codex',
   opencode: process.env.SAVOR_OPENCODE_BIN ?? 'opencode',
+  grok: process.env.SAVOR_GROK_BIN ?? 'grok',
+  antigravity: process.env.SAVOR_ANTIGRAVITY_BIN ?? 'antigravity',
 }
 
 export const mcpUrl = (projectId: string, threadId: string) =>

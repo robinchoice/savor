@@ -1,11 +1,16 @@
 import fs from 'node:fs'
-import { chromium, type Browser, type Page } from 'playwright-core'
+import type { ServerResponse } from 'node:http'
+import { chromium, type Browser, type CDPSession, type Page } from 'playwright-core'
+import { openStream } from './events.js'
 
-// One headless page per thread. The agent drives it; the UI shows its screenshots
-// next to a live iframe of the same URL.
+// One headless page per thread. Agent and user share it: the agent drives it through MCP tools,
+// the UI shows its screencast and forwards the user's clicks and keystrokes.
+
+interface Session { page: Page; cdp: CDPSession; errors: string[]; frame: string | null; viewers: Set<ServerResponse> }
 
 let browser: Promise<Browser> | null = null
-const pages = new Map<string, { page: Page; errors: string[]; shot: Buffer | null }>()
+const sessions = new Map<string, Session>()
+export const VIEWPORT = { width: 1280, height: 800 }
 
 function executable() {
   const candidates = [
@@ -22,37 +27,50 @@ function executable() {
   return found
 }
 
-async function session(tid: string) {
-  const s = pages.get(tid)
+function session(tid: string) {
+  const s = sessions.get(tid)
   if (!s) throw new Error('No preview open. Call open_browser first.')
   return s
 }
 
+const broadcast = (s: Session, data: string) => s.viewers.forEach((v) => v.write(`data: ${data}\n\n`))
+
 export async function open(tid: string, url: string) {
-  let s = pages.get(tid)
+  let s = sessions.get(tid)
   if (!s) {
     browser ??= chromium.launch({ executablePath: executable() })
-    const page = await (await browser).newPage({ viewport: { width: 1280, height: 800 } })
-    s = { page, errors: [], shot: null }
-    const errors = s.errors
-    page.on('console', (m) => m.type() === 'error' && errors.push(m.text()))
-    page.on('pageerror', (e) => errors.push(e.message))
-    pages.set(tid, s)
+    const page = await (await browser).newPage({ viewport: VIEWPORT })
+    const cdp = await page.context().newCDPSession(page)
+    const created: Session = { page, cdp, errors: [], frame: null, viewers: new Set() }
+    page.on('console', (m) => m.type() === 'error' && created.errors.push(m.text()))
+    page.on('pageerror', (e) => created.errors.push(e.message))
+    cdp.on('Page.screencastFrame', ({ data, sessionId }) => {
+      created.frame = data
+      broadcast(created, data)
+      cdp.send('Page.screencastFrameAck', { sessionId }).catch(() => {})
+    })
+    await cdp.send('Page.startScreencast', { format: 'jpeg', quality: 70, maxWidth: VIEWPORT.width, maxHeight: VIEWPORT.height })
+    sessions.set(tid, (s = created))
   }
   await s.page.goto(url, { waitUntil: 'domcontentloaded' })
-  await snapshot(tid)
 }
 
-export async function snapshot(tid: string) {
-  const s = await session(tid)
-  s.shot = await s.page.screenshot({ type: 'png' })
-  return s.shot
+// Server-sent stream of base64 JPEG frames for the UI.
+export async function watch(tid: string, res: ServerResponse) {
+  openStream(res)
+  const s = sessions.get(tid)
+  if (!s) return
+  s.viewers.add(res)
+  res.on('close', () => s.viewers.delete(res))
+  const first = s.frame ?? (await s.page.screenshot({ type: 'jpeg', quality: 70 })).toString('base64')
+  res.write(`data: ${first}\n\n`)
 }
 
-export const lastShot = (tid: string) => pages.get(tid)?.shot ?? null
+export const has = (tid: string) => sessions.has(tid)
+export const screenshot = (tid: string) => session(tid).page.screenshot({ type: 'png' })
 
 export async function inspect(tid: string) {
-  const s = await session(tid)
+  const s = session(tid)
   const outline = await s.page.evaluate(() => {
     document.querySelectorAll('[data-savor-ref]').forEach((e) => e.removeAttribute('data-savor-ref'))
     const sel = 'a[href],button,input,textarea,select,[role=button],[role=link],[role=checkbox],[role=tab],[contenteditable=true],h1,h2,h3'
@@ -82,10 +100,9 @@ export async function inspect(tid: string) {
 const target = (ref: string) => `[data-savor-ref="${ref.replace(/[^a-z0-9]/gi, '')}"]`
 
 async function act(tid: string, fn: (page: Page) => Promise<unknown>) {
-  const s = await session(tid)
-  await fn(s.page)
-  await s.page.waitForLoadState('domcontentloaded').catch(() => {})
-  await snapshot(tid)
+  const { page } = session(tid)
+  await fn(page)
+  await page.waitForLoadState('domcontentloaded').catch(() => {})
   return 'ok — call browser_inspect to see the result'
 }
 
@@ -99,3 +116,48 @@ export const fill = (tid: string, ref: string, value: string) =>
 export const press = (tid: string, key: string) => act(tid, (p) => p.keyboard.press(key))
 export const scroll = (tid: string, dy: number) => act(tid, (p) => p.mouse.wheel(0, dy))
 export const navigate = (tid: string, url: string) => act(tid, (p) => p.goto(url, { waitUntil: 'domcontentloaded' }))
+
+// ---- user input from the UI (coordinates in page CSS pixels) ----
+
+export type UserInput =
+  | { type: 'click'; x: number; y: number }
+  | { type: 'scroll'; dy: number }
+  | { type: 'type'; text: string }
+  | { type: 'key'; key: string }
+  | { type: 'back' | 'forward' | 'reload' }
+
+export async function userInput(tid: string, e: UserInput) {
+  const { page } = session(tid)
+  if (e.type === 'click') await page.mouse.click(e.x, e.y)
+  if (e.type === 'scroll') await page.mouse.wheel(0, e.dy)
+  if (e.type === 'type') await page.keyboard.type(e.text)
+  if (e.type === 'key') await page.keyboard.press(e.key)
+  if (e.type === 'back') await page.goBack()
+  if (e.type === 'forward') await page.goForward()
+  if (e.type === 'reload') await page.reload()
+}
+
+// Describe the element under a point so the user can point the agent at it ("make this bigger").
+export function pick(tid: string, x: number, y: number) {
+  return session(tid).page.evaluate(
+    ({ x, y }) => {
+      const el = document.elementFromPoint(x, y) as HTMLElement | null
+      if (!el) return null
+      const path: string[] = []
+      for (let e: HTMLElement | null = el; e && e !== document.body; e = e.parentElement) {
+        const cls = [...e.classList].slice(0, 2).map((c) => `.${c}`).join('')
+        path.unshift(e.id ? `#${e.id}` : `${e.tagName.toLowerCase()}${cls}`)
+        if (e.id) break
+      }
+      const cs = getComputedStyle(el)
+      return {
+        selector: path.join(' > '),
+        text: el.innerText?.trim().slice(0, 200) ?? '',
+        html: el.outerHTML.slice(0, 600),
+        styles: { font: `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`, color: cs.color, background: cs.backgroundColor, margin: cs.margin, padding: cs.padding },
+        url: location.href,
+      }
+    },
+    { x, y },
+  )
+}

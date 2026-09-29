@@ -1,0 +1,12 @@
+{
+  "name": "savor-desktop",
+  "private": true,
+  "license": "AGPL-3.0-or-later",
+  "main": "main.cjs",
+  "scripts": {
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "electron": "^44.4.5"
+  }
+}
