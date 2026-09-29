@@ -2,7 +2,6 @@ import http, { type IncomingMessage, type ServerResponse } from 'node:http'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { webcrypto } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 import * as store from './store.js'
 import { emit, subscribe } from './events.js'
@@ -15,9 +14,6 @@ import * as files from './files.js'
 import * as awake from './awake.js'
 import { handleMcp, refreshNeedsYou, resolveApproval } from './mcp.js'
 import { nextRun, runWorkflow, syncSchedules, validateCron } from './scheduler.js'
-
-// Node 18 has no global WebCrypto, which the MCP SDK expects.
-globalThis.crypto ??= webcrypto as Crypto
 
 const WEB = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'dist', 'web')
 const MIME: Record<string, string> = {

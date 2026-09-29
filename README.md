@@ -21,7 +21,7 @@ Everything lives in plain files: `~/.savor/state.json` holds projects, tokens an
 
 ## Quick start
 
-Requirements: Node ≥ 18, at least one logged-in agent CLI, and Chromium or Chrome for the preview.
+Requirements: Node ≥ 22.12, at least one logged-in agent CLI, and Chromium or Chrome for the preview.
 
 ```sh
 git clone <repo> savor && cd savor
@@ -31,7 +31,7 @@ npm start
 
 Open the printed `http://localhost:4317/?token=…` link once. It sets a cookie, and after that `http://localhost:4317` is enough.
 
-Desktop window (Electron, needs Node ≥ 22.12 to install):
+Desktop window (Electron):
 
 ```sh
 cd desktop && npm install && npm start
