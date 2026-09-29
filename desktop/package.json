@@ -3,6 +3,9 @@
   "private": true,
   "license": "AGPL-3.0-or-later",
   "main": "main.cjs",
+  "engines": {
+    "node": ">=22.12"
+  },
   "scripts": {
     "start": "electron ."
   },

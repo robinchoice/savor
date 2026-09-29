@@ -31,11 +31,13 @@ npm start
 
 Open the printed `http://localhost:4317/?token=…` link once. It sets a cookie, and after that `http://localhost:4317` is enough.
 
-Desktop window (Electron):
+Desktop window (Electron, needs Node ≥ 22.12 to install):
 
 ```sh
 cd desktop && npm install && npm start
 ```
+
+The window starts its own daemon unless one is already running on `SAVOR_PORT`, and stops that daemon again when you close it. On Ubuntu 24.04 and later, Electron aborts with a `chrome-sandbox` error. Either run `sudo chown root:root node_modules/electron/dist/chrome-sandbox && sudo chmod 4755 node_modules/electron/dist/chrome-sandbox`, or start it with `npm start -- --no-sandbox`.
 
 ## Phone / remote access
 
