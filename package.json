@@ -1,0 +1,41 @@
+{
+  "name": "savor",
+  "version": "0.1.0",
+  "description": "Local-first workspace for CLI coding agents (Claude Code, Codex, OpenCode)",
+  "license": "AGPL-3.0-or-later",
+  "type": "module",
+  "bin": {
+    "savor": "bin/savor.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "vite build",
+    "prepare": "vite build",
+    "dev:web": "vite",
+    "start": "node bin/savor.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.31.0",
+    "croner": "^10.0.1",
+    "playwright-core": "1.52",
+    "tsx": "^4.23.15",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@preact/preset-vite": "^2.10.6",
+    "@types/node": "^26.6.3",
+    "dompurify": "^3.4.16",
+    "marked": "^18.0.14",
+    "preact": "^10.29.8",
+    "typescript": "^7.0.2",
+    "vite": "^6.4.3"
+  },
+  "files": [
+    "bin",
+    "server",
+    "dist"
+  ]
+}

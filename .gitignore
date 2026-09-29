@@ -1,0 +1,6 @@
+node_modules/
+dist/
+.enjoy/
+.enjoy-logs/
+.savor/
+.savor-logs/
