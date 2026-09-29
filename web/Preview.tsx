@@ -16,7 +16,9 @@ export function Preview({ base, threadId, url, onPick }: { base: string; threadI
   const [stream, setStream] = useState(0)
   const img = useRef<HTMLImageElement>(null)
 
-  useEffect(() => setAddress(url ?? ''), [url])
+  useEffect(() => {
+    if (url) setAddress(url)
+  }, [url])
   useEffect(() => {
     if (!url) return
     return transport.stream(`/api${base}/browser/stream`, setFrame)

@@ -107,6 +107,7 @@ test('the live preview streams through the tunnel', async () => {
   await page.click('button[title="Side panel"]')
   await page.click('.panel-tabs >> text=Preview')
   await page.fill('.preview-bar input', relayBase + '/healthz')
+  assert.equal(await page.inputValue('.preview-bar input'), relayBase + '/healthz')
   await page.keyboard.press('Enter')
   await page.waitForSelector('img.screen')
   assert.match(await page.getAttribute('img.screen', 'src'), /^data:image\/jpeg;base64,/)

@@ -216,6 +216,7 @@ route('GET', '/projects/:pid/threads/:tid/browser/stream', async (params, _, ctx
   return browser.watch(params.tid, ctx.res)
 })
 route('POST', '/projects/:pid/threads/:tid/browser/open', async (params, b) => {
+  if (!/^https?:\/\//.test(String(b.url ?? ''))) throw new BadRequest('Enter a full URL starting with http:// or https://.')
   const p = project(params)
   await browser.open(p.id, params.tid, b.url)
   store.updateThread(p, params.tid, { preview: b.url })
