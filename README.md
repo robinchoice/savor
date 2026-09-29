@@ -1,6 +1,52 @@
-# Savor
+<p align="center"><img src="web/public/icon.svg" width="72" alt=""></p>
 
-A local-first workspace for CLI coding agents. Savor runs Claude Code, Codex, OpenCode, Grok Build or Antigravity in your project folders. You use it from a desktop window, a browser tab or your phone.
+<h1 align="center">Savor</h1>
+
+<p align="center">
+  <b>A local-first workspace for coding agents.</b><br>
+  Describe what you want, let Claude Code, Codex or OpenCode build it, and keep projects, conversations and live previews in one place: on your desktop, in the browser or on your phone.
+</p>
+
+<p align="center">
+  <a href="https://github.com/robinchoice/savor/releases/latest"><img src="https://img.shields.io/github/v/release/robinchoice/savor" alt="Latest release"></a>
+  <a href="https://github.com/robinchoice/savor/actions/workflows/ci.yml"><img src="https://github.com/robinchoice/savor/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/robinchoice/savor" alt="AGPL-3.0"></a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/robinchoice/savor/releases/latest"><b>Download</b></a> ·
+  <a href="#install">Install</a> ·
+  <a href="#how-it-works">How it works</a>
+</p>
+
+![A conversation with Claude Code next to the live preview of the landing page it built](docs/screenshots/conversation.png)
+
+**Why Savor**
+
+- **Free and open source** (AGPL-3.0). No account and no cloud in between: Savor runs on your machine and uses the agent subscriptions you already have.
+- **Your files stay yours.** Projects are ordinary folders; conversations, documents and workflows are plain files in `.savor/`.
+- **Agents that report back.** Every task gets a short acknowledgement, a clear result, questions you answer in one click and suggestions for what to do next, instead of a wall of terminal output.
+- **See what gets built.** The app your agent builds runs in a live preview beside the chat. You and the agent use the same page.
+- **Take it with you.** Pair your phone with a QR code and keep conversations going from anywhere.
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/questions.png" alt="An agent asking two questions before it continues"></td>
+    <td width="50%"><img src="docs/screenshots/workflows.png" alt="Scheduled workflows"></td>
+  </tr>
+  <tr>
+    <td align="center">Agents ask, you answer in one reply</td>
+    <td align="center">Workflows run on a schedule, and can be chained</td>
+  </tr>
+  <tr>
+    <td colspan="2" align="center"><img src="docs/screenshots/mobile.png" width="560" alt="Savor on a phone: conversation list and a conversation with preview"></td>
+  </tr>
+  <tr>
+    <td colspan="2" align="center">The same workspace on your phone</td>
+  </tr>
+</table>
+
+## Features
 
 - **Projects as tabs**, each with its own color. Badges show which agents are working and which conversations need you.
 - **Conversations**: every task gets its own agent session. You can send new messages while an agent is working; Claude Code picks them up in the running turn. Turns the agent starts on its own, for example when a background task finishes, show up as working too. You get search, filters (All / Needs you / Working / Unread), colored labels, "Mark as completed" and a "Show completed" toggle.

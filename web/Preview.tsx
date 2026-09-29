@@ -71,22 +71,24 @@ export function Preview({ base, threadId, url, onPick }: { base: string; threadI
       </form>
       {error && <div class="error-text pad">{error}</div>}
       {url && frame ? (
-        <img
-          ref={img}
-          class={`screen ${picking ? 'picking' : ''}`}
-          src={`data:image/jpeg;base64,${frame}`}
-          alt="Preview"
-          tabIndex={0}
-          draggable={false}
-          onClick={click}
-          onWheel={(e) => (e.preventDefault(), input({ type: 'scroll', dy: e.deltaY }))}
-          onKeyDown={(e) => {
-            if (e.metaKey || e.ctrlKey) return
-            e.preventDefault()
-            if (KEYS.has(e.key)) input({ type: 'key', key: e.key })
-            else if (e.key.length === 1) input({ type: 'type', text: e.key })
-          }}
-        />
+        <div class="screen-wrap">
+          <img
+            ref={img}
+            class={`screen ${picking ? 'picking' : ''}`}
+            src={`data:image/jpeg;base64,${frame}`}
+            alt="Preview"
+            tabIndex={0}
+            draggable={false}
+            onClick={click}
+            onWheel={(e) => (e.preventDefault(), input({ type: 'scroll', dy: e.deltaY }))}
+            onKeyDown={(e) => {
+              if (e.metaKey || e.ctrlKey) return
+              e.preventDefault()
+              if (KEYS.has(e.key)) input({ type: 'key', key: e.key })
+              else if (e.key.length === 1) input({ type: 'type', text: e.key })
+            }}
+          />
+        </div>
       ) : (
         <p class="muted center">{url ? 'Connecting…' : 'Enter a URL, or let the agent open the app it built.'}</p>
       )}
