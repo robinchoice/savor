@@ -3,6 +3,11 @@
   "version": "0.1.0",
   "description": "Local-first workspace for CLI coding agents (Claude Code, Codex, OpenCode)",
   "license": "AGPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/robinchoice/savor.git"
+  },
+  "homepage": "https://github.com/robinchoice/savor",
   "type": "module",
   "bin": {
     "savor": "bin/savor.js"
@@ -11,11 +16,13 @@
     "node": ">=22.12"
   },
   "scripts": {
-    "build": "vite build",
-    "prepare": "vite build",
+    "build": "vite build && npm run build:server",
+    "build:server": "esbuild server/index.ts --bundle --platform=node --target=node22 --format=esm --outfile=dist/server/index.mjs --external:playwright-core --banner:js=\"import { createRequire as __cjsRequire } from 'node:module'; const require = __cjsRequire(import.meta.url);\"",
+    "prepare": "npm run build",
     "dev:web": "vite",
     "start": "node bin/savor.js",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --test \"test/*.test.mjs\""
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.31.0",
@@ -28,6 +35,7 @@
     "@preact/preset-vite": "^2.10.6",
     "@types/node": "^26.6.3",
     "dompurify": "^3.4.16",
+    "esbuild": "^0.28.2",
     "lucide-preact": "^1.48.0",
     "marked": "^18.0.14",
     "preact": "^10.29.8",

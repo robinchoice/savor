@@ -1,15 +1,78 @@
 {
   "name": "savor-desktop",
+  "productName": "Savor",
+  "version": "0.1.0",
+  "description": "Local-first workspace for CLI coding agents",
   "private": true,
   "license": "AGPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/robinchoice/savor.git"
+  },
+  "homepage": "https://github.com/robinchoice/savor",
+  "author": {
+    "name": "Savor contributors"
+  },
   "main": "main.cjs",
   "engines": {
     "node": ">=22.12"
   },
   "scripts": {
-    "start": "electron ."
+    "start": "electron .",
+    "dist": "npm --prefix .. run build && electron-builder --publish never"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
   },
   "devDependencies": {
-    "electron": "^44.4.5"
-  }
+    "electron": "^44.4.5",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "dev.savor.app",
+    "productName": "Savor",
+    "files": [
+      "main.cjs"
+    ],
+    "extraResources": [
+      {
+        "from": "../dist",
+        "to": "savor",
+        "filter": [
+          "server/**",
+          "web/**"
+        ]
+      },
+      {
+        "from": "../node_modules/playwright-core",
+        "to": "savor/node_modules/playwright-core"
+      }
+    ],
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Development",
+      "syncDesktopName": true
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.developer-tools"
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "robinchoice",
+        "repo": "savor",
+        "releaseType": "draft"
+      }
+    ]
+  },
+  "desktopName": "savor.desktop"
 }

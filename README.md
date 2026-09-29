@@ -20,26 +20,45 @@ A local-first workspace for CLI coding agents. Savor runs Claude Code, Codex, Op
 
 Everything lives in plain files: `~/.savor/state.json` holds projects, tokens and devices, and each project gets a `.savor/` directory.
 
-## Quick start
+## Install
 
-Requirements: Node ≥ 22.12, at least one logged-in agent CLI, and Chromium or Chrome for the preview.
+**Desktop app:** download the AppImage (Linux), dmg (macOS) or exe (Windows) from the [Releases page](https://github.com/robinchoice/savor/releases). The app starts its own daemon, finds agent CLIs through your login shell's `PATH`, downloads Chromium for the preview on first use, and updates itself from new releases. You still need at least one logged-in agent CLI (`claude`, `codex`, …).
+
+- Linux: `chmod +x Savor-*.AppImage && ./Savor-*.AppImage`. On Ubuntu 24.04 and later, AppImages built with Electron need `--no-sandbox`, because AppArmor blocks Chromium's sandbox.
+- macOS and Windows builds are not code-signed yet. macOS needs a right-click → Open on first launch, Windows SmartScreen asks once, and macOS only updates itself once builds are signed.
+
+**From source** (Node ≥ 22.12):
 
 ```sh
-git clone <repo> savor && cd savor
-npm install                          # also builds the web UI
+git clone https://github.com/robinchoice/savor.git && cd savor
+npm install                          # also builds the web UI and the server bundle
 npx playwright-core install chromium # browser for the preview
 npm start
 ```
 
 Open the printed `http://localhost:4317/?token=…` link once. It sets a cookie, and after that `http://localhost:4317` is enough.
 
-Desktop window (Electron):
+Desktop window from source: `cd desktop && npm install && npm start`. The window starts its own daemon unless one is already running on `SAVOR_PORT`, and stops that daemon again when you close it. On Ubuntu 24.04 and later, either run `sudo chown root:root node_modules/electron/dist/chrome-sandbox && sudo chmod 4755 node_modules/electron/dist/chrome-sandbox`, or start it with `npm start -- --no-sandbox`.
+
+**As a background service** (Linux, systemd user unit), so Savor is reachable from your phone without an open window:
 
 ```sh
-cd desktop && npm install && npm start
-```
+mkdir -p ~/.config/systemd/user
+cat > ~/.config/systemd/user/savor.service <<UNIT
+[Unit]
+Description=Savor
 
-The window starts its own daemon unless one is already running on `SAVOR_PORT`, and stops that daemon again when you close it. On Ubuntu 24.04 and later, Electron aborts with a `chrome-sandbox` error. Either run `sudo chown root:root node_modules/electron/dist/chrome-sandbox && sudo chmod 4755 node_modules/electron/dist/chrome-sandbox`, or start it with `npm start -- --no-sandbox`.
+[Service]
+ExecStart=$(command -v node) $PWD/dist/server/index.mjs
+Environment=PATH=$PATH
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
+UNIT
+systemctl --user enable --now savor
+journalctl --user -u savor | grep token   # the login link
+```
 
 ## Phone / remote access
 
@@ -79,7 +98,8 @@ server/
   files.ts      project file access
   awake.ts      keep-awake inhibitor
 web/            Preact PWA
-desktop/        Electron shell
+desktop/        Electron shell and installers (electron-builder)
+test/           end-to-end tests with a fake agent
 ```
 
 - **Claude Code** runs as one long-lived `claude -p --input-format stream-json` process per conversation. Savor attaches its own MCP server and routes permission prompts through `--permission-prompt-tool`. The process stays alive while the conversation owns background processes and closes 5 minutes after the last activity. A change of model, effort, fast mode or permissions restarts it with `--resume`.
@@ -95,6 +115,17 @@ Project layout:
   documents/<id>.md
   workflows/<id>.json
 ```
+
+## Development
+
+```sh
+npm run typecheck
+npm test            # end-to-end: real daemon + UI in headless Chromium, test/fake-claude.mjs as the agent
+npm run dev:web     # Vite dev server for the UI, proxies /api to a daemon on :4317
+cd desktop && npm run dist   # local installer build (AppImage on Linux)
+```
+
+CI runs typecheck and the end-to-end tests on every push. Pushing a tag like `v0.2.0` builds the desktop app for Linux, macOS and Windows and publishes it as a GitHub release, which installed apps pick up as an update.
 
 ## Status
 

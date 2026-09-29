@@ -1,4 +1,6 @@
 import fs from 'node:fs'
+import { spawn } from 'node:child_process'
+import { createRequire } from 'node:module'
 import os from 'node:os'
 import path from 'node:path'
 import type { ServerResponse } from 'node:http'
@@ -26,26 +28,36 @@ function executable() {
     '/usr/bin/google-chrome',
     '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
   ]
-  const found = candidates.find((c) => c && fs.existsSync(c))
-  if (!found) throw new Error('No Chromium found. Set SAVOR_CHROMIUM or run `npx playwright-core install chromium`.')
-  return found
+  return candidates.find((c) => c && fs.existsSync(c))
+}
+
+// Installers ship without a browser: download Playwright's Chromium on first use.
+function installChromium() {
+  const cli = path.join(path.dirname(createRequire(import.meta.url).resolve('playwright-core/package.json')), 'cli.js')
+  return new Promise<string>((resolve, reject) => {
+    const child = spawn(process.execPath, [cli, 'install', 'chromium'], { stdio: 'inherit', env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' } })
+    child.on('error', reject)
+    child.on('exit', (code) => (code === 0 ? resolve(chromium.executablePath()) : reject(new Error('Installing Chromium for the preview failed.'))))
+  })
 }
 
 function profile(projectId: string) {
   let ctx = profiles.get(projectId)
   if (!ctx) {
-    const exe = executable()
-    // Snap-confined Chromium can't write to hidden folders like ~/.savor.
-    const root = exe.startsWith('/snap/') ? path.join(os.homedir(), 'snap', 'chromium', 'common', 'savor-profiles') : path.join(HOME, 'browser')
-    ctx = chromium.launchPersistentContext(path.join(root, path.basename(projectId)), {
-      executablePath: exe,
-      headless: true,
-      viewport: VIEWPORT,
-      // Leave SIGINT/SIGTERM to Node so Ctrl+C still stops the daemon; the browser exits with it.
-      handleSIGINT: false,
-      handleSIGTERM: false,
-      handleSIGHUP: false,
-    })
+    ctx = (async () => {
+      const exe = executable() ?? (await installChromium())
+      // Snap-confined Chromium can't write to hidden folders like ~/.savor.
+      const root = exe.startsWith('/snap/') ? path.join(os.homedir(), 'snap', 'chromium', 'common', 'savor-profiles') : path.join(HOME, 'browser')
+      return chromium.launchPersistentContext(path.join(root, path.basename(projectId)), {
+        executablePath: exe,
+        headless: true,
+        viewport: VIEWPORT,
+        // Leave SIGINT/SIGTERM to Node so Ctrl+C still stops the daemon; the browser exits with it.
+        handleSIGINT: false,
+        handleSIGTERM: false,
+        handleSIGHUP: false,
+      })
+    })()
     ctx.catch(() => profiles.delete(projectId))
     profiles.set(projectId, ctx)
   }

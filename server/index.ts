@@ -15,7 +15,9 @@ import * as awake from './awake.js'
 import { handleMcp, refreshNeedsYou, resolveApproval } from './mcp.js'
 import { nextRun, runWorkflow, syncSchedules, validateCron } from './scheduler.js'
 
-const WEB = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'dist', 'web')
+// dist/web next to the sources in development, ../web next to the bundled dist/server/index.mjs.
+const HERE = path.dirname(fileURLToPath(import.meta.url))
+const WEB = [path.join(HERE, '..', 'dist', 'web'), path.join(HERE, '..', 'web')].find((d) => fs.existsSync(d)) ?? path.join(HERE, '..', 'dist', 'web')
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript',
@@ -36,6 +38,7 @@ const route = (method: string, pattern: string, h: Handler) =>
   routes.push([method, new RegExp('^/api' + pattern.replace(/:(\w+)/g, '(?<$1>[^/]+)') + '$'), h])
 
 class Forbidden extends Error {}
+class BadRequest extends Error {}
 const localOnly = (ctx: Ctx) => {
   if (ctx.auth.origin !== 'local') throw new Forbidden('Only available on this computer.')
 }
@@ -266,7 +269,11 @@ route('DELETE', '/projects/:pid/docs/:id', (params) => {
 // ---- workflows ----
 
 const saveWorkflowRoute = (params: Params, b: any, id?: string) => {
-  if (b.cron) validateCron(b.cron, b.timezone)
+  try {
+    if (b.cron) validateCron(b.cron, b.timezone)
+  } catch (e) {
+    throw new BadRequest(`Invalid schedule: ${(e as Error).message}`)
+  }
   const { name, prompt, cron, timezone, enabled, next } = b
   const fields = Object.fromEntries(Object.entries({ name, prompt, cron, timezone, enabled, next }).filter(([, v]) => v !== undefined))
   const wf = store.saveWorkflow(project(params), { ...(fields as { name: string; prompt: string }), ...(id && { id }) })
@@ -374,8 +381,8 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
 http
   .createServer((req, res) =>
     handle(req, res).catch((e) => {
-      if (!(e instanceof store.NotFound || e instanceof Forbidden)) console.error(e)
-      if (!res.headersSent) json(res, e instanceof store.NotFound ? 404 : e instanceof Forbidden ? 403 : 500, { error: e.message })
+      if (!(e instanceof store.NotFound || e instanceof Forbidden || e instanceof BadRequest)) console.error(e)
+      if (!res.headersSent) json(res, e instanceof store.NotFound ? 404 : e instanceof Forbidden ? 403 : e instanceof BadRequest ? 400 : 500, { error: e.message })
       else res.end()
     }),
   )
