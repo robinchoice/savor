@@ -30,15 +30,16 @@ function seen(s: ReturnType<typeof store.state>, device: store.Device) {
 export function authenticate(req: IncomingMessage): Auth | null {
   const c = cookies(req)
   const s = store.state()
-  if (c.savor_token === s.token) return { origin: loopback(req) && !req.headers['x-forwarded-for'] ? 'local' : 'remote' }
-  if (req.headers['x-savor-relay'] === s.relayToken && loopback(req)) {
+  if (store.safeEqual(c.savor_token, s.token)) return { origin: loopback(req) && !req.headers['x-forwarded-for'] ? 'local' : 'remote' }
+  if (store.safeEqual(req.headers['x-savor-relay'], s.relayToken) && loopback(req)) {
     const device = s.devices.find((d) => d.publicKey && d.id === req.headers['x-savor-device'])
     if (!device) return null
     seen(s, device)
     return { origin: 'remote', device }
   }
   if (!c.savor_device) return null
-  const device = s.devices.find((d) => d.tokenHash && d.tokenHash === store.hash(c.savor_device))
+  const given = store.hash(c.savor_device)
+  const device = s.devices.find((d) => d.tokenHash && store.sameHash(d.tokenHash, given))
   if (!device) return null
   seen(s, device)
   return { origin: 'remote', device }

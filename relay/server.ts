@@ -2,24 +2,34 @@
 // Daemons connect outbound and prove they hold the key their address is derived from. Devices
 // connect to that address; the relay pairs the sockets and forwards opaque, end-to-end encrypted
 // frames (see shared/tunnel.ts). It also serves the web UI, which runs the device side.
+//
+// Everything a client sends is untrusted: handlers never throw, sockets that don't authenticate or
+// start talking in time are closed, and connections are capped per IP, per daemon and in total.
 import http from 'node:http'
 import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { WebSocketServer, type WebSocket } from 'ws'
-import { b64, daemonId, relayChallenge } from '../shared/tunnel.js'
+import { daemonId, publicKey, relayChallenge } from '../shared/tunnel.js'
+import { securityHeaders } from '../shared/headers.js'
 
 const PORT = Number(process.env.RELAY_PORT ?? 8787)
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const WEB = process.env.RELAY_WEB_DIR ?? [path.join(HERE, '..', 'dist', 'web'), path.join(HERE, '..', 'web')].find((d) => fs.existsSync(path.join(d, 'index.html')))!
+// Only behind a reverse proxy (Caddy, nginx) is X-Forwarded-For the client's address.
+const TRUST_PROXY = process.env.RELAY_TRUST_PROXY === '1'
+const HANDSHAKE_MS = Number(process.env.RELAY_HANDSHAKE_TIMEOUT_MS ?? 10_000)
 const MAX_FRAME = 32 * 1024 * 1024
+const MAX_DAEMONS = Number(process.env.RELAY_MAX_DAEMONS ?? 5000)
 const MAX_DEVICES_PER_DAEMON = 32
+const MAX_DEVICES_PER_IP_PER_DAEMON = 8
 const CONNECTS_PER_MINUTE = 60
 // For tests: append every forwarded payload so they can check that no plaintext passes through.
 const TAP = process.env.RELAY_TAP_FILE
 
-interface Daemon { socket: WebSocket; devices: Map<string, WebSocket> }
+interface Device { socket: WebSocket; ip: string }
+interface Daemon { socket: WebSocket; devices: Map<string, Device> }
 const daemons = new Map<string, Daemon>()
 const recentConnects = new Map<string, number[]>()
 
@@ -35,14 +45,18 @@ const MIME: Record<string, string> = {
 
 function serveStatic(req: http.IncomingMessage, res: http.ServerResponse) {
   const url = new URL(req.url ?? '/', 'http://x')
+  for (const [k, v] of Object.entries(securityHeaders(req.headers.host))) res.setHeader(k, v)
   // Tells the UI to run in relay mode, i.e. to talk to its daemon through the tunnel.
   if (url.pathname === '/savor-relay.json') return res.writeHead(200, { 'content-type': 'application/json' }).end('{"relay":true}')
-  if (url.pathname === '/healthz') return res.writeHead(200).end(`ok ${daemons.size}`)
+  if (url.pathname === '/healthz') return res.writeHead(200).end('ok')
   const file = path.join(WEB, path.normalize(url.pathname))
-  const target = file.startsWith(WEB) && fs.existsSync(file) && fs.statSync(file).isFile() ? file : path.join(WEB, 'index.html')
+  const target = file.startsWith(WEB + path.sep) && fs.existsSync(file) && fs.statSync(file).isFile() ? file : path.join(WEB, 'index.html')
   res.writeHead(200, { 'content-type': MIME[path.extname(target)] ?? 'application/octet-stream' })
   fs.createReadStream(target).pipe(res)
 }
+
+const clientIp = (req: http.IncomingMessage) =>
+  (TRUST_PROXY && (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0].trim()) || req.socket.remoteAddress || ''
 
 function rateLimited(ip: string) {
   const now = Date.now()
@@ -52,66 +66,93 @@ function rateLimited(ip: string) {
   return recent.length > CONNECTS_PER_MINUTE
 }
 
+setInterval(() => {
+  const now = Date.now()
+  for (const [ip, times] of recentConnects) if (times.every((t) => now - t >= 60_000)) recentConnects.delete(ip)
+}, 60_000).unref()
+
 const send = (socket: WebSocket, message: object) => socket.readyState === socket.OPEN && socket.send(JSON.stringify(message))
+
+function parse(raw: unknown) {
+  try {
+    const m = JSON.parse(String(raw))
+    return m && typeof m === 'object' && !Array.isArray(m) ? m : null
+  } catch {
+    return null
+  }
+}
 
 function acceptDaemon(socket: WebSocket) {
   const { challenge, verify } = relayChallenge()
   send(socket, challenge)
   let id: string | null = null
+  const authTimer = setTimeout(() => socket.close(4408, 'auth timeout'), HANDSHAKE_MS)
 
   socket.on('message', (raw) => {
-    let m: any
-    try {
-      m = JSON.parse(raw.toString())
-    } catch {
-      return socket.close(4400, 'bad frame')
-    }
+    const m = parse(raw)
+    if (!m) return socket.close(4400, 'bad frame')
     if (!id) {
-      const pk = b64.dec(m.pk ?? '')
-      if (m.t !== 'auth' || pk.length !== 32 || !verify(pk, b64.dec(m.mac ?? ''))) return socket.close(4401, 'auth failed')
-      id = daemonId(pk)
+      let pk: Uint8Array
+      try {
+        pk = publicKey(m.pk)
+      } catch {
+        return socket.close(4401, 'auth failed')
+      }
+      if (m.t !== 'auth' || !verify(pk, m.mac)) return socket.close(4401, 'auth failed')
+      const next = daemonId(pk)
+      if (!daemons.has(next) && daemons.size >= MAX_DAEMONS) return socket.close(4503, 'relay full')
+      clearTimeout(authTimer)
+      id = next
       // A reconnect from the same key replaces the old socket; its tunnels can't be resumed.
       const old = daemons.get(id)
       daemons.set(id, { socket, devices: new Map() })
       if (old) {
         old.socket.close(4409, 'replaced')
-        for (const device of old.devices.values()) device.close(4503, 'daemon reconnected')
+        for (const device of old.devices.values()) device.socket.close(4503, 'daemon reconnected')
       }
       return send(socket, { t: 'ready', id })
     }
+    if (typeof m.c !== 'string') return
     const device = daemons.get(id)?.devices.get(m.c)
     if (!device) return
-    if (m.t === 'data') {
+    if (m.t === 'data' && typeof m.d === 'string') {
       if (TAP) fs.appendFileSync(TAP, m.d + '\n')
-      device.send(m.d)
+      device.socket.send(m.d)
     }
-    if (m.t === 'close') device.close(1000)
+    if (m.t === 'close') device.socket.close(1000)
   })
 
   socket.on('close', () => {
+    clearTimeout(authTimer)
     const d = id ? daemons.get(id) : null
     if (!d || d.socket !== socket) return
     daemons.delete(id!)
-    for (const device of d.devices.values()) device.close(4503, 'daemon offline')
+    for (const device of d.devices.values()) device.socket.close(4503, 'daemon offline')
   })
 }
 
-function acceptDevice(socket: WebSocket, id: string) {
+function acceptDevice(socket: WebSocket, id: string, ip: string) {
   const daemon = daemons.get(id)
   if (!daemon) return socket.close(4404, 'daemon offline')
-  if (daemon.devices.size >= MAX_DEVICES_PER_DAEMON) return socket.close(4429, 'too many devices')
+  const fromIp = [...daemon.devices.values()].filter((d) => d.ip === ip).length
+  if (daemon.devices.size >= MAX_DEVICES_PER_DAEMON || fromIp >= MAX_DEVICES_PER_IP_PER_DAEMON) return socket.close(4429, 'too many devices')
   const c = crypto.randomBytes(9).toString('base64url')
-  daemon.devices.set(c, socket)
+  daemon.devices.set(c, { socket, ip })
   send(daemon.socket, { t: 'open', c })
+  // A device that doesn't start its handshake right away only holds a slot.
+  const helloTimer = setTimeout(() => socket.close(4408, 'handshake timeout'), HANDSHAKE_MS)
   socket.on('message', (raw) => {
-    if (TAP) fs.appendFileSync(TAP, raw.toString() + '\n')
-    const d = daemons.get(id)
-    if (d) send(d.socket, { t: 'data', c, d: raw.toString() })
-  })
-  socket.on('close', () => {
+    clearTimeout(helloTimer)
     const d = daemons.get(id)
     if (!d) return
-    d.devices.delete(c)
+    const text = String(raw)
+    if (TAP) fs.appendFileSync(TAP, text + '\n')
+    send(d.socket, { t: 'data', c, d: text })
+  })
+  socket.on('close', () => {
+    clearTimeout(helloTimer)
+    const d = daemons.get(id)
+    if (!d || !d.devices.delete(c)) return
     send(d.socket, { t: 'close', c })
   })
 }
@@ -121,11 +162,12 @@ const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_FRAME })
 
 server.on('upgrade', (req, socket, head) => {
   const url = new URL(req.url ?? '/', 'http://x')
-  const ip = (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0].trim() || req.socket.remoteAddress || ''
+  const ip = clientIp(req)
   if (rateLimited(ip)) return socket.destroy()
   wss.handleUpgrade(req, socket, head, (ws) => {
+    ws.on('error', () => ws.terminate())
     if (url.pathname === '/daemon') acceptDaemon(ws)
-    else if (url.pathname === '/connect') acceptDevice(ws, url.searchParams.get('id') ?? '')
+    else if (url.pathname === '/connect') acceptDevice(ws, url.searchParams.get('id') ?? '', ip)
     else ws.close(4404, 'not found')
   })
 })

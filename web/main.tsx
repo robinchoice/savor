@@ -177,7 +177,7 @@ function TopBar({ projects, active, me, setMe, theme, toggleTheme }: { projects:
               )}
               {me.origin === 'local' && <a href="#/devices">Devices & remote access</a>}
               {loadProfile() && (
-                <button onClick={() => confirm('Forget this computer on this device? You will need to pair again.') && (forgetProfile(), location.reload())}>Forget this computer</button>
+                <button onClick={() => confirm('Forget this computer on this device? You will need to pair again.') && forgetProfile().then(() => location.reload())}>Forget this computer</button>
               )}
             </div>
           )}

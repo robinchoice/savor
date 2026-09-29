@@ -26,14 +26,60 @@ export const direct: Transport = {
 }
 
 export let transport: Transport = direct
+export const setTransport = (next: Transport) => (transport = next)
+
+// ---- device key ----
+// The device's private key is a non-extractable WebCrypto key kept in IndexedDB, so script running
+// on the page can use it but not read it out. Browsers without X25519 in WebCrypto fall back to a
+// raw key.
+
+type StoredKey = { privateKey: CryptoKey; pk: Uint8Array } | { sk: Uint8Array; pk: Uint8Array }
+
+function keyStore<T>(mode: IDBTransactionMode, op: (store: IDBObjectStore) => IDBRequest<T>) {
+  return new Promise<T>((resolve, reject) => {
+    const open = indexedDB.open('savor', 1)
+    open.onupgradeneeded = () => open.result.createObjectStore('keys')
+    open.onerror = () => reject(open.error)
+    open.onsuccess = () => {
+      const req = op(open.result.transaction('keys', mode).objectStore('keys'))
+      req.onsuccess = () => resolve(req.result)
+      req.onerror = () => reject(req.error)
+    }
+  })
+}
+
+async function createDeviceKey(): Promise<StoredKey> {
+  try {
+    const pair = (await crypto.subtle.generateKey({ name: 'X25519' }, false, ['deriveBits'])) as CryptoKeyPair
+    return { privateKey: pair.privateKey, pk: new Uint8Array(await crypto.subtle.exportKey('raw', pair.publicKey)) }
+  } catch {
+    return t.keypair()
+  }
+}
+
+function deviceKey(stored: StoredKey): t.DeviceKey {
+  if ('sk' in stored) return t.rawDeviceKey(stored)
+  return {
+    pk: stored.pk,
+    async dh(peer) {
+      const pub = await crypto.subtle.importKey('raw', new Uint8Array(peer), { name: 'X25519' }, false, [])
+      return new Uint8Array(await crypto.subtle.deriveBits({ name: 'X25519', public: pub }, stored.privateKey, 256))
+    },
+  }
+}
 
 // ---- remote mode ----
 
-export interface RemoteProfile { daemonPk: string; deviceSk: string; name: string }
+// Which computer this browser is paired with; the key itself lives in IndexedDB.
+export interface RemoteProfile { daemonPk: string; name: string }
 const PROFILE_KEY = 'savor-remote'
 
 export const loadProfile = (): RemoteProfile | null => JSON.parse(localStorage.getItem(PROFILE_KEY) ?? 'null')
-export const forgetProfile = () => localStorage.removeItem(PROFILE_KEY)
+
+export async function forgetProfile() {
+  localStorage.removeItem(PROFILE_KEY)
+  await keyStore('readwrite', (s) => s.delete('device'))
+}
 
 const relaySocket = (daemonPk: Uint8Array) => new WebSocket(`${location.origin.replace(/^http/, 'ws')}/connect?id=${t.daemonId(daemonPk)}`)
 
@@ -57,12 +103,12 @@ async function welcome(ws: WebSocket, hello: object) {
 
 // First contact: prove knowledge of the one-time code and register this device's key.
 export async function pairThroughRelay(daemonPkText: string, code: string, name: string) {
-  const daemonPk = t.b64.dec(daemonPkText)
-  const device = t.keypair()
+  const daemonPk = t.publicKey(daemonPkText)
+  const key = await createDeviceKey()
   const ws = relaySocket(daemonPk)
   const pairing = t.devicePairing(daemonPk, code)
   const channel = pairing.finish(await welcome(ws, pairing.hello))
-  ws.send(channel.seal({ name, device: t.b64.enc(device.pk) }))
+  ws.send(channel.seal({ name, device: t.b64.enc(key.pk) }))
   const reply = await nextMessage(ws)
   ws.close()
   let result: any
@@ -72,24 +118,29 @@ export async function pairThroughRelay(daemonPkText: string, code: string, name:
     throw new Error(JSON.parse(reply).error === 'pairing failed' ? 'Pairing code invalid or expired.' : 'Pairing failed.')
   }
   if (!result.paired) throw new Error('Pairing failed.')
-  localStorage.setItem(PROFILE_KEY, JSON.stringify({ daemonPk: daemonPkText, deviceSk: t.b64.enc(device.sk), name }))
+  await keyStore('readwrite', (s) => s.put(key, 'device'))
+  localStorage.setItem(PROFILE_KEY, JSON.stringify({ daemonPk: daemonPkText, name }))
 }
 
 type Pending = { resolve: (r: Response) => void; reject: (e: Error) => void; onData?: (data: string) => void; buffer: string; path: string }
+type Tunnel = { ws: WebSocket; channel: t.Channel }
 
 // One encrypted tunnel with request multiplexing. Reconnects on its own and resumes open streams.
 export function remote(profile: RemoteProfile, onState: (connected: boolean, error?: string) => void): Transport {
-  const daemonPk = t.b64.dec(profile.daemonPk)
-  const device = t.keypairFrom(t.b64.dec(profile.deviceSk))
+  const daemonPk = t.publicKey(profile.daemonPk)
+  const device = keyStore<StoredKey | undefined>('readonly', (s) => s.get('device')).then((stored) => {
+    if (!stored) throw new Error('This browser has no device key. Pair it again.')
+    return deviceKey(stored)
+  })
   const pending = new Map<number, Pending>()
   let nextId = 1
-  let ready: Promise<{ ws: WebSocket; channel: t.Channel }> | null = null
+  let ready: Promise<Tunnel> | null = null
 
   function connect() {
-    ready = (async () => {
+    const attempt: Promise<Tunnel> = (async () => {
       const ws = relaySocket(daemonPk)
-      const session = t.deviceSession(device, daemonPk)
-      const channel = session.finish(await welcome(ws, session.hello))
+      const session = t.deviceSession(await device, daemonPk)
+      const channel = await session.finish(await welcome(ws, session.hello))
       ws.onmessage = (m) => {
         let msg: any
         try {
@@ -124,12 +175,13 @@ export function remote(profile: RemoteProfile, onState: (connected: boolean, err
       onState(true)
       return { ws, channel }
     })()
-    ready.catch((e) => {
+    ready = attempt
+    attempt.catch((e) => {
       onState(false, e.message)
       ready = null
       setTimeout(resume, 5000)
     })
-    return ready
+    return attempt
   }
 
   // After a reconnect, streams are requested again so events keep flowing.
@@ -162,10 +214,9 @@ export function remote(profile: RemoteProfile, onState: (connected: boolean, err
     },
     async imageUrl(path) {
       const r = await this.request('GET', path)
-      if (!r.binary) return ''
+      // Only images become blob URLs; a blob of another type could run script on this origin.
+      if (!r.binary || !/^image\/(png|jpeg|gif|webp)$/.test(r.type)) return ''
       return URL.createObjectURL(new Blob([t.b64.dec(r.body)], { type: r.type }))
     },
   }
 }
-
-export const setTransport = (next: Transport) => (transport = next)

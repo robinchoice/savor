@@ -102,6 +102,10 @@ export const newId = () => crypto.randomUUID().replaceAll('-', '').slice(0, 16)
 export const now = () => new Date().toISOString()
 export const hash = (s: string) => crypto.createHash('sha256').update(s).digest('hex')
 
+// Constant-time comparison of a secret from a request against the expected value.
+export const sameHash = (a: string, b: string) => a.length === b.length && crypto.timingSafeEqual(Buffer.from(a, 'hex'), Buffer.from(b, 'hex'))
+export const safeEqual = (given: unknown, expected: string) => typeof given === 'string' && sameHash(hash(given), hash(expected))
+
 function readJson<T>(file: string, fallback: T): T {
   try {
     return JSON.parse(fs.readFileSync(file, 'utf8'))

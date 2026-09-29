@@ -1,6 +1,9 @@
 // Keeps an outbound connection to the configured relay and serves the devices tunneled through it.
 // Each device connection runs the handshake from shared/tunnel.ts, then carries encrypted HTTP
 // requests that are replayed against this daemon's own API with the device's identity.
+//
+// Anything arriving from the relay is untrusted: handlers never throw, connections that don't finish
+// their handshake in time are closed, and only normalized /api paths are forwarded.
 import * as t from '../shared/tunnel.js'
 import * as store from './store.js'
 import * as devices from './devices.js'
@@ -8,6 +11,8 @@ import { PORT } from './config.js'
 import { emit } from './events.js'
 
 type Status = { state: 'off' | 'connecting' | 'online' | 'error'; error?: string; id?: string }
+
+const HANDSHAKE_MS = Number(process.env.SAVOR_TUNNEL_HANDSHAKE_MS ?? 10_000)
 
 let socket: WebSocket | null = null
 let status: Status = { state: 'off' }
@@ -29,6 +34,19 @@ export function pairingLink(code: string) {
   return `${relay.url.replace(/\/$/, '')}/#/rpair/${t.b64.enc(identity().pk)}/${code}`
 }
 
+// The API path a tunneled request may reach, after the same normalization fetch() applies.
+export function tunnelPath(path: unknown) {
+  if (typeof path !== 'string' || !path.startsWith('/') || path.startsWith('//') || path.includes('\\')) return null
+  const url = new URL(path, 'http://x')
+  if (!url.pathname.startsWith('/api/') || url.pathname === '/api/pair' || url.pathname.startsWith('/api/pair/')) return null
+  return url.pathname + url.search
+}
+
+// Revoking a device ends its tunnels right away, including open event streams.
+export function closeDevice(deviceId: string) {
+  for (const c of conns.values()) if (c.deviceId === deviceId) c.fail('device revoked')
+}
+
 function setStatus(next: Status) {
   status = next
   emit({ type: 'devices' })
@@ -38,7 +56,7 @@ export function startRelay() {
   clearTimeout(retryTimer)
   socket?.close()
   socket = null
-  conns.clear()
+  for (const c of conns.values()) c.dispose()
   const { relay } = store.state()
   if (!relay.enabled || !relay.url) return setStatus({ state: 'off' })
   connect(relay.url)
@@ -50,20 +68,11 @@ function connect(url: string) {
   socket = ws
   ws.onmessage = (ev) => {
     if (socket !== ws) return
-    let m: any
     try {
-      m = JSON.parse(String(ev.data))
-    } catch {
-      return
+      onRelayMessage(ws, JSON.parse(String(ev.data)))
+    } catch (e) {
+      console.error('relay message rejected:', (e as Error).message)
     }
-    if (m.t === 'challenge') ws.send(JSON.stringify({ t: 'auth', pk: t.b64.enc(identity().pk), mac: t.answerChallenge(identity(), m) }))
-    if (m.t === 'ready') {
-      retryDelay = 2000
-      setStatus({ state: 'online', id: m.id })
-    }
-    if (m.t === 'open') conns.set(m.c, new Conn(m.c, ws))
-    if (m.t === 'data') conns.get(m.c)?.receive(m.d)
-    if (m.t === 'close') conns.get(m.c)?.dispose()
   }
   ws.onclose = (ev) => {
     if (socket !== ws) return
@@ -74,50 +83,72 @@ function connect(url: string) {
   }
 }
 
+function onRelayMessage(ws: WebSocket, m: any) {
+  if (m.t === 'challenge') ws.send(JSON.stringify({ t: 'auth', pk: t.b64.enc(identity().pk), mac: t.answerChallenge(identity(), m) }))
+  if (m.t === 'ready') {
+    retryDelay = 2000
+    setStatus({ state: 'online', id: m.id })
+  }
+  if (typeof m.c !== 'string') return
+  if (m.t === 'open' && !conns.has(m.c)) conns.set(m.c, new Conn(m.c, ws))
+  if (m.t === 'data') conns.get(m.c)?.receive(m.d)
+  if (m.t === 'close') conns.get(m.c)?.dispose()
+}
+
 interface Req { id: number; method?: string; path?: string; body?: string; cancel?: boolean }
 
 class Conn {
+  deviceId: string | null = null
   private channel: t.Channel | null = null
   private pairing: { code: string; channel: t.Channel }[] | null = null
-  private deviceId: string | null = null
   private streams = new Map<number, AbortController>()
+  private handshakeTimer: NodeJS.Timeout
 
   constructor(
     private c: string,
     private ws: WebSocket,
-  ) {}
+  ) {
+    this.handshakeTimer = setTimeout(() => this.fail('handshake timeout'), HANDSHAKE_MS)
+  }
 
   private send(d: string) {
     if (this.ws.readyState === this.ws.OPEN) this.ws.send(JSON.stringify({ t: 'data', c: this.c, d }))
   }
 
-  private fail(error: string) {
+  fail(error: string) {
     this.send(JSON.stringify({ type: 'error', error }))
     if (this.ws.readyState === this.ws.OPEN) this.ws.send(JSON.stringify({ t: 'close', c: this.c }))
     this.dispose()
   }
 
   dispose() {
+    clearTimeout(this.handshakeTimer)
     for (const s of this.streams.values()) s.abort()
+    this.channel = null
     conns.delete(this.c)
   }
 
-  receive(d: string) {
-    if (this.channel) return this.onRequest(d)
-    if (this.pairing) return this.onPairing(d)
-    let hello: any
+  receive(d: unknown) {
+    if (typeof d !== 'string') return this.fail('bad frame')
     try {
-      hello = JSON.parse(d)
+      if (this.channel) return this.onRequest(d)
+      if (this.pairing) return this.onPairing(d)
+      this.onHello(JSON.parse(d))
     } catch {
-      return this.fail('bad hello')
+      this.fail('bad handshake')
     }
-    if (hello.type !== 'hello') return this.fail('bad hello')
+  }
+
+  private onHello(hello: any) {
+    if (hello?.type !== 'hello') return this.fail('bad hello')
     if (hello.mode === 'session') {
-      const device = devices.deviceByKey(hello.device)
+      const devicePk = t.openHello(identity(), hello)
+      const device = devices.deviceByKey(t.b64.enc(devicePk))
       if (!device) return this.fail('unknown device')
-      const session = t.daemonSession(identity(), t.b64.dec(hello.device), hello)
+      const session = t.daemonSession(identity(), devicePk, hello)
       this.channel = session.channel
       this.deviceId = device.id
+      clearTimeout(this.handshakeTimer)
       return this.send(JSON.stringify(session.welcome))
     }
     if (hello.mode === 'pair') {
@@ -138,7 +169,8 @@ class Conn {
       } catch {
         continue
       }
-      const device = devices.redeemWithKey(code, String(m.name ?? ''), String(m.device ?? ''))
+      const devicePk = t.publicKey(m?.device)
+      const device = devices.redeemWithKey(code, typeof m.name === 'string' ? m.name : '', t.b64.enc(devicePk))
       emit({ type: 'devices' })
       this.send(channel.seal({ paired: true, deviceId: device.id }))
       return this.fail('paired')
@@ -154,8 +186,8 @@ class Conn {
     } catch {
       return this.fail('decryption failed')
     }
-    // Revoked devices lose their tunnels on the next request.
     if (!devices.deviceById(this.deviceId!)) return this.fail('device revoked')
+    if (typeof req?.id !== 'number') return
     if (req.cancel) return this.streams.get(req.id)?.abort()
     this.forward(req).catch((e) => this.reply({ id: req.id, status: 502, type: 'application/json', body: JSON.stringify({ error: String(e.message ?? e) }), end: true }))
   }
@@ -165,16 +197,15 @@ class Conn {
   }
 
   private async forward(req: Req) {
-    if (!req.path?.startsWith('/api/') || req.path.startsWith('/api/pair')) {
-      return this.reply({ id: req.id, status: 404, type: 'application/json', body: '{"error":"not found"}', end: true })
-    }
+    const path = tunnelPath(req.path)
+    if (!path) return this.reply({ id: req.id, status: 404, type: 'application/json', body: '{"error":"not found"}', end: true })
     const abort = new AbortController()
     this.streams.set(req.id, abort)
     try {
-      const res = await fetch(`http://127.0.0.1:${PORT}${req.path}`, {
-        method: req.method ?? 'GET',
+      const res = await fetch(`http://127.0.0.1:${PORT}${path}`, {
+        method: typeof req.method === 'string' ? req.method : 'GET',
         headers: { 'content-type': 'application/json', 'x-savor-relay': store.state().relayToken, 'x-savor-device': this.deviceId! },
-        body: req.body,
+        body: typeof req.body === 'string' ? req.body : undefined,
         signal: abort.signal,
       })
       const type = res.headers.get('content-type') ?? ''

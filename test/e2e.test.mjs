@@ -112,4 +112,19 @@ test('auth: tokens, pairing and remote limits', async () => {
   assert.equal((await api('POST', '/projects', { path: '/' }, device)).status, 403)
   const again = await fetch(`${base}/api/pair`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code: pairing.code, name: 'x' }) })
   assert.equal(again.status, 400)
+
+  // Revoking a LAN device ends its open event stream right away, not only its next request.
+  const events = await fetch(`${base}/api/events`, { headers: { cookie: device } })
+  const reader = events.body.getReader()
+  await reader.read()
+  const [paired] = (await api('GET', '/devices')).body
+  await api('DELETE', `/devices/${paired.id}`)
+  const outcome = await Promise.race([
+    (async () => {
+      for (;;) if ((await reader.read()).done) return 'ended'
+    })().catch(() => 'ended'),
+    new Promise((resolve) => setTimeout(() => resolve('still open'), 3000)),
+  ])
+  assert.equal(outcome, 'ended')
+  assert.equal((await api('GET', '/me', undefined, device)).status, 401)
 })

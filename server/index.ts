@@ -12,7 +12,8 @@ import * as processes from './processes.js'
 import * as devices from './devices.js'
 import * as files from './files.js'
 import * as awake from './awake.js'
-import { pairingLink, relayStatus, startRelay } from './relay-client.js'
+import { closeDevice, pairingLink, relayStatus, startRelay } from './relay-client.js'
+import { securityHeaders } from '../shared/headers.js'
 import { handleMcp, refreshNeedsYou, resolveApproval } from './mcp.js'
 import { nextRun, runWorkflow, syncSchedules, validateCron } from './scheduler.js'
 
@@ -80,6 +81,8 @@ route('PUT', '/relay', (_, b, ctx) => {
 route('DELETE', '/devices/:id', (params, _, ctx) => {
   localOnly(ctx)
   devices.revokeDevice(params.id)
+  closeDevice(params.id)
+  disconnectDevice(params.id)
   emit({ type: 'devices' })
   return {}
 })
@@ -349,15 +352,31 @@ function serveStatic(url: URL, res: ServerResponse) {
   fs.createReadStream(target).pipe(res)
 }
 
+// Open responses per device, so revoking a device also ends its live streams.
+const deviceResponses = new Map<string, Set<ServerResponse>>()
+
+function track(deviceId: string, res: ServerResponse) {
+  const open = deviceResponses.get(deviceId) ?? new Set()
+  deviceResponses.set(deviceId, open)
+  open.add(res)
+  res.on('close', () => open.delete(res))
+}
+
+function disconnectDevice(deviceId: string) {
+  for (const res of deviceResponses.get(deviceId) ?? []) res.destroy()
+  deviceResponses.delete(deviceId)
+}
+
 async function handle(req: IncomingMessage, res: ServerResponse) {
   const url = new URL(req.url ?? '/', 'http://x')
+  for (const [k, v] of Object.entries(securityHeaders(req.headers.host))) res.setHeader(k, v)
 
   if (url.pathname.startsWith('/mcp/')) {
-    if (url.pathname !== `/mcp/${store.state().mcpToken}`) return res.writeHead(401).end()
+    if (!store.safeEqual(url.pathname.slice('/mcp/'.length), store.state().mcpToken)) return res.writeHead(401).end()
     return handleMcp(req, res, url, req.method === 'POST' ? await readBody(req) : undefined)
   }
 
-  if (url.searchParams.get('token') === store.state().token) {
+  if (url.searchParams.has('token') && store.safeEqual(url.searchParams.get('token'), store.state().token)) {
     res.writeHead(302, { 'set-cookie': `savor_token=${store.state().token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=31536000`, location: '/' })
     return res.end()
   }
@@ -378,6 +397,7 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
   if (!url.pathname.startsWith('/api/')) return serveStatic(url, res)
   const auth = devices.authenticate(req)
   if (!auth) return json(res, 401, { error: 'unauthorized' })
+  if (auth.device) track(auth.device.id, res)
   if (url.pathname === '/api/events') return subscribe(res)
 
   for (const [method, re, h] of routes) {

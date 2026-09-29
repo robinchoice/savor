@@ -112,10 +112,11 @@ Open **Devices & remote access** from the avatar menu. Your desktop has to stay 
 
 **Through a relay** (no VPN, works on mobile data). Enter a relay URL, click **Connect**, then **Pair a device** and scan the QR code with your phone. Use "Add to Home Screen" on the phone.
 
-- Traffic between the device and your computer is end-to-end encrypted (X25519 key exchange with forward secrecy, ChaCha20-Poly1305, see [`shared/tunnel.ts`](shared/tunnel.ts)). The relay forwards ciphertext. It sees public keys, connection times and message sizes, not your conversations or files.
+- Traffic between the device and your computer is end-to-end encrypted (X25519 key exchange with forward secrecy, ChaCha20-Poly1305, see [`shared/tunnel.ts`](shared/tunnel.ts)). The relay forwards ciphertext. It sees your computer's public key, connection times and message sizes. It does not see your conversations, files or which of your devices is connecting.
 - Pairing uses the computer's public key and a one-time code from the QR code, so the phone knows it's talking to your computer and not to the relay.
-- Every paired device has its own key and can be revoked, which cuts its tunnel immediately.
-- The relay authenticates daemons by their key, so nobody else can take over your computer's relay address.
+- Every paired device has its own key and can be revoked, which cuts its tunnel and open streams immediately. In the browser, the device key is a non-extractable WebCrypto key: scripts can use it but cannot read it out.
+- The relay authenticates daemons by their key, so nobody else can take over your computer's relay address. It closes connections that don't authenticate or start a handshake within 10 seconds, and it limits connections per IP, per computer and in total.
+- The relay and Savor send a strict Content Security Policy and other security headers.
 - One caveat: the relay also serves the web app to the phone, and a malicious relay could serve a modified app. Run your own relay, or use one run by someone you trust.
 
 Run a relay on any server with Node ≥ 22.12, behind HTTPS (for example with Caddy):
@@ -123,7 +124,7 @@ Run a relay on any server with Node ≥ 22.12, behind HTTPS (for example with Ca
 ```sh
 git clone https://github.com/robinchoice/savor.git && cd savor
 npm install
-RELAY_PORT=8787 npm run relay
+RELAY_TRUST_PROXY=1 RELAY_PORT=8787 npm run relay
 ```
 
 ```
@@ -151,6 +152,8 @@ Without a connected relay, the pairing QR code points at `SAVOR_PUBLIC_URL`.
 | `SAVOR_HOME` | `~/.savor` | Global state |
 | `RELAY_PORT` | `8787` | Relay only: HTTP/WebSocket port |
 | `RELAY_WEB_DIR` | `dist/web` | Relay only: web app to serve |
+| `RELAY_TRUST_PROXY` | off | Relay only: set to `1` behind a reverse proxy, so rate limits use `X-Forwarded-For` |
+| `RELAY_MAX_DAEMONS` | `5000` | Relay only: computers that can be connected at once |
 | `SAVOR_CHROMIUM` | Playwright Chromium, then system Chrome/Chromium | Browser for the preview |
 | `SAVOR_CLAUDE_BIN`, `SAVOR_CODEX_BIN`, `SAVOR_OPENCODE_BIN`, `SAVOR_GROK_BIN`, `SAVOR_ANTIGRAVITY_BIN` | CLI name | Agent binaries |
 
