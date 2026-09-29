@@ -2,6 +2,7 @@ import { useEffect, useState } from 'preact/hooks'
 import qrcode from 'qrcode-generator'
 import { Smartphone, Trash2 } from 'lucide-preact'
 import { api, go, PROVIDERS, useApi, type Project } from './api'
+import { pairThroughRelay } from './transport'
 
 const TINTS = ['#2878ef', '#e0735a', '#9b6bd6', '#3fa37a', '#d69a2d', '#d6567f', '#4aa3c9']
 
@@ -85,11 +86,17 @@ export function Settings({ project }: { project: Project }) {
   )
 }
 
-interface DeviceRow { id: string; name: string; createdAt: string; lastSeenAt: string | null }
+interface DeviceRow { id: string; name: string; via: 'lan' | 'relay'; createdAt: string; lastSeenAt: string | null }
+interface RelayState { url: string | null; enabled: boolean; state: 'off' | 'connecting' | 'online' | 'error'; error?: string; id?: string }
+
+const RELAY_LABEL = { off: 'Off', connecting: 'Connecting…', online: 'Connected', error: 'Not connected' }
 
 export function Devices() {
   const [devices] = useApi<DeviceRow[]>('/devices', (e) => e.type === 'devices')
-  const [pairing, setPairing] = useState<{ code: string; url: string; expiresAt: string } | null>(null)
+  const [relay] = useApi<RelayState>('/relay', (e) => e.type === 'devices')
+  const [relayUrl, setRelayUrl] = useState<string | null>(null)
+  const [error, setError] = useState('')
+  const [pairing, setPairing] = useState<{ code: string; url: string; relayUrl: string | null; expiresAt: string } | null>(null)
 
   const qr = (text: string) => {
     const q = qrcode(0, 'M')
@@ -98,32 +105,78 @@ export function Devices() {
     return q.createSvgTag({ cellSize: 5, margin: 2, scalable: true })
   }
   const revoke = (d: DeviceRow) => confirm(`Revoke access for ${d.name}?`) && api('DELETE', `/devices/${d.id}`)
+  const saveRelay = async (enabled: boolean) => {
+    try {
+      await api('PUT', '/relay', { url: relayUrl ?? relay?.url ?? '', enabled })
+      setError('')
+    } catch (e) {
+      setError((e as Error).message)
+    }
+  }
+  const link = pairing?.relayUrl ?? pairing?.url
 
   return (
     <div class="page">
       <div class="form">
         <h1>Devices & remote access</h1>
         <p class="muted">
-          Pair your phone or another computer to use Savor remotely. Requests from paired devices are marked as remote, and agents treat them with extra care. Reach this computer over a private network such as
-          Tailscale and start Savor with <code>SAVOR_HOST=0.0.0.0</code>.
+          Pair your phone or another computer to use Savor remotely. Requests from paired devices are marked as remote, and agents treat them with extra care.
+        </p>
+
+        <h2>Relay</h2>
+        <p class="muted">
+          A relay lets paired devices reach this computer from anywhere, without a VPN or open ports. Traffic is end-to-end encrypted between the device and this computer; the relay only forwards
+          ciphertext. The relay does serve the web app, so use one you trust or run your own (<code>npm run relay</code>).
+        </p>
+        <div class="row wide">
+          <label>
+            Relay URL
+            <input placeholder="https://relay.example.com" value={relayUrl ?? relay?.url ?? ''} onInput={(e) => setRelayUrl(e.currentTarget.value)} />
+          </label>
+        </div>
+        <div class="row">
+          {relay?.enabled ? (
+            <button class="ghost" onClick={() => saveRelay(false)}>
+              Turn off
+            </button>
+          ) : (
+            <button class="primary" onClick={() => saveRelay(true)}>
+              Connect
+            </button>
+          )}
+          {relay && (
+            <span class={`relay-state ${relay.state}`}>
+              <i /> {RELAY_LABEL[relay.state]}
+              {relay.state === 'error' && relay.error ? ` · ${relay.error}` : ''}
+            </span>
+          )}
+        </div>
+        {error && <div class="error-text">{error}</div>}
+
+        <h2>Pair a device</h2>
+        <p class="muted">
+          {relay?.state === 'online'
+            ? 'The QR code opens Savor through the relay.'
+            : 'Without a relay, the device has to reach this computer directly: same network, or a VPN such as Tailscale, with Savor started as SAVOR_HOST=0.0.0.0.'}
         </p>
         <div class="row">
           <button class="primary" onClick={async () => setPairing(await api('POST', '/devices/pairing'))}>
             <Smartphone size={15} /> Pair a device
           </button>
         </div>
-        {pairing && (
+        {pairing && link && (
           <div class="pairing">
-            <div class="qr" dangerouslySetInnerHTML={{ __html: qr(pairing.url) }} />
+            <div class="qr" dangerouslySetInnerHTML={{ __html: qr(link) }} />
             <div>
               <p>Scan the code, or open this link on the device:</p>
-              <p class="mono">{pairing.url}</p>
+              <p class="mono">{link}</p>
               <p>
                 Code: <b class="mono">{pairing.code}</b> · valid until {new Date(pairing.expiresAt).toLocaleTimeString()}
               </p>
             </div>
           </div>
         )}
+
         <h2>Paired devices</h2>
         {devices && !devices.length && <p class="muted">None yet.</p>}
         {devices?.map((d) => (
@@ -132,7 +185,7 @@ export function Devices() {
             <div>
               <b>{d.name}</b>
               <small class="muted">
-                Paired {new Date(d.createdAt).toLocaleDateString()} · last seen {d.lastSeenAt ? new Date(d.lastSeenAt).toLocaleString() : 'never'}
+                {d.via === 'relay' ? 'Via relay' : 'Direct'} · paired {new Date(d.createdAt).toLocaleDateString()} · last seen {d.lastSeenAt ? new Date(d.lastSeenAt).toLocaleString() : 'never'}
               </small>
             </div>
             <button class="ghost danger" onClick={() => revoke(d)}>
@@ -141,6 +194,41 @@ export function Devices() {
           </div>
         ))}
       </div>
+    </div>
+  )
+}
+
+// Pairing a phone through the relay: the QR code carries the computer's public key and a one-time code.
+export function RemotePair({ daemonPk, code }: { daemonPk: string; code: string }) {
+  const [name, setName] = useState(/iPhone|Android|iPad/.exec(navigator.userAgent)?.[0] ?? 'My phone')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const submit = async (e: Event) => {
+    e.preventDefault()
+    setBusy(true)
+    try {
+      await pairThroughRelay(daemonPk, code, name)
+      location.replace('/')
+    } catch (err) {
+      setError((err as Error).message)
+      setBusy(false)
+    }
+  }
+  return (
+    <div class="gate">
+      <img src="/icon.svg" alt="" />
+      <h1>Pair this device</h1>
+      <p class="muted">The connection to your computer is end-to-end encrypted; the relay only passes it on.</p>
+      <form class="form" onSubmit={submit}>
+        <label>
+          Device name
+          <input value={name} onInput={(e) => setName(e.currentTarget.value)} />
+        </label>
+        {error && <div class="error-text">{error}</div>}
+        <button class="primary" disabled={busy}>
+          {busy ? 'Pairing…' : 'Pair'}
+        </button>
+      </form>
     </div>
   )
 }

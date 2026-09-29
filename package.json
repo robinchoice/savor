@@ -1,6 +1,6 @@
 {
   "name": "savor",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Local-first workspace for CLI coding agents (Claude Code, Codex, OpenCode)",
   "license": "AGPL-3.0-or-later",
   "repository": {
@@ -16,24 +16,31 @@
     "node": ">=22.12"
   },
   "scripts": {
-    "build": "vite build && npm run build:server",
+    "build": "vite build && npm run build:server && npm run build:relay",
     "build:server": "esbuild server/index.ts --bundle --platform=node --target=node22 --format=esm --outfile=dist/server/index.mjs --external:playwright-core --banner:js=\"import { createRequire as __cjsRequire } from 'node:module'; const require = __cjsRequire(import.meta.url);\"",
+    "build:relay": "esbuild relay/server.ts --bundle --platform=node --target=node22 --format=esm --outfile=dist/relay/server.mjs --external:bufferutil --external:utf-8-validate --banner:js=\"import { createRequire as __cjsRequire } from 'node:module'; const require = __cjsRequire(import.meta.url);\"",
     "prepare": "npm run build",
-    "dev:web": "vite",
     "start": "node bin/savor.js",
+    "relay": "node dist/relay/server.mjs",
+    "dev:web": "vite",
     "typecheck": "tsc --noEmit",
-    "test": "node --test \"test/*.test.mjs\""
+    "test": "node --import tsx --test \"test/*.test.mjs\""
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.31.0",
+    "@noble/ciphers": "^2.4.0",
+    "@noble/curves": "^2.4.0",
+    "@noble/hashes": "^2.4.0",
     "croner": "^10.0.1",
     "playwright-core": "^1.63.0",
     "tsx": "^4.23.15",
+    "ws": "^8.22.0",
     "zod": "^4.6.5"
   },
   "devDependencies": {
     "@preact/preset-vite": "^2.10.6",
     "@types/node": "^26.6.3",
+    "@types/ws": "^8.18.2",
     "dompurify": "^3.4.16",
     "esbuild": "^0.28.2",
     "lucide-preact": "^1.48.0",

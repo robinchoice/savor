@@ -9,6 +9,7 @@ import {
   api, duration, formatDay, formatTime, go, PROVIDERS, useApi, type ActivityEvent, type AgentConfig, type Decision, type Message, type Proc, type Project, type Thread,
 } from './api'
 import { Composer, type Picked } from './Composer'
+import { transport } from './transport'
 import { Preview } from './Preview'
 
 export function Markdown({ text }: { text: string }) {
@@ -400,9 +401,7 @@ function MessageItem({ m, thread, decisions, active, base }: { m: Message; threa
           {m.images?.length ? (
             <div class="msg-images">
               {m.images.map((img) => (
-                <a key={img} href={`/api${base}/attachments/${img}`} target="_blank" rel="noreferrer">
-                  <img src={`/api${base}/attachments/${img}`} alt="" />
-                </a>
+                <AttachmentImage key={img} path={`/api${base}/attachments/${img}`} />
               ))}
             </div>
           ) : null}
@@ -421,6 +420,20 @@ function MessageItem({ m, thread, decisions, active, base }: { m: Message; threa
       {decisions.length > 0 && <Questions decisions={decisions} active={active} base={base} />}
     </div>
   )
+}
+
+function AttachmentImage({ path }: { path: string }) {
+  const [src, setSrc] = useState('')
+  useEffect(() => {
+    let url = ''
+    transport.imageUrl(path).then((u) => setSrc((url = u)))
+    return () => url.startsWith('blob:') && URL.revokeObjectURL(url)
+  }, [path])
+  return src ? (
+    <a href={src} target="_blank" rel="noreferrer">
+      <img src={src} alt="" />
+    </a>
+  ) : null
 }
 
 function Questions({ decisions, active, base }: { decisions: Decision[]; active: boolean; base: string }) {

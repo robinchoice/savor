@@ -5,7 +5,8 @@ import { api, connectEvents, go, Unauthorized, useApi, useEvent, type Me, type P
 import { Conversations } from './Conversations'
 import { FilesView } from './Files'
 import { Workflows } from './Workflows'
-import { Settings, Devices, Pair } from './Settings'
+import { Settings, Devices, Pair, RemotePair } from './Settings'
+import { loadProfile, remote, setTransport, forgetProfile } from './transport'
 import { ProcessesPopover } from './Processes'
 import { useNotifications, useNotificationToggle } from './notify'
 import './style.css'
@@ -34,11 +35,25 @@ export const initial = (name: string) => (name.trim()[0] ?? '?').toLowerCase()
 
 function App() {
   const [me, setMe] = useState<Me | null | false>(null)
+  const [mode, setMode] = useState<'direct' | 'relay' | null>(null)
+  const [link, setLink] = useState<{ connected: boolean; error?: string }>({ connected: true })
   const route = useRoute()
   const [theme, toggleTheme] = useTheme()
   const [projects] = useApi<Project[]>(me ? '/projects' : null, (e) => ['projects', 'thread', 'status'].includes(e.type))
 
+  // Served by a relay: talk to the paired computer through the encrypted tunnel.
   useEffect(() => {
+    fetch('/savor-relay.json')
+      .then((r) => r.json())
+      .catch(() => null)
+      .then((cfg) => {
+        const profile = cfg?.relay ? loadProfile() : null
+        if (profile) setTransport(remote(profile, (connected, error) => setLink({ connected, error })))
+        setMode(cfg?.relay ? 'relay' : 'direct')
+      })
+  }, [])
+  useEffect(() => {
+    if (!mode || (mode === 'relay' && !loadProfile())) return
     api<Me>('GET', '/me').then(
       (m) => {
         setMe(m)
@@ -46,14 +61,30 @@ function App() {
       },
       (e) => setMe(e instanceof Unauthorized ? false : null),
     )
-  }, [])
+  }, [mode])
   useNotifications(route[2] === 't' ? route[3] : undefined, projects)
   useEffect(() => {
     if (projects?.length && route[0] !== 'p' && route[0] !== 'devices') go(`/p/${projects[0].id}`)
   }, [projects, route[0]])
 
   if (route[0] === 'pair') return <Pair code={route[1]} />
-  if (me === null) return null
+  if (route[0] === 'rpair') return <RemotePair daemonPk={route[1]} code={route[2]} />
+  if (mode === 'relay' && !loadProfile())
+    return (
+      <div class="gate">
+        <img src="/icon.svg" alt="" />
+        <h1>Savor</h1>
+        <p>This is a Savor relay. To reach your computer from here, open Savor on it, go to Devices & remote access → Pair a device, and scan the QR code.</p>
+      </div>
+    )
+  if (me === null)
+    return mode === 'relay' && !link.connected ? (
+      <div class="gate">
+        <img src="/icon.svg" alt="" />
+        <h1>Connecting…</h1>
+        <p class="muted">{link.error ?? 'Reaching your computer through the relay.'}</p>
+      </div>
+    ) : null
   if (me === false)
     return (
       <div class="gate">
@@ -78,6 +109,7 @@ function App() {
 
   return (
     <div class="app" style={project ? { '--tint': project.tint } : undefined}>
+      {mode === 'relay' && !link.connected && <div class="link-banner">Reconnecting to your computer…</div>}
       <TopBar projects={projects ?? []} active={project} me={me} setMe={setMe} theme={theme} toggleTheme={toggleTheme} />
       {project && <SubBar project={project} section={section} />}
       <main>{main}</main>
@@ -144,6 +176,9 @@ function TopBar({ projects, active, me, setMe, theme, toggleTheme }: { projects:
                 </button>
               )}
               {me.origin === 'local' && <a href="#/devices">Devices & remote access</a>}
+              {loadProfile() && (
+                <button onClick={() => confirm('Forget this computer on this device? You will need to pair again.') && (forgetProfile(), location.reload())}>Forget this computer</button>
+              )}
             </div>
           )}
         </div>

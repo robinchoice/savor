@@ -83,7 +83,8 @@ export interface Proc {
   threadId: string
   startedAt: string
 }
-export interface Device { id: string; name: string; tokenHash: string; createdAt: string; lastSeenAt: string | null }
+// Devices paired over the LAN get a cookie token (tokenHash), devices paired through the relay a public key.
+export interface Device { id: string; name: string; tokenHash: string; publicKey?: string; createdAt: string; lastSeenAt: string | null }
 
 interface State {
   token: string
@@ -91,6 +92,10 @@ interface State {
   projects: { id: string; path: string }[]
   devices: Device[]
   providers: Record<string, { command: string[] }>
+  relay: { url: string | null; enabled: boolean }
+  // The daemon's long-term X25519 key for the relay tunnel (base64url secret key).
+  identity: string
+  relayToken: string
 }
 
 export const newId = () => crypto.randomUUID().replaceAll('-', '').slice(0, 16)
@@ -105,10 +110,10 @@ function readJson<T>(file: string, fallback: T): T {
   }
 }
 
-function writeJson(file: string, data: unknown) {
+function writeJson(file: string, data: unknown, mode = 0o644) {
   fs.mkdirSync(path.dirname(file), { recursive: true })
   const tmp = `${file}.${process.pid}.tmp`
-  fs.writeFileSync(tmp, JSON.stringify(data, null, 2))
+  fs.writeFileSync(tmp, JSON.stringify(data, null, 2), { mode })
   fs.renameSync(tmp, file)
 }
 
@@ -133,13 +138,17 @@ export function state(): State {
     projects: [],
     devices: [],
     providers: {},
+    relay: { url: null, enabled: false },
+    identity: Buffer.from(crypto.randomBytes(32)).toString('base64url'),
+    relayToken: crypto.randomBytes(24).toString('hex'),
     ...s,
   }
-  if (!s) writeJson(stateFile, full)
+  if (!s || !s.identity || !s.relayToken) saveState(full)
   return full
 }
 
-export const saveState = (s: State) => writeJson(stateFile, s)
+// state.json holds tokens and the daemon key: readable by the owner only.
+export const saveState = (s: State) => writeJson(stateFile, s, 0o600)
 
 // ---- projects ----
 

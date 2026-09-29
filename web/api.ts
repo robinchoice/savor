@@ -1,18 +1,18 @@
 import { useCallback, useEffect, useState } from 'preact/hooks'
+import { transport } from './transport'
 
 export class Unauthorized extends Error {}
 
 export const go = (path: string) => (location.hash = path)
 
 export async function api<T = any>(method: string, path: string, body?: unknown): Promise<T> {
-  const r = await fetch('/api' + path, {
-    method,
-    headers: body === undefined ? {} : { 'content-type': 'application/json' },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  })
+  const r = await transport.request(method, '/api' + path, body === undefined ? undefined : JSON.stringify(body))
   if (r.status === 401) throw new Unauthorized()
-  const data = await r.json().catch(() => ({}))
-  if (!r.ok) throw new Error(data.error ?? r.statusText)
+  let data: any = {}
+  try {
+    data = JSON.parse(r.body)
+  } catch {}
+  if (r.status >= 400) throw new Error(data.error ?? `Request failed (${r.status})`)
   return data
 }
 
@@ -21,11 +21,10 @@ type Listener = (e: SavorEvent) => void
 const listeners = new Set<Listener>()
 
 export function connectEvents() {
-  const es = new EventSource('/api/events')
-  es.onmessage = (m) => {
-    const e = JSON.parse(m.data)
+  transport.stream('/api/events', (data) => {
+    const e = JSON.parse(data)
     listeners.forEach((l) => l(e))
-  }
+  })
 }
 
 export function useEvent(fn: Listener, deps: unknown[]) {

@@ -12,6 +12,7 @@ import * as processes from './processes.js'
 import * as devices from './devices.js'
 import * as files from './files.js'
 import * as awake from './awake.js'
+import { pairingLink, relayStatus, startRelay } from './relay-client.js'
 import { handleMcp, refreshNeedsYou, resolveApproval } from './mcp.js'
 import { nextRun, runWorkflow, syncSchedules, validateCron } from './scheduler.js'
 
@@ -63,7 +64,18 @@ route('GET', '/devices', (_, __, ctx) => (localOnly(ctx), devices.listDevices())
 route('POST', '/devices/pairing', (_, __, ctx) => {
   localOnly(ctx)
   const pairing = devices.createPairing()
-  return { ...pairing, url: `${PUBLIC_URL}/#/pair/${pairing.code}` }
+  return { ...pairing, url: `${PUBLIC_URL}/#/pair/${pairing.code}`, relayUrl: pairingLink(pairing.code) }
+})
+route('GET', '/relay', (_, __, ctx) => (localOnly(ctx), relayStatus()))
+route('PUT', '/relay', (_, b, ctx) => {
+  localOnly(ctx)
+  const url = typeof b.url === 'string' && b.url.trim() ? b.url.trim().replace(/\/$/, '') : null
+  if (url && !/^https?:\/\//.test(url)) throw new BadRequest('The relay URL must start with https:// (or http:// for local testing).')
+  const s = store.state()
+  s.relay = { url, enabled: !!b.enabled && !!url }
+  store.saveState(s)
+  startRelay()
+  return relayStatus()
 })
 route('DELETE', '/devices/:id', (params, _, ctx) => {
   localOnly(ctx)
@@ -389,5 +401,6 @@ http
   .listen(PORT, HOST, () => {
     syncSchedules()
     processes.watchProcesses()
+    startRelay()
     console.log(`Savor running — open ${PUBLIC_URL}/?token=${store.state().token}`)
   })

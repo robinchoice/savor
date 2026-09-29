@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks'
 import { ArrowLeft, ArrowRight, Crosshair, ExternalLink, RotateCw } from 'lucide-preact'
 import { api, useEvent } from './api'
+import { transport } from './transport'
 import type { Picked } from './Composer'
 
 const VIEWPORT = { width: 1280, height: 800 }
@@ -18,9 +19,7 @@ export function Preview({ base, threadId, url, onPick }: { base: string; threadI
   useEffect(() => setAddress(url ?? ''), [url])
   useEffect(() => {
     if (!url) return
-    const es = new EventSource(`/api${base}/browser/stream`)
-    es.onmessage = (m) => setFrame(m.data)
-    return () => es.close()
+    return transport.stream(`/api${base}/browser/stream`, setFrame)
   }, [base, url, stream])
   // Reconnect when the agent (re)opens the preview, e.g. after a daemon restart.
   useEvent((e) => e.type === 'browser' && e.threadId === threadId && setStream((n) => n + 1), [threadId])

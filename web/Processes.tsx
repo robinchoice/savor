@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks'
 import { ExternalLink, ScrollText, Square } from 'lucide-preact'
 import { api, useApi, type Proc, type Project } from './api'
+import { transport } from './transport'
 
 export function ProcessesPopover({ project, close }: { project: Project; close: () => void }) {
   const base = `/projects/${project.id}/processes`
@@ -13,7 +14,7 @@ export function ProcessesPopover({ project, close }: { project: Project; close: 
     return () => removeEventListener('click', on)
   }, [])
 
-  const showLog = async (pid: number) => setLog({ pid, text: await (await fetch(`/api${base}/${pid}/log`)).text() })
+  const showLog = async (pid: number) => setLog({ pid, text: (await transport.request('GET', `/api${base}/${pid}/log`)).body })
   const kill = (p: Proc) => confirm(`Stop ${p.name} (PID ${p.pid})?`) && api('POST', `${base}/${p.pid}/kill`)
 
   return (

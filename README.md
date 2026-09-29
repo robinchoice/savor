@@ -108,13 +108,38 @@ journalctl --user -u savor | grep token   # the login link
 
 ## Phone / remote access
 
-Savor binds to `127.0.0.1` by default. Use a private network such as [Tailscale](https://tailscale.com) or WireGuard instead of exposing the port publicly:
+Open **Devices & remote access** from the avatar menu. Your desktop has to stay awake while you're away, which the coffee-cup toggle takes care of. There are two ways in:
+
+**Through a relay** (no VPN, works on mobile data). Enter a relay URL, click **Connect**, then **Pair a device** and scan the QR code with your phone. Use "Add to Home Screen" on the phone.
+
+- Traffic between the device and your computer is end-to-end encrypted (X25519 key exchange with forward secrecy, ChaCha20-Poly1305, see [`shared/tunnel.ts`](shared/tunnel.ts)). The relay forwards ciphertext. It sees public keys, connection times and message sizes, not your conversations or files.
+- Pairing uses the computer's public key and a one-time code from the QR code, so the phone knows it's talking to your computer and not to the relay.
+- Every paired device has its own key and can be revoked, which cuts its tunnel immediately.
+- The relay authenticates daemons by their key, so nobody else can take over your computer's relay address.
+- One caveat: the relay also serves the web app to the phone, and a malicious relay could serve a modified app. Run your own relay, or use one run by someone you trust.
+
+Run a relay on any server with Node ≥ 22.12, behind HTTPS (for example with Caddy):
+
+```sh
+git clone https://github.com/robinchoice/savor.git && cd savor
+npm install
+RELAY_PORT=8787 npm run relay
+```
+
+```
+# Caddyfile
+relay.example.com {
+  reverse_proxy localhost:8787
+}
+```
+
+**Directly** over your own network or a VPN such as [Tailscale](https://tailscale.com) or WireGuard. Savor binds to `127.0.0.1` by default:
 
 ```sh
 SAVOR_HOST=0.0.0.0 SAVOR_PUBLIC_URL=http://my-desktop.tailnet.ts.net:4317 npm start
 ```
 
-Then go to **Devices & remote access** (avatar menu), click **Pair a device** and scan the QR code. Use "Add to Home Screen" on the phone. Your desktop has to stay awake, which the coffee-cup toggle takes care of.
+Without a connected relay, the pairing QR code points at `SAVOR_PUBLIC_URL`.
 
 ## Configuration
 
@@ -124,6 +149,8 @@ Then go to **Devices & remote access** (avatar menu), click **Pair a device** an
 | `SAVOR_HOST` | `127.0.0.1` | Bind address |
 | `SAVOR_PUBLIC_URL` | `http://localhost:$SAVOR_PORT` | Base for links agents post and pairing links |
 | `SAVOR_HOME` | `~/.savor` | Global state |
+| `RELAY_PORT` | `8787` | Relay only: HTTP/WebSocket port |
+| `RELAY_WEB_DIR` | `dist/web` | Relay only: web app to serve |
 | `SAVOR_CHROMIUM` | Playwright Chromium, then system Chrome/Chromium | Browser for the preview |
 | `SAVOR_CLAUDE_BIN`, `SAVOR_CODEX_BIN`, `SAVOR_OPENCODE_BIN`, `SAVOR_GROK_BIN`, `SAVOR_ANTIGRAVITY_BIN` | CLI name | Agent binaries |
 
@@ -143,6 +170,11 @@ server/
   browser.ts    shared headless preview with screencast (playwright-core)
   files.ts      project file access
   awake.ts      keep-awake inhibitor
+  relay-client.ts  outbound relay connection, serves tunneled devices
+shared/
+  tunnel.ts     end-to-end encryption for the relay tunnel (noble crypto)
+relay/
+  server.ts     the relay: daemon login, device routing, serves the web app
 web/            Preact PWA
 desktop/        Electron shell and installers (electron-builder)
 test/           end-to-end tests with a fake agent
@@ -176,9 +208,9 @@ CI runs typecheck and the end-to-end tests on every push. Pushing a tag like `v0
 ## Status
 
 Early. Known gaps:
-- Remote traffic is only encrypted in transit if you use Tailscale, WireGuard or HTTPS. There is no relay with end-to-end encryption.
+- There is no public relay instance yet: run your own (see above) or use a direct connection.
+- A browser remembers one paired computer at a time.
 - The OpenCode, Grok Build and Antigravity adapters haven't been tested against the real CLIs.
-- The preview shows one headless page per conversation; logins inside the preview don't persist across daemon restarts.
 
 ## License
 
