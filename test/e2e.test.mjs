@@ -28,6 +28,11 @@ const api = async (method, p, body, cookie = `savor_token=${token}`) => {
   return { status: r.status, body: await r.json().catch(() => null) }
 }
 
+async function newConversation() {
+  await page.click('.new-btn')
+  await page.waitForSelector('text=What do you want to build?')
+}
+
 async function send(text) {
   await page.fill('.composer textarea', text)
   await page.keyboard.press('Enter')
@@ -69,7 +74,7 @@ test('add a project and get a conclusion with next actions', async () => {
 })
 
 test('questions are answered in one reply', async () => {
-  await page.click('.new-btn')
+  await newConversation()
   await send('ask: Ship it?')
   await page.waitForSelector('text=One thing before I continue')
   assert.equal(await page.locator('.filter.attention').count(), 1, 'Needs you filter lights up')
@@ -79,7 +84,7 @@ test('questions are answered in one reply', async () => {
 })
 
 test('approvals are routed to the user', async () => {
-  await page.click('.new-btn')
+  await newConversation()
   await send('approve: now')
   await page.waitForSelector('.approval >> text=Allow')
   await page.click('.approval button:has-text("Allow")')
