@@ -70,7 +70,7 @@ Everything lives in plain files: `~/.savor/state.json` holds projects, tokens an
 
 **Desktop app:** download the AppImage (Linux), dmg (macOS) or exe (Windows) from the [Releases page](https://github.com/robinchoice/savor/releases). The app starts its own daemon, finds agent CLIs through your login shell's `PATH`, downloads Chromium for the preview on first use, and updates itself from new releases. You still need at least one logged-in agent CLI (`claude`, `codex`, …).
 
-- Linux: `chmod +x Savor-*.AppImage && ./Savor-*.AppImage`. On Ubuntu 24.04 and later, AppImages built with Electron need `--no-sandbox`, because AppArmor blocks Chromium's sandbox.
+- Linux: `chmod +x Savor-*.AppImage && ./Savor-*.AppImage`. No extra flags are needed: where Chromium's sandbox can't use user namespaces, for example on Ubuntu 24.04 and later because of AppArmor, the AppImage starts itself with `--no-sandbox`.
 - macOS and Windows builds are not code-signed yet. macOS needs a right-click → Open on first launch, Windows SmartScreen asks once, and macOS only updates itself once builds are signed.
 
 **From source** (Node ≥ 22.12):
