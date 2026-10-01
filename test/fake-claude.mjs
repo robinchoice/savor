@@ -6,16 +6,19 @@
 // - anything else → acknowledgement plus a conclusion echoing the input with one suggestion
 import readline from 'node:readline'
 import crypto from 'node:crypto'
+import fs from 'node:fs'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 
 const args = process.argv.slice(2)
-const mcpUrl = JSON.parse(args[args.indexOf('--mcp-config') + 1]).mcpServers.savor.url
+const config = args[args.indexOf('--mcp-config') + 1]
+const mcp = JSON.parse(fs.readFileSync(config, 'utf8')).mcpServers.savor
+if (process.env.FAKE_AGENT_LOG) fs.appendFileSync(process.env.FAKE_AGENT_LOG, JSON.stringify({ agent: 'claude', argv: process.argv, configMode: fs.statSync(config).mode & 0o777 }) + '\n')
 const sessionId = args.includes('--resume') ? args[args.indexOf('--resume') + 1] : args[args.indexOf('--session-id') + 1] ?? crypto.randomUUID()
 const out = (e) => process.stdout.write(JSON.stringify(e) + '\n')
 
 const client = new Client({ name: 'fake-claude', version: '1' })
-await client.connect(new StreamableHTTPClientTransport(new URL(mcpUrl)))
+await client.connect(new StreamableHTTPClientTransport(new URL(mcp.url), { requestInit: { headers: mcp.headers } }))
 const call = async (name, a) => JSON.parse((await client.callTool({ name, arguments: a })).content[0].text)
 
 let started = false

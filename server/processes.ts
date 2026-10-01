@@ -39,6 +39,7 @@ export function unregister(p: Project, pid: number) {
 }
 
 export function kill(p: Project, pid: number) {
+  if (!store.listProcs(p).some((pr) => pr.pid === pid)) throw new store.NotFound(`process ${pid}`)
   if (alive(pid)) process.kill(pid, 'SIGTERM')
   unregister(p, pid)
 }

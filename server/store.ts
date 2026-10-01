@@ -72,6 +72,7 @@ export interface Workflow {
   enabled: boolean
   next: string[]
   lastRunAt: string | null
+  origin: Origin
 }
 export interface Proc {
   pid: number
@@ -370,7 +371,9 @@ export function getWorkflow(p: Project, id: string): Workflow {
   return { next: [], ...wf } as Workflow
 }
 
-export function saveWorkflow(p: Project, wf: Partial<Workflow> & { name: string; prompt: string }): Workflow {
+// `by` is where the request came from. Whoever writes the instructions (prompt or chain) decides
+// whether runs count as local or remote.
+export function saveWorkflow(p: Project, wf: Partial<Workflow> & { name: string; prompt: string }, by?: Origin): Workflow {
   const prev = wf.id ? getWorkflow(p, wf.id) : null
   const next: Workflow = {
     id: newId(),
@@ -379,9 +382,11 @@ export function saveWorkflow(p: Project, wf: Partial<Workflow> & { name: string;
     enabled: true,
     next: [],
     lastRunAt: null,
+    origin: 'local',
     ...prev,
     ...wf,
   }
+  if (by && (!prev || next.prompt !== prev.prompt || String(next.next) !== String(prev.next))) next.origin = by
   writeJson(path.join(wfDir(p), `${next.id}.json`), next)
   return next
 }

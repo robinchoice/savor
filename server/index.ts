@@ -44,6 +44,10 @@ class BadRequest extends Error {}
 const localOnly = (ctx: Ctx) => {
   if (ctx.auth.origin !== 'local') throw new Forbidden('Only available on this computer.')
 }
+// Skipping approvals can only be switched on at this computer; devices keep it where it's already on.
+const noNewBypass = (ctx: Ctx, next: store.AgentConfig, current: store.AgentConfig) => {
+  if (next.permissionMode === 'bypassPermissions' && current.permissionMode !== 'bypassPermissions') localOnly(ctx)
+}
 
 const project = (params: Params) => store.getProject(params.pid)
 const inputFrom = (b: any, ctx: Ctx, p: store.Project, tid: string) => ({
@@ -109,10 +113,15 @@ route('POST', '/projects', (_, b, ctx) => {
   return p
 })
 route('GET', '/projects/:pid/role', (params) => ({ role: store.readRole(project(params)) }))
-route('PATCH', '/projects/:pid', (params, b) => {
+route('PATCH', '/projects/:pid', (params, b, ctx) => {
   const p = project(params)
-  if (typeof b.role === 'string') store.saveRole(p, b.role)
+  // ROLE.md and the default agent apply to every conversation in the project, so devices can't change them.
+  const agent = b.agent && { ...p.agent, ...b.agent }
+  const roleChanged = typeof b.role === 'string' && b.role !== store.readRole(p)
+  if (roleChanged || (agent && JSON.stringify(agent) !== JSON.stringify(p.agent))) localOnly(ctx)
+  if (roleChanged) store.saveRole(p, b.role)
   const patch = Object.fromEntries(Object.entries(b).filter(([k]) => ['name', 'tint', 'agent', 'verbosity', 'paused'].includes(k)))
+  if (agent) patch.agent = agent
   const updated = store.updateProject(p.id, patch)
   emit({ type: 'projects' })
   return updated
@@ -132,8 +141,10 @@ route('GET', '/projects/:pid/threads', (params) => {
 })
 route('POST', '/projects/:pid/threads', (params, b, ctx) => {
   const p = project(params)
-  const t = store.createThread(p, { title: b.text || 'New conversation', agent: { ...p.agent, ...b.agent } })
-  if (b.agent) store.updateProject(p.id, { agent: { ...p.agent, ...b.agent } })
+  const agent = { ...p.agent, ...b.agent }
+  noNewBypass(ctx, agent, p.agent)
+  const t = store.createThread(p, { title: b.text || 'New conversation', agent })
+  if (b.agent && ctx.auth.origin === 'local') store.updateProject(p.id, { agent })
   emit({ type: 'thread', projectId: p.id, threadId: t.id })
   agents.send(p, t.id, inputFrom(b, ctx, p, t.id))
   return t
@@ -154,15 +165,18 @@ route('GET', '/projects/:pid/threads/:tid', (params) => {
   }
 })
 route('GET', '/projects/:pid/threads/:tid/activity', (params) => store.readActivity(project(params), params.tid))
-route('PATCH', '/projects/:pid/threads/:tid', (params, b) => {
+route('PATCH', '/projects/:pid/threads/:tid', (params, b, ctx) => {
   const p = project(params)
   const patch: Partial<store.Thread> = {}
   if (typeof b.completed === 'boolean') patch.completed = b.completed
   if (typeof b.title === 'string') patch.title = b.title
   if (typeof b.label === 'string') patch.label = b.label ? { name: b.label, hue: store.hueFor(b.label) } : null
   if (b.agent) {
-    patch.agent = { ...store.getThread(p, params.tid).agent, ...b.agent }
-    store.updateProject(p.id, { agent: patch.agent! })
+    const current = store.getThread(p, params.tid).agent
+    const agent = { ...current, ...b.agent }
+    noNewBypass(ctx, agent, current)
+    patch.agent = agent
+    if (ctx.auth.origin === 'local') store.updateProject(p.id, { agent })
   }
   const t = store.updateThread(p, params.tid, patch)
   emit({ type: 'thread', projectId: p.id, threadId: t.id })
@@ -260,7 +274,10 @@ route('GET', '/projects/:pid/files', (params, _, ctx) => files.list(project(para
 route('GET', '/projects/:pid/files/search', (params, _, ctx) => files.search(project(params), ctx.query.get('q') ?? ''))
 route('GET', '/projects/:pid/file', (params, _, ctx) => files.read(project(params), ctx.query.get('path') ?? ''))
 route('PUT', '/projects/:pid/file', (params, b) => {
-  files.write(project(params), b.path, b.content)
+  const p = project(params)
+  // Savor's own records change only through their routes, which check who is asking.
+  if (files.internal(p, b.path)) throw new Forbidden("Savor's own files (.savor/) can't be edited here.")
+  files.write(p, b.path, b.content)
   return {}
 })
 
@@ -284,7 +301,7 @@ route('DELETE', '/projects/:pid/docs/:id', (params) => {
 
 // ---- workflows ----
 
-const saveWorkflowRoute = (params: Params, b: any, id?: string) => {
+const saveWorkflowRoute = (params: Params, b: any, ctx: Ctx, id?: string) => {
   try {
     if (b.cron) validateCron(b.cron, b.timezone)
   } catch (e) {
@@ -292,14 +309,14 @@ const saveWorkflowRoute = (params: Params, b: any, id?: string) => {
   }
   const { name, prompt, cron, timezone, enabled, next } = b
   const fields = Object.fromEntries(Object.entries({ name, prompt, cron, timezone, enabled, next }).filter(([, v]) => v !== undefined))
-  const wf = store.saveWorkflow(project(params), { ...(fields as { name: string; prompt: string }), ...(id && { id }) })
+  const wf = store.saveWorkflow(project(params), { ...(fields as { name: string; prompt: string }), ...(id && { id }) }, ctx.auth.origin)
   syncSchedules()
   emit({ type: 'workflows', projectId: params.pid })
   return wf
 }
 route('GET', '/projects/:pid/workflows', (params) => store.listWorkflows(project(params)).map((wf) => ({ ...wf, nextRunAt: nextRun(wf) })))
-route('POST', '/projects/:pid/workflows', (params, b) => saveWorkflowRoute(params, b))
-route('PUT', '/projects/:pid/workflows/:id', (params, b) => saveWorkflowRoute(params, b, params.id))
+route('POST', '/projects/:pid/workflows', (params, b, ctx) => saveWorkflowRoute(params, b, ctx))
+route('PUT', '/projects/:pid/workflows/:id', (params, b, ctx) => saveWorkflowRoute(params, b, ctx, params.id))
 route('DELETE', '/projects/:pid/workflows/:id', (params) => {
   store.deleteWorkflow(project(params), params.id)
   syncSchedules()
@@ -371,8 +388,8 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
   const url = new URL(req.url ?? '/', 'http://x')
   for (const [k, v] of Object.entries(securityHeaders(req.headers.host))) res.setHeader(k, v)
 
-  if (url.pathname.startsWith('/mcp/')) {
-    if (!store.safeEqual(url.pathname.slice('/mcp/'.length), store.state().mcpToken)) return res.writeHead(401).end()
+  if (url.pathname === '/mcp') {
+    if (!store.safeEqual(req.headers.authorization?.match(/^Bearer (.+)$/)?.[1], store.state().mcpToken)) return res.writeHead(401).end()
     return handleMcp(req, res, url, req.method === 'POST' ? await readBody(req) : undefined)
   }
 
@@ -380,6 +397,11 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
     res.writeHead(302, { 'set-cookie': `savor_token=${store.state().token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=31536000`, location: '/' })
     return res.end()
   }
+
+  // Changes must be JSON: browsers send that cross-origin only after a CORS preflight, which this server
+  // never allows, so pages on other ports of this host (the same site for cookies) can't use the login.
+  if (url.pathname.startsWith('/api/') && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method!) && !req.headers['content-type']?.startsWith('application/json'))
+    return json(res, 415, { error: 'Send changes as application/json.' })
 
   if (url.pathname === '/api/pair' && req.method === 'POST') {
     const b = await readBody(req)

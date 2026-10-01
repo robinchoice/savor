@@ -10,6 +10,7 @@ export function Settings({ project }: { project: Project }) {
   const [draft, setDraft] = useState({ name: project.name, tint: project.tint, verbosity: project.verbosity, paused: project.paused, agent: project.agent })
   const [role, setRole] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
+  const [error, setError] = useState('')
   useEffect(() => void api<{ role: string }>('GET', `/projects/${project.id}/role`).then((r) => setRole(r.role)), [project.id])
   const set = (patch: Partial<typeof draft>) => {
     setSaved(false)
@@ -18,8 +19,13 @@ export function Settings({ project }: { project: Project }) {
 
   const save = async (e: Event) => {
     e.preventDefault()
-    await api('PATCH', `/projects/${project.id}`, { ...draft, role })
-    setSaved(true)
+    try {
+      await api('PATCH', `/projects/${project.id}`, { ...draft, role })
+      setError('')
+      setSaved(true)
+    } catch (err) {
+      setError((err as Error).message)
+    }
   }
   const remove = async () => {
     if (!confirm(`Remove ${project.name} from Savor? Files stay on disk.`)) return
@@ -76,6 +82,7 @@ export function Settings({ project }: { project: Project }) {
             Save
           </button>
           {saved && <span class="muted">Saved.</span>}
+          {error && <span class="error-text">{error}</span>}
           <span class="spacer" />
           <button type="button" class="ghost danger" onClick={remove}>
             Remove project

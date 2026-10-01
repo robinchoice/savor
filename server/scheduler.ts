@@ -39,9 +39,25 @@ export const nextRun = (wf: store.Workflow) => {
   }
 }
 
-export function runWorkflow(projectId: string, workflowId: string, origin: Origin) {
+// The workflow and every workflow its `next` links lead to, each once.
+function reachable(p: store.Project, wf: store.Workflow) {
+  const all = new Map([[wf.id, wf]])
+  for (const w of all.values()) {
+    for (const id of w.next) {
+      if (all.has(id)) continue
+      try {
+        all.set(id, store.getWorkflow(p, id))
+      } catch {}
+    }
+  }
+  return [...all.values()]
+}
+
+export function runWorkflow(projectId: string, workflowId: string, trigger: Origin) {
   const p = store.getProject(projectId)
   const wf = store.getWorkflow(p, workflowId)
+  // Instructions a paired device wrote run as remote, even when the schedule or a local workflow starts them.
+  const origin = trigger === 'remote' || reachable(p, wf).some((w) => w.origin === 'remote') ? 'remote' : 'local'
   const linked = wf.next.flatMap((id) => {
     try {
       return [store.getWorkflow(p, id)]

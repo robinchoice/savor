@@ -14,7 +14,7 @@ export interface Transport {
 
 export const direct: Transport = {
   async request(method, path, body) {
-    const r = await fetch(path, { method, headers: body === undefined ? {} : { 'content-type': 'application/json' }, body })
+    const r = await fetch(path, { method, headers: method === 'GET' ? {} : { 'content-type': 'application/json' }, body })
     return { status: r.status, type: r.headers.get('content-type') ?? '', body: await r.text() }
   },
   stream(path, onData) {

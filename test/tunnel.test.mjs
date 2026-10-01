@@ -75,7 +75,7 @@ test('malformed keys from the wire are rejected, not accepted', () => {
 
 test('the tunnel only forwards normalized /api paths, never pairing', () => {
   assert.equal(tunnelPath('/api/projects?x=1'), '/api/projects?x=1')
-  for (const p of ['/api/pair', '/api/./pair', '/api/%2e/pair', '/api/../mcp/token', '/api/%2e%2e/mcp/x', '/mcp/x', 'api/me', '//evil/api/me', '/\\evil/api/me', 42]) {
+  for (const p of ['/api/pair', '/api/./pair', '/api/%2e/pair', '/api/../mcp', '/api/%2e%2e/mcp?project=x', '/mcp', 'api/me', '//evil/api/me', '/\\evil/api/me', 42]) {
     assert.equal(tunnelPath(p), null, String(p))
   }
 })

@@ -181,7 +181,7 @@ function buildServer(p: Project, tid: string) {
     { description: 'Save a workflow. With a cron expression Savor runs it on schedule in a new conversation.', inputSchema: workflowShape },
     async (wf) => {
       if (wf.cron) validateCron(wf.cron, wf.timezone)
-      const saved = store.saveWorkflow(p, wf)
+      const saved = store.saveWorkflow(p, wf, agents.originOf(tid))
       syncSchedules()
       emit({ type: 'workflows', projectId: p.id })
       return ok({ id: saved.id, url: wfUrl(saved.id) })
@@ -195,7 +195,7 @@ function buildServer(p: Project, tid: string) {
       if (patch.cron) validateCron(patch.cron, patch.timezone)
       const prev = store.getWorkflow(p, id)
       const clean = Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined))
-      store.saveWorkflow(p, { ...prev, ...clean })
+      store.saveWorkflow(p, { ...prev, ...clean }, agents.originOf(tid))
       syncSchedules()
       emit({ type: 'workflows', projectId: p.id })
       return ok({ id, url: wfUrl(id) })

@@ -81,7 +81,6 @@ export function send(p: Project, tid: string, input: { text: string; images?: st
   const thread = store.updateThread(p, tid, { completed: false, needsYou: false })
   const msg = post(p, tid, { kind: 'user', text: input.text, images: input.images, modelInfo: thread.agent, origin: input.origin, device: input.device })
   requests.set(tid, { inputId: msg.id, startedAt: msg.ts, updates: new Map() })
-  turnOrigin.set(tid, input.origin)
   emit({ type: 'thread', projectId: p.id, threadId: tid })
   const next = { text: input.text, images: input.images ?? [], origin: input.origin }
   if (thread.agent.provider === 'claude') return sendToClaude(p, thread, next)
@@ -149,6 +148,7 @@ async function pump(p: Project, tid: string) {
   if (!input) return
   const thread = store.getThread(p, tid)
   if (thread.agent.provider === 'claude') return sendToClaude(p, thread, input)
+  turnOrigin.set(tid, input.origin)
   beginTurn(p, tid)
   try {
     endTurn(p, tid, { text: await runners[thread.agent.provider](p, thread, buildPrompt(p, thread, input), imagePaths(p, tid, input)) })
@@ -192,6 +192,8 @@ function sendToClaude(p: Project, thread: Thread, input: Input) {
     s = undefined
   }
   if (!s) sessions.set(key, (s = new ClaudeSession(p, thread, key)))
+  // Claude reads new input within the running turn, so after a remote input the rest of that turn stays remote.
+  turnOrigin.set(thread.id, busy.has(thread.id) && originOf(thread.id) === 'remote' ? 'remote' : input.origin)
   beginTurn(p, thread.id)
   s.write(buildPrompt(p, thread, input), imagePaths(p, thread.id, input))
 }
@@ -275,13 +277,18 @@ class ClaudeSession {
     const a = thread.agent
     this.config = configKey(a)
     this.activity = new Activity(p, thread.id)
+    // The MCP config holds the token, so it goes into a file only this user can read.
+    const mcpConfig = path.join(store.HOME, 'mcp', `${crypto.randomUUID()}.json`)
+    fs.mkdirSync(path.dirname(mcpConfig), { recursive: true, mode: 0o700 })
+    const savor = { type: 'http', url: mcpUrl(p.id, thread.id), headers: { Authorization: `Bearer ${store.state().mcpToken}` } }
+    fs.writeFileSync(mcpConfig, JSON.stringify({ mcpServers: { savor } }), { mode: 0o600 })
     const args = [
       '-p',
       '--input-format', 'stream-json',
       '--output-format', 'stream-json',
       '--verbose',
       '--append-system-prompt', systemPrompt(p),
-      '--mcp-config', JSON.stringify({ mcpServers: { savor: { type: 'http', url: mcpUrl(p.id, thread.id) } } }),
+      '--mcp-config', mcpConfig,
       '--permission-prompt-tool', 'mcp__savor__approve_tool',
       '--allowedTools', 'mcp__savor',
       '--permission-mode', a.permissionMode || 'acceptEdits',
@@ -298,6 +305,8 @@ class ClaudeSession {
       env: { ...process.env, MCP_TOOL_TIMEOUT: String(24 * 3600_000) },
       stdio: ['pipe', 'pipe', 'pipe'],
     })
+    const removeConfig = () => fs.rmSync(mcpConfig, { force: true })
+    this.child.on('exit', removeConfig).on('error', removeConfig)
     readline.createInterface({ input: this.child.stdout! }).on('line', (l) => this.onLine(l))
     this.child.stderr!.on('data', (d) => (this.stderr = (this.stderr + d).slice(-4000)))
     const gone = (error: string) => {
@@ -380,7 +389,8 @@ type Runner = (p: Project, thread: Thread, prompt: string, images: string[]) => 
 
 // Grok Build and Antigravity have no stable headless JSON protocol we can rely on yet: they run a
 // configurable command (state.json → providers.<name>.command, "{prompt}" is replaced) and their
-// stdout becomes the conclusion. SAVOR_MCP_URL points them at Savor's MCP server.
+// stdout becomes the conclusion. SAVOR_MCP_URL and the bearer token SAVOR_MCP_TOKEN point them at
+// Savor's MCP server.
 const DEFAULT_COMMANDS: Record<string, string[]> = { grok: [BIN.grok, '-p', '{prompt}'], antigravity: [BIN.antigravity, '-p', '{prompt}'] }
 
 const genericRunner =
@@ -390,15 +400,14 @@ const genericRunner =
     const out: string[] = []
     const activity = new Activity(p, thread.id)
     activity.start('run', 'command', `${bin} (${provider})`)
-    await runLines(thread.id, bin, args.map((a) => a.replace('{prompt}', withProtocol(p, thread, prompt))), { cwd: p.path, env: { SAVOR_MCP_URL: mcpUrl(p.id, thread.id) } }, (l) => out.push(l)).finally(() =>
-      activity.finish('run'),
-    )
+    const env = { SAVOR_MCP_URL: mcpUrl(p.id, thread.id), SAVOR_MCP_TOKEN: store.state().mcpToken }
+    await runLines(thread.id, bin, args.map((a) => a.replace('{prompt}', withProtocol(p, thread, prompt))), { cwd: p.path, env }, (l) => out.push(l)).finally(() => activity.finish('run'))
     return out.join('\n')
   }
 
 const runners: Record<Exclude<Provider, 'claude'>, Runner> = {
   async codex(p, thread, prompt, images) {
-    const args = ['exec', '--json', '--skip-git-repo-check', '-c', `mcp_servers.savor.url=${JSON.stringify(mcpUrl(p.id, thread.id))}`]
+    const args = ['exec', '--json', '--skip-git-repo-check', '-c', `mcp_servers.savor.url=${JSON.stringify(mcpUrl(p.id, thread.id))}`, '-c', 'mcp_servers.savor.bearer_token_env_var="SAVOR_MCP_TOKEN"']
     if (thread.agent.model) args.push('-m', thread.agent.model)
     if (thread.agent.reasoning) args.push('-c', `model_reasoning_effort=${JSON.stringify(thread.agent.reasoning)}`)
     for (const img of images) args.push('-i', img)
@@ -414,7 +423,7 @@ const runners: Record<Exclude<Provider, 'claude'>, Runner> = {
       thread.id,
       BIN.codex,
       args,
-      { cwd: p.path, stdin: withProtocol(p, thread, prompt) },
+      { cwd: p.path, stdin: withProtocol(p, thread, prompt), env: { SAVOR_MCP_TOKEN: store.state().mcpToken } },
       json((ev) => {
         if (ev.type === 'thread.started') saveSession(p, thread.id, 'codex', ev.thread_id)
         const item = ev.item
@@ -438,7 +447,8 @@ const runners: Record<Exclude<Provider, 'claude'>, Runner> = {
     if (sid) args.push('--session', sid)
     for (const img of images) args.push('-f', img)
     args.push(withProtocol(p, thread, prompt))
-    const env = { OPENCODE_CONFIG_CONTENT: JSON.stringify({ mcp: { savor: { type: 'remote', url: mcpUrl(p.id, thread.id), enabled: true } } }) }
+    const savor = { type: 'remote', url: mcpUrl(p.id, thread.id), headers: { Authorization: `Bearer ${store.state().mcpToken}` }, enabled: true }
+    const env = { OPENCODE_CONFIG_CONTENT: JSON.stringify({ mcp: { savor } }) }
     let last = ''
     const activity = new Activity(p, thread.id)
     await runLines(

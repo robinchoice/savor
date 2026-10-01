@@ -30,6 +30,20 @@ export function read(p: Project, rel: string) {
 
 export const write = (p: Project, rel: string, content: string) => fs.writeFileSync(resolve(p, rel), content)
 
+// Whether a write to `rel` would land in Savor's own records (.savor/), following symlinks. A dangling
+// symlink would create its target, so it counts as internal.
+export function internal(p: Project, rel: string) {
+  const file = resolve(p, rel)
+  let target: string
+  try {
+    target = fs.realpathSync(file)
+  } catch {
+    if (fs.lstatSync(file, { throwIfNoEntry: false })?.isSymbolicLink()) return true
+    target = path.join(fs.realpathSync(path.dirname(file)), path.basename(file))
+  }
+  return path.relative(fs.realpathSync(p.path), target).split(path.sep)[0].toLowerCase() === '.savor'
+}
+
 // Name search for @-mentions; walks at most a few thousand entries.
 export function search(p: Project, q: string) {
   const needle = q.toLowerCase()

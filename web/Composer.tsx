@@ -8,7 +8,7 @@ export interface Picked { selector: string; text: string; html: string; styles: 
 interface Props {
   project: Project
   agent: AgentConfig
-  setAgent: (a: AgentConfig) => void
+  setAgent: (a: AgentConfig) => Promise<unknown> | void
   onSend: (text: string, images: string[]) => Promise<void> | void
   busy?: boolean
   onStop?: () => void
@@ -30,6 +30,7 @@ const pickedContext = (picked: Picked[]) =>
 export function Composer(props: Props) {
   const [text, setText] = useState('')
   const [images, setImages] = useState<string[]>([])
+  const [error, setError] = useState('')
   const [popover, setPopover] = useState<'mention' | 'agent' | 'branch' | null>(null)
   const ref = useRef<HTMLTextAreaElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -53,8 +54,17 @@ export function Composer(props: Props) {
     setText('')
     setImages([])
     props.clearPicked?.(-1)
-    await props.onSend(full, images)
+    try {
+      await props.onSend(full, images)
+      setError('')
+    } catch (e) {
+      // Give the input back when the server refuses it, e.g. a setting a paired device may not choose.
+      setText(text)
+      setImages(images)
+      setError((e as Error).message)
+    }
   }
+  const setAgent = (a: AgentConfig) => Promise.resolve(props.setAgent(a)).then(() => setError(''), (e: Error) => setError(e.message))
   const addFiles = async (files: FileList | File[]) => {
     const imgs = [...files].filter((f) => f.type.startsWith('image/'))
     const urls = await Promise.all(imgs.map(readFileAsDataUrl))
@@ -88,6 +98,7 @@ export function Composer(props: Props) {
           ))}
         </div>
       )}
+      {error && <div class="error-text pad">{error}</div>}
       <div class="composer-top">
         <textarea
           ref={ref}
@@ -131,7 +142,7 @@ export function Composer(props: Props) {
             </span>
             <ChevronDown size={14} />
           </button>
-          {popover === 'agent' && <AgentMenu agent={props.agent} setAgent={props.setAgent} close={() => setPopover(null)} />}
+          {popover === 'agent' && <AgentMenu agent={props.agent} setAgent={setAgent} close={() => setPopover(null)} />}
         </div>
         <BranchPicker project={props.project} open={popover === 'branch'} toggle={() => setPopover(popover === 'branch' ? null : 'branch')} />
         <div class="spacer" />

@@ -2,7 +2,7 @@
 // relay in headless Chromium, fake agent. Also checks that the relay only ever sees ciphertext.
 import { test, before, after } from 'node:test'
 import assert from 'node:assert/strict'
-import { spawn } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import fs from 'node:fs'
 import http from 'node:http'
 import net from 'node:net'
@@ -92,6 +92,8 @@ before(async () => {
 after(async () => {
   await browser?.close()
   for (const c of children) c.kill()
+  // The daemon's preview browser and agents outlive it for a moment, and the browser keeps writing its profile.
+  await until(() => !execFileSync('ps', ['-eo', 'args']).toString().includes(TMP))
   fs.rmSync(TMP, { recursive: true, force: true })
 })
 
