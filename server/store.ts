@@ -18,21 +18,27 @@ export interface Project {
 }
 export interface Question { title: string; body: string; options: string[] }
 export type Origin = 'local' | 'remote'
+export interface ApprovalOption { id: string; label: string; kind: 'allow' | 'deny' }
+export interface Approval { title: string; detail: string; options: ApprovalOption[]; status: 'pending' | 'resolved'; choice?: string }
 export interface Message {
   id: string
   ts: string
-  kind: 'user' | 'ack' | 'update' | 'conclusion' | 'error' | 'approval'
+  // 'question' carries an agent's own clarifying questions (decisions) outside a conclusion.
+  kind: 'user' | 'ack' | 'update' | 'conclusion' | 'error' | 'approval' | 'question'
   text?: string
   images?: string[]
+  files?: string[]
   questions?: Question[]
   decisionIds?: string[]
   suggestions?: string[]
   commits?: string[]
-  approval?: { tool: string; input: unknown; status: 'pending' | 'allowed' | 'denied' }
+  approval?: Approval
   modelInfo?: AgentConfig
   workTiming?: { startedAt: string; finishedAt: string }
   origin?: Origin
   device?: string
+  // User messages typed while the agent works wait here until the turn ends (or "Send now").
+  delivered?: boolean
 }
 export interface Thread {
   id: string
@@ -86,12 +92,14 @@ export interface Proc {
 }
 // Devices paired over the LAN get a cookie token (tokenHash), devices paired through the relay a public key.
 export interface Device { id: string; name: string; tokenHash: string; publicKey?: string; createdAt: string; lastSeenAt: string | null }
+export interface Preset { id: string; name: string; agent: AgentConfig }
 
 interface State {
   token: string
   mcpToken: string
   projects: { id: string; path: string }[]
   devices: Device[]
+  presets: Preset[]
   providers: Record<string, { command: string[] }>
   relay: { url: string | null; enabled: boolean }
   // The daemon's long-term X25519 key for the relay tunnel (base64url secret key).
@@ -142,6 +150,7 @@ export function state(): State {
     mcpToken: crypto.randomBytes(24).toString('hex'),
     projects: [],
     devices: [],
+    presets: [],
     providers: {},
     relay: { url: null, enabled: false },
     identity: Buffer.from(crypto.randomBytes(32)).toString('base64url'),
@@ -154,6 +163,24 @@ export function state(): State {
 
 // state.json holds tokens and the daemon key: readable by the owner only.
 export const saveState = (s: State) => writeJson(stateFile, s, 0o600)
+
+// ---- presets ----
+
+export const listPresets = () => state().presets
+
+export function savePreset(name: string, agent: AgentConfig): Preset {
+  const s = state()
+  const preset = { id: newId(), name: name.trim().slice(0, 60), agent }
+  s.presets = [...s.presets.filter((x) => x.name !== preset.name), preset]
+  saveState(s)
+  return preset
+}
+
+export function deletePreset(id: string) {
+  const s = state()
+  s.presets = s.presets.filter((x) => x.id !== id)
+  saveState(s)
+}
 
 // ---- projects ----
 
@@ -269,11 +296,21 @@ export function appendMessage(p: Project, tid: string, m: Omit<Message, 'id' | '
   return msg
 }
 
+const writeMessages = (p: Project, tid: string, msgs: Message[]) =>
+  fs.writeFileSync(path.join(threadDir(p, tid), 'messages.jsonl'), msgs.map((m) => JSON.stringify(m) + '\n').join(''))
+
 export function updateMessage(p: Project, tid: string, id: string, patch: Partial<Message>): Message {
   const msgs = readMessages(p, tid).map((m) => (m.id === id ? { ...m, ...patch } : m))
-  fs.writeFileSync(path.join(threadDir(p, tid), 'messages.jsonl'), msgs.map((m) => JSON.stringify(m) + '\n').join(''))
+  writeMessages(p, tid, msgs)
   return msgs.find((m) => m.id === id)!
 }
+
+export const removeMessage = (p: Project, tid: string, id: string) =>
+  writeMessages(
+    p,
+    tid,
+    readMessages(p, tid).filter((m) => m.id !== id),
+  )
 
 // Activity is append-only: a start line per event, then a {id, finishedAt} line when it ends.
 export function readActivity(p: Project, tid: string): ActivityEvent[] {
@@ -288,13 +325,21 @@ export const appendActivity = (p: Project, tid: string, e: Partial<ActivityEvent
 
 export const attachmentDir = (p: Project, tid: string) => path.join(threadDir(p, tid), 'attachments')
 
-export function saveAttachment(p: Project, tid: string, dataUrl: string): string {
-  const m = dataUrl.match(/^data:image\/(png|jpeg|gif|webp);base64,(.+)$/)
-  if (!m) throw new Error('Only png, jpeg, gif and webp images are supported.')
-  const name = `${newId()}.${m[1] === 'jpeg' ? 'jpg' : m[1]}`
+export const IMAGE_TYPES: Record<string, string> = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp' }
+export const isImage = (name: string) => /\.(png|jpe?g|gif|webp)$/i.test(name)
+
+// Stores an attachment as <id>-<original name> and says whether it is an image the agent can look at.
+export function saveAttachment(p: Project, tid: string, file: { name: string; dataUrl: string }): { name: string; image: boolean } {
+  const m = String(file.dataUrl).match(/^data:([\w.+-]+\/[\w.+-]+)?(?:;[^,]*)?;base64,(.+)$/)
+  if (!m) throw new Error('Attachments must be sent as base64 data URLs.')
+  const data = Buffer.from(m[2], 'base64')
+  if (data.length > 20 * 1024 * 1024) throw new Error('Attachments are limited to 20 MB.')
+  const ext = IMAGE_TYPES[m[1] ?? '']
+  const base = path.basename(String(file.name || 'file')).replace(/[^\w.+-]+/g, '_').slice(0, 80) || 'file'
+  const name = `${newId()}-${ext && !isImage(base) ? `${base}.${ext}` : base}`
   fs.mkdirSync(attachmentDir(p, tid), { recursive: true })
-  fs.writeFileSync(path.join(attachmentDir(p, tid), name), Buffer.from(m[2], 'base64'))
-  return name
+  fs.writeFileSync(path.join(attachmentDir(p, tid), name), data)
+  return { name, image: !!ext || isImage(base) }
 }
 
 // ---- decisions ----

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks'
-import { ArrowUp, AtSign, ChevronDown, FileText, GitBranch, Plus, Square, Workflow as WorkflowIcon, X, Zap, Crosshair } from 'lucide-preact'
-import { api, agentSummary, cap, PROVIDERS, readFileAsDataUrl, type AgentConfig, type Project, type Workflow } from './api'
+import { ArrowUp, AtSign, Bookmark, ChevronDown, FileText, GitBranch, ListPlus, Plus, Square, Trash2, Workflow as WorkflowIcon, X, Zap, Crosshair } from 'lucide-preact'
+import { api, agentSummary, cap, PROVIDER_NAMES, readFileAsDataUrl, useAgents, useApi, type AgentConfig, type Attachment, type Project, type ProviderInfo, type Preset, type Workflow } from './api'
 import { ProviderIcon } from './Conversations'
 
 export interface Picked { selector: string; text: string; html: string; styles: Record<string, string>; url: string }
@@ -9,7 +9,7 @@ interface Props {
   project: Project
   agent: AgentConfig
   setAgent: (a: AgentConfig) => Promise<unknown> | void
-  onSend: (text: string, images: string[]) => Promise<void> | void
+  onSend: (text: string, attachments: Attachment[]) => Promise<void> | void
   busy?: boolean
   onStop?: () => void
   placeholder: string
@@ -18,6 +18,8 @@ interface Props {
   clearPicked?: (i: number) => void // -1 clears all
   autoFocus?: boolean
 }
+
+const MAX_FILES = 8
 
 const pickedContext = (picked: Picked[]) =>
   picked
@@ -29,11 +31,13 @@ const pickedContext = (picked: Picked[]) =>
 
 export function Composer(props: Props) {
   const [text, setText] = useState('')
-  const [images, setImages] = useState<string[]>([])
+  const [files, setFiles] = useState<(Attachment & { image: boolean })[]>([])
   const [error, setError] = useState('')
   const [popover, setPopover] = useState<'mention' | 'agent' | 'branch' | null>(null)
   const ref = useRef<HTMLTextAreaElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+  const agents = useAgents()
+  const info = agents?.find((a) => a.id === props.agent.provider)
 
   useEffect(() => {
     if (props.draft !== undefined) {
@@ -47,28 +51,31 @@ export function Composer(props: Props) {
     el.style.height = Math.min(el.scrollHeight, 320) + 'px'
   }, [text])
 
-  const canSend = !!(text.trim() || images.length)
+  const canSend = !!(text.trim() || files.length)
   const submit = async () => {
     if (!canSend) return
     const full = text + pickedContext(props.picked ?? [])
     setText('')
-    setImages([])
+    setFiles([])
     props.clearPicked?.(-1)
     try {
-      await props.onSend(full, images)
+      await props.onSend(full, files.map(({ name, dataUrl }) => ({ name, dataUrl })))
       setError('')
     } catch (e) {
       // Give the input back when the server refuses it, e.g. a setting a paired device may not choose.
       setText(text)
-      setImages(images)
+      setFiles(files)
       setError((e as Error).message)
     }
   }
   const setAgent = (a: AgentConfig) => Promise.resolve(props.setAgent(a)).then(() => setError(''), (e: Error) => setError(e.message))
-  const addFiles = async (files: FileList | File[]) => {
-    const imgs = [...files].filter((f) => f.type.startsWith('image/'))
-    const urls = await Promise.all(imgs.map(readFileAsDataUrl))
-    setImages((prev) => [...prev, ...urls])
+  // Dropped files also get their name in the text, so the agent knows which attachment is meant.
+  const addFiles = async (list: FileList | File[], mention = false) => {
+    const picked = [...list].slice(0, MAX_FILES - files.length)
+    if (picked.length < list.length) setError(`Attach up to ${MAX_FILES} files per message.`)
+    const added = await Promise.all(picked.map(async (f) => ({ name: f.name, dataUrl: await readFileAsDataUrl(f), image: f.type.startsWith('image/') })))
+    setFiles((prev) => [...prev, ...added])
+    if (mention) setText((t) => (t && !/\s$/.test(t) ? t + ' ' : t) + added.map((f) => `[${f.name}]`).join(' ') + ' ')
   }
   const insert = (s: string) => {
     setText((t) => (t && !t.endsWith(' ') ? t + ' ' : t) + s + ' ')
@@ -77,17 +84,26 @@ export function Composer(props: Props) {
   }
 
   return (
-    <div class="composer" onDragOver={(e) => e.preventDefault()} onDrop={(e) => (e.preventDefault(), addFiles(e.dataTransfer?.files ?? []))}>
-      {(images.length > 0 || (props.picked?.length ?? 0) > 0) && (
+    <div class="composer" onDragOver={(e) => e.preventDefault()} onDrop={(e) => (e.preventDefault(), addFiles(e.dataTransfer?.files ?? [], true))}>
+      {(files.length > 0 || (props.picked?.length ?? 0) > 0) && (
         <div class="attachments">
-          {images.map((src, i) => (
-            <span key={i} class="thumb">
-              <img src={src} alt="" />
-              <button onClick={() => setImages(images.filter((_, j) => j !== i))} aria-label="Remove">
-                <X size={12} />
-              </button>
-            </span>
-          ))}
+          {files.map((f, i) =>
+            f.image ? (
+              <span key={i} class="thumb" title={f.name}>
+                <img src={f.dataUrl} alt="" />
+                <button onClick={() => setFiles(files.filter((_, j) => j !== i))} aria-label="Remove">
+                  <X size={12} />
+                </button>
+              </span>
+            ) : (
+              <span key={i} class="chip-ctx" title={f.name}>
+                <FileText size={13} /> {f.name}
+                <button onClick={() => setFiles(files.filter((_, j) => j !== i))} aria-label="Remove">
+                  <X size={12} />
+                </button>
+              </span>
+            ),
+          )}
           {props.picked?.map((p, i) => (
             <span key={i} class="chip-ctx" title={p.html}>
               <Crosshair size={13} /> {p.selector.split(' > ').slice(-1)[0]}
@@ -108,10 +124,10 @@ export function Composer(props: Props) {
           placeholder={props.placeholder}
           onInput={(e) => setText(e.currentTarget.value)}
           onPaste={(e) => {
-            const files = [...(e.clipboardData?.files ?? [])]
-            if (files.length) {
+            const pasted = [...(e.clipboardData?.files ?? [])]
+            if (pasted.length) {
               e.preventDefault()
-              addFiles(files)
+              addFiles(pasted)
             }
           }}
           onKeyDown={(e) => {
@@ -129,20 +145,20 @@ export function Composer(props: Props) {
         </div>
       </div>
       <div class="composer-bottom">
-        <button class="icon-btn" title="Attach images" onClick={() => fileRef.current?.click()}>
+        <button class="icon-btn" title="Attach files" onClick={() => fileRef.current?.click()}>
           <Plus size={18} />
         </button>
-        <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={(e) => addFiles(e.currentTarget.files ?? [])} />
+        <input ref={fileRef} type="file" multiple hidden onChange={(e) => (addFiles(e.currentTarget.files ?? []), (e.currentTarget.value = ''))} />
         <div class="menu-anchor">
           <button class="agent-btn" onClick={() => setPopover(popover === 'agent' ? null : 'agent')}>
             <ProviderIcon provider={props.agent.provider} />
             <span>
-              <b>{PROVIDERS[props.agent.provider]?.name ?? props.agent.provider}</b>
-              <small>{agentSummary(props.agent)}</small>
+              <b>{PROVIDER_NAMES[props.agent.provider] ?? props.agent.provider}</b>
+              <small>{agentSummary(props.agent, info)}</small>
             </span>
             <ChevronDown size={14} />
           </button>
-          {popover === 'agent' && <AgentMenu agent={props.agent} setAgent={setAgent} close={() => setPopover(null)} />}
+          {popover === 'agent' && <AgentMenu agent={props.agent} agents={agents ?? []} setAgent={setAgent} close={() => setPopover(null)} />}
         </div>
         <BranchPicker project={props.project} open={popover === 'branch'} toggle={() => setPopover(popover === 'branch' ? null : 'branch')} />
         <div class="spacer" />
@@ -151,8 +167,8 @@ export function Composer(props: Props) {
             <Square size={13} />
           </button>
         )}
-        <button class="send" title="Send" disabled={!canSend} onClick={submit}>
-          <ArrowUp size={16} />
+        <button class="send" title={props.busy ? 'Queue (Enter): sent after the current turn' : 'Send'} disabled={!canSend} onClick={submit}>
+          {props.busy ? <ListPlus size={16} /> : <ArrowUp size={16} />}
         </button>
       </div>
     </div>
@@ -188,37 +204,54 @@ function MentionMenu({ project, onPick }: { project: Project; onPick: (s: string
   )
 }
 
-const PERMISSION_MODES = [
-  ['acceptEdits', 'Ask before commands'],
-  ['auto', 'Auto'],
-  ['manual', 'Ask for everything'],
-  ['plan', 'Plan only'],
-  ['bypassPermissions', 'Full access'],
-]
-
-function AgentMenu({ agent, setAgent, close }: { agent: AgentConfig; setAgent: (a: AgentConfig) => void; close: () => void }) {
-  const info = PROVIDERS[agent.provider]
+function AgentMenu({ agent, agents, setAgent, close }: { agent: AgentConfig; agents: ProviderInfo[]; setAgent: (a: AgentConfig) => void; close: () => void }) {
+  const info = agents.find((a) => a.id === agent.provider)
+  const [presets] = useApi<Preset[]>('/presets', (e) => e.type === 'presets')
+  const [presetName, setPresetName] = useState('')
+  const [error, setError] = useState('')
   const set = (patch: Partial<AgentConfig>) => setAgent({ ...agent, ...patch })
+  const choose = (p: ProviderInfo) => set({ provider: p.id, model: '', reasoning: p.defaultEffort, fast: false, permissionMode: p.defaultMode })
+  const efforts = info?.models.find((m) => m.id === agent.model)?.efforts ?? info?.efforts ?? []
+  const savePreset = async () => {
+    try {
+      await api('POST', '/presets', { name: presetName, agent })
+      setPresetName('')
+      setError('')
+    } catch (e) {
+      setError((e as Error).message)
+    }
+  }
+  const status = (p: ProviderInfo) => (!p.installed ? 'not installed' : p.signedIn === false ? `sign in: ${p.signIn}` : p.account ?? p.version ?? '')
+
   return (
     <div class="menu up agent-menu">
       <div class="menu-label">Agent</div>
-      {Object.entries(PROVIDERS).map(([id, p]) => (
-        <button key={id} class={agent.provider === id ? 'selected' : ''} onClick={() => set({ provider: id, model: '', reasoning: p.reasoning.includes(agent.reasoning) ? agent.reasoning : p.reasoning.at(-2) ?? '' })}>
-          <ProviderIcon provider={id} /> {p.name}
+      {(agents.length ? agents : Object.entries(PROVIDER_NAMES).map(([id, name]) => ({ id, name }) as ProviderInfo)).map((p) => (
+        <button key={p.id} class={agent.provider === p.id ? 'selected' : ''} onClick={() => (p.modes ? choose(p) : set({ provider: p.id, model: '' }))}>
+          <ProviderIcon provider={p.id} />
+          <span>
+            {p.name}
+            {p.modes && <small class="status">{status(p)}</small>}
+          </span>
         </button>
       ))}
       <div class="menu-label">Model</div>
-      <input list="savor-models" placeholder="Default" value={agent.model} onInput={(e) => set({ model: e.currentTarget.value })} />
-      <datalist id="savor-models">
-        {info?.models.filter(Boolean).map((m) => (
-          <option key={m} value={m} />
-        ))}
-      </datalist>
-      {info?.reasoning.length ? (
+      {info?.models.length ? (
+        <select value={agent.model} onChange={(e) => set({ model: e.currentTarget.value })}>
+          {info.models.map((m) => (
+            <option key={m.id} value={m.id} title={m.detail}>
+              {m.label}
+            </option>
+          ))}
+        </select>
+      ) : (
+        <input placeholder="Default" value={agent.model} onInput={(e) => set({ model: e.currentTarget.value })} />
+      )}
+      {efforts.length ? (
         <>
-          <div class="menu-label">Reasoning</div>
+          <div class="menu-label">Effort</div>
           <div class="segmented">
-            {info.reasoning.map((r) => (
+            {efforts.map((r) => (
               <button key={r} class={agent.reasoning === r ? 'selected' : ''} onClick={() => set({ reasoning: r })}>
                 {cap(r)}
               </button>
@@ -226,20 +259,56 @@ function AgentMenu({ agent, setAgent, close }: { agent: AgentConfig; setAgent: (
           </div>
         </>
       ) : null}
-      {agent.provider === 'claude' && (
+      {info?.fast && (
         <label class="toggle-row">
           <Zap size={14} /> Fast mode
           <input type="checkbox" checked={agent.fast} onChange={(e) => set({ fast: e.currentTarget.checked })} />
         </label>
       )}
-      <div class="menu-label">Permissions</div>
-      <select value={agent.permissionMode} onChange={(e) => set({ permissionMode: e.currentTarget.value })}>
-        {PERMISSION_MODES.map(([v, l]) => (
-          <option key={v} value={v}>
-            {l}
-          </option>
-        ))}
-      </select>
+      {info?.modes.length ? (
+        <>
+          <div class="menu-label">Permissions</div>
+          <select value={agent.permissionMode} onChange={(e) => set({ permissionMode: e.currentTarget.value })} title={info.modes.find((m) => m.id === agent.permissionMode)?.detail}>
+            {info.modes.map((m) => (
+              <option key={m.id} value={m.id} title={m.detail}>
+                {m.label}
+                {m.unsafe ? ' ⚠' : ''}
+              </option>
+            ))}
+          </select>
+          <small class="status pad">{info.modes.find((m) => m.id === agent.permissionMode)?.detail}</small>
+        </>
+      ) : null}
+      <div class="menu-label">Presets</div>
+      {presets?.map((p) => (
+        <div class="preset-row" key={p.id}>
+          <button class={JSON.stringify(p.agent) === JSON.stringify(agent) ? 'selected' : ''} onClick={() => setAgent(p.agent)}>
+            <Bookmark size={14} />
+            <span>
+              {p.name}
+              <small>
+                {PROVIDER_NAMES[p.agent.provider] ?? p.agent.provider} · {agentSummary(p.agent, agents.find((a) => a.id === p.agent.provider))}
+              </small>
+            </span>
+          </button>
+          <button class="icon-btn" title="Remove preset" onClick={() => api('DELETE', `/presets/${p.id}`).catch((e: Error) => setError(e.message))}>
+            <Trash2 size={14} />
+          </button>
+        </div>
+      ))}
+      <form
+        class="menu-form"
+        onSubmit={(e) => {
+          e.preventDefault()
+          savePreset()
+        }}
+      >
+        <input placeholder="Save as preset…" value={presetName} onInput={(e) => setPresetName(e.currentTarget.value)} />
+        <button class="primary" disabled={!presetName.trim()}>
+          Save
+        </button>
+      </form>
+      {error && <div class="error-text pad">{error}</div>}
       <button class="primary done" onClick={close}>
         Done
       </button>

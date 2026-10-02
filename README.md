@@ -51,10 +51,11 @@
 - **Projects as tabs**, each with its own color. Badges show which agents are working and which conversations need you.
 - **Conversations**: every task gets its own agent session. You can send new messages while an agent is working; Claude Code picks them up in the running turn. Turns the agent starts on its own, for example when a background task finishes, show up as working too. You get search, filters (All / Needs you / Working / Unread), colored labels, "Mark as completed" and a "Show completed" toggle.
 - **Message protocol over MCP**: one acknowledgement and one conclusion per input, idempotent updates. Agents send acknowledgements, results, blocking questions, "potential next actions" and commit hashes. Their raw output goes to an activity log (thinking, commands, edits, tool calls, with durations).
-- **Questions**: questions become decision records with options and a free-text answer. You answer them all in one reply.
-- **Agent picker per conversation**: agent, model, reasoning level, fast mode and permissions. You can switch agents mid-conversation, and the new agent gets the visible history handed over.
-- **Image attachments** by picker, paste or drag-and-drop. **@-mentions** for files and workflows. A **git branch switcher**.
-- **Approvals**: Claude Code permission prompts appear in the conversation as Allow/Deny.
+- **Questions**: questions become decision records with options and a free-text answer. You answer them all in one reply. An agent's own clarifying questions (Claude's `AskUserQuestion`, Codex's user input requests) show up the same way.
+- **Queue**: messages you send while the agent works wait as *Queued* and go out after the turn, or right away with "Stop work and send now".
+- **Agent picker per conversation**: agent, model, reasoning level, fast mode and permissions, with the models and modes each installed agent actually offers. Save a combination as a **preset**. You can switch agents mid-conversation, and the new agent gets the visible history handed over.
+- **Attachments**: images and files by picker, paste or drag-and-drop (up to 8 per message). **@-mentions** for files and workflows. A **git branch switcher**. **Find in conversation** with Ctrl/⌘F.
+- **Approvals**: permission prompts from Claude Code, Codex and ACP agents appear in the conversation with the agent's own options (Allow, Always allow, Allow for this session, Deny).
 - **Files**: a project file browser and editor, plus markdown documents that both you and the agents write.
 - **Workflows**: saved prompts on a cron schedule, which can be chained. Each run starts a new conversation.
 - **Project settings**: `ROLE.md` instructions for every agent, verbosity, pause (skips scheduled runs), color and default agent.
@@ -155,16 +156,22 @@ Without a connected relay, the pairing QR code points at `SAVOR_PUBLIC_URL`.
 | `RELAY_TRUST_PROXY` | off | Relay only: set to `1` behind a reverse proxy, so rate limits use `X-Forwarded-For` |
 | `RELAY_MAX_DAEMONS` | `5000` | Relay only: computers that can be connected at once |
 | `SAVOR_CHROMIUM` | Playwright Chromium, then system Chrome/Chromium | Browser for the preview |
-| `SAVOR_CLAUDE_BIN`, `SAVOR_CODEX_BIN`, `SAVOR_OPENCODE_BIN`, `SAVOR_GROK_BIN`, `SAVOR_ANTIGRAVITY_BIN` | CLI name | Agent binaries |
+| `SAVOR_CLAUDE_BIN`, `SAVOR_CODEX_BIN`, `SAVOR_OPENCODE_BIN`, `SAVOR_GROK_BIN`, `SAVOR_ANTIGRAVITY_BIN` | `claude`, `codex`, `opencode`, `grok`, `agy` | Agent binaries |
 
-Grok Build and Antigravity run a configurable command, because their headless interfaces aren't stable yet. Set it in `~/.savor/state.json` with `"providers": { "grok": { "command": ["grok", "-p", "{prompt}"] } }`. Their stdout becomes the result, and `SAVOR_MCP_URL` with the bearer token `SAVOR_MCP_TOKEN` points them at Savor's MCP server.
+Antigravity has no stable headless protocol yet, so it runs a configurable command. Set it in `~/.savor/state.json` with `"providers": { "antigravity": { "command": ["agy", "-p", "{prompt}"] } }`. Its stdout becomes the result, and `SAVOR_MCP_URL` with the bearer token `SAVOR_MCP_TOKEN` points it at Savor's MCP server.
 
 ## How it works
 
 ```
 server/
   index.ts      HTTP API, SSE events, static UI, MCP endpoint
-  agents.ts     agent adapters, protocol prompt, activity log
+  agents.ts     turns, the queue, approvals and questions
+  session.ts    what every agent adapter gets (Host) and provides (Session), protocol prompt, activity log
+  claude.ts     Claude Code over stream-json with stdio permission prompts
+  codex.ts      Codex over the app-server protocol (JSON-RPC)
+  acp.ts        OpenCode and Grok Build over the Agent Client Protocol
+  jsonrpc.ts    newline-delimited JSON-RPC over stdio
+  providers.ts  what each agent offers, and whether it is installed and signed in
   mcp.ts        MCP tools the agents call
   store.ts      file storage
   devices.ts    owner token, device pairing, request origin
@@ -183,8 +190,10 @@ desktop/        Electron shell and installers (electron-builder)
 test/           end-to-end tests with a fake agent
 ```
 
-- **Claude Code** runs as one long-lived `claude -p --input-format stream-json` process per conversation. Savor attaches its own MCP server and routes permission prompts through `--permission-prompt-tool`. The process stays alive while the conversation owns background processes and closes 5 minutes after the last activity. A change of model, effort, fast mode or permissions restarts it with `--resume`.
-- **Codex** (`codex exec --json`) and **OpenCode** (`opencode run --format json`) run once per turn and resume their own session.
+- Every conversation gets one long-lived agent process. It stays alive while the conversation owns background processes and closes 5 minutes after the last activity. A change of agent, model, effort, fast mode or permissions restarts it and resumes the agent's own session.
+- **Claude Code** runs as `claude -p --input-format stream-json` with `--permission-prompts host --permission-prompt-tool stdio`: permission prompts and `AskUserQuestion` arrive as control requests on stdout and are answered on stdin. "Always allow" writes the rule Claude suggests to `.claude/settings.local.json`.
+- **Codex** runs as `codex app-server` (JSON-RPC over stdio): `thread/start`, `turn/start`, `turn/interrupt`, approvals through `item/commandExecution/requestApproval` and `item/fileChange/requestApproval`, questions through `item/tool/requestUserInput`. The permission modes map to Codex's sandbox and approval policy; models and effort levels come from `model/list`.
+- **OpenCode** (`opencode acp`) and **Grok Build** (`grok agent stdio`) speak the [Agent Client Protocol](https://agentclientprotocol.com): `session/new`, `session/prompt`, progress through `session/update`, approvals through `session/request_permission`, interrupts through `session/cancel`.
 
 Project layout:
 

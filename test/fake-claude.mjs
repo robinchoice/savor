@@ -1,9 +1,13 @@
 #!/usr/bin/env node
 // Stand-in for `claude -p --input-format stream-json` used by the end-to-end tests. It speaks the
-// same stream-json protocol and answers through Savor's MCP tools:
+// same stream-json protocol (user messages in, events and control requests out) and answers through
+// Savor's MCP tools:
 // - "ask: <question>" → conclusion with that question and the options Yes/No
-// - "approve: <anything>" → asks for permission via approve_tool, then concludes with the verdict
+// - "approve: <anything>" → permission prompt via a can_use_tool control request, then the verdict
+// - "native-ask: <question>" → an AskUserQuestion control request with the options Blue/Green
+// - "slow: <text>" → acknowledges, waits 1.5 s (or until interrupted), then echoes
 // - anything else → acknowledgement plus a conclusion echoing the input with one suggestion
+// `--version` and `auth status` answer like the real CLI, so Savor lists the fake as installed.
 import readline from 'node:readline'
 import crypto from 'node:crypto'
 import fs from 'node:fs'
@@ -11,6 +15,14 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 
 const args = process.argv.slice(2)
+if (args[0] === '--version') {
+  console.log('9.9.9 (Fake Claude)')
+  process.exit(0)
+}
+if (args[0] === 'auth' && args[1] === 'status') {
+  console.log(JSON.stringify({ loggedIn: true, email: 'fake@claude.test' }))
+  process.exit(0)
+}
 const config = args[args.indexOf('--mcp-config') + 1]
 const mcp = JSON.parse(fs.readFileSync(config, 'utf8')).mcpServers.savor
 if (process.env.FAKE_AGENT_LOG) fs.appendFileSync(process.env.FAKE_AGENT_LOG, JSON.stringify({ agent: 'claude', argv: process.argv, configMode: fs.statSync(config).mode & 0o777 }) + '\n')
@@ -21,24 +33,65 @@ const client = new Client({ name: 'fake-claude', version: '1' })
 await client.connect(new StreamableHTTPClientTransport(new URL(mcp.url), { requestInit: { headers: mcp.headers } }))
 const call = async (name, a) => JSON.parse((await client.callTool({ name, arguments: a })).content[0].text)
 
+const controls = new Map() // request_id → resolve(response)
+const control = (request) =>
+  new Promise((resolve) => {
+    const request_id = crypto.randomUUID()
+    controls.set(request_id, resolve)
+    out({ type: 'control_request', request_id, request })
+  })
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+
 let started = false
-for await (const line of readline.createInterface({ input: process.stdin })) {
-  const text = JSON.parse(line).message.content[0].text
+let interrupted = false
+
+async function turn(text) {
   const input = text.slice(text.indexOf('New input:\n') + 'New input:\n'.length).trim()
   if (!started) out({ type: 'system', subtype: 'init', session_id: sessionId })
   started = true
+  interrupted = false
   out({ type: 'assistant', message: { content: [{ type: 'text', text: 'working' }] } })
 
   if (text.includes('"threadLabel":null')) await call('set_thread_label', { label: 'Fake agent test' })
   if (input.startsWith('ask:')) {
     await call('send_conclusion_message', { text: 'One question first.', questions: [{ title: input.slice(4).trim(), body: '', options: ['Yes', 'No'] }] })
   } else if (input.startsWith('approve:')) {
-    const verdict = await call('approve_tool', { tool_name: 'Bash', input: { command: 'rm -rf build' } })
-    await call('send_conclusion_message', { text: `Permission: ${verdict.behavior}` })
+    const verdict = await control({
+      subtype: 'can_use_tool',
+      tool_name: 'Bash',
+      input: { command: 'rm -rf build' },
+      permission_suggestions: [{ type: 'addRules', rules: [{ toolName: 'Bash', ruleContent: 'rm -rf build' }], behavior: 'allow', destination: 'localSettings' }],
+      tool_use_id: 'toolu_fake',
+    })
+    await call('send_conclusion_message', { text: `Permission: ${verdict.behavior}${verdict.updatedPermissions?.length ? ' always' : ''}` })
+  } else if (input.startsWith('native-ask:')) {
+    const question = input.slice('native-ask:'.length).trim()
+    const verdict = await control({
+      subtype: 'can_use_tool',
+      tool_name: 'AskUserQuestion',
+      input: { questions: [{ question, header: 'Pick', options: [{ label: 'Blue', description: '' }, { label: 'Green', description: '' }], multiSelect: false }] },
+      tool_use_id: 'toolu_ask',
+    })
+    await call('send_conclusion_message', { text: `Answered: ${verdict.updatedInput?.answers?.[question] ?? verdict.behavior}` })
+  } else if (input.startsWith('slow:')) {
+    await call('send_acknowledgement_message', { text: 'On it.' })
+    await sleep(1500)
+    if (!interrupted) await call('send_conclusion_message', { text: `Echo: ${input.slice(5).trim()}` })
   } else {
     await call('send_acknowledgement_message', { text: 'On it.' })
     await call('send_conclusion_message', { text: `Echo: ${input}`, suggestions: ['Do it again'] })
   }
-  out({ type: 'result', subtype: 'success', is_error: false, result: 'done' })
+  out({ type: 'result', subtype: interrupted ? 'success' : 'success', is_error: false, result: 'done' })
 }
-await client.close()
+
+const rl = readline.createInterface({ input: process.stdin })
+rl.on('line', (line) => {
+  const msg = JSON.parse(line)
+  if (msg.type === 'control_response') return controls.get(msg.response.request_id)?.(msg.response.response)
+  if (msg.type === 'control_request') {
+    if (msg.request.subtype === 'interrupt') interrupted = true
+    return out({ type: 'control_response', response: { subtype: 'success', request_id: msg.request_id, response: {} } })
+  }
+  if (msg.type === 'user') turn(msg.message.content[0].text)
+})
+rl.on('close', () => client.close().then(() => process.exit(0)))

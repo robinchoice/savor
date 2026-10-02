@@ -3,10 +3,10 @@ import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import {
   Asterisk, Hexagon, Code2, Sparkles, Orbit, Plus, Search, Layers, MessageSquare, Check, MoreHorizontal, PanelRight, FileText, Flag,
-  CircleAlert, ArrowUp, ArrowLeft, Pencil, Brain, Terminal, Wrench, ArrowRight, MessageSquareMore, Smartphone, Monitor, ShieldQuestion, CircleCheck,
+  CircleAlert, ArrowUp, ArrowLeft, Pencil, Brain, Terminal, Wrench, ArrowRight, MessageSquareMore, Smartphone, Monitor, ShieldQuestion, CircleCheck, X, ChevronUp, ChevronDown, Paperclip,
 } from 'lucide-preact'
 import {
-  api, duration, formatDay, formatTime, go, PROVIDERS, useApi, type ActivityEvent, type AgentConfig, type Decision, type Message, type Proc, type Project, type Thread,
+  api, duration, formatDay, formatTime, go, PROVIDER_NAMES, useApi, type ActivityEvent, type AgentConfig, type Attachment, type Decision, type Message, type Proc, type Project, type Thread,
 } from './api'
 import { Composer, type Picked } from './Composer'
 import { transport } from './transport'
@@ -109,7 +109,7 @@ function ThreadCard({ project, thread: t, active }: { project: Project; thread: 
   useEffect(() => {
     if (t.needsYou) api<{ decisions: Decision[]; messages: Message[] }>('GET', `/projects/${project.id}/threads/${t.id}`).then((d) => {
       const pendingApproval = d.messages.find((m) => m.approval?.status === 'pending')
-      setFirstOpen(d.decisions.find((x) => !x.resolved)?.title ?? (pendingApproval ? `Allow ${pendingApproval.approval!.tool}?` : null))
+      setFirstOpen(d.decisions.find((x) => !x.resolved)?.title ?? pendingApproval?.approval?.title ?? null)
     })
   }, [t.needsYou, t.updatedAt])
   const href = `#/p/${project.id}/t/${t.id}`
@@ -125,7 +125,7 @@ function ThreadCard({ project, thread: t, active }: { project: Project; thread: 
       <div class="card-title">{t.title}</div>
       <div class="card-meta">
         <span>
-          {PROVIDERS[t.agent.provider]?.name} · {formatDay(t.updatedAt)}
+          {PROVIDER_NAMES[t.agent.provider] ?? t.agent.provider} · {formatDay(t.updatedAt)}
         </span>
         {t.completed && (
           <span class="completed-badge">
@@ -152,8 +152,8 @@ function ThreadCard({ project, thread: t, active }: { project: Project; thread: 
 
 function NewConversation({ project }: { project: Project }) {
   const [agent, setAgent] = useState<AgentConfig>(project.agent)
-  const send = async (text: string, images: string[]) => {
-    const t = await api<Thread>('POST', `/projects/${project.id}/threads`, { text, images, agent })
+  const send = async (text: string, attachments: Attachment[]) => {
+    const t = await api<Thread>('POST', `/projects/${project.id}/threads`, { text, attachments, agent })
     go(`/p/${project.id}/t/${t.id}`)
   }
   return (
@@ -179,19 +179,43 @@ function ThreadView({ project, threadId }: { project: Project; threadId: string 
   const [draft, setDraft] = useState<string>()
   const [picked, setPicked] = useState<Picked[]>([])
   const [menu, setMenu] = useState(false)
+  const [find, setFind] = useState<{ open: boolean; q: string; at: number }>({ open: false, q: '', at: 0 })
   const listRef = useRef<HTMLDivElement>(null)
+  const findRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (data?.thread.preview && panel === null) setPanel('preview')
   }, [data?.thread.preview])
   useEffect(() => {
     const el = listRef.current
-    if (el) requestAnimationFrame(() => (el.scrollTop = el.scrollHeight))
+    if (el && !find.open) requestAnimationFrame(() => (el.scrollTop = el.scrollHeight))
   }, [data?.messages.length, data?.busy, panel])
+  // Ctrl/⌘F searches the conversation instead of the page.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f' && !e.shiftKey) {
+        e.preventDefault()
+        setFind((f) => ({ ...f, open: true }))
+        setTimeout(() => findRef.current?.select())
+      }
+    }
+    addEventListener('keydown', onKey)
+    return () => removeEventListener('keydown', onKey)
+  }, [])
+
+  const matches = useMemo(() => {
+    const q = find.q.trim().toLowerCase()
+    if (!find.open || !q || !data) return []
+    return data.messages.filter((m) => (m.text ?? '').toLowerCase().includes(q) || m.approval?.title.toLowerCase().includes(q)).map((m) => m.id)
+  }, [find.open, find.q, data?.messages])
+  const currentMatch = matches.length ? matches[((find.at % matches.length) + matches.length) % matches.length] : null
+  useEffect(() => {
+    if (currentMatch) document.getElementById(`msg-${currentMatch}`)?.scrollIntoView({ block: 'center' })
+  }, [currentMatch])
 
   if (!data) return <section class="thread" />
   const { thread, messages, decisions, busy } = data
-  const send = (text: string, images: string[] = []) => api('POST', `${base}/messages`, { text, images })
+  const send = (text: string, attachments: Attachment[] = []) => api('POST', `${base}/messages`, { text, attachments })
   const setAgent = (agent: AgentConfig) => api('PATCH', base, { agent })
   const patch = (b: object) => api('PATCH', base, b)
 
@@ -201,6 +225,7 @@ function ThreadView({ project, threadId }: { project: Project; threadId: string 
   const lastConclusion = [...messages].reverse().find((m) => m.kind === 'conclusion')
   const showNext = !busy && last?.kind === 'conclusion' && !openDecisions && last.suggestions?.length
   const canComplete = !busy && !thread.completed && last?.kind === 'conclusion' && !openDecisions
+  const queued = messages.filter((m) => m.kind === 'user' && m.delivered === false).length
   const status = busy
     ? { icon: <Layers size={13} />, text: 'Working', cls: 'working' }
     : thread.needsYou
@@ -221,6 +246,7 @@ function ThreadView({ project, threadId }: { project: Project; threadId: string 
     await api('DELETE', base)
     go(`/p/${project.id}`)
   }
+  const step = (dir: 1 | -1) => setFind((f) => ({ ...f, at: f.at + dir }))
 
   return (
     <div class="thread-layout">
@@ -235,6 +261,7 @@ function ThreadView({ project, threadId }: { project: Project; threadId: string 
               <span class={`status ${status.cls}`}>
                 {status.icon} {status.text}
               </span>
+              {queued > 0 && <span class="status">{queued} queued</span>}
               <span class="path">
                 <FileText size={12} /> .savor/threads/{thread.id}/messages.jsonl
               </span>
@@ -245,6 +272,9 @@ function ThreadView({ project, threadId }: { project: Project; threadId: string 
               <Check size={17} />
             </button>
             <div class="group">
+              <button class={`square ${find.open ? 'on' : ''}`} title="Find in conversation (Ctrl+F)" onClick={() => setFind({ ...find, open: !find.open })}>
+                <Search size={17} />
+              </button>
               <div class="menu-anchor">
                 <button class="square" title="More" onClick={() => setMenu(!menu)}>
                   <MoreHorizontal size={17} />
@@ -266,6 +296,32 @@ function ThreadView({ project, threadId }: { project: Project; threadId: string 
             </div>
           </div>
         </header>
+        {find.open && (
+          <div class="find-bar">
+            <Search size={14} />
+            <input
+              ref={findRef}
+              autoFocus
+              placeholder="Find in conversation…"
+              value={find.q}
+              onInput={(e) => setFind({ open: true, q: e.currentTarget.value, at: 0 })}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') step(e.shiftKey ? -1 : 1)
+                if (e.key === 'Escape') setFind({ open: false, q: '', at: 0 })
+              }}
+            />
+            <span class="count">{find.q.trim() ? (matches.length ? `${matches.indexOf(currentMatch!) + 1} of ${matches.length}` : 'No matches') : ''}</span>
+            <button class="icon-btn" title="Older match (Shift+Enter)" disabled={!matches.length} onClick={() => step(-1)}>
+              <ChevronUp size={16} />
+            </button>
+            <button class="icon-btn" title="Newer match (Enter)" disabled={!matches.length} onClick={() => step(1)}>
+              <ChevronDown size={16} />
+            </button>
+            <button class="icon-btn" title="Close (Esc)" onClick={() => setFind({ open: false, q: '', at: 0 })}>
+              <X size={16} />
+            </button>
+          </div>
+        )}
 
         <div class="messages" ref={listRef}>
           {messages.map((m, i) => (
@@ -274,8 +330,10 @@ function ThreadView({ project, threadId }: { project: Project; threadId: string 
               m={m}
               thread={thread}
               decisions={decisions.filter((d) => m.decisionIds?.includes(d.id))}
-              active={i > lastUser}
+              active={i > lastUser || m.kind === 'question'}
               base={base}
+              highlight={find.open ? find.q.trim() : ''}
+              match={matches.includes(m.id) ? (m.id === currentMatch ? 'current' : 'match') : ''}
             />
           ))}
           {busy && (
@@ -321,7 +379,7 @@ function ThreadView({ project, threadId }: { project: Project; threadId: string 
           onSend={send}
           busy={busy}
           onStop={() => api('POST', `${base}/stop`)}
-          placeholder="Add a follow-up..."
+          placeholder={busy ? 'Add a follow-up (queued until the agent is done)…' : 'Add a follow-up...'}
           draft={draft}
           picked={picked}
           clearPicked={(i) => setPicked(i < 0 ? [] : picked.filter((_, j) => j !== i))}
@@ -357,33 +415,42 @@ function Avatar({ m, thread }: { m: Message; thread: Thread }) {
   )
 }
 
-function MessageItem({ m, thread, decisions, active, base }: { m: Message; thread: Thread; decisions: Decision[]; active: boolean; base: string }) {
-  const who = m.kind === 'user' ? (m.origin === 'remote' ? `You · ${m.device ?? 'remote device'}` : 'You') : PROVIDERS[m.modelInfo?.provider ?? thread.agent.provider]?.name
+// Plain text with the find query highlighted.
+function Highlighted({ text, q }: { text: string; q: string }) {
+  if (!q) return <>{text}</>
+  const parts = text.split(new RegExp(`(${q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi'))
+  return <>{parts.map((part, i) => (i % 2 ? <mark key={i}>{part}</mark> : part))}</>
+}
+
+const attachmentLabel = (name: string) => name.replace(/^[0-9a-f]{16}-/, '')
+
+function MessageItem({ m, thread, decisions, active, base, highlight, match }: { m: Message; thread: Thread; decisions: Decision[]; active: boolean; base: string; highlight: string; match: string }) {
+  const who = m.kind === 'user' ? (m.origin === 'remote' ? `You · ${m.device ?? 'remote device'}` : 'You') : PROVIDER_NAMES[m.modelInfo?.provider ?? thread.agent.provider]
   const worked = m.workTiming && Date.parse(m.workTiming.finishedAt) - Date.parse(m.workTiming.startedAt)
+  const queued = m.kind === 'user' && m.delivered === false
 
   if (m.kind === 'approval') {
     const a = m.approval!
     return (
-      <div class="msg">
+      <div class={`msg ${match}`} id={`msg-${m.id}`}>
         <div class="msg-head">
           <Avatar m={m} thread={thread} /> <b>{who}</b> <span class="muted">{formatTime(m.ts)}</span>
         </div>
         <div class="msg-card approval">
           <div class="approval-title">
-            <ShieldQuestion size={16} /> Allow <code>{a.tool}</code>?
+            <ShieldQuestion size={16} /> {a.title}
           </div>
-          <pre>{JSON.stringify(a.input, null, 2).slice(0, 1500)}</pre>
+          {a.detail && <pre>{a.detail.slice(0, 1500)}</pre>}
           {a.status === 'pending' ? (
             <div class="row">
-              <button class="primary" onClick={() => api('POST', `${base}/approvals/${m.id}`, { allow: true })}>
-                Allow
-              </button>
-              <button class="ghost" onClick={() => api('POST', `${base}/approvals/${m.id}`, { allow: false })}>
-                Deny
-              </button>
+              {a.options.map((o) => (
+                <button key={o.id} class={o.kind === 'allow' ? 'primary' : 'ghost'} onClick={() => api('POST', `${base}/approvals/${m.id}`, { choice: o.id })}>
+                  {o.label}
+                </button>
+              ))}
             </div>
           ) : (
-            <div class="muted">{a.status === 'allowed' ? 'Allowed' : 'Denied'}</div>
+            <div class="muted">{a.options.find((o) => o.id === a.choice)?.label ?? 'Resolved'}</div>
           )}
         </div>
       </div>
@@ -391,12 +458,13 @@ function MessageItem({ m, thread, decisions, active, base }: { m: Message; threa
   }
 
   return (
-    <div class={`msg ${m.kind}`}>
+    <div class={`msg ${m.kind} ${queued ? 'queued' : ''} ${match}`} id={`msg-${m.id}`}>
       <div class="msg-head">
         <Avatar m={m} thread={thread} /> <b>{who}</b> <span class="muted">{formatTime(m.ts)}</span>
         {worked ? <span class="muted">Worked for {duration(worked)}</span> : null}
+        {m.kind === 'question' && <span class="muted">Needs your input</span>}
       </div>
-      {(m.text || m.images?.length) && (
+      {(m.text || m.images?.length || m.files?.length) && (
         <div class={`msg-card ${m.kind}`}>
           {m.images?.length ? (
             <div class="msg-images">
@@ -405,7 +473,16 @@ function MessageItem({ m, thread, decisions, active, base }: { m: Message; threa
               ))}
             </div>
           ) : null}
-          {m.text && (m.kind === 'user' ? <div class="plain">{m.text}</div> : <Markdown text={m.text} />)}
+          {m.files?.length ? (
+            <div class="msg-files">
+              {m.files.map((f) => (
+                <a key={f} href={`/api${base}/attachments/${f}`} download={attachmentLabel(f)}>
+                  <Paperclip size={12} /> {attachmentLabel(f)}
+                </a>
+              ))}
+            </div>
+          ) : null}
+          {m.text && (m.kind === 'user' ? <div class="plain"><Highlighted text={m.text} q={highlight} /></div> : <Markdown text={m.text} />)}
           {m.commits?.length ? (
             <div class="commits">
               {m.commits.map((c) => (
@@ -415,6 +492,15 @@ function MessageItem({ m, thread, decisions, active, base }: { m: Message; threa
               ))}
             </div>
           ) : null}
+        </div>
+      )}
+      {queued && (
+        <div class="queued-row">
+          <b>Queued</b> <span>Sent after the current turn</span>
+          <button onClick={() => api('POST', `${base}/send-now`)}>Stop work and send now</button>
+          <button class="danger" onClick={() => api('DELETE', `${base}/messages/${m.id}`)}>
+            Remove
+          </button>
         </div>
       )}
       {decisions.length > 0 && <Questions decisions={decisions} active={active} base={base} />}

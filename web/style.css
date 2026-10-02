@@ -224,7 +224,7 @@ main { min-height: 0; overflow: hidden; }
 .answered { display: flex; align-items: center; gap: 6px; color: var(--green); }
 .q-actions { display: flex; justify-content: flex-end; }
 
-.working-row { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 13px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.working-row { flex: none; display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 13px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .spinner { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--line-strong); border-top-color: var(--tint); animation: spin 0.8s linear infinite; flex: none; display: inline-block; }
 .spinner.small { width: 10px; height: 10px; }
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -384,3 +384,28 @@ main { min-height: 0; overflow: hidden; }
   .doc, .form { padding: 16px; }
   .menu.wide, .procs, .mention, .agent-menu { width: min(92vw, 380px); min-width: 0; }
 }
+
+/* v0.3: queue, approvals with options, file attachments, find in conversation, presets */
+.msg.user.queued .msg-card { border-style: dashed; opacity: 0.8; }
+.queued-row { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--muted); margin-top: 6px; }
+.queued-row b { color: var(--orange); font-weight: 600; }
+.queued-row button { color: var(--tint); }
+.queued-row button.danger { color: var(--red); }
+.msg-files { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+.msg-files a { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; padding: 3px 9px; border-radius: 6px; background: var(--code-bg); border: 1px solid var(--line); }
+.msg-files a:hover { border-color: var(--line-strong); }
+.approval-detail { color: var(--muted); white-space: pre-wrap; }
+.find-bar { display: flex; align-items: center; gap: 8px; padding: 8px 20px; border-bottom: 1px solid var(--line); background: var(--panel); font-size: 13px; }
+.find-bar input { flex: 1; }
+.find-bar .count { color: var(--muted); white-space: nowrap; }
+.msg.match .msg-card { outline: 2px solid color-mix(in srgb, var(--orange) 45%, transparent); }
+.msg.current .msg-card { outline-color: var(--orange); }
+mark { background: color-mix(in srgb, var(--orange) 50%, transparent); color: inherit; border-radius: 3px; padding: 0 1px; }
+.agent-menu .status { color: var(--muted); font-size: 11px; display: block; }
+.agent-menu > small.status { grid-column: 1 / -1; }
+.preset-row { display: flex; align-items: center; gap: 4px; grid-column: 1 / -1; }
+.preset-row > button:first-child { flex: 1; display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: 8px; text-align: left; }
+.preset-row > button:first-child:hover, .preset-row > button.selected { background: var(--card-hover); }
+.preset-row > button.selected { color: var(--tint); }
+.preset-row .icon-btn { width: 28px; height: 28px; }
+.question-head { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }

@@ -1,4 +1,5 @@
-// End-to-end tests: real daemon, real UI in headless Chromium, fake agents (test/fake-claude.mjs, test/fake-codex.mjs).
+// End-to-end tests: real daemon, real UI in headless Chromium, fake agents (test/fake-claude.mjs,
+// test/fake-codex.mjs speaking the app-server protocol, test/fake-acp.mjs speaking ACP for OpenCode).
 import { test, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
@@ -63,6 +64,9 @@ before(async () => {
       SAVOR_PORT: String(port),
       SAVOR_CLAUDE_BIN: path.join(ROOT, 'test/fake-claude.mjs'),
       SAVOR_CODEX_BIN: path.join(ROOT, 'test/fake-codex.mjs'),
+      SAVOR_OPENCODE_BIN: path.join(ROOT, 'test/fake-acp.mjs'),
+      SAVOR_GROK_BIN: path.join(TMP, 'no-such-grok'),
+      SAVOR_ANTIGRAVITY_BIN: path.join(TMP, 'no-such-agy'),
       FAKE_AGENT_LOG: AGENT_LOG,
     },
     stdio: ['ignore', 'pipe', 'inherit'],
@@ -103,12 +107,139 @@ test('questions are answered in one reply', async () => {
   await page.waitForSelector('text=Selected: Yes')
 })
 
-test('approvals are routed to the user', async () => {
+test('approvals are routed to the user, "Always allow" remembers the rule', async () => {
   await newConversation()
   await send('approve: now')
   await page.waitForSelector('.approval >> text=Allow')
-  await page.click('.approval button:has-text("Allow")')
-  await page.waitForSelector('text=Permission: allow')
+  await page.click('.approval button:has-text("Always allow")')
+  await page.waitForSelector('text=Permission: allow always')
+  await send('approve: again')
+  await page.waitForSelector('.approval:has(button:has-text("Deny"))')
+  await page.click('.approval button:has-text("Deny")')
+  await page.waitForSelector('text=Permission: deny')
+})
+
+test("an agent's own clarifying questions become decisions", async () => {
+  await newConversation()
+  await send('native-ask: Which color?')
+  await page.waitForSelector('text=One thing before I continue')
+  await page.click('.option:has-text("Green")')
+  await page.click('text=Send reply')
+  await page.waitForSelector('text=Answered: Green')
+})
+
+test('input during a turn waits in the queue; "send now" interrupts', async () => {
+  await newConversation()
+  await send('slow: first')
+  await page.waitForSelector('text=On it.')
+  await send('second')
+  await page.waitForSelector('.msg.queued >> text=second')
+  await page.waitForSelector('text=Echo: first')
+  await page.waitForSelector('text=Echo: second')
+  assert.equal(await page.locator('.msg.queued').count(), 0)
+
+  await send('slow: third')
+  await page.waitForSelector('.working-row')
+  await send('fourth')
+  await page.click('.queued-row >> text=Stop work and send now')
+  await page.waitForSelector('text=Echo: fourth')
+  assert.equal(await page.locator('text=Echo: third').count(), 0, 'the interrupted turn did not conclude')
+})
+
+test('queued messages can be removed before they are sent', async () => {
+  const [project] = (await api('GET', '/projects')).body
+  const thread = (await api('POST', `/projects/${project.id}/threads`, { text: 'slow: busy' })).body
+  const t = `/projects/${project.id}/threads/${thread.id}`
+  const queued = (await api('POST', `${t}/messages`, { text: 'never mind' })).body
+  assert.equal(queued.delivered, false)
+  assert.equal((await api('DELETE', `${t}/messages/${queued.id}`)).status, 200)
+  assert.equal((await api('DELETE', `${t}/messages/${thread.id}`)).status, 404)
+  await until(async () => (await api('GET', t)).body.messages.some((m) => m.text === 'Echo: busy'))
+  assert.ok(!(await api('GET', t)).body.messages.some((m) => m.text === 'never mind'))
+})
+
+test('Codex runs through the app-server protocol with approvals and questions', async () => {
+  const [project] = (await api('GET', '/projects')).body
+  const thread = (await api('POST', `/projects/${project.id}/threads`, { text: 'approve: run', agent: { provider: 'codex', permissionMode: 'default' } })).body
+  const t = `/projects/${project.id}/threads/${thread.id}`
+  let approval
+  await until(async () => (approval = (await api('GET', t)).body.messages.find((m) => m.approval?.status === 'pending')))
+  assert.deepEqual(approval.approval.options.map((o) => o.id), ['accept', 'acceptForSession', 'decline'])
+  assert.equal((await api('POST', `${t}/approvals/${approval.id}`, { choice: 'nonsense' })).status, 400)
+  await api('POST', `${t}/approvals/${approval.id}`, { choice: 'acceptForSession' })
+  await until(async () => (await api('GET', t)).body.messages.some((m) => m.text === 'Codex permission: acceptForSession'))
+
+  await api('POST', `${t}/messages`, { text: 'ask-native: Which one?' })
+  let decision
+  await until(async () => (decision = (await api('GET', t)).body.decisions.find((d) => !d.resolved)))
+  assert.deepEqual(decision.options, ['Red', 'Blue'])
+  await api('POST', `${t}/decisions`, { answers: [{ id: decision.id, selected: 1 }] })
+  await until(async () => (await api('GET', t)).body.messages.some((m) => m.text === 'Codex answered: Blue'))
+  assert.ok((await api('GET', `${t}/activity`)).body.some((a) => a.type === 'command' && a.label === 'echo hi'))
+  // A mode the provider does not have is refused, and the project's default agent goes back to Claude.
+  assert.equal((await api('POST', `/projects/${project.id}/threads`, { text: 'x', agent: { provider: 'codex', permissionMode: 'bypassPermissions' } })).status, 400)
+  await api('PATCH', `/projects/${project.id}`, { agent: project.agent })
+})
+
+test('OpenCode runs through the Agent Client Protocol', async () => {
+  const [project] = (await api('GET', '/projects')).body
+  const thread = (await api('POST', `/projects/${project.id}/threads`, { text: 'hello acp', agent: { provider: 'opencode', permissionMode: 'plan' } })).body
+  const t = `/projects/${project.id}/threads/${thread.id}`
+  await until(async () => (await api('GET', t)).body.messages.some((m) => m.text === 'ACP echo: hello acp'))
+  await api('POST', `${t}/messages`, { text: 'approve: this' })
+  let approval
+  await until(async () => (approval = (await api('GET', t)).body.messages.find((m) => m.approval?.status === 'pending')))
+  assert.deepEqual(approval.approval.options.map((o) => [o.id, o.kind]), [['allow_once', 'allow'], ['reject_once', 'deny']])
+  await api('POST', `${t}/approvals/${approval.id}`, { choice: 'allow_once' })
+  await until(async () => (await api('GET', t)).body.messages.some((m) => m.text === 'ACP permission: allow_once'))
+  // The MCP token travelled inside the protocol, not on the command line.
+  const run = fs.readFileSync(AGENT_LOG, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).find((r) => r.agent === 'opencode')
+  assert.deepEqual(run.argv.slice(2), ['acp'])
+  await api('PATCH', `/projects/${project.id}`, { agent: project.agent })
+})
+
+test('the agent list reports what is installed, signed in and offered', async () => {
+  const agents = (await api('GET', '/agents')).body
+  const by = Object.fromEntries(agents.map((a) => [a.id, a]))
+  assert.equal(by.claude.signedIn, true)
+  assert.equal(by.claude.account, 'fake@claude.test')
+  assert.ok(by.codex.models.some((m) => m.id === 'fake-model' && m.efforts.includes('high')))
+  assert.equal(by.codex.account, 'fake@codex.test')
+  assert.ok(by.opencode.models.some((m) => m.id === 'fake/model'))
+  assert.equal(by.grok.installed, false)
+  assert.ok(by.claude.modes.find((m) => m.id === 'bypassPermissions').unsafe)
+})
+
+test('presets are saved globally and only from this computer', async () => {
+  const agent = { provider: 'codex', model: 'fake-model', reasoning: 'high', fast: false, permissionMode: 'read-only' }
+  const preset = (await api('POST', '/presets', { name: 'Careful Codex', agent })).body
+  assert.deepEqual((await api('GET', '/presets')).body.map((p) => p.name), ['Careful Codex'])
+  const pairing = (await api('POST', '/devices/pairing')).body
+  const redeem = await fetch(`${base}/api/pair`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code: pairing.code, name: 'CI watch' }) })
+  const device = redeem.headers.get('set-cookie').split(';')[0]
+  assert.equal((await api('POST', '/presets', { name: 'Sneaky', agent }, device)).status, 403)
+  assert.equal((await api('GET', '/presets', undefined, device)).status, 200)
+  await api('DELETE', `/presets/${preset.id}`)
+  assert.deepEqual((await api('GET', '/presets')).body, [])
+  const watch = (await api('GET', '/devices')).body.find((d) => d.name === 'CI watch')
+  await api('DELETE', `/devices/${watch.id}`)
+})
+
+test('files can be attached to a message', async () => {
+  const [project] = (await api('GET', '/projects')).body
+  const dataUrl = `data:text/plain;base64,${Buffer.from('hello from a file').toString('base64')}`
+  const thread = (await api('POST', `/projects/${project.id}/threads`, { text: 'read this', attachments: [{ name: 'notes.txt', dataUrl }] })).body
+  const t = `/projects/${project.id}/threads/${thread.id}`
+  const first = (await api('GET', t)).body.messages[0]
+  assert.equal(first.files.length, 1)
+  assert.match(first.files[0], /^[0-9a-f]{16}-notes\.txt$/)
+  // The agent gets the path and can read the file.
+  await until(async () => (await api('GET', t)).body.messages.some((m) => m.text?.includes('Echo: read this') && m.text.includes(first.files[0])))
+  const r = await fetch(`${base}/api${t}/attachments/${first.files[0]}`, { headers: { cookie: `savor_token=${token}` } })
+  assert.equal(r.headers.get('content-disposition'), 'attachment; filename="notes.txt"')
+  assert.equal(await r.text(), 'hello from a file')
+  const tooMany = (await api('POST', `${t}/messages`, { text: 'x', attachments: Array(9).fill({ name: 'a.txt', dataUrl }) })).status
+  assert.equal(tooMany, 400)
 })
 
 test('workflows run in a new conversation', async () => {
@@ -137,7 +268,7 @@ test('auth: tokens, pairing and remote limits', async () => {
   const events = await fetch(`${base}/api/events`, { headers: { cookie: device } })
   const reader = events.body.getReader()
   await reader.read()
-  const [paired] = (await api('GET', '/devices')).body
+  const paired = (await api('GET', '/devices')).body.find((d) => d.name === 'CI phone')
   await api('DELETE', `/devices/${paired.id}`)
   const outcome = await Promise.race([
     (async () => {
@@ -158,6 +289,7 @@ test('the MCP token stays off agent command lines, which every user on the machi
   const { mcpToken } = JSON.parse(fs.readFileSync(path.join(HOME, 'state.json'), 'utf8'))
   const runs = fs.readFileSync(AGENT_LOG, 'utf8').trim().split('\n').map((l) => JSON.parse(l))
   assert.ok(runs.some((r) => r.agent === 'claude') && runs.some((r) => r.agent === 'codex'))
+  assert.ok(runs.filter((r) => r.agent === 'codex').every((r) => r.argv[2] === 'app-server'))
   for (const r of runs) assert.ok(!r.argv.some((a) => a.includes(mcpToken)), `${r.agent} got the MCP token on its command line`)
   for (const r of runs.filter((r) => r.agent === 'claude')) assert.equal(r.configMode, 0o600)
 })

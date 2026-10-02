@@ -7,7 +7,7 @@ export const BIN = {
   codex: process.env.SAVOR_CODEX_BIN ?? 'codex',
   opencode: process.env.SAVOR_OPENCODE_BIN ?? 'opencode',
   grok: process.env.SAVOR_GROK_BIN ?? 'grok',
-  antigravity: process.env.SAVOR_ANTIGRAVITY_BIN ?? 'antigravity',
+  antigravity: process.env.SAVOR_ANTIGRAVITY_BIN ?? 'agy',
 }
 
 // Agents send the MCP token as a bearer token. It never goes into a URL or onto a command line,

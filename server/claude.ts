@@ -1,0 +1,149 @@
+// Claude Code: one long-lived `claude -p --input-format stream-json` process per conversation and
+// settings. Turns go in as user messages on stdin; permission prompts and clarifying questions come
+// back as control requests on stdout and are answered on stdin.
+import { spawn, type ChildProcess } from 'node:child_process'
+import readline from 'node:readline'
+import crypto from 'node:crypto'
+import fs from 'node:fs'
+import path from 'node:path'
+import * as store from './store.js'
+import type { ApprovalOption, Thread } from './store.js'
+import { BIN, mcpUrl } from './config.js'
+import { configKey, rememberSession, sessionIdOf, summarize, systemPrompt, type Host, type Session, type TurnInput } from './session.js'
+
+const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
+
+const describe = (tool: string, input: any) =>
+  tool === 'Bash' ? String(input?.command ?? '') : /^(Edit|Write|MultiEdit|NotebookEdit)$/.test(tool) ? String(input?.file_path ?? '') : JSON.stringify(input, null, 2).slice(0, 1500)
+
+export class ClaudeSession implements Session {
+  readonly config: string
+  private child: ChildProcess
+  private stderr = ''
+  private stopping = false
+
+  constructor(private host: Host, thread: Thread) {
+    const { p } = host
+    const a = thread.agent
+    this.config = configKey(a)
+    // The MCP config holds the token, so it goes into a file only this user can read.
+    const mcpConfig = path.join(store.HOME, 'mcp', `${crypto.randomUUID()}.json`)
+    fs.mkdirSync(path.dirname(mcpConfig), { recursive: true, mode: 0o700 })
+    const savor = { type: 'http', url: mcpUrl(p.id, thread.id), headers: { Authorization: `Bearer ${store.state().mcpToken}` } }
+    fs.writeFileSync(mcpConfig, JSON.stringify({ mcpServers: { savor } }), { mode: 0o600 })
+    const args = [
+      '-p',
+      '--input-format', 'stream-json',
+      '--output-format', 'stream-json',
+      '--verbose',
+      '--append-system-prompt', systemPrompt(p),
+      '--mcp-config', mcpConfig,
+      '--allowedTools', 'mcp__savor',
+      '--permission-mode', a.permissionMode || 'acceptEdits',
+      '--permission-prompts', 'host',
+      '--permission-prompt-tool', 'stdio',
+    ]
+    if (a.model) args.push('--model', a.model)
+    if (EFFORTS.includes(a.reasoning)) args.push('--effort', a.reasoning)
+    if (a.fast) args.push('--settings', JSON.stringify({ fastMode: true }))
+    const sid = sessionIdOf(thread, 'claude')
+    if (sid) args.push('--resume', sid)
+    else args.push('--session-id', crypto.randomUUID())
+
+    this.child = spawn(BIN.claude, args, {
+      cwd: p.path,
+      env: { ...process.env, MCP_TOOL_TIMEOUT: String(24 * 3600_000) },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    const removeConfig = () => fs.rmSync(mcpConfig, { force: true })
+    this.child.on('exit', removeConfig).on('error', removeConfig)
+    readline.createInterface({ input: this.child.stdout! }).on('line', (l) => this.onLine(l))
+    this.child.stderr!.on('data', (d) => (this.stderr = (this.stderr + d).slice(-4000)))
+    this.child.on('error', (e) => host.closed(e.message))
+    this.child.on('exit', (code, signal) => host.closed(this.stopping || signal === 'SIGTERM' ? 'Turn stopped.' : `claude exited with ${code}: ${this.stderr.trim()}`))
+  }
+
+  start({ prompt, images }: TurnInput) {
+    const content = [
+      { type: 'text', text: prompt },
+      ...images.map((file) => ({
+        type: 'image',
+        source: { type: 'base64', media_type: `image/${path.extname(file).slice(1).toLowerCase().replace('jpg', 'jpeg')}`, data: fs.readFileSync(file).toString('base64') },
+      })),
+    ]
+    this.write({ type: 'user', message: { role: 'user', content } })
+  }
+
+  interrupt() {
+    this.write({ type: 'control_request', request_id: crypto.randomUUID(), request: { subtype: 'interrupt' } })
+  }
+
+  end() {
+    this.child.stdin?.end()
+  }
+
+  kill() {
+    this.stopping = true
+    this.child.kill('SIGTERM')
+  }
+
+  private write(msg: unknown) {
+    if (this.child.stdin?.writable) this.child.stdin.write(JSON.stringify(msg) + '\n')
+  }
+
+  // Busy state follows Claude's own events, so turns it starts by itself (e.g. when a background
+  // task finishes) show up as working too.
+  private onLine(line: string) {
+    let ev: any
+    try {
+      ev = JSON.parse(line)
+    } catch {
+      return
+    }
+    const { p, tid, activity } = this.host
+    if (ev.type === 'assistant' || ev.type === 'user' || (ev.type === 'system' && ['init', 'task_notification'].includes(ev.subtype))) this.host.working()
+    if (ev.type === 'system' && ev.subtype === 'init' && ev.session_id) {
+      rememberSession(p, tid, 'claude', ev.session_id)
+    } else if (ev.type === 'assistant') {
+      for (const c of ev.message?.content ?? []) {
+        if (c.type === 'thinking') activity.instant('thinking', 'Thinking')
+        if (c.type === 'text' && c.text.trim()) activity.instant('note', c.text)
+        if (c.type === 'tool_use') activity.tool(c.id, c.name, c.input)
+      }
+    } else if (ev.type === 'user') {
+      for (const c of ev.message?.content ?? []) if (c.type === 'tool_result') activity.finish(c.tool_use_id)
+    } else if (ev.type === 'control_request') {
+      this.control(ev.request_id, ev.request).catch((e: Error) => this.respond(ev.request_id, undefined, e.message))
+    } else if (ev.type === 'result') {
+      this.host.ended(ev.is_error && !/interrupt/i.test(ev.subtype ?? '') ? { error: ev.result || ev.subtype } : { text: ev.is_error ? '' : ev.result ?? '' })
+    }
+  }
+
+  private respond(requestId: string, result?: unknown, error?: string) {
+    this.write({ type: 'control_response', response: error ? { subtype: 'error', request_id: requestId, error } : { subtype: 'success', request_id: requestId, response: result } })
+  }
+
+  private async control(requestId: string, req: any) {
+    if (req.subtype !== 'can_use_tool') throw new Error(`Savor does not handle ${req.subtype} requests.`)
+    const input = req.input ?? {}
+    if (req.tool_name === 'AskUserQuestion') {
+      const questions = (input.questions ?? []) as { question: string; options?: { label: string }[] }[]
+      const answers = await this.host.ask(questions.map((q) => ({ title: q.question, body: '', options: q.options?.map((o) => o.label) ?? [] })))
+      const map: Record<string, string> = {}
+      questions.forEach((q, i) => {
+        const a = answers[i]
+        map[q.question] = a.selected != null ? q.options?.[a.selected]?.label ?? '' : a.answer ?? ''
+      })
+      return this.respond(requestId, { behavior: 'allow', updatedInput: { questions, answers: map } })
+    }
+    const persist = ((req.permission_suggestions ?? []) as { destination?: string }[]).filter((s) => s.destination === 'localSettings')
+    const options: ApprovalOption[] = [
+      { id: 'allow', label: 'Allow', kind: 'allow' },
+      ...(persist.length ? [{ id: 'always', label: 'Always allow', kind: 'allow' as const }] : []),
+      { id: 'deny', label: 'Deny', kind: 'deny' },
+    ]
+    const choice = await this.host.approve({ title: `Allow ${req.display_name ?? req.tool_name}?`, detail: describe(req.tool_name, input) || summarize(input), options })
+    if (choice === 'deny') return this.respond(requestId, { behavior: 'deny', message: 'The user denied this action.' })
+    this.respond(requestId, { behavior: 'allow', updatedInput: input, ...(choice === 'always' && { updatedPermissions: persist }) })
+  }
+}

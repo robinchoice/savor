@@ -58,22 +58,45 @@ export const readFileAsDataUrl = (f: File) =>
 
 export interface AgentConfig { provider: string; model: string; reasoning: string; fast: boolean; permissionMode: string }
 export interface Question { title: string; body: string; options: string[] }
+export interface ApprovalOption { id: string; label: string; kind: 'allow' | 'deny' }
+export interface Approval { title: string; detail: string; options: ApprovalOption[]; status: 'pending' | 'resolved'; choice?: string }
 export interface Message {
   id: string
   ts: string
-  kind: 'user' | 'ack' | 'update' | 'conclusion' | 'error' | 'approval'
+  kind: 'user' | 'ack' | 'update' | 'conclusion' | 'error' | 'approval' | 'question'
   text?: string
   images?: string[]
+  files?: string[]
   questions?: Question[]
   decisionIds?: string[]
   suggestions?: string[]
   commits?: string[]
-  approval?: { tool: string; input: unknown; status: 'pending' | 'allowed' | 'denied' }
+  approval?: Approval
   modelInfo?: AgentConfig
   workTiming?: { startedAt: string; finishedAt: string }
   origin?: 'local' | 'remote'
   device?: string
+  delivered?: boolean
 }
+export interface Attachment { name: string; dataUrl: string }
+export interface ModeInfo { id: string; label: string; detail: string; unsafe?: boolean }
+export interface ModelInfo { id: string; label: string; detail?: string; efforts?: string[] }
+export interface ProviderInfo {
+  id: string
+  name: string
+  installed: boolean
+  version: string | null
+  signedIn: boolean | null
+  account: string | null
+  models: ModelInfo[]
+  efforts: string[]
+  defaultEffort: string
+  modes: ModeInfo[]
+  defaultMode: string
+  fast: boolean
+  signIn: string
+}
+export interface Preset { id: string; name: string; agent: AgentConfig }
 export interface Thread {
   id: string
   title: string
@@ -106,16 +129,20 @@ export interface Workflow { id: string; name: string; prompt: string; cron: stri
 export interface Proc { pid: number; name: string; cwd: string; command: string; url: string | null; log: string | null; threadId: string; startedAt: string }
 export interface Me { origin: 'local' | 'remote'; device: string | null; awake: boolean }
 
-export const PROVIDERS: Record<string, { name: string; models: string[]; reasoning: string[] }> = {
-  claude: { name: 'Claude Code', models: ['', 'opus', 'sonnet', 'haiku'], reasoning: ['low', 'medium', 'high', 'xhigh', 'max'] },
-  codex: { name: 'Codex', models: ['', 'gpt-5-codex', 'gpt-5'], reasoning: ['minimal', 'low', 'medium', 'high'] },
-  opencode: { name: 'OpenCode', models: [''], reasoning: [] },
-  grok: { name: 'Grok Build', models: [''], reasoning: [] },
-  antigravity: { name: 'Antigravity', models: [''], reasoning: [] },
+export const PROVIDER_NAMES: Record<string, string> = { claude: 'Claude Code', codex: 'Codex', opencode: 'OpenCode', grok: 'Grok Build', antigravity: 'Antigravity' }
+
+// Installed agents, their models and modes: fetched once and shared by every picker.
+let agentsCache: Promise<ProviderInfo[]> | null = null
+export const fetchAgents = (refresh = false) => (agentsCache = !refresh && agentsCache ? agentsCache : api<ProviderInfo[]>('GET', refresh ? '/agents?refresh=1' : '/agents'))
+
+export function useAgents() {
+  const [agents, setAgents] = useState<ProviderInfo[]>()
+  useEffect(() => void fetchAgents().then(setAgents, () => setAgents([])), [])
+  return agents
 }
 
-export const agentSummary = (a: AgentConfig) =>
-  [a.model || 'Default', a.reasoning && PROVIDERS[a.provider]?.reasoning.includes(a.reasoning) && cap(a.reasoning), a.fast && 'Fast'].filter(Boolean).join(' ')
+export const agentSummary = (a: AgentConfig, info?: ProviderInfo) =>
+  [info?.models.find((m) => m.id === a.model)?.label ?? (a.model || 'Default'), a.reasoning && cap(a.reasoning), a.fast && 'Fast'].filter(Boolean).join(' · ')
 
 export const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 

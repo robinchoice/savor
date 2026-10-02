@@ -14,7 +14,8 @@ import * as files from './files.js'
 import * as awake from './awake.js'
 import { closeDevice, pairingLink, relayStatus, startRelay } from './relay-client.js'
 import { securityHeaders } from '../shared/headers.js'
-import { handleMcp, refreshNeedsYou, resolveApproval } from './mcp.js'
+import { handleMcp } from './mcp.js'
+import { isUnsafe, listAgents, mergeAgent } from './providers.js'
 import { nextRun, runWorkflow, syncSchedules, validateCron } from './scheduler.js'
 
 // dist/web next to the sources in development, ../web next to the bundled dist/server/index.mjs.
@@ -27,6 +28,7 @@ const MIME: Record<string, string> = {
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
   '.gif': 'image/gif',
   '.webp': 'image/webp',
   '.webmanifest': 'application/manifest+json',
@@ -44,18 +46,32 @@ class BadRequest extends Error {}
 const localOnly = (ctx: Ctx) => {
   if (ctx.auth.origin !== 'local') throw new Forbidden('Only available on this computer.')
 }
-// Skipping approvals can only be switched on at this computer; devices keep it where it's already on.
-const noNewBypass = (ctx: Ctx, next: store.AgentConfig, current: store.AgentConfig) => {
-  if (next.permissionMode === 'bypassPermissions' && current.permissionMode !== 'bypassPermissions') localOnly(ctx)
+// Agent settings must name a known provider and one of its permission modes. Skipping approvals can
+// only be switched on at this computer; devices keep it where it's already on.
+function agentFrom(ctx: Ctx, current: store.AgentConfig, patch: Partial<store.AgentConfig>) {
+  let next: store.AgentConfig
+  try {
+    next = mergeAgent(current, patch)
+  } catch (e) {
+    throw new BadRequest((e as Error).message)
+  }
+  if (isUnsafe(next.provider, next.permissionMode) && !(next.provider === current.provider && next.permissionMode === current.permissionMode)) localOnly(ctx)
+  return next
 }
 
 const project = (params: Params) => store.getProject(params.pid)
-const inputFrom = (b: any, ctx: Ctx, p: store.Project, tid: string) => ({
-  text: String(b.text ?? ''),
-  images: (b.images ?? []).map((dataUrl: string) => store.saveAttachment(p, tid, dataUrl)),
-  origin: ctx.auth.origin,
-  device: ctx.auth.device?.name,
-})
+function inputFrom(b: any, ctx: Ctx, p: store.Project, tid: string): agents.Input {
+  const attachments = (b.attachments ?? []) as { name: string; dataUrl: string }[]
+  if (attachments.length > 8) throw new BadRequest('Attach up to 8 files per message.')
+  const saved = attachments.map((a) => store.saveAttachment(p, tid, a))
+  return {
+    text: String(b.text ?? ''),
+    images: saved.filter((a) => a.image).map((a) => a.name),
+    files: saved.filter((a) => !a.image).map((a) => a.name),
+    origin: ctx.auth.origin,
+    device: ctx.auth.device?.name,
+  }
+}
 
 // ---- session ----
 
@@ -70,6 +86,21 @@ route('POST', '/devices/pairing', (_, __, ctx) => {
   localOnly(ctx)
   const pairing = devices.createPairing()
   return { ...pairing, url: `${PUBLIC_URL}/#/pair/${pairing.code}`, relayUrl: pairingLink(pairing.code) }
+})
+route('GET', '/agents', (_, __, ctx) => listAgents(ctx.query.has('refresh')))
+route('GET', '/presets', () => store.listPresets())
+route('POST', '/presets', (_, b, ctx) => {
+  localOnly(ctx)
+  if (typeof b.name !== 'string' || !b.name.trim()) throw new BadRequest('Give the preset a name.')
+  const preset = store.savePreset(b.name, { ...store.defaultAgent(), ...b.agent })
+  emit({ type: 'presets' })
+  return preset
+})
+route('DELETE', '/presets/:id', (params, _, ctx) => {
+  localOnly(ctx)
+  store.deletePreset(params.id)
+  emit({ type: 'presets' })
+  return {}
 })
 route('GET', '/relay', (_, __, ctx) => (localOnly(ctx), relayStatus()))
 route('PUT', '/relay', (_, b, ctx) => {
@@ -116,7 +147,7 @@ route('GET', '/projects/:pid/role', (params) => ({ role: store.readRole(project(
 route('PATCH', '/projects/:pid', (params, b, ctx) => {
   const p = project(params)
   // ROLE.md and the default agent apply to every conversation in the project, so devices can't change them.
-  const agent = b.agent && { ...p.agent, ...b.agent }
+  const agent = b.agent && agentFrom(ctx, p.agent, b.agent)
   const roleChanged = typeof b.role === 'string' && b.role !== store.readRole(p)
   if (roleChanged || (agent && JSON.stringify(agent) !== JSON.stringify(p.agent))) localOnly(ctx)
   if (roleChanged) store.saveRole(p, b.role)
@@ -141,8 +172,7 @@ route('GET', '/projects/:pid/threads', (params) => {
 })
 route('POST', '/projects/:pid/threads', (params, b, ctx) => {
   const p = project(params)
-  const agent = { ...p.agent, ...b.agent }
-  noNewBypass(ctx, agent, p.agent)
+  const agent = agentFrom(ctx, p.agent, b.agent ?? {})
   const t = store.createThread(p, { title: b.text || 'New conversation', agent })
   if (b.agent && ctx.auth.origin === 'local') store.updateProject(p.id, { agent })
   emit({ type: 'thread', projectId: p.id, threadId: t.id })
@@ -173,8 +203,7 @@ route('PATCH', '/projects/:pid/threads/:tid', (params, b, ctx) => {
   if (typeof b.label === 'string') patch.label = b.label ? { name: b.label, hue: store.hueFor(b.label) } : null
   if (b.agent) {
     const current = store.getThread(p, params.tid).agent
-    const agent = { ...current, ...b.agent }
-    noNewBypass(ctx, agent, current)
+    const agent = agentFrom(ctx, current, b.agent)
     patch.agent = agent
     if (ctx.auth.origin === 'local') store.updateProject(p.id, { agent })
   }
@@ -191,7 +220,14 @@ route('DELETE', '/projects/:pid/threads/:tid', (params) => {
 })
 route('POST', '/projects/:pid/threads/:tid/messages', (params, b, ctx) => {
   const p = project(params)
-  agents.send(p, store.getThread(p, params.tid).id, inputFrom(b, ctx, p, params.tid))
+  return agents.send(p, store.getThread(p, params.tid).id, inputFrom(b, ctx, p, params.tid))
+})
+route('POST', '/projects/:pid/threads/:tid/send-now', (params) => {
+  agents.sendNow(project(params), params.tid)
+  return {}
+})
+route('DELETE', '/projects/:pid/threads/:tid/messages/:mid', (params) => {
+  agents.removeQueued(project(params), params.tid, params.mid)
   return {}
 })
 route('POST', '/projects/:pid/threads/:tid/stop', (params) => {
@@ -199,28 +235,28 @@ route('POST', '/projects/:pid/threads/:tid/stop', (params) => {
   return {}
 })
 route('POST', '/projects/:pid/threads/:tid/approvals/:mid', (params, b) => {
-  resolveApproval(project(params), params.tid, params.mid, !!b.allow)
+  const p = project(params)
+  const approval = store.readMessages(p, params.tid).find((m) => m.id === params.mid)?.approval
+  if (!approval || approval.status !== 'pending') throw new store.NotFound(`approval ${params.mid}`)
+  if (!approval.options.some((o) => o.id === b.choice)) throw new BadRequest('Choose one of the offered options.')
+  agents.resolveApproval(p, params.tid, params.mid, b.choice)
   return {}
 })
 route('POST', '/projects/:pid/threads/:tid/decisions', (params, b, ctx) => {
-  const p = project(params)
-  const all = store.listDecisions(p, params.tid)
-  const lines: string[] = []
-  for (const a of b.answers as { id: string; selected?: number; answer?: string }[]) {
-    const d = all.find((d) => d.id === a.id)
-    if (!d || d.resolved) continue
-    const resolved = { ...d, resolved: true, selected: a.selected ?? null, answer: a.selected == null ? a.answer ?? '' : null }
-    store.saveDecision(p, resolved)
-    lines.push(`Decision: ${d.title}\n${a.selected != null ? `Selected: ${d.options[a.selected]}` : `Answer: ${a.answer}`}`)
-  }
-  refreshNeedsYou(p, params.tid)
-  if (lines.length) agents.send(p, params.tid, { text: lines.join('\n\n'), origin: ctx.auth.origin, device: ctx.auth.device?.name })
+  agents.answerDecisions(project(params), params.tid, b.answers ?? [], ctx.auth.origin, ctx.auth.device?.name)
   return {}
 })
 route('GET', '/projects/:pid/threads/:tid/attachments/:name', (params, _, ctx) => {
-  const file = path.join(store.attachmentDir(project(params), params.tid), path.basename(params.name))
+  const name = path.basename(params.name)
+  const file = path.join(store.attachmentDir(project(params), params.tid), name)
   if (!fs.existsSync(file)) throw new store.NotFound('attachment')
-  ctx.res.writeHead(200, { 'content-type': MIME[path.extname(file)] ?? 'application/octet-stream', 'cache-control': 'max-age=31536000' })
+  // Only images are shown inline; everything else downloads, so an attached HTML file can't run as this origin.
+  const image = store.isImage(name)
+  ctx.res.writeHead(200, {
+    'content-type': image ? MIME[path.extname(file).toLowerCase()] ?? 'application/octet-stream' : 'application/octet-stream',
+    'content-disposition': `${image ? 'inline' : 'attachment'}; filename="${encodeURIComponent(name.replace(/^[0-9a-f]{16}-/, ''))}"`,
+    'cache-control': 'max-age=31536000',
+  })
   fs.createReadStream(file).pipe(ctx.res)
 })
 

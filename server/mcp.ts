@@ -10,31 +10,12 @@ import * as agents from './agents.js'
 import * as browser from './browser.js'
 import * as processes from './processes.js'
 import { runWorkflow, syncSchedules, validateCron } from './scheduler.js'
+import { listAgents, mergeAgent, STATIC } from './providers.js'
 
 const ok = (data: unknown) => ({ content: [{ type: 'text' as const, text: typeof data === 'string' ? data : JSON.stringify(data) }] })
 
-const approvals = new Map<string, (allow: boolean) => void>()
-
-// "Needs you" = open questions or pending approvals in the thread.
-export function refreshNeedsYou(p: Project, tid: string) {
-  const needsYou =
-    store.listDecisions(p, tid).some((d) => !d.resolved) || store.readMessages(p, tid).some((m) => m.approval?.status === 'pending')
-  store.updateThread(p, tid, { needsYou })
-  emit({ type: 'thread', projectId: p.id, threadId: tid })
-}
-
-export function resolveApproval(p: Project, tid: string, mid: string, allow: boolean) {
-  const msg = store.readMessages(p, tid).find((m) => m.id === mid)
-  if (!msg?.approval) throw new store.NotFound(`approval ${mid}`)
-  store.updateMessage(p, tid, mid, { approval: { ...msg.approval, status: allow ? 'allowed' : 'denied' } })
-  emit({ type: 'message', projectId: p.id, threadId: tid })
-  approvals.get(mid)?.(allow)
-  approvals.delete(mid)
-  refreshNeedsYou(p, tid)
-}
-
 function buildServer(p: Project, tid: string) {
-  const server = new McpServer({ name: 'savor', version: '0.2.0' })
+  const server = new McpServer({ name: 'savor', version: '0.3.0' })
   const threadUrl = (id: string) => appUrl(`/p/${p.id}/t/${id}`)
   const touchThread = () => emit({ type: 'thread', projectId: p.id, threadId: tid })
   const modelInfo = () => store.getThread(p, tid).agent
@@ -211,13 +192,31 @@ function buildServer(p: Project, tid: string) {
 
   server.registerTool(
     'start_conversation',
-    { description: 'Start a new conversation in this project with its own agent, e.g. to delegate a separate task.', inputSchema: { prompt: z.string().min(1), label: z.string().optional() } },
-    async ({ prompt, label }) => {
-      const t = store.createThread(p, { title: prompt, label, agent: modelInfo(), parentId: tid })
+    {
+      description: 'Start a new conversation in this project with its own agent, e.g. to delegate a separate task. Without agent settings it uses this conversation’s agent.',
+      inputSchema: {
+        prompt: z.string().min(1),
+        label: z.string().optional(),
+        agent: z
+          .object({ provider: z.enum(Object.keys(STATIC) as [string, ...string[]]), model: z.string().optional(), reasoning: z.string().optional(), fast: z.boolean().optional(), permissionMode: z.string().optional() })
+          .optional()
+          .describe('See list_agents for providers, models, reasoning levels and permission modes'),
+      },
+    },
+    async ({ prompt, label, agent }) => {
+      const current = modelInfo()
+      const chosen = agent ? mergeAgent(current, { ...agent, provider: agent.provider as store.Provider }) : current
+      if (chosen.permissionMode !== current.permissionMode && STATIC[chosen.provider].modes.find((m) => m.id === chosen.permissionMode)?.unsafe)
+        throw new Error('A started conversation cannot have broader permissions than this one.')
+      const t = store.createThread(p, { title: prompt, label, agent: chosen, parentId: tid })
       emit({ type: 'thread', projectId: p.id, threadId: t.id })
       agents.send(p, t.id, { text: prompt, origin: agents.originOf(tid) })
       return ok({ id: t.id, url: threadUrl(t.id) })
     },
+  )
+
+  server.registerTool('list_agents', { description: 'The agents installed on this computer with their models, reasoning levels and permission modes, for start_conversation.' }, async () =>
+    ok({ current: modelInfo(), agents: await listAgents() }),
   )
 
   server.registerTool('list_conversations', { description: 'List conversations in this project.' }, async () =>
@@ -297,21 +296,6 @@ function buildServer(p: Project, tid: string) {
   server.registerTool('browser_screenshot', { description: 'Capture the preview as an image.' }, async () => ({
     content: [{ type: 'image' as const, data: (await browser.screenshot(tid)).toString('base64'), mimeType: 'image/png' }],
   }))
-
-  // ---- permission prompts (Claude Code --permission-prompt-tool) ----
-
-  server.registerTool(
-    'approve_tool',
-    { description: 'Internal: asks the user to approve a tool call.', inputSchema: { tool_name: z.string(), input: z.record(z.string(), z.unknown()), tool_use_id: z.string().optional() } },
-    async ({ tool_name, input }) => {
-      const msg = agents.post(p, tid, { kind: 'approval', approval: { tool: tool_name, input, status: 'pending' } })
-      store.updateThread(p, tid, { unread: true, needsYou: true })
-      touchThread()
-      agents.notify(p, tid, `Approval needed: ${tool_name}`)
-      const allow = await new Promise<boolean>((resolve) => approvals.set(msg.id, resolve))
-      return ok(allow ? { behavior: 'allow', updatedInput: input } : { behavior: 'deny', message: 'The user denied this action.' })
-    },
-  )
 
   return server
 }

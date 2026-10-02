@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'preact/hooks'
 import qrcode from 'qrcode-generator'
 import { Smartphone, Trash2 } from 'lucide-preact'
-import { api, go, PROVIDERS, useApi, type Project } from './api'
+import { api, go, PROVIDER_NAMES, useApi, useAgents, type Project } from './api'
 import { pairThroughRelay } from './transport'
 
 const TINTS = ['#2878ef', '#e0735a', '#9b6bd6', '#3fa37a', '#d69a2d', '#d6567f', '#4aa3c9']
@@ -11,6 +11,7 @@ export function Settings({ project }: { project: Project }) {
   const [role, setRole] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
+  const agents = useAgents()
   useEffect(() => void api<{ role: string }>('GET', `/projects/${project.id}/role`).then((r) => setRole(r.role)), [project.id])
   const set = (patch: Partial<typeof draft>) => {
     setSaved(false)
@@ -65,12 +66,22 @@ export function Settings({ project }: { project: Project }) {
           </label>
           <label>
             Default agent
-            <select value={draft.agent.provider} onChange={(e) => set({ agent: { ...draft.agent, provider: e.currentTarget.value, model: '' } })}>
-              {Object.entries(PROVIDERS).map(([id, p]) => (
-                <option key={id} value={id}>
-                  {p.name}
-                </option>
-              ))}
+            <select
+              value={draft.agent.provider}
+              onChange={(e) => {
+                const info = agents?.find((a) => a.id === e.currentTarget.value)
+                set({ agent: { ...draft.agent, provider: e.currentTarget.value, model: '', reasoning: info?.defaultEffort ?? '', permissionMode: info?.defaultMode ?? 'default' } })
+              }}
+            >
+              {Object.entries(PROVIDER_NAMES).map(([id, name]) => {
+                const info = agents?.find((a) => a.id === id)
+                return (
+                  <option key={id} value={id}>
+                    {name}
+                    {info && !info.installed ? ' (not installed)' : ''}
+                  </option>
+                )
+              })}
             </select>
           </label>
         </div>
