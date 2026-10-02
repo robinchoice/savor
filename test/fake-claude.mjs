@@ -5,7 +5,7 @@
 // - "ask: <question>" → conclusion with that question and the options Yes/No
 // - "approve: <anything>" → permission prompt via a can_use_tool control request, then the verdict
 // - "native-ask: <question>" → an AskUserQuestion control request with the options Blue/Green
-// - "slow: <text>" → acknowledges, waits 1.5 s (or until interrupted), then echoes
+// - "slow: <text>" → acknowledges, waits for the test's release file or an interrupt, then echoes
 // - anything else → acknowledgement plus a conclusion echoing the input with one suggestion
 // `--version` and `auth status` answer like the real CLI, so Savor lists the fake as installed.
 import readline from 'node:readline'
@@ -53,7 +53,10 @@ async function turn(text) {
   out({ type: 'assistant', message: { content: [{ type: 'text', text: 'working' }] } })
 
   if (text.includes('"threadLabel":null')) await call('set_thread_label', { label: 'Fake agent test' })
-  if (input.startsWith('ask:')) {
+  if (input.startsWith('fail:')) {
+    out({ type: 'result', subtype: 'error_during_execution', is_error: true, result: input.slice(5).trim() })
+    return
+  } else if (input.startsWith('ask:')) {
     await call('send_conclusion_message', { text: 'One question first.', questions: [{ title: input.slice(4).trim(), body: '', options: ['Yes', 'No'] }] })
   } else if (input.startsWith('approve:')) {
     const verdict = await control({
@@ -75,7 +78,8 @@ async function turn(text) {
     await call('send_conclusion_message', { text: `Answered: ${verdict.updatedInput?.answers?.[question] ?? verdict.behavior}` })
   } else if (input.startsWith('slow:')) {
     await call('send_acknowledgement_message', { text: 'On it.' })
-    await sleep(1500)
+    const release = process.env.FAKE_AGENT_LOG + '.release'
+    while (!interrupted && (!fs.existsSync(release) || fs.readFileSync(release, 'utf8') !== input)) await sleep(20)
     if (!interrupted) await call('send_conclusion_message', { text: `Echo: ${input.slice(5).trim()}` })
   } else {
     await call('send_acknowledgement_message', { text: 'On it.' })

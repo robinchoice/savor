@@ -1,5 +1,6 @@
 // End-to-end tests: real daemon, real UI in headless Chromium, fake agents (test/fake-claude.mjs,
-// test/fake-codex.mjs speaking the app-server protocol, test/fake-acp.mjs speaking ACP for OpenCode).
+// test/fake-codex.mjs speaking the app-server protocol, test/fake-acp.mjs speaking ACP for OpenCode)
+// and a fake whisper.cpp (test/fake-whisper.mjs) behind Chromium's fake microphone.
 import { test, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync, spawn } from 'node:child_process'
@@ -18,6 +19,7 @@ const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'savor-e2e-'))
 const HOME = path.join(TMP, 'home')
 const PROJECT = path.join(TMP, 'project')
 const AGENT_LOG = path.join(TMP, 'agents.jsonl') // the fake agents log their command lines here
+const WHISPER_MODEL = path.join(TMP, 'ggml-test.bin')
 let server, browser, page, port, token, base
 
 const freePort = () =>
@@ -58,6 +60,7 @@ before(async () => {
   port = await freePort()
   base = `http://127.0.0.1:${port}`
   fs.mkdirSync(PROJECT)
+  fs.writeFileSync(WHISPER_MODEL, '')
   const entry = fs.existsSync(path.join(ROOT, 'dist/server/index.mjs')) ? 'dist/server/index.mjs' : 'bin/savor.js'
   server = spawn(process.execPath, [path.join(ROOT, entry)], {
     env: {
@@ -69,6 +72,8 @@ before(async () => {
       SAVOR_OPENCODE_BIN: path.join(ROOT, 'test/fake-acp.mjs'),
       SAVOR_GROK_BIN: path.join(TMP, 'no-such-grok'),
       SAVOR_ANTIGRAVITY_BIN: path.join(TMP, 'no-such-agy'),
+      SAVOR_WHISPER_BIN: path.join(ROOT, 'test/fake-whisper.mjs'),
+      SAVOR_WHISPER_MODEL: WHISPER_MODEL,
       FAKE_AGENT_LOG: AGENT_LOG,
       CLAUDE_CONFIG_DIR: path.join(TMP, 'claude'),
       CODEX_HOME: path.join(TMP, 'codex'),
@@ -77,7 +82,7 @@ before(async () => {
   })
   await new Promise((resolve) => server.stdout.on('data', (d) => d.toString().includes('Savor running') && resolve()))
   token = JSON.parse(fs.readFileSync(path.join(HOME, 'state.json'), 'utf8')).token
-  browser = await chromium.launch({ executablePath: process.env.SAVOR_CHROMIUM })
+  browser = await chromium.launch({ executablePath: process.env.SAVOR_CHROMIUM, args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'] })
   page = await browser.newPage({ viewport: { width: 1400, height: 900 } })
   await page.goto(`${base}/?token=${token}`)
 })
@@ -99,6 +104,83 @@ test('add a project and get a conclusion with next actions', async () => {
   await page.waitForSelector('.next-actions >> text=Do it again')
   await page.click('.mark-complete')
   await page.waitForSelector('.status:has-text("Completed")')
+})
+
+test('agent settings fit the viewport and effort is directly selectable', async () => {
+  await newConversation()
+  for (const viewport of [{ width: 1400, height: 900 }, { width: 900, height: 600 }, { width: 390, height: 844 }]) {
+    await page.setViewportSize(viewport)
+    await page.click('.agent-btn')
+    await page.waitForSelector('.agent-menu')
+    const bounds = await page.locator('.agent-menu').evaluate((el) => {
+      const r = el.getBoundingClientRect()
+      return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, overflow: el.scrollWidth - el.clientWidth }
+    })
+    assert.ok(bounds.left >= 0 && bounds.top >= 0 && bounds.right <= viewport.width && bounds.bottom <= viewport.height, JSON.stringify(bounds))
+    assert.ok(bounds.overflow <= 1, JSON.stringify(bounds))
+    await page.keyboard.press('Escape')
+    await page.waitForSelector('.agent-menu', { state: 'detached' })
+  }
+  await page.setViewportSize({ width: 1400, height: 900 })
+  await page.click('.agent-btn')
+  await page.locator('.agent-menu').getByRole('button', { name: /Codex/ }).click()
+  assert.equal(await page.locator('.agent-menu select').first().evaluate((el) => el.selectedOptions[0]?.textContent), 'Default')
+  await page.keyboard.press('Escape')
+  await page.locator('.quick-effort button', { hasText: 'Medium' }).click()
+  assert.equal(await page.locator('.quick-effort button.selected').innerText(), 'Medium')
+  await page.click('.agent-btn')
+  await page.click('.conv-head h2')
+  await page.waitForSelector('.agent-menu', { state: 'detached' })
+})
+
+test('errors retain their provider after switching agents', async () => {
+  const [project] = (await api('GET', '/projects')).body
+  const t = (await api('POST', `/projects/${project.id}/threads`, { text: 'fail: Session limit reached', agent: project.agent })).body
+  const route = `/projects/${project.id}/threads/${t.id}`
+  await until(async () => (await api('GET', route)).body.messages.some((m) => m.kind === 'error'))
+  await api('PATCH', route, { agent: { ...project.agent, provider: 'codex', permissionMode: 'on-request' } })
+  await page.goto(`${base}/#/p/${project.id}/t/${t.id}`)
+  await page.waitForSelector('.msg.error')
+  assert.equal(await page.locator('.msg.error .msg-head b').innerText(), 'Claude Code')
+  assert.equal((await api('GET', route)).body.messages.find((m) => m.kind === 'error').modelInfo.provider, 'claude')
+  await api('PATCH', `/projects/${project.id}`, { agent: project.agent })
+})
+
+test('historical approvals render and failed conversation loads can be retried', async () => {
+  const [project] = (await api('GET', '/projects')).body
+  const t = (await api('POST', `/projects/${project.id}/threads`, { text: 'historical approval' })).body
+  const endpoint = `${base}/api/projects/${project.id}/threads/${t.id}`
+  await until(async () => !(await api('GET', `/projects/${project.id}/threads/${t.id}`)).body.busy)
+  let fail = true
+  await page.route(endpoint, async (route) => {
+    if (fail) return route.fulfill({ status: 500, json: { error: 'Temporary read failure' } })
+    const response = await route.fetch()
+    const data = await response.json()
+    data.messages.splice(1, 0, { id: 'historical-approval', kind: 'approval', ts: t.createdAt, approval: { tool: 'Bash', input: { command: 'pwd' }, status: 'allowed' } })
+    data.messages.splice(2, 0, { id: 'historical-error', kind: 'error', ts: t.createdAt, text: 'Earlier session limit' })
+    data.thread.agent.provider = 'codex'
+    await route.fulfill({ response, json: data })
+  })
+  const errors = []
+  const collect = (error) => errors.push(error.message)
+  page.on('pageerror', collect)
+  try {
+    await page.goto(`${base}/#/p/${project.id}/t/${t.id}`)
+    await page.waitForSelector('text=Could not load this conversation')
+    fail = false
+    await page.getByRole('button', { name: 'Try again' }).click()
+    await page.waitForSelector('#msg-historical-approval')
+    assert.match(await page.locator('#msg-historical-approval').innerText(), /Allowed/)
+    assert.equal(await page.locator('#msg-historical-error .msg-head b').innerText(), 'Claude Code')
+    assert.ok(await page.locator('.composer textarea').isVisible())
+    assert.deepEqual(errors, [])
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
+    await page.locator('.msg.conclusion button[title="Copy message"]').click()
+    assert.equal(await page.evaluate(() => navigator.clipboard.readText()), 'Echo: historical approval')
+  } finally {
+    page.off('pageerror', collect)
+    await page.unroute(endpoint)
+  }
 })
 
 test('questions are answered in one reply', async () => {
@@ -138,6 +220,9 @@ test('input during a turn waits in the queue; "send now" interrupts', async () =
   await page.waitForSelector('text=On it.')
   await send('second')
   await page.waitForSelector('.msg.queued >> text=second')
+  assert.ok(await page.locator('.stop-work').isVisible())
+  assert.match(await page.locator('.thread-sub .working').innerText(), /Working ·/)
+  fs.writeFileSync(AGENT_LOG + '.release', 'slow: first')
   await page.waitForSelector('text=Echo: first')
   await page.waitForSelector('text=Echo: second')
   assert.equal(await page.locator('.msg.queued').count(), 0)
@@ -158,6 +243,7 @@ test('queued messages can be removed before they are sent', async () => {
   assert.equal(queued.delivered, false)
   assert.equal((await api('DELETE', `${t}/messages/${queued.id}`)).status, 200)
   assert.equal((await api('DELETE', `${t}/messages/${thread.id}`)).status, 404)
+  fs.writeFileSync(AGENT_LOG + '.release', 'slow: busy')
   await until(async () => (await api('GET', t)).body.messages.some((m) => m.text === 'Echo: busy'))
   assert.ok(!(await api('GET', t)).body.messages.some((m) => m.text === 'never mind'))
 })
@@ -244,6 +330,54 @@ test('files can be attached to a message', async () => {
   assert.equal(await r.text(), 'hello from a file')
   const tooMany = (await api('POST', `${t}/messages`, { text: 'x', attachments: Array(9).fill({ name: 'a.txt', dataUrl }) })).status
   assert.equal(tooMany, 400)
+})
+
+test('voice input turns a recording into text in the composer', async () => {
+  await newConversation()
+  await page.click('.voice button[title="Voice input"]')
+  await page.waitForSelector('.voice-time')
+  await page.waitForTimeout(1500)
+  await page.click('.voice button.recording')
+  await page.waitForFunction(() => document.querySelector('.composer textarea').value.includes('Heard'))
+  // The browser sent 16 kHz mono 16-bit PCM in its own language, and the daemon cut the audio context to the length.
+  const text = await page.inputValue('.composer textarea')
+  const [, seconds, context] = text.match(/^Heard (\d+\.\d) seconds, 16000 Hz, 1 channel, 16 bit, language en, audio context (\d+)\. $/) ?? []
+  assert.ok(seconds >= 1.4 && seconds < 3, text)
+  assert.ok(Math.abs(context - (seconds * 50 + 50)) < 5, text)
+  await page.fill('.composer textarea', '')
+})
+
+test('voice input discards recordings and releases a microphone granted after navigation', async () => {
+  await newConversation()
+  await page.fill('.composer textarea', 'Keep this draft')
+  await page.click('.voice button[title="Voice input"]')
+  await page.waitForSelector('.voice-time')
+  await page.click('.voice button[title="Discard the recording"]')
+  await page.waitForSelector('.voice-time', { state: 'detached' })
+  assert.equal(await page.inputValue('.composer textarea'), 'Keep this draft')
+  await page.evaluate(() => {
+    const original = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices)
+    window.voiceTracks = null
+    navigator.mediaDevices.getUserMedia = async (constraints) => {
+      const stream = await original(constraints)
+      window.voiceTracks = stream.getTracks()
+      await new Promise((resolve) => { window.allowVoice = resolve })
+      return stream
+    }
+  })
+  await page.click('.voice button[title="Voice input"]')
+  await page.waitForFunction(() => window.allowVoice)
+  await page.locator('a.card').first().click()
+  await page.waitForSelector('text=What do you want to build?', { state: 'detached' })
+  await page.evaluate(() => window.allowVoice())
+  await page.waitForFunction(() => window.voiceTracks.every((track) => track.readyState === 'ended'))
+  await page.reload()
+})
+
+test('voice input rejects missing or incomplete PCM', async () => {
+  for (const audio of [undefined, '', 'AQ==']) {
+    assert.equal((await api('POST', '/voice/transcribe', { audio })).status, 400)
+  }
 })
 
 test('workflows run in a new conversation', async () => {
@@ -569,7 +703,9 @@ test('files open in the code editor, markdown and documents in the rich editor',
   await page.keyboard.press('Enter')
   await page.keyboard.type('Ship it')
   let doc
-  await until(async () => (doc = (await api('GET', `/projects/${project.id}/docs`)).body.find((d) => d.title === 'Launch plan' && d.content.includes('Ship it'))))
+  await until(async () => (doc = (await api('GET', `/projects/${project.id}/docs`)).body.find((d) => d.title === 'Launch plan' && d.content.includes('Ship it')))).catch(async (error) => {
+    assert.fail(`${error.message}: ${JSON.stringify((await api('GET', `/projects/${project.id}/docs`)).body)}`)
+  })
   assert.equal(doc.content, '# Plan\n\nShip it\n')
   await page.waitForSelector('.editor-page >> text=Saved')
 })

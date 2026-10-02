@@ -18,6 +18,7 @@ import { isUnsafe, listAgents, mergeAgent } from './providers.js'
 import { nextRun, runWorkflow, syncSchedules, validateCron } from './scheduler.js'
 import * as git from './git.js'
 import { importSessions, listSessions } from './import.js'
+import * as voice from './voice.js'
 
 // dist/web next to the sources in development, ../web next to the bundled dist/server/index.mjs.
 const HERE = path.dirname(fileURLToPath(import.meta.url))
@@ -123,6 +124,22 @@ route('DELETE', '/devices/:id', (params, _, ctx) => {
   return {}
 })
 
+// ---- voice input ----
+
+route('POST', '/voice/prepare', async () => {
+  try {
+    return await voice.prepare()
+  } catch (e) {
+    throw new BadRequest((e as Error).message)
+  }
+})
+route('POST', '/voice/transcribe', async (_, b) => {
+  if (typeof b.audio !== 'string') throw new BadRequest('Audio is required.')
+  const pcm = Buffer.from(b.audio, 'base64')
+  if (!pcm.length || pcm.length % 2) throw new BadRequest('Audio must be 16-bit PCM.')
+  return { text: await voice.transcribe(pcm, String(b.language ?? '')) }
+})
+
 // ---- projects ----
 
 route('GET', '/projects', () =>
@@ -191,6 +208,7 @@ route('GET', '/projects/:pid/threads/:tid', (params) => {
   return {
     thread,
     busy: agents.isBusy(thread.id),
+    startedAt: agents.startedAt(thread.id),
     messages: store.readMessages(p, thread.id),
     decisions: store.listDecisions(p, thread.id),
     processes: store.listProcs(p).filter((pr) => pr.threadId === thread.id),

@@ -24,7 +24,7 @@ export function securityHeaders(host?: string, nonce?: string) {
     'x-frame-options': 'DENY',
     'referrer-policy': 'no-referrer',
     'cross-origin-opener-policy': 'same-origin',
-    'permissions-policy': 'camera=(), microphone=(), geolocation=()',
+    'permissions-policy': 'camera=(), microphone=(self), geolocation=()',
   }
 }
 

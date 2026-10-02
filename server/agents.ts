@@ -3,7 +3,7 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import path from 'node:path'
 import * as store from './store.js'
-import type { Message, Origin, Project, Provider, Question, Thread } from './store.js'
+import type { AgentConfig, Message, Origin, Project, Provider, Question, Thread } from './store.js'
 import { emit } from './events.js'
 import { BIN, mcpUrl } from './config.js'
 import { Activity, configKey, systemPrompt, type Answer, type ApprovalRequest, type Host, type Session, type TurnInput } from './session.js'
@@ -33,6 +33,7 @@ const approvals = new Map<string, (choice: string) => void>() // approval messag
 const questions = new Map<string, (answers: Answer[]) => void>() // decision group id → resolver
 
 export const isBusy = (tid: string) => busy.has(tid)
+export const startedAt = (tid: string) => busy.get(tid)
 export const markConcluded = (tid: string, messageId: string) => turnConclusion.set(tid, messageId)
 export const originOf = (tid: string): Origin => turnOrigin.get(tid) ?? 'local'
 
@@ -43,7 +44,7 @@ export function request(tid: string) {
 }
 
 export function post(p: Project, tid: string, m: Omit<Message, 'id' | 'ts'>) {
-  const msg = store.appendMessage(p, tid, m)
+  const msg = store.appendMessage(p, tid, { modelInfo: store.getThread(p, tid).agent, ...m })
   emit({ type: 'message', projectId: p.id, threadId: tid })
   return msg
 }
@@ -120,12 +121,12 @@ function beginTurn(p: Project, tid: string) {
   emit({ type: 'status', projectId: p.id, threadId: tid })
 }
 
-function endTurn(p: Project, tid: string, result: { text?: string; error?: string }) {
+function endTurn(p: Project, tid: string, result: { text?: string; error?: string }, agent: AgentConfig) {
   const startedAt = busy.get(tid)
   if (!startedAt) return
   if (result.error) {
     store.updateThread(p, tid, { error: result.error })
-    post(p, tid, { kind: 'error', text: result.error })
+    post(p, tid, { kind: 'error', text: result.error, modelInfo: agent })
     if (result.error !== 'Turn stopped.') notify(p, tid, result.error)
   } else {
     store.updateThread(p, tid, { error: null })
@@ -133,7 +134,7 @@ function endTurn(p: Project, tid: string, result: { text?: string; error?: strin
     // acknowledged and ended its turn without a conclusion is waiting for background work.
     const r = request(tid)
     if (!r.ack && !r.conclusion && !r.updates.size && result.text?.trim()) {
-      const msg = post(p, tid, { kind: 'conclusion', text: result.text, modelInfo: store.getThread(p, tid).agent })
+      const msg = post(p, tid, { kind: 'conclusion', text: result.text, modelInfo: agent })
       r.conclusion = { key: '', id: msg.id }
       markConcluded(tid, msg.id)
       store.updateThread(p, tid, { unread: true })
@@ -221,12 +222,12 @@ function hostFor(p: Project, thread: Thread, holder: { session?: Session }): Hos
     working: () => mine() && beginTurn(p, tid),
     approve: (req) => askApproval(p, tid, req),
     ask: (qs) => askQuestions(p, tid, qs),
-    ended: (result) => mine() && endTurn(p, tid, result),
+    ended: (result) => mine() && endTurn(p, tid, result, thread.agent),
     closed: (error) => {
       if (!mine()) return
       sessions.delete(tid)
       cancelPending(p, tid)
-      if (busy.has(tid)) endTurn(p, tid, { error })
+      if (busy.has(tid)) endTurn(p, tid, { error }, thread.agent)
     },
   }
 }

@@ -3,10 +3,10 @@ import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import {
   Asterisk, Hexagon, Code2, Sparkles, Orbit, Plus, Search, Layers, MessageSquare, Check, MoreHorizontal, PanelRight, FileText, Flag,
-  CircleAlert, ArrowUp, ArrowLeft, Pencil, Brain, Terminal, Wrench, ArrowRight, MessageSquareMore, Smartphone, Monitor, ShieldQuestion, CircleCheck, X, ChevronUp, ChevronDown, Paperclip, GitBranch, GitMerge, Trash2,
+  CircleAlert, ArrowUp, ArrowLeft, Pencil, Brain, Terminal, Wrench, ArrowRight, MessageSquareMore, Smartphone, Monitor, ShieldQuestion, CircleCheck, X, ChevronUp, ChevronDown, ChevronRight, Paperclip, GitBranch, GitMerge, Trash2, Copy,
 } from 'lucide-preact'
 import {
-  api, duration, formatDay, formatTime, go, PROVIDER_NAMES, useApi, type ActivityEvent, type AgentConfig, type Attachment, type Decision, type Message, type Proc, type Project, type Thread, type Worktree,
+  api, cap, duration, formatDay, formatTime, go, PROVIDER_NAMES, useApi, type ActivityEvent, type AgentConfig, type Attachment, type Decision, type Message, type Proc, type Project, type Thread, type Worktree,
 } from './api'
 import { Composer, type Picked } from './Composer'
 import { transport } from './transport'
@@ -235,11 +235,11 @@ function NewConversation({ project }: { project: Project }) {
   )
 }
 
-interface ThreadData { thread: Thread; busy: boolean; messages: Message[]; decisions: Decision[]; processes: Proc[] }
+interface ThreadData { thread: Thread; busy: boolean; startedAt?: string; messages: Message[]; decisions: Decision[]; processes: Proc[] }
 
 function ThreadView({ project, threadId }: { project: Project; threadId: string }) {
   const base = `/projects/${project.id}/threads/${threadId}`
-  const [data] = useApi<ThreadData>(base, (e) => e.threadId === threadId && ['message', 'thread', 'status'].includes(e.type))
+  const [data, reload, loadError] = useApi<ThreadData>(base, (e) => e.threadId === threadId && ['message', 'thread', 'status'].includes(e.type))
   const [activity] = useApi<ActivityEvent[]>(`${base}/activity`, (e) => e.threadId === threadId && (e.type === 'activity' || e.type === 'status'))
   const [panel, setPanel] = useState<'activity' | 'preview' | null>(null)
   const [draft, setDraft] = useState<string>()
@@ -249,6 +249,13 @@ function ThreadView({ project, threadId }: { project: Project; threadId: string 
   const [commit, setCommit] = useState<string | null>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const findRef = useRef<HTMLInputElement>(null)
+  const [clock, setClock] = useState(Date.now())
+  useEffect(() => {
+    if (!data?.busy) return
+    setClock(Date.now())
+    const timer = setInterval(() => setClock(Date.now()), 1000)
+    return () => clearInterval(timer)
+  }, [data?.busy])
 
   useEffect(() => {
     if (data?.thread.preview && panel === null) setPanel('preview')
@@ -280,8 +287,21 @@ function ThreadView({ project, threadId }: { project: Project; threadId: string 
     if (currentMatch) document.getElementById(`msg-${currentMatch}`)?.scrollIntoView({ block: 'center' })
   }, [currentMatch])
 
-  if (!data) return <section class="thread" />
+  if (!data) return (
+    <section class="thread">
+      <div class="empty-state" role="status">
+        <p>{loadError ? `Could not load this conversation: ${loadError.message}` : 'Loading conversation…'}</p>
+        {loadError && <button class="ghost" onClick={reload}>Try again</button>}
+      </div>
+    </section>
+  )
   const { thread, messages, decisions, busy } = data
+  let messageAgent = messages.find((m) => m.modelInfo)?.modelInfo ?? thread.agent
+  const attributedMessages = messages.map((m) => {
+    messageAgent = m.modelInfo ?? messageAgent
+    return { ...m, modelInfo: messageAgent }
+  })
+  const elapsed = data.startedAt ? duration(Math.max(0, clock - Date.parse(data.startedAt))) : ''
   const send = (text: string, attachments: Attachment[] = []) => api('POST', `${base}/messages`, { text, attachments })
   const setAgent = (agent: AgentConfig) => api('PATCH', base, { agent })
   const patch = (b: object) => api('PATCH', base, b)
@@ -302,7 +322,8 @@ function ThreadView({ project, threadId }: { project: Project; threadId: string 
         : thread.completed
           ? { icon: <CircleCheck size={13} />, text: 'Completed', cls: 'done' }
           : { icon: <MessageSquare size={13} />, text: 'Ready', cls: '' }
-  const running = activity?.filter((a) => !a.finishedAt).at(-1) ?? activity?.at(-1)
+  const running = activity?.filter((a) => !a.finishedAt && (!data.startedAt || a.time >= data.startedAt)).at(-1)
+  const workingLabel = running ? { thinking: 'Thinking', command: 'Running a command', edit: 'Editing files', note: 'Working' }[running.type] : 'Working'
 
   const rename = () => {
     const name = prompt('Label', thread.label?.name ?? '')
@@ -326,17 +347,15 @@ function ThreadView({ project, threadId }: { project: Project; threadId: string 
             <h1 title={thread.title}>{thread.title}</h1>
             <div class="thread-sub">
               <span class={`status ${status.cls}`}>
-                {status.icon} {status.text}
+                {status.icon} {status.text}{busy && elapsed ? ` · ${elapsed}` : ''}
               </span>
+              {busy && <button class="status stop-work" onClick={() => api('POST', `${base}/stop`)}>Stop</button>}
               {queued > 0 && <span class="status">{queued} queued</span>}
               {thread.worktree && (
                 <span class="status worktree" title={thread.worktree.path}>
                   <GitBranch size={12} /> {thread.worktree.branch}
                 </span>
               )}
-              <span class="path">
-                <FileText size={12} /> .savor/threads/{thread.id}/messages.jsonl
-              </span>
             </div>
           </div>
           <div class="head-actions">
@@ -396,7 +415,7 @@ function ThreadView({ project, threadId }: { project: Project; threadId: string 
         )}
 
         <div class="messages" ref={listRef}>
-          {messages.map((m, i) => (
+          {attributedMessages.map((m, i) => (
             <MessageItem
               key={m.id}
               m={m}
@@ -410,9 +429,9 @@ function ThreadView({ project, threadId }: { project: Project; threadId: string 
             />
           ))}
           {busy && (
-            <div class="working-row">
-              <span class="spinner" /> Working{running ? <span class="muted"> · {running.label.slice(0, 120)}</span> : null}
-            </div>
+            <button class="working-row" title="Show activity" onClick={() => setPanel('activity')}>
+              <span class="spinner" /> {workingLabel}{elapsed && <span class="muted"> · {elapsed}</span>} <ChevronRight size={13} />
+            </button>
           )}
           {showNext && lastConclusion ? (
             <div class="next-actions">
@@ -500,6 +519,20 @@ function Highlighted({ text, q }: { text: string; q: string }) {
 const attachmentLabel = (name: string) => name.replace(/^[0-9a-f]{16}-/, '')
 
 function MessageItem({ m, thread, decisions, active, base, highlight, match, onCommit }: { m: Message; thread: Thread; decisions: Decision[]; active: boolean; base: string; highlight: string; match: string; onCommit: (hash: string) => void }) {
+  const [copyState, setCopyState] = useState('')
+  useEffect(() => {
+    if (!copyState) return
+    const timer = setTimeout(() => setCopyState(''), 2000)
+    return () => clearTimeout(timer)
+  }, [copyState])
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(m.text ?? '')
+      setCopyState('Copied')
+    } catch {
+      setCopyState('Could not copy')
+    }
+  }
   const who = m.kind === 'user' ? (m.origin === 'remote' ? `You · ${m.device ?? 'remote device'}` : 'You') : PROVIDER_NAMES[m.modelInfo?.provider ?? thread.agent.provider]
   const worked = m.workTiming && Date.parse(m.workTiming.finishedAt) - Date.parse(m.workTiming.startedAt)
   const queued = m.kind === 'user' && m.delivered === false
@@ -513,10 +546,10 @@ function MessageItem({ m, thread, decisions, active, base, highlight, match, onC
         </div>
         <div class="msg-card approval">
           <div class="approval-title">
-            <ShieldQuestion size={16} /> {a.title}
+            <ShieldQuestion size={16} /> {a.title ?? 'Permission request'}
           </div>
           {a.detail && <pre>{a.detail.slice(0, 1500)}</pre>}
-          {a.status === 'pending' ? (
+          {a.status === 'pending' && a.options?.length ? (
             <div class="row">
               {a.options.map((o) => (
                 <button key={o.id} class={o.kind === 'allow' ? 'primary' : 'ghost'} onClick={() => api('POST', `${base}/approvals/${m.id}`, { choice: o.id })}>
@@ -525,7 +558,7 @@ function MessageItem({ m, thread, decisions, active, base, highlight, match, onC
               ))}
             </div>
           ) : (
-            <div class="muted">{a.options.find((o) => o.id === a.choice)?.label ?? 'Resolved'}</div>
+            <div class="muted">{a.options?.find((o) => o.id === a.choice)?.label ?? cap(a.status)}</div>
           )}
         </div>
       </div>
@@ -538,6 +571,9 @@ function MessageItem({ m, thread, decisions, active, base, highlight, match, onC
         <Avatar m={m} thread={thread} /> <b>{who}</b> <span class="muted">{formatTime(m.ts)}</span>
         {worked ? <span class="muted">Worked for {duration(worked)}</span> : null}
         {m.kind === 'question' && <span class="muted">Needs your input</span>}
+        {m.modelInfo?.model && <span class="muted">{m.modelInfo.model}{m.modelInfo.reasoning && ` · ${cap(m.modelInfo.reasoning)} effort`}</span>}
+        {m.text && <button class="icon-btn copy-message" title={copyState || 'Copy message'} aria-label={copyState || 'Copy message'} onClick={copy}>{copyState === 'Copied' ? <Check size={13} /> : <Copy size={13} />}</button>}
+        {copyState && <span class="muted" role="status">{copyState}</span>}
       </div>
       {(m.text || m.images?.length || m.files?.length) && (
         <div class={`msg-card ${m.kind}`}>

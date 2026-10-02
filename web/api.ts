@@ -35,20 +35,25 @@ export function useEvent(fn: Listener, deps: unknown[]) {
 }
 
 // Fetch `path` and refetch whenever a matching server event arrives.
-export function useApi<T>(path: string | null, refetchOn: (e: SavorEvent) => boolean): [T | undefined, () => void] {
+export function useApi<T>(path: string | null, refetchOn: (e: SavorEvent) => boolean): [T | undefined, () => void, Error | undefined] {
   const [data, setData] = useState<T>()
+  const [error, setError] = useState<Error>()
   const load = useCallback(() => {
-    if (path) api<T>('GET', path).then(setData, () => setData(undefined))
+    if (path) api<T>('GET', path).then((next) => {
+      setData(next)
+      setError(undefined)
+    }, setError)
   }, [path])
   useEffect(() => {
     setData(undefined)
+    setError(undefined)
     load()
   }, [load])
   useEvent((e) => refetchOn(e) && load(), [load])
-  return [data, load]
+  return [data, load, error]
 }
 
-export const readFileAsDataUrl = (f: File) =>
+export const readFileAsDataUrl = (f: Blob) =>
   new Promise<string>((resolve, reject) => {
     const r = new FileReader()
     r.onload = () => resolve(r.result as string)

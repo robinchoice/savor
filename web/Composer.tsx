@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from 'preact/hooks'
-import { ArrowUp, AtSign, Bookmark, ChevronDown, FileText, FolderGit2, GitBranch, ListPlus, Plus, Square, Trash2, Workflow as WorkflowIcon, X, Zap, Crosshair } from 'lucide-preact'
+import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
+import { ArrowUp, AtSign, Bookmark, ChevronDown, FileText, FolderGit2, GitBranch, ListPlus, Mic, Plus, Square, Trash2, Workflow as WorkflowIcon, X, Zap, Crosshair } from 'lucide-preact'
 import { api, agentSummary, cap, PROVIDER_NAMES, readFileAsDataUrl, useAgents, useApi, type AgentConfig, type Attachment, type Project, type ProviderInfo, type Preset, type Workflow } from './api'
 import { ProviderIcon } from './Conversations'
+import { record, type Recording } from './voice'
 
 export interface Picked { selector: string; text: string; html: string; styles: Record<string, string>; url: string }
 
@@ -41,8 +42,24 @@ export function Composer(props: Props) {
   const [popover, setPopover] = useState<'mention' | 'agent' | 'branch' | null>(null)
   const ref = useRef<HTMLTextAreaElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+  const composerRef = useRef<HTMLDivElement>(null)
   const agents = useAgents()
   const info = agents?.find((a) => a.id === props.agent.provider)
+  const efforts = info?.models.find((m) => m.id === props.agent.model)?.efforts ?? info?.efforts ?? []
+
+  useEffect(() => {
+    if (!popover) return
+    const outside = (e: PointerEvent) => {
+      if (!composerRef.current?.contains(e.target as Node)) setPopover(null)
+    }
+    const escape = (e: KeyboardEvent) => { if (e.key === 'Escape') setPopover(null) }
+    document.addEventListener('pointerdown', outside)
+    document.addEventListener('keydown', escape)
+    return () => {
+      document.removeEventListener('pointerdown', outside)
+      document.removeEventListener('keydown', escape)
+    }
+  }, [popover])
 
   useEffect(() => {
     if (props.draft !== undefined) {
@@ -89,7 +106,7 @@ export function Composer(props: Props) {
   }
 
   return (
-    <div class="composer" onDragOver={(e) => e.preventDefault()} onDrop={(e) => (e.preventDefault(), addFiles(e.dataTransfer?.files ?? [], true))}>
+    <div class="composer" ref={composerRef} onDragOver={(e) => e.preventDefault()} onDrop={(e) => (e.preventDefault(), addFiles(e.dataTransfer?.files ?? [], true))}>
       {(files.length > 0 || (props.picked?.length ?? 0) > 0) && (
         <div class="attachments">
           {files.map((f, i) =>
@@ -165,8 +182,18 @@ export function Composer(props: Props) {
           </button>
           {popover === 'agent' && <AgentMenu agent={props.agent} agents={agents ?? []} setAgent={setAgent} close={() => setPopover(null)} />}
         </div>
+        {efforts.length > 0 && (
+          <div class="segmented quick-effort" aria-label="Reasoning effort">
+            {efforts.map((effort) => (
+              <button key={effort} type="button" class={props.agent.reasoning === effort ? 'selected' : ''} aria-pressed={props.agent.reasoning === effort} onClick={() => setAgent({ ...props.agent, reasoning: effort })}>
+                {cap(effort)}
+              </button>
+            ))}
+          </div>
+        )}
         <BranchPicker project={props.project} threadId={props.threadId} worktree={props.worktree} setWorktree={props.setWorktree} open={popover === 'branch'} toggle={() => setPopover(popover === 'branch' ? null : 'branch')} />
         <div class="spacer" />
+        <VoiceButton onText={insert} onError={setError} />
         {props.busy && props.onStop && (
           <button class="send stop" title="Stop" onClick={props.onStop}>
             <Square size={13} />
@@ -177,6 +204,76 @@ export function Composer(props: Props) {
         </button>
       </div>
     </div>
+  )
+}
+
+function VoiceButton({ onText, onError }: { onText: (s: string) => void; onError: (e: string) => void }) {
+  const [state, setState] = useState<'idle' | 'starting' | 'recording' | 'transcribing'>('idle')
+  const [seconds, setSeconds] = useState(0)
+  const rec = useRef<Recording | null>(null)
+  const mounted = useRef(true)
+  useEffect(() => () => {
+    mounted.current = false
+    rec.current?.cancel()
+  }, [])
+  useEffect(() => {
+    if (state !== 'recording') return
+    setSeconds(0)
+    const t = setInterval(() => setSeconds((s) => s + 1), 1000)
+    return () => clearInterval(t)
+  }, [state])
+
+  const start = async () => {
+    setState('starting')
+    try {
+      const recording = await record()
+      if (!mounted.current) {
+        recording.cancel()
+        return
+      }
+      rec.current = recording
+      onError('')
+      setState('recording')
+    } catch (e) {
+      if (!mounted.current) return
+      onError((e as Error).message)
+      setState('idle')
+    }
+  }
+  const stop = async () => {
+    setState('transcribing')
+    try {
+      const text = await rec.current!.stop()
+      if (text && mounted.current) onText(text)
+    } catch (e) {
+      if (mounted.current) onError((e as Error).message)
+    }
+    rec.current = null
+    setState('idle')
+  }
+  const cancel = () => {
+    rec.current?.cancel()
+    rec.current = null
+    setState('idle')
+  }
+
+  return (
+    <span class="voice">
+      {state === 'recording' && (
+        <>
+          <span class="voice-time">
+            {Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, '0')}
+          </span>
+          <button class="icon-btn" title="Discard the recording" onClick={cancel}>
+            <X size={15} />
+          </button>
+        </>
+      )}
+      {state === 'transcribing' && <small>{rec.current?.downloading ? 'Downloading the speech model…' : 'Transcribing…'}</small>}
+      <button class={`icon-btn${state === 'recording' ? ' recording' : ''}`} title={state === 'recording' ? 'Stop and insert the text' : 'Voice input'} disabled={state === 'starting' || state === 'transcribing'} onClick={state === 'recording' ? stop : start}>
+        {state === 'transcribing' ? <span class="spinner small" /> : <Mic size={17} />}
+      </button>
+    </span>
   )
 }
 
@@ -210,6 +307,23 @@ function MentionMenu({ project, onPick }: { project: Project; onPick: (s: string
 }
 
 function AgentMenu({ agent, agents, setAgent, close }: { agent: AgentConfig; agents: ProviderInfo[]; setAgent: (a: AgentConfig) => void; close: () => void }) {
+  const ref = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    const place = () => {
+      const menu = ref.current!
+      const anchor = menu.parentElement!.getBoundingClientRect()
+      menu.style.maxHeight = `${innerHeight - 24}px`
+      menu.style.left = `${Math.max(12, Math.min(anchor.left, innerWidth - menu.offsetWidth - 12))}px`
+      const below = innerHeight - anchor.bottom - 8
+      const top = below >= menu.offsetHeight ? anchor.bottom + 8 : anchor.top - menu.offsetHeight - 8
+      menu.style.top = `${Math.max(12, Math.min(top, innerHeight - menu.offsetHeight - 12))}px`
+    }
+    place()
+    const observer = new ResizeObserver(place)
+    observer.observe(ref.current!)
+    addEventListener('resize', place)
+    return () => { observer.disconnect(); removeEventListener('resize', place) }
+  }, [])
   const info = agents.find((a) => a.id === agent.provider)
   const [presets] = useApi<Preset[]>('/presets', (e) => e.type === 'presets')
   const [presetName, setPresetName] = useState('')
@@ -229,12 +343,12 @@ function AgentMenu({ agent, agents, setAgent, close }: { agent: AgentConfig; age
   const status = (p: ProviderInfo) => (!p.installed ? 'not installed' : p.signedIn === false ? `sign in: ${p.signIn}` : p.account ?? p.version ?? '')
 
   return (
-    <div class="menu up agent-menu">
+    <div class="menu agent-menu" ref={ref}>
       <div class="menu-label">Agent</div>
       {(agents.length ? agents : Object.entries(PROVIDER_NAMES).map(([id, name]) => ({ id, name }) as ProviderInfo)).map((p) => (
         <button key={p.id} class={agent.provider === p.id ? 'selected' : ''} onClick={() => (p.modes ? choose(p) : set({ provider: p.id, model: '' }))}>
           <ProviderIcon provider={p.id} />
-          <span>
+          <span title={status(p)}>
             {p.name}
             {p.modes && <small class="status">{status(p)}</small>}
           </span>
@@ -243,6 +357,7 @@ function AgentMenu({ agent, agents, setAgent, close }: { agent: AgentConfig; age
       <div class="menu-label">Model</div>
       {info?.models.length ? (
         <select value={agent.model} onChange={(e) => set({ model: e.currentTarget.value })}>
+          {!info.models.some((m) => m.id === '') && <option value="">Default</option>}
           {info.models.map((m) => (
             <option key={m.id} value={m.id} title={m.detail}>
               {m.label}
