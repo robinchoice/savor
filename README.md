@@ -55,9 +55,12 @@
 - **Queue**: messages you send while the agent works wait as *Queued* and go out after the turn, or right away with "Stop work and send now".
 - **Agent picker per conversation**: agent, model, reasoning level, fast mode and permissions, with the models and modes each installed agent actually offers. Save a combination as a **preset**. You can switch agents mid-conversation, and the new agent gets the visible history handed over.
 - **Attachments**: images and files by picker, paste or drag-and-drop (up to 8 per message). **@-mentions** for files and workflows. A **git branch switcher**. **Find in conversation** with Ctrl/⌘F.
+- **Worktrees**: a conversation can work in its own git worktree of a new branch, so several agents change the project at the same time without stepping on each other. Conversations are grouped by worktree, with commits ahead and uncommitted changes at a glance, **Merge** back into the project and **Delete**. Agents can start conversations in a worktree too.
+- **Commit diffs**: commit hashes in agent messages open the commit: changed files with +/− and the patch.
 - **Approvals**: permission prompts from Claude Code, Codex and ACP agents appear in the conversation with the agent's own options (Allow, Always allow, Allow for this session, Deny).
-- **Files**: a project file browser and editor, plus markdown documents that both you and the agents write.
-- **Workflows**: saved prompts on a cron schedule, which can be chained. Each run starts a new conversation.
+- **Files**: a project file browser with a code editor (CodeMirror, syntax highlighting for the usual languages, Ctrl/⌘S), a rich-text editor for markdown files with a switch to the source, and markdown documents that both you and the agents write and that save as you type.
+- **Workflows**: saved prompts on a schedule (presets such as every weekday at 9:00, or any cron expression), which can be chained. Each run starts a new conversation. A **gallery** of 15 ready-made workflows, from a morning briefing to a release checklist, fills the editor for you to adjust and save.
+- **Import**: the Claude Code and Codex sessions you ran in a project folder before Savor become conversations, and continue with the same agent session.
 - **Project settings**: `ROLE.md` instructions for every agent, verbosity, pause (skips scheduled runs), color and default agent.
 - **Background processes**: agents register the dev servers they start. Savor watches the PIDs, shows logs and can stop them.
 - **Live preview**: the app the agent built runs in a headless Chromium next to the chat, with a persistent browser profile per project so logins survive restarts. You see exactly the page the agent controls, and your clicks, typing and scrolling are forwarded to it. The picker lets you point at an element ("make this bigger"), and its selector and styles go along with your next message.
@@ -65,7 +68,7 @@
 - **Notifications** when an agent finishes, needs an answer or asks for approval, plus an unread count in the tab title and on the app icon.
 - **Keep awake** toggle, dark and light theme.
 
-Everything lives in plain files: `~/.savor/state.json` holds projects, tokens and devices, and each project gets a `.savor/` directory.
+Everything lives in plain files: `~/.savor/state.json` holds projects, tokens and devices, each project gets a `.savor/` directory, and worktrees live under `~/.savor/worktrees/`.
 
 ## Install
 
@@ -174,6 +177,8 @@ server/
   providers.ts  what each agent offers, and whether it is installed and signed in
   mcp.ts        MCP tools the agents call
   store.ts      file storage
+  git.ts        worktrees, merging, commit diffs
+  import.ts     Claude Code and Codex session transcripts as conversations
   devices.ts    owner token, device pairing, request origin
   scheduler.ts  cron workflows and chains (croner)
   processes.ts  PID watcher
@@ -185,7 +190,8 @@ shared/
   tunnel.ts     end-to-end encryption for the relay tunnel (noble crypto)
 relay/
   server.ts     the relay: daemon login, device routing, serves the web app
-web/            Preact PWA
+web/            Preact PWA (CodeMirror and TipTap load on demand for the editors)
+recipes/        workflow gallery: markdown with front matter, bundled into the UI
 desktop/        Electron shell and installers (electron-builder)
 test/           end-to-end tests with a fake agent
 ```
@@ -204,7 +210,10 @@ Project layout:
   decisions/<id>.json
   documents/<id>.md
   workflows/<id>.json
+~/.savor/worktrees/<project id>/<branch>/   git worktrees of conversations
 ```
+
+A conversation in a worktree runs its agent there: the agent's working directory, the branch switcher and registered processes all refer to the worktree. Deleting a worktree removes it and its branch; its conversations stay and continue in the project folder with a fresh agent session that gets the visible history handed over.
 
 ## Development
 

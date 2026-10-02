@@ -102,7 +102,7 @@ function App() {
   if (route[0] === 'devices') main = <Devices />
   else if (project) {
     if (section === 'files') main = <FilesView key={project.id} project={project} rest={rest} />
-    else if (section === 'workflows') main = <Workflows key={project.id} project={project} workflowId={rest[0]} />
+    else if (section === 'workflows') main = <Workflows key={project.id} project={project} rest={rest} />
     else if (section === 'settings') main = <Settings key={project.id} project={project} />
     else main = <Conversations key={project.id} project={project} threadId={section === 't' ? rest[0] : undefined} isNew={section === 'new'} />
   }

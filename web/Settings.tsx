@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'preact/hooks'
 import qrcode from 'qrcode-generator'
-import { Smartphone, Trash2 } from 'lucide-preact'
-import { api, go, PROVIDER_NAMES, useApi, useAgents, type Project } from './api'
+import { Download, Smartphone, Trash2, X } from 'lucide-preact'
+import { api, formatDay, go, PROVIDER_NAMES, useApi, useAgents, type ImportableSession, type Project, type Thread } from './api'
 import { pairThroughRelay } from './transport'
 
 const TINTS = ['#2878ef', '#e0735a', '#9b6bd6', '#3fa37a', '#d69a2d', '#d6567f', '#4aa3c9']
@@ -100,6 +100,107 @@ export function Settings({ project }: { project: Project }) {
           </button>
         </div>
       </form>
+      <ImportSection project={project} />
+    </div>
+  )
+}
+
+// Conversations from Claude Code and Codex sessions that ran in this folder outside Savor.
+function ImportSection({ project }: { project: Project }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div class="form">
+      <h2>Import conversations</h2>
+      <p class="muted">Claude Code and Codex keep transcripts of the sessions you ran in this folder. Bring them in as conversations; they continue with the same agent session.</p>
+      <div class="row">
+        <button type="button" class="ghost" onClick={() => setOpen(true)}>
+          <Download size={14} /> Import conversations…
+        </button>
+      </div>
+      {open && <ImportDialog project={project} onClose={() => setOpen(false)} />}
+    </div>
+  )
+}
+
+function ImportDialog({ project, onClose }: { project: Project; onClose: () => void }) {
+  const [sessions, setSessions] = useState<ImportableSession[] | null>(null)
+  const [chosen, setChosen] = useState<Set<string>>(new Set())
+  const [busy, setBusy] = useState(false)
+  const [done, setDone] = useState<Thread[] | null>(null)
+  const [error, setError] = useState('')
+  useEffect(() => {
+    api<ImportableSession[]>('GET', `/projects/${project.id}/import`).then(
+      (list) => {
+        setSessions(list)
+        setChosen(new Set(list.filter((s) => !s.imported).map((s) => s.id)))
+      },
+      (e: Error) => setError(e.message),
+    )
+  }, [])
+  const toggle = (id: string) => setChosen((c) => {
+    const next = new Set(c)
+    next.has(id) ? next.delete(id) : next.add(id)
+    return next
+  })
+  const run = async () => {
+    setBusy(true)
+    try {
+      setDone(await api<Thread[]>('POST', `/projects/${project.id}/import`, { sessions: sessions!.filter((s) => chosen.has(s.id)).map(({ provider, id }) => ({ provider, id })) }))
+      setError('')
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <div class="overlay" onClick={onClose}>
+      <div class="dialog import-dialog" onClick={(e) => e.stopPropagation()}>
+        <header class="dialog-head">
+          <Download size={18} />
+          <div class="dialog-title">
+            <b>Import conversations</b>
+            <small class="muted">Sessions that ran in {project.path}</small>
+          </div>
+          <button class="icon-btn" title="Close" onClick={onClose}>
+            <X size={16} />
+          </button>
+        </header>
+        <div class="dialog-body">
+          {error && <div class="error-text pad">{error}</div>}
+          {done ? (
+            <p class="pad">
+              Imported {done.length} conversation{done.length === 1 ? '' : 's'}.{' '}
+              <a class="link" href={`#/p/${project.id}`} onClick={onClose}>
+                Open conversations
+              </a>
+            </p>
+          ) : sessions === null ? (
+            <p class="muted pad">Looking for sessions…</p>
+          ) : !sessions.length ? (
+            <p class="muted pad">No Claude Code or Codex sessions found for this folder.</p>
+          ) : (
+            sessions.map((s) => (
+              <label key={s.id} class={`import-row ${s.imported ? 'done' : ''}`}>
+                <input type="checkbox" disabled={s.imported} checked={!s.imported && chosen.has(s.id)} onChange={() => toggle(s.id)} />
+                <span class="import-title">{s.title}</span>
+                <span class="muted small">
+                  {PROVIDER_NAMES[s.provider]} · {formatDay(s.startedAt)} · {s.messages} message{s.messages === 1 ? '' : 's'}
+                  {s.imported ? ' · imported' : ''}
+                </span>
+              </label>
+            ))
+          )}
+        </div>
+        {!done && sessions?.length ? (
+          <footer class="dialog-foot">
+            <span class="muted small">{chosen.size} selected</span>
+            <button class="primary" disabled={!chosen.size || busy} onClick={run}>
+              {busy ? 'Importing…' : `Import ${chosen.size}`}
+            </button>
+          </footer>
+        ) : null}
+      </div>
     </div>
   )
 }

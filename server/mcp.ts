@@ -11,11 +11,12 @@ import * as browser from './browser.js'
 import * as processes from './processes.js'
 import { runWorkflow, syncSchedules, validateCron } from './scheduler.js'
 import { listAgents, mergeAgent, STATIC } from './providers.js'
+import { addWorktree } from './git.js'
 
 const ok = (data: unknown) => ({ content: [{ type: 'text' as const, text: typeof data === 'string' ? data : JSON.stringify(data) }] })
 
 function buildServer(p: Project, tid: string) {
-  const server = new McpServer({ name: 'savor', version: '0.3.0' })
+  const server = new McpServer({ name: 'savor', version: '0.4.0' })
   const threadUrl = (id: string) => appUrl(`/p/${p.id}/t/${id}`)
   const touchThread = () => emit({ type: 'thread', projectId: p.id, threadId: tid })
   const modelInfo = () => store.getThread(p, tid).agent
@@ -193,22 +194,24 @@ function buildServer(p: Project, tid: string) {
   server.registerTool(
     'start_conversation',
     {
-      description: 'Start a new conversation in this project with its own agent, e.g. to delegate a separate task. Without agent settings it uses this conversation’s agent.',
+      description:
+        'Start a new conversation in this project with its own agent, e.g. to delegate a separate task. Without agent settings it uses this conversation’s agent. With `worktree`, the conversation works in its own git worktree of that branch (created from HEAD when new); otherwise it works where this conversation works.',
       inputSchema: {
         prompt: z.string().min(1),
         label: z.string().optional(),
+        worktree: z.string().min(1).optional().describe('Branch name for a separate git worktree'),
         agent: z
           .object({ provider: z.enum(Object.keys(STATIC) as [string, ...string[]]), model: z.string().optional(), reasoning: z.string().optional(), fast: z.boolean().optional(), permissionMode: z.string().optional() })
           .optional()
           .describe('See list_agents for providers, models, reasoning levels and permission modes'),
       },
     },
-    async ({ prompt, label, agent }) => {
+    async ({ prompt, label, worktree, agent }) => {
       const current = modelInfo()
       const chosen = agent ? mergeAgent(current, { ...agent, provider: agent.provider as store.Provider }) : current
       if (chosen.permissionMode !== current.permissionMode && STATIC[chosen.provider].modes.find((m) => m.id === chosen.permissionMode)?.unsafe)
         throw new Error('A started conversation cannot have broader permissions than this one.')
-      const t = store.createThread(p, { title: prompt, label, agent: chosen, parentId: tid })
+      const t = store.createThread(p, { title: prompt, label, agent: chosen, parentId: tid, worktree: worktree ? addWorktree(p, worktree) : store.getThread(p, tid).worktree })
       emit({ type: 'thread', projectId: p.id, threadId: t.id })
       agents.send(p, t.id, { text: prompt, origin: agents.originOf(tid) })
       return ok({ id: t.id, url: threadUrl(t.id) })
@@ -221,7 +224,7 @@ function buildServer(p: Project, tid: string) {
 
   server.registerTool('list_conversations', { description: 'List conversations in this project.' }, async () =>
     ok(
-      store.listThreads(p).map((t) => ({ id: t.id, title: t.title, label: t.label?.name ?? null, completed: t.completed, busy: agents.isBusy(t.id), url: threadUrl(t.id) })),
+      store.listThreads(p).map((t) => ({ id: t.id, title: t.title, label: t.label?.name ?? null, completed: t.completed, busy: agents.isBusy(t.id), worktree: t.worktree?.branch ?? null, url: threadUrl(t.id) })),
     ),
   )
 
@@ -248,7 +251,7 @@ function buildServer(p: Project, tid: string) {
       },
     },
     async ({ pid, name, command, cwd, url, log }) => {
-      processes.register(p, { pid, name, command, cwd: cwd ?? p.path, url: url ?? null, log: log ?? null, threadId: tid, startedAt: store.now() })
+      processes.register(p, { pid, name, command, cwd: cwd ?? store.cwdOf(p, store.getThread(p, tid)), url: url ?? null, log: log ?? null, threadId: tid, startedAt: store.now() })
       return ok({ registered: pid })
     },
   )

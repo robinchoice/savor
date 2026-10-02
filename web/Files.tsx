@@ -1,7 +1,11 @@
-import { useEffect, useState } from 'preact/hooks'
-import { ChevronDown, ChevronRight, File, FileText, Folder, Plus, Pencil, Trash2 } from 'lucide-preact'
+import { useEffect, useRef, useState } from 'preact/hooks'
+import { lazy, Suspense } from 'preact/compat'
+import { ChevronDown, ChevronRight, File, FileText, Folder, Plus, Trash2 } from 'lucide-preact'
 import { api, go, useApi, type Doc, type Project } from './api'
-import { Markdown } from './Conversations'
+
+// The editors are big: they load when a file or document opens.
+const CodeEditor = lazy(() => import('./CodeEditor'))
+const RichEditor = lazy(() => import('./RichEditor'))
 
 interface Entry { name: string; path: string; dir: boolean }
 
@@ -79,101 +83,154 @@ function Tree({ project, path, active }: { project: Project; path: string; activ
   )
 }
 
+const isMarkdown = (path: string) => /\.(md|markdown)$/i.test(path)
+
+// Markdown opens in the rich editor unless the source view was chosen; the choice is remembered.
+function useMarkdownMode() {
+  const [rich, setRich] = useState(() => localStorage.getItem('savor-md-editor') !== 'source')
+  const toggle = (next: boolean) => {
+    localStorage.setItem('savor-md-editor', next ? 'rich' : 'source')
+    setRich(next)
+  }
+  return [rich, toggle] as const
+}
+
+const ModeToggle = ({ rich, setRich }: { rich: boolean; setRich: (b: boolean) => void }) => (
+  <div class="segmented">
+    <button type="button" class={rich ? 'selected' : ''} onClick={() => setRich(true)}>
+      Rich
+    </button>
+    <button type="button" class={!rich ? 'selected' : ''} onClick={() => setRich(false)}>
+      Markdown
+    </button>
+  </div>
+)
+
+const Loading = () => <p class="muted pad">Loading editor…</p>
+
 function FileEditor({ base, path }: { base: string; path: string }) {
   const [file, setFile] = useState<{ content: string; binary: boolean; truncated: boolean; size: number } | null>(null)
   const [draft, setDraft] = useState<string | null>(null)
   const [error, setError] = useState('')
-  const load = () => api('GET', `${base}/file?path=${encodeURIComponent(path)}`).then(setFile, (e) => setError(e.message))
-  useEffect(() => void load(), [path])
+  const [rich, setRich] = useMarkdownMode()
+  useEffect(() => void api('GET', `${base}/file?path=${encodeURIComponent(path)}`).then(setFile, (e) => setError(e.message)), [path])
+  const dirty = file !== null && draft !== null && draft !== file.content
   const save = async () => {
-    await api('PUT', `${base}/file`, { path, content: draft })
-    setDraft(null)
-    load()
+    if (!dirty) return
+    try {
+      await api('PUT', `${base}/file`, { path, content: draft })
+      setFile({ ...file, content: draft })
+      setError('')
+    } catch (e) {
+      setError((e as Error).message)
+    }
   }
-  if (error) return <div class="error-text pad">{error}</div>
+  if (error && !file) return <div class="error-text pad">{error}</div>
   if (!file) return null
-  const isMd = path.endsWith('.md')
+  const md = isMarkdown(path)
   return (
-    <article class="doc">
+    <article class="doc editor-page">
       <div class="doc-head">
         <h1 class="mono">{path}</h1>
-        {!file.binary && !file.truncated && draft === null && (
-          <button class="ghost" onClick={() => setDraft(file.content)}>
-            <Pencil size={14} /> Edit
-          </button>
-        )}
-      </div>
-      {file.binary ? (
-        <p class="muted">Binary file · {file.size} bytes</p>
-      ) : draft !== null ? (
-        <>
-          <textarea class="code-input" value={draft} onInput={(e) => setDraft(e.currentTarget.value)} />
-          <div class="row">
-            <button class="primary" onClick={save}>
+        <div class="row">
+          {md && !file.binary && <ModeToggle rich={rich} setRich={setRich} />}
+          {dirty && <span class="muted small">Unsaved changes</span>}
+          {!file.binary && !file.truncated && (
+            <button class="primary" disabled={!dirty} onClick={save} title="Save (Ctrl+S)">
               Save
             </button>
-            <button class="ghost" onClick={() => setDraft(null)}>
-              Cancel
-            </button>
-          </div>
+          )}
+        </div>
+      </div>
+      {error && <div class="error-text">{error}</div>}
+      {file.binary ? (
+        <p class="muted">Binary file · {file.size} bytes</p>
+      ) : file.truncated ? (
+        <>
+          <p class="muted">Showing the first 512 KB. Files this large can't be edited here.</p>
+          <pre class="code">{file.content}</pre>
         </>
-      ) : isMd ? (
-        <Markdown text={file.content} />
       ) : (
-        <pre class="code">{file.content}</pre>
+        <Suspense fallback={<Loading />}>
+          {md && rich ? (
+            <RichEditor key="rich" value={draft ?? file.content} onChange={setDraft} onSave={save} />
+          ) : (
+            <CodeEditor key="code" value={draft ?? file.content} path={path} onChange={setDraft} onSave={save} />
+          )}
+        </Suspense>
       )}
-      {file.truncated && <p class="muted">Showing the first 512 KB.</p>}
     </article>
   )
 }
 
+// Documents save themselves a moment after each change.
 function DocEditor({ base, id, projectId }: { base: string; id: string; projectId: string }) {
-  const [doc] = useApi<Doc>(`${base}/docs/${id}`, (e) => e.type === 'documents' && e.projectId === projectId)
-  const [draft, setDraft] = useState<{ title: string; content: string } | null>(null)
+  const [doc, setDoc] = useState<Doc | null>(null)
+  const [title, setTitle] = useState('')
+  const [state, setState] = useState<'saved' | 'unsaved' | 'saving' | 'error'>('saved')
+  const [rich, setRich] = useMarkdownMode()
+  const pending = useRef<{ title: string; content: string } | null>(null)
+  const timer = useRef<ReturnType<typeof setTimeout>>()
   useEffect(() => {
-    if (doc && doc.title === 'Untitled' && !doc.content && draft === null) setDraft({ title: doc.title, content: '' })
-  }, [doc])
-  if (!doc) return null
-  const save = async () => {
-    await api('PUT', `${base}/docs/${id}`, draft)
-    setDraft(null)
+    api<Doc>('GET', `${base}/docs/${id}`).then((d) => {
+      setDoc(d)
+      setTitle(d.title)
+    })
+  }, [id])
+
+  const flush = async () => {
+    const next = pending.current
+    if (!next) return
+    pending.current = null
+    setState('saving')
+    try {
+      await api('PUT', `${base}/docs/${id}`, next)
+      setState(pending.current ? 'unsaved' : 'saved')
+    } catch {
+      setState('error')
+    }
   }
+  const schedule = (patch: Partial<{ title: string; content: string }>) => {
+    pending.current = { title: pending.current?.title ?? title, content: pending.current?.content ?? doc!.content, ...patch }
+    setState('unsaved')
+    clearTimeout(timer.current)
+    timer.current = setTimeout(flush, 800)
+  }
+  useEffect(() => () => clearTimeout(timer.current), [])
   const remove = async () => {
-    if (!confirm(`Delete “${doc.title}”?`)) return
+    if (!doc || !confirm(`Delete “${doc.title}”?`)) return
     await api('DELETE', `${base}/docs/${id}`)
     go(`/p/${projectId}/files`)
   }
+  if (!doc) return null
+  const content = pending.current?.content ?? doc.content
   return (
-    <article class="doc">
-      {draft ? (
-        <>
-          <input class="title-input" value={draft.title} onInput={(e) => setDraft({ ...draft, title: e.currentTarget.value })} />
-          <textarea class="code-input" placeholder="Write in markdown…" value={draft.content} onInput={(e) => setDraft({ ...draft, content: e.currentTarget.value })} />
-          <div class="row">
-            <button class="primary" onClick={save}>
-              Save
-            </button>
-            <button class="ghost" onClick={() => setDraft(null)}>
-              Cancel
-            </button>
-          </div>
-        </>
-      ) : (
-        <>
-          <div class="doc-head">
-            <h1>{doc.title}</h1>
-            <div class="row">
-              <button class="ghost" onClick={() => setDraft({ title: doc.title, content: doc.content })}>
-                <Pencil size={14} /> Edit
-              </button>
-              <button class="ghost danger" onClick={remove}>
-                <Trash2 size={14} />
-              </button>
-            </div>
-          </div>
-          <Markdown text={doc.content} />
-        </>
-      )}
+    <article class="doc editor-page">
+      <div class="doc-head">
+        <input
+          class="title-input"
+          value={title}
+          placeholder="Title"
+          onInput={(e) => {
+            setTitle(e.currentTarget.value)
+            schedule({ title: e.currentTarget.value })
+          }}
+        />
+        <div class="row">
+          <ModeToggle rich={rich} setRich={setRich} />
+          <span class={`muted small ${state === 'error' ? 'error-text' : ''}`}>{{ saved: 'Saved', unsaved: 'Unsaved', saving: 'Saving…', error: 'Could not save' }[state]}</span>
+          <button class="ghost danger" title="Delete document" onClick={remove}>
+            <Trash2 size={14} />
+          </button>
+        </div>
+      </div>
+      <Suspense fallback={<Loading />}>
+        {rich ? (
+          <RichEditor key="rich" value={content} onChange={(c) => schedule({ content: c })} onSave={flush} autoFocus={!doc.content} />
+        ) : (
+          <CodeEditor key="code" value={content} path={`${doc.title}.md`} onChange={(c) => schedule({ content: c })} onSave={flush} />
+        )}
+      </Suspense>
     </article>
   )
 }

@@ -25,7 +25,7 @@ if (args[0] === 'auth' && args[1] === 'status') {
 }
 const config = args[args.indexOf('--mcp-config') + 1]
 const mcp = JSON.parse(fs.readFileSync(config, 'utf8')).mcpServers.savor
-if (process.env.FAKE_AGENT_LOG) fs.appendFileSync(process.env.FAKE_AGENT_LOG, JSON.stringify({ agent: 'claude', argv: process.argv, configMode: fs.statSync(config).mode & 0o777 }) + '\n')
+if (process.env.FAKE_AGENT_LOG) fs.appendFileSync(process.env.FAKE_AGENT_LOG, JSON.stringify({ agent: 'claude', argv: process.argv, cwd: process.cwd(), configMode: fs.statSync(config).mode & 0o777 }) + '\n')
 const sessionId = args.includes('--resume') ? args[args.indexOf('--resume') + 1] : args[args.indexOf('--session-id') + 1] ?? crypto.randomUUID()
 const out = (e) => process.stdout.write(JSON.stringify(e) + '\n')
 

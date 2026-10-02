@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks'
-import { ArrowUp, AtSign, Bookmark, ChevronDown, FileText, GitBranch, ListPlus, Plus, Square, Trash2, Workflow as WorkflowIcon, X, Zap, Crosshair } from 'lucide-preact'
+import { ArrowUp, AtSign, Bookmark, ChevronDown, FileText, FolderGit2, GitBranch, ListPlus, Plus, Square, Trash2, Workflow as WorkflowIcon, X, Zap, Crosshair } from 'lucide-preact'
 import { api, agentSummary, cap, PROVIDER_NAMES, readFileAsDataUrl, useAgents, useApi, type AgentConfig, type Attachment, type Project, type ProviderInfo, type Preset, type Workflow } from './api'
 import { ProviderIcon } from './Conversations'
 
@@ -17,6 +17,11 @@ interface Props {
   picked?: Picked[]
   clearPicked?: (i: number) => void // -1 clears all
   autoFocus?: boolean
+  // Git runs in this conversation's worktree when it has one.
+  threadId?: string
+  // New conversations can ask for a worktree of a new branch.
+  worktree?: string | null
+  setWorktree?: (branch: string | null) => void
 }
 
 const MAX_FILES = 8
@@ -160,7 +165,7 @@ export function Composer(props: Props) {
           </button>
           {popover === 'agent' && <AgentMenu agent={props.agent} agents={agents ?? []} setAgent={setAgent} close={() => setPopover(null)} />}
         </div>
-        <BranchPicker project={props.project} open={popover === 'branch'} toggle={() => setPopover(popover === 'branch' ? null : 'branch')} />
+        <BranchPicker project={props.project} threadId={props.threadId} worktree={props.worktree} setWorktree={props.setWorktree} open={popover === 'branch'} toggle={() => setPopover(popover === 'branch' ? null : 'branch')} />
         <div class="spacer" />
         {props.busy && props.onStop && (
           <button class="send stop" title="Stop" onClick={props.onStop}>
@@ -316,21 +321,36 @@ function AgentMenu({ agent, agents, setAgent, close }: { agent: AgentConfig; age
   )
 }
 
-function BranchPicker({ project, open, toggle }: { project: Project; open: boolean; toggle: () => void }) {
+function BranchPicker({ project, threadId, worktree, setWorktree, open, toggle }: { project: Project; threadId?: string; worktree?: string | null; setWorktree?: (b: string | null) => void; open: boolean; toggle: () => void }) {
   const [git, setGit] = useState<{ branch: string | null; branches: string[] }>({ branch: null, branches: [] })
   const [error, setError] = useState('')
-  const load = () => api('GET', `/projects/${project.id}/git`).then(setGit)
-  useEffect(() => void load(), [project.id, open])
+  const load = () => api('GET', `/projects/${project.id}/git${threadId ? `?thread=${threadId}` : ''}`).then(setGit)
+  useEffect(() => void load(), [project.id, threadId, open])
   if (!git.branch) return null
+  if (worktree)
+    return (
+      <span class="branch-btn worktree" title="This conversation will work in its own git worktree of this branch">
+        <FolderGit2 size={14} /> {worktree} <small>new worktree</small>
+        <button class="icon-btn" title="Work in the project folder instead" onClick={() => setWorktree?.(null)}>
+          <X size={13} />
+        </button>
+      </span>
+    )
   const change = async (branch: string) => {
     try {
-      await api('POST', `/projects/${project.id}/git/switch`, { branch })
+      await api('POST', `/projects/${project.id}/git/switch`, { branch, thread: threadId })
       setError('')
       toggle()
       load()
     } catch (e) {
       setError((e as Error).message)
     }
+  }
+  const newWorktree = () => {
+    const name = prompt('Branch name for the new worktree', '')?.trim()
+    if (!name) return
+    setWorktree?.(name)
+    toggle()
   }
   return (
     <div class="menu-anchor">
@@ -345,6 +365,11 @@ function BranchPicker({ project, open, toggle }: { project: Project; open: boole
               <GitBranch size={14} /> {b}
             </button>
           ))}
+          {setWorktree && (
+            <button onClick={newWorktree}>
+              <FolderGit2 size={14} /> New worktree…
+            </button>
+          )}
           {error && <div class="error-text">{error}</div>}
         </div>
       )}

@@ -2,7 +2,7 @@
 // test/fake-codex.mjs speaking the app-server protocol, test/fake-acp.mjs speaking ACP for OpenCode).
 import { test, before, after } from 'node:test'
 import assert from 'node:assert/strict'
-import { spawn } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import fs from 'node:fs'
 import http from 'node:http'
 import net from 'node:net'
@@ -29,7 +29,9 @@ const freePort = () =>
   })
 
 const api = async (method, p, body, cookie = `savor_token=${token}`) => {
-  const r = await fetch(`${base}/api${p}`, { method, headers: { cookie, 'content-type': 'application/json' }, body: body && JSON.stringify(body) })
+  const r = await fetch(`${base}/api${p}`, { method, headers: { cookie, 'content-type': 'application/json' }, body: body && JSON.stringify(body) }).catch((e) => {
+    throw new Error(`${method} ${p}: ${e.message} (${e.cause?.code ?? e.cause?.message ?? 'no cause'})`)
+  })
   return { status: r.status, body: await r.json().catch(() => null) }
 }
 
@@ -68,6 +70,8 @@ before(async () => {
       SAVOR_GROK_BIN: path.join(TMP, 'no-such-grok'),
       SAVOR_ANTIGRAVITY_BIN: path.join(TMP, 'no-such-agy'),
       FAKE_AGENT_LOG: AGENT_LOG,
+      CLAUDE_CONFIG_DIR: path.join(TMP, 'claude'),
+      CODEX_HOME: path.join(TMP, 'codex'),
     },
     stdio: ['ignore', 'pipe', 'inherit'],
   })
@@ -369,4 +373,203 @@ test('stopping a process only works for processes registered in the project', as
 
   assert.equal((await stop()).status, 200)
   await until(() => proc.signalCode === 'SIGTERM')
+})
+
+const gitIn = (cwd, ...args) => execFileSync('git', ['-c', 'user.email=t@test', '-c', 'user.name=Test', ...args], { cwd, stdio: 'pipe' }).toString().trim()
+const agentRuns = () => fs.readFileSync(AGENT_LOG, 'utf8').trim().split('\n').map((l) => JSON.parse(l))
+async function pairDevice(name) {
+  const pairing = (await api('POST', '/devices/pairing')).body
+  const redeem = await fetch(`${base}/api/pair`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code: pairing.code, name }) })
+  return redeem.headers.get('set-cookie').split(';')[0]
+}
+
+test('a conversation can work in its own git worktree, which merges back and can be deleted', async () => {
+  const [project] = (await api('GET', '/projects')).body
+  gitIn(PROJECT, 'init', '-q', '-b', 'main')
+  gitIn(PROJECT, 'commit', '-q', '--allow-empty', '-m', 'init')
+  const thread = (await api('POST', `/projects/${project.id}/threads`, { text: 'hello worktree', worktree: 'feature/wt' })).body
+  const t = `/projects/${project.id}/threads/${thread.id}`
+  assert.equal(thread.worktree.branch, 'feature/wt')
+  assert.ok(thread.worktree.path.startsWith(path.join(HOME, 'worktrees', project.id) + path.sep))
+  await until(async () => (await api('GET', t)).body.messages.some((m) => m.text === 'Echo: hello worktree'))
+  // The agent ran inside the worktree, and git in the conversation means git in the worktree.
+  assert.equal(fs.realpathSync(agentRuns().filter((r) => r.agent === 'claude').at(-1).cwd), fs.realpathSync(thread.worktree.path))
+  assert.equal((await api('GET', `/projects/${project.id}/git?thread=${thread.id}`)).body.branch, 'feature/wt')
+  assert.equal((await api('GET', `/projects/${project.id}/git`)).body.branch, 'main')
+  let [wt] = (await api('GET', `/projects/${project.id}/worktrees`)).body
+  assert.deepEqual([wt.branch, wt.ahead, wt.dirty], ['feature/wt', 0, false])
+  // A second conversation on the same branch shares the worktree.
+  const sibling = (await api('POST', `/projects/${project.id}/threads`, { text: 'more', worktree: 'feature/wt' })).body
+  assert.equal(sibling.worktree.path, wt.path)
+  assert.equal((await api('POST', `/projects/${project.id}/threads`, { text: 'x', worktree: 'not a branch' })).status, 400)
+
+  fs.writeFileSync(path.join(wt.path, 'feature.txt'), 'hello\n')
+  gitIn(wt.path, 'add', '.')
+  gitIn(wt.path, 'commit', '-q', '-m', 'add feature')
+  wt = (await api('GET', `/projects/${project.id}/worktrees`)).body[0]
+  assert.equal(wt.ahead, 1)
+  const hash = gitIn(wt.path, 'rev-parse', 'HEAD')
+  const commit = (await api('GET', `/projects/${project.id}/git/commits/${hash}?thread=${thread.id}`)).body
+  assert.equal(commit.subject, 'add feature')
+  assert.deepEqual(commit.files.map((f) => [f.path, f.additions, f.deletions]), [['feature.txt', 1, 0]])
+  assert.ok(commit.files[0].patch.includes('+hello'))
+  assert.equal((await api('GET', `/projects/${project.id}/git/commits/nothash`)).status, 400)
+
+  await page.goto(`${base}/#/p/${project.id}`)
+  await page.waitForSelector('.wt-head >> text=feature/wt')
+  await page.waitForSelector('.wt-head >> text=1 commit ahead')
+  await page.goto(`${base}/#${t.replace('/projects/', '/p/').replace('/threads/', '/t/')}`)
+  await page.waitForSelector('.status.worktree >> text=feature/wt')
+
+  assert.equal((await api('POST', `/projects/${project.id}/worktrees/merge`, { path: wt.path })).status, 200)
+  assert.equal(fs.readFileSync(path.join(PROJECT, 'feature.txt'), 'utf8'), 'hello\n')
+  assert.equal((await api('GET', `/projects/${project.id}/worktrees`)).body[0].ahead, 0)
+
+  // Deleting is for this computer only. Afterwards the conversations continue in the project folder with a fresh session.
+  const device = await pairDevice('CI laptop')
+  assert.equal((await api('DELETE', `/projects/${project.id}/worktrees?path=${encodeURIComponent(wt.path)}`, undefined, device)).status, 403)
+  assert.equal((await api('DELETE', `/projects/${project.id}/worktrees?path=${encodeURIComponent(wt.path)}`)).status, 200)
+  assert.equal((await api('GET', `/projects/${project.id}/worktrees`)).body.length, 0)
+  assert.ok(!fs.existsSync(wt.path))
+  assert.ok(!gitIn(PROJECT, 'branch', '--list', 'feature/wt'))
+  const after = (await api('GET', t)).body.thread
+  assert.deepEqual([after.worktree, after.completed, after.agentSessions], [null, true, []])
+  await api('POST', `${t}/messages`, { text: 'back home' })
+  await until(async () => (await api('GET', t)).body.messages.some((m) => m.text === 'Echo: back home'))
+  assert.equal(fs.realpathSync(agentRuns().filter((r) => r.agent === 'claude').at(-1).cwd), fs.realpathSync(PROJECT))
+})
+
+test('agents can start conversations in a worktree', async () => {
+  const [project] = (await api('GET', '/projects')).body
+  const [thread] = (await api('GET', `/projects/${project.id}/threads`)).body
+  const { mcpToken } = JSON.parse(fs.readFileSync(path.join(HOME, 'state.json'), 'utf8'))
+  const client = new Client({ name: 'e2e', version: '1' })
+  await client.connect(new StreamableHTTPClientTransport(new URL(`${base}/mcp?project=${project.id}&thread=${thread.id}`), { requestInit: { headers: { authorization: `Bearer ${mcpToken}` } } }))
+  await client.callTool({ name: 'start_conversation', arguments: { prompt: 'child work', worktree: 'agent/child' } })
+  await client.close()
+  const child = (await api('GET', `/projects/${project.id}/threads`)).body.find((t) => t.title === 'child work')
+  assert.equal(child.worktree.branch, 'agent/child')
+  await until(async () => (await api('GET', `/projects/${project.id}/threads/${child.id}`)).body.messages.some((m) => m.text === 'Echo: child work'))
+  assert.equal(fs.realpathSync(agentRuns().filter((r) => r.agent === 'claude').at(-1).cwd), fs.realpathSync(child.worktree.path))
+  await api('DELETE', `/projects/${project.id}/worktrees?path=${encodeURIComponent(child.worktree.path)}`)
+})
+
+test('Claude Code and Codex sessions of the project can be imported and continue', async () => {
+  const [project] = (await api('GET', '/projects')).body
+  const rec = (o) => JSON.stringify(o) + '\n'
+  const claudeDir = path.join(TMP, 'claude', 'projects', PROJECT.replace(/[^a-zA-Z0-9]/g, '-'))
+  fs.mkdirSync(claudeDir, { recursive: true })
+  const sid = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'
+  fs.writeFileSync(
+    path.join(claudeDir, `${sid}.jsonl`),
+    [
+      rec({ type: 'queue-operation', operation: 'enqueue', timestamp: '2026-09-29T10:00:00.000Z', sessionId: sid }),
+      rec({ type: 'user', timestamp: '2026-09-29T10:00:01.000Z', sessionId: sid, cwd: PROJECT, isSidechain: false, message: { role: 'user', content: [{ type: 'text', text: 'Enjoy context:\n{"threadLabel":null}\n\nNew input:\nBuild the login page' }] } }),
+      rec({ type: 'assistant', timestamp: '2026-09-29T10:00:02.000Z', sessionId: sid, message: { role: 'assistant', model: 'claude-opus-5-5', content: [{ type: 'thinking', thinking: 'hm' }, { type: 'text', text: 'Starting.' }, { type: 'tool_use', id: 't1', name: 'Bash', input: {} }] } }),
+      rec({ type: 'user', timestamp: '2026-09-29T10:00:03.000Z', sessionId: sid, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't1', content: 'ok' }] } }),
+      rec({ type: 'assistant', timestamp: '2026-09-29T10:00:04.000Z', sessionId: sid, message: { role: 'assistant', content: [{ type: 'text', text: 'Done: the login page exists.' }] } }),
+      rec({ type: 'user', timestamp: '2026-09-29T10:00:05.000Z', sessionId: sid, isMeta: true, message: { role: 'user', content: '[Image: a screenshot]' } }),
+      rec({ type: 'user', timestamp: '2026-09-29T10:00:06.000Z', sessionId: sid, message: { role: 'user', content: '<local-command-stdout>x</local-command-stdout>' } }),
+      rec({ type: 'user', timestamp: '2026-09-29T10:00:07.000Z', sessionId: sid, isSidechain: true, message: { role: 'user', content: [{ type: 'text', text: 'subagent prompt' }] } }),
+    ].join(''),
+  )
+  fs.mkdirSync(path.join(TMP, 'claude', 'projects', '-elsewhere'), { recursive: true })
+  fs.writeFileSync(path.join(TMP, 'claude', 'projects', '-elsewhere', 'ffffffff-0000-4000-8000-000000000000.jsonl'), rec({ type: 'user', timestamp: '2026-09-29T10:00:01.000Z', message: { role: 'user', content: 'other project' } }))
+  const codexDir = path.join(TMP, 'codex', 'sessions', '2026', '10', '01')
+  fs.mkdirSync(codexDir, { recursive: true })
+  const cid = '01a0fe68-0000-7020-bf38-bb0817cf96ee'
+  fs.writeFileSync(
+    path.join(codexDir, `rollout-2026-10-01T10-00-00-${cid}.jsonl`),
+    [
+      rec({ timestamp: '2026-10-01T10:00:00.000Z', type: 'session_meta', payload: { id: cid, timestamp: '2026-10-01T10:00:00.000Z', cwd: PROJECT, originator: 'codex_exec', cli_version: '0.159.0' } }),
+      rec({ timestamp: '2026-10-01T10:00:01.000Z', type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: '<environment_context>\n<cwd>x</cwd>\n</environment_context>' }, { type: 'input_text', text: '# AGENTS.md instructions\n\nbe nice' }] } }),
+      rec({ timestamp: '2026-10-01T10:00:02.000Z', type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Review the diff' }] } }),
+      rec({ timestamp: '2026-10-01T10:00:03.000Z', type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Looks good.' }] } }),
+      rec({ timestamp: '2026-10-01T10:00:04.000Z', type: 'event_msg', payload: { type: 'task_complete' } }),
+    ].join(''),
+  )
+  fs.writeFileSync(
+    path.join(codexDir, 'rollout-2026-10-01T11-00-00-01a0fe68-1111-7020-bf38-bb0817cf96ee.jsonl'),
+    rec({ timestamp: '2026-10-01T11:00:00.000Z', type: 'session_meta', payload: { id: '01a0fe68-1111-7020-bf38-bb0817cf96ee', timestamp: '2026-10-01T11:00:00.000Z', cwd: '/elsewhere' } }),
+  )
+
+  const list = (await api('GET', `/projects/${project.id}/import`)).body
+  assert.deepEqual(
+    list.map((s) => [s.provider, s.title, s.messages, s.imported]),
+    [
+      ['codex', 'Review the diff', 2, false],
+      ['claude', 'Build the login page', 2, false],
+    ],
+  )
+  const device = await pairDevice('CI phone 2')
+  assert.equal((await api('GET', `/projects/${project.id}/import`, undefined, device)).status, 403)
+  const sessions = list.map(({ provider, id }) => ({ provider, id }))
+  const threads = (await api('POST', `/projects/${project.id}/import`, { sessions })).body
+  assert.equal(threads.length, 2)
+  const imported = threads.find((t) => t.agent.provider === 'claude')
+  assert.deepEqual(imported.agentSessions, [{ provider: 'claude', sessionId: sid }])
+  assert.equal(imported.createdAt, '2026-09-29T10:00:01.000Z')
+  const t = `/projects/${project.id}/threads/${imported.id}`
+  assert.deepEqual(
+    (await api('GET', t)).body.messages.map((m) => [m.kind, m.text]),
+    [
+      ['user', 'Build the login page'],
+      ['conclusion', 'Starting.\n\nDone: the login page exists.'],
+    ],
+  )
+  assert.deepEqual((await api('GET', `/projects/${project.id}/threads/${threads.find((x) => x.agent.provider === 'codex').id}`)).body.messages.map((m) => m.text), ['Review the diff', 'Looks good.'])
+  assert.ok((await api('GET', `/projects/${project.id}/import`)).body.every((s) => s.imported))
+  assert.equal((await api('POST', `/projects/${project.id}/import`, { sessions })).body.length, 0)
+  // Continuing resumes the agent's own session instead of starting a new one.
+  await api('POST', `${t}/messages`, { text: 'continue' })
+  await until(async () => (await api('GET', t)).body.messages.some((m) => m.text === 'Echo: continue'))
+  const run = agentRuns().filter((r) => r.agent === 'claude').at(-1)
+  assert.equal(run.argv[run.argv.indexOf('--resume') + 1], sid)
+})
+
+test('the workflow gallery fills the editor with a recipe', async () => {
+  const [project] = (await api('GET', '/projects')).body
+  await page.goto(`${base}/#/p/${project.id}/workflows/gallery`)
+  await page.click('.recipe:has-text("Standup notes")')
+  await page.waitForSelector('text=New workflow from “Standup notes”')
+  assert.equal(await page.inputValue('.form input[required]'), 'Standup notes')
+  assert.equal(await page.inputValue('.form select'), '0 9 * * 1-5')
+  await page.click('.form button[type=submit]')
+  await page.waitForSelector('.side-list .card:has-text("Standup notes")')
+  const wf = (await api('GET', `/projects/${project.id}/workflows`)).body.find((w) => w.name === 'Standup notes')
+  assert.equal(wf.cron, '0 9 * * 1-5')
+  assert.ok(wf.prompt.includes('standup notes'))
+})
+
+test('files open in the code editor, markdown and documents in the rich editor', async () => {
+  const [project] = (await api('GET', '/projects')).body
+  fs.writeFileSync(path.join(PROJECT, 'hello.js'), 'const a = 1\n')
+  await page.goto(`${base}/#/p/${project.id}/files/f/hello.js`)
+  await page.click('.cm-editor .cm-content')
+  await page.keyboard.press('Control+End')
+  await page.keyboard.type('const b = 2')
+  await page.waitForSelector('text=Unsaved changes')
+  await page.keyboard.press('Control+s')
+  await until(() => fs.readFileSync(path.join(PROJECT, 'hello.js'), 'utf8') === 'const a = 1\nconst b = 2')
+
+  fs.writeFileSync(path.join(PROJECT, 'NOTES.md'), '# Notes\n\nSome **bold** text.\n')
+  await page.goto(`${base}/#/p/${project.id}/files/f/NOTES.md`)
+  await page.waitForSelector('.rich-content h1:has-text("Notes")')
+  await page.waitForSelector('.rich-content strong:has-text("bold")')
+  await page.click('.segmented button:has-text("Markdown")')
+  await page.waitForSelector('.cm-editor')
+  await page.click('.segmented button:has-text("Rich")')
+  await page.waitForSelector('.rich-content')
+
+  await page.click('.tree-head .icon-btn[title="New document"]')
+  await page.waitForSelector('.rich-content')
+  await page.fill('.title-input', 'Launch plan')
+  await page.click('.rich-content')
+  await page.keyboard.type('# Plan')
+  await page.keyboard.press('Enter')
+  await page.keyboard.type('Ship it')
+  let doc
+  await until(async () => (doc = (await api('GET', `/projects/${project.id}/docs`)).body.find((d) => d.title === 'Launch plan' && d.content.includes('Ship it'))))
+  assert.equal(doc.content, '# Plan\n\nShip it\n')
+  await page.waitForSelector('.editor-page >> text=Saved')
 })

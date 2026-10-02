@@ -12,7 +12,7 @@ import crypto from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { WebSocketServer, type WebSocket } from 'ws'
 import { daemonId, publicKey, relayChallenge } from '../shared/tunnel.js'
-import { securityHeaders } from '../shared/headers.js'
+import { newNonce, securityHeaders, withNonce } from '../shared/headers.js'
 
 const PORT = Number(process.env.RELAY_PORT ?? 8787)
 const HERE = path.dirname(fileURLToPath(import.meta.url))
@@ -45,13 +45,15 @@ const MIME: Record<string, string> = {
 
 function serveStatic(req: http.IncomingMessage, res: http.ServerResponse) {
   const url = new URL(req.url ?? '/', 'http://x')
-  for (const [k, v] of Object.entries(securityHeaders(req.headers.host))) res.setHeader(k, v)
+  const nonce = newNonce()
+  for (const [k, v] of Object.entries(securityHeaders(req.headers.host, nonce))) res.setHeader(k, v)
   // Tells the UI to run in relay mode, i.e. to talk to its daemon through the tunnel.
   if (url.pathname === '/savor-relay.json') return res.writeHead(200, { 'content-type': 'application/json' }).end('{"relay":true}')
   if (url.pathname === '/healthz') return res.writeHead(200).end('ok')
   const file = path.join(WEB, path.normalize(url.pathname))
   const target = file.startsWith(WEB + path.sep) && fs.existsSync(file) && fs.statSync(file).isFile() ? file : path.join(WEB, 'index.html')
   res.writeHead(200, { 'content-type': MIME[path.extname(target)] ?? 'application/octet-stream' })
+  if (target.endsWith('index.html')) return res.end(withNonce(fs.readFileSync(target, 'utf8'), nonce))
   fs.createReadStream(target).pipe(res)
 }
 

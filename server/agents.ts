@@ -172,6 +172,8 @@ function turnInput(p: Project, thread: Thread, msg: Message): TurnInput {
     productPreview: thread.preview,
     backgroundProcesses: store.listProcs(p).filter((pr) => pr.threadId === thread.id),
     decisions: store.listDecisions(p, thread.id).slice(-20),
+    cwd: store.cwdOf(p, thread),
+    worktree: thread.worktree?.branch ?? null,
   }
   const files = (msg.files ?? []).map((f) => path.join(dir, f))
   const attached = files.length ? `\n\nAttached files:\n${files.join('\n')}` : ''
@@ -195,7 +197,7 @@ function sessionFor(p: Project, thread: Thread): Session {
     return s.session
   }
   const holder: { session?: Session } = {}
-  const host = hostFor(p, tid, holder)
+  const host = hostFor(p, thread, holder)
   const provider = thread.agent.provider
   const session =
     provider === 'claude' ? new ClaudeSession(host, thread)
@@ -208,11 +210,13 @@ function sessionFor(p: Project, thread: Thread): Session {
 }
 
 // Events from a session that was already replaced (new settings) or closed are ignored.
-function hostFor(p: Project, tid: string, holder: { session?: Session }): Host {
+function hostFor(p: Project, thread: Thread, holder: { session?: Session }): Host {
+  const tid = thread.id
   const mine = () => !!holder.session && sessions.get(tid)?.session === holder.session
   return {
     p,
     tid,
+    cwd: store.cwdOf(p, thread),
     activity: new Activity(p, tid),
     working: () => mine() && beginTurn(p, tid),
     approve: (req) => askApproval(p, tid, req),
@@ -325,13 +329,14 @@ class CommandSession implements Session {
   start({ prompt }: TurnInput) {
     const { p, tid, activity } = this.host
     const [bin, ...args] = store.state().providers[this.provider]?.command ?? DEFAULT_COMMANDS[this.provider] ?? [BIN.antigravity, '-p', '{prompt}']
-    const first = !store.getThread(p, tid).agentSessions.length
-    const full = first ? `${systemPrompt(p)}\n\n${prompt}` : prompt
+    const thread = store.getThread(p, tid)
+    const first = !thread.agentSessions.length
+    const full = first ? `${systemPrompt(p, thread)}\n\n${prompt}` : prompt
     const out: string[] = []
     let stderr = ''
     activity.start('run', 'command', `${bin} (${this.provider})`)
     const child = spawn(bin, args.map((a) => a.replace('{prompt}', full)), {
-      cwd: p.path,
+      cwd: this.host.cwd,
       env: { ...process.env, SAVOR_MCP_URL: mcpUrl(p.id, tid), SAVOR_MCP_TOKEN: store.state().mcpToken },
       stdio: ['ignore', 'pipe', 'pipe'],
     })

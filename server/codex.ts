@@ -15,7 +15,7 @@ const MODES: Record<string, { sandbox: string; approvalPolicy: string; approvals
   'full-access': { sandbox: 'danger-full-access', approvalPolicy: 'never', approvalsReviewer: 'user' },
 }
 
-const CLIENT = { name: 'savor', title: 'Savor', version: '0.3.0' }
+const CLIENT = { name: 'savor', title: 'Savor', version: '0.4.0' }
 const CAPABILITIES = { experimentalApi: true, requestAttestation: false }
 
 function spawnAppServer(projectId?: string, threadId?: string) {
@@ -55,7 +55,7 @@ export class CodexSession implements Session {
     await this.rpc.request('initialize', { clientInfo: CLIENT, capabilities: CAPABILITIES })
     this.rpc.notify('initialized', {})
     const mode = MODES[a.permissionMode] ?? MODES.default
-    const settings = { cwd: p.path, ...mode, model: a.model || null, developerInstructions: systemPrompt(p) }
+    const settings = { cwd: this.host.cwd, ...mode, model: a.model || null, developerInstructions: systemPrompt(p, this.thread) }
     const sid = sessionIdOf(this.thread, 'codex')
     const r = sid ? await this.rpc.request('thread/resume', { threadId: sid, ...settings }).catch(() => this.rpc.request('thread/start', settings)) : await this.rpc.request('thread/start', settings)
     this.threadId = r.thread.id

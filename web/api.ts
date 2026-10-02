@@ -109,9 +109,14 @@ export interface Thread {
   completed: boolean
   needsYou: boolean
   error: string | null
+  worktree?: { branch: string; path: string } | null
   busy?: boolean
   messageCount?: number
 }
+export interface Worktree { branch: string; path: string; ahead: number; dirty: boolean }
+export interface CommitFile { path: string; additions: number | null; deletions: number | null; patch: string }
+export interface Commit { hash: string; subject: string; body: string; author: string; date: string; files: CommitFile[] }
+export interface ImportableSession { provider: 'claude' | 'codex'; id: string; title: string; startedAt: string; messages: number; imported: boolean }
 export interface Decision { id: string; groupId: string; title: string; body: string; options: string[]; selected: number | null; answer: string | null; resolved: boolean }
 export interface ActivityEvent { id: number; type: 'thinking' | 'command' | 'edit' | 'note'; label: string; time: string; finishedAt?: string }
 export interface Project {

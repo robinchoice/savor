@@ -38,7 +38,7 @@ export class AcpSession implements Session {
     const { p } = host
     this.config = configKey(thread.agent)
     const cmd = acpCommand(thread.agent.provider, p.id, thread.id)
-    const child = spawn(cmd.bin, cmd.args, { cwd: p.path, env: { ...process.env, ...cmd.env }, stdio: ['pipe', 'pipe', 'pipe'] })
+    const child = spawn(cmd.bin, cmd.args, { cwd: host.cwd, env: { ...process.env, ...cmd.env }, stdio: ['pipe', 'pipe', 'pipe'] })
     this.rpc = new Rpc(child, { notification: (m, params) => this.onNotification(m, params), request: (m, params) => this.onRequest(m, params) })
     this.rpc.exited.then(({ code, signal }) => host.closed(this.stopping || signal === 'SIGTERM' ? 'Turn stopped.' : `${cmd.bin} exited with ${code}: ${this.rpc.stderrTail}`))
     this.ready = this.init()
@@ -50,18 +50,18 @@ export class AcpSession implements Session {
     const init = await this.rpc.request('initialize', {
       protocolVersion: 1,
       clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
-      clientInfo: { name: 'savor', version: '0.3.0' },
+      clientInfo: { name: 'savor', version: '0.4.0' },
     })
     const mcpServers = [{ type: 'http', name: 'savor', url: mcpUrl(p.id, tid), headers: [{ name: 'Authorization', value: `Bearer ${store.state().mcpToken}` }] }]
     const sid = sessionIdOf(this.thread, a.provider)
     let session: any = null
     if (sid && init.agentCapabilities?.loadSession) {
       this.loading = true
-      session = await this.rpc.request('session/load', { sessionId: sid, cwd: p.path, mcpServers }).catch(() => null)
+      session = await this.rpc.request('session/load', { sessionId: sid, cwd: this.host.cwd, mcpServers }).catch(() => null)
       this.loading = false
       if (session) session.sessionId = sid
     }
-    if (!session) session = await this.rpc.request('session/new', { cwd: p.path, mcpServers })
+    if (!session) session = await this.rpc.request('session/new', { cwd: this.host.cwd, mcpServers })
     this.sessionId = session.sessionId
     rememberSession(p, tid, a.provider, this.sessionId)
     if (a.permissionMode && session.modes?.availableModes?.some((m: any) => m.id === a.permissionMode) && session.modes.currentModeId !== a.permissionMode)
@@ -74,7 +74,7 @@ export class AcpSession implements Session {
     // ACP has no system prompt: the protocol goes in front of the first prompt of a session.
     const first = !sessionIdOf(this.thread, this.thread.agent.provider)
     const content = [
-      { type: 'text', text: first ? `${systemPrompt(this.host.p)}\n\n${prompt}` : prompt },
+      { type: 'text', text: first ? `${systemPrompt(this.host.p, this.thread)}\n\n${prompt}` : prompt },
       ...images.map((file) => ({ type: 'image', data: fs.readFileSync(file).toString('base64'), mimeType: MIME[path.extname(file).slice(1).toLowerCase()] ?? 'image/png' })),
     ]
     this.ready

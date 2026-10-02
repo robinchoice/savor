@@ -2,7 +2,6 @@ import http, { type IncomingMessage, type ServerResponse } from 'node:http'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { execFileSync } from 'node:child_process'
 import * as store from './store.js'
 import { emit, subscribe } from './events.js'
 import { HOST, PORT, PUBLIC_URL } from './config.js'
@@ -13,10 +12,12 @@ import * as devices from './devices.js'
 import * as files from './files.js'
 import * as awake from './awake.js'
 import { closeDevice, pairingLink, relayStatus, startRelay } from './relay-client.js'
-import { securityHeaders } from '../shared/headers.js'
+import { newNonce, securityHeaders, withNonce } from '../shared/headers.js'
 import { handleMcp } from './mcp.js'
 import { isUnsafe, listAgents, mergeAgent } from './providers.js'
 import { nextRun, runWorkflow, syncSchedules, validateCron } from './scheduler.js'
+import * as git from './git.js'
+import { importSessions, listSessions } from './import.js'
 
 // dist/web next to the sources in development, ../web next to the bundled dist/server/index.mjs.
 const HERE = path.dirname(fileURLToPath(import.meta.url))
@@ -173,7 +174,8 @@ route('GET', '/projects/:pid/threads', (params) => {
 route('POST', '/projects/:pid/threads', (params, b, ctx) => {
   const p = project(params)
   const agent = agentFrom(ctx, p.agent, b.agent ?? {})
-  const t = store.createThread(p, { title: b.text || 'New conversation', agent })
+  const worktree = typeof b.worktree === 'string' && b.worktree.trim() ? git.addWorktree(p, b.worktree.trim()) : null
+  const t = store.createThread(p, { title: b.text || 'New conversation', agent, worktree })
   if (b.agent && ctx.auth.origin === 'local') store.updateProject(p.id, { agent })
   emit({ type: 'thread', projectId: p.id, threadId: t.id })
   agents.send(p, t.id, inputFrom(b, ctx, p, t.id))
@@ -285,22 +287,38 @@ route('POST', '/projects/:pid/threads/:tid/browser/pick', (params, b) => browser
 
 // ---- git ----
 
-const git = (p: store.Project, ...args: string[]) => execFileSync('git', args, { cwd: p.path, stdio: ['ignore', 'pipe', 'pipe'] }).toString().trim()
+// Git routes take `thread` to work in that conversation's worktree instead of the project folder.
+const cwdFor = (p: store.Project, thread: string | null | undefined) => (thread ? store.cwdOf(p, store.getThread(p, thread)) : p.path)
 
-route('GET', '/projects/:pid/git', (params) => {
-  const p = project(params)
-  try {
-    return { branch: git(p, 'rev-parse', '--abbrev-ref', 'HEAD'), branches: git(p, 'branch', '--format=%(refname:short)').split('\n').filter(Boolean) }
-  } catch {
-    return { branch: null, branches: [] }
-  }
-})
+route('GET', '/projects/:pid/git', (params, _, ctx) => git.branches(cwdFor(project(params), ctx.query.get('thread'))))
 route('POST', '/projects/:pid/git/switch', (params, b) => {
-  try {
-    git(project(params), 'switch', String(b.branch))
-  } catch (e) {
-    throw new Error(String((e as { stderr?: Buffer }).stderr ?? e).trim())
+  git.git(cwdFor(project(params), b.thread), 'switch', String(b.branch))
+  return {}
+})
+route('GET', '/projects/:pid/git/commits/:hash', (params, _, ctx) => git.showCommit(cwdFor(project(params), ctx.query.get('thread')), params.hash))
+route('GET', '/projects/:pid/worktrees', (params) => git.listWorktrees(project(params)))
+route('POST', '/projects/:pid/worktrees/merge', (params, b) => {
+  const p = project(params)
+  const wt = git.listWorktrees(p).find((w) => w.path === b.path)
+  if (!wt) throw new store.NotFound('worktree')
+  git.mergeWorktree(p, wt.branch)
+  emit({ type: 'thread', projectId: p.id })
+  return git.branches(p.path)
+})
+// Removes the worktree and its branch. Its conversations stay, and continue in the project folder
+// with a fresh agent session that gets the visible history handed over.
+route('DELETE', '/projects/:pid/worktrees', (params, _, ctx) => {
+  localOnly(ctx)
+  const p = project(params)
+  const wt = git.listWorktrees(p).find((w) => w.path === ctx.query.get('path'))
+  if (!wt) throw new store.NotFound('worktree')
+  for (const t of store.listThreads(p).filter((t) => t.worktree?.path === wt.path)) {
+    agents.stop(t.id)
+    store.updateThread(p, t.id, { worktree: null, agentSessions: [], completed: true })
   }
+  git.removeWorktree(p, wt.path)
+  git.deleteBranch(p, wt.branch)
+  emit({ type: 'thread', projectId: p.id })
   return {}
 })
 
@@ -315,6 +333,17 @@ route('PUT', '/projects/:pid/file', (params, b) => {
   if (files.internal(p, b.path)) throw new Forbidden("Savor's own files (.savor/) can't be edited here.")
   files.write(p, b.path, b.content)
   return {}
+})
+
+// ---- import of existing agent sessions ----
+
+route('GET', '/projects/:pid/import', (params, _, ctx) => (localOnly(ctx), listSessions(project(params))))
+route('POST', '/projects/:pid/import', (params, b, ctx) => {
+  localOnly(ctx)
+  const p = project(params)
+  const threads = importSessions(p, (b.sessions ?? []).filter((s: any) => ['claude', 'codex'].includes(s?.provider) && typeof s.id === 'string'))
+  emit({ type: 'thread', projectId: p.id })
+  return threads
 })
 
 route('GET', '/projects/:pid/docs', (params) => store.listDocs(project(params)))
@@ -372,7 +401,7 @@ route('GET', '/projects/:pid/processes/:ospid/log', (params, _, ctx) => {
   const p = project(params)
   const proc = store.listProcs(p).find((pr) => pr.pid === Number(params.ospid))
   if (!proc?.log) throw new store.NotFound('log')
-  const file = path.join(p.path, proc.log)
+  const file = path.resolve(proc.cwd, proc.log)
   const size = fs.statSync(file).size
   const fd = fs.openSync(file, 'r')
   const buf = Buffer.alloc(Math.min(size, 20_000))
@@ -397,11 +426,12 @@ async function readBody(req: IncomingMessage) {
 
 const json = (res: ServerResponse, status: number, data: unknown) => res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify(data))
 
-function serveStatic(url: URL, res: ServerResponse) {
+function serveStatic(url: URL, res: ServerResponse, nonce: string) {
   const file = path.join(WEB, path.normalize(url.pathname))
   const target = fs.existsSync(file) && fs.statSync(file).isFile() ? file : path.join(WEB, 'index.html')
   if (!fs.existsSync(target)) return res.writeHead(500).end('Web UI not built. Run `npm run build`.')
   res.writeHead(200, { 'content-type': MIME[path.extname(target)] ?? 'application/octet-stream' })
+  if (target.endsWith('index.html')) return res.end(withNonce(fs.readFileSync(target, 'utf8'), nonce))
   fs.createReadStream(target).pipe(res)
 }
 
@@ -422,7 +452,8 @@ function disconnectDevice(deviceId: string) {
 
 async function handle(req: IncomingMessage, res: ServerResponse) {
   const url = new URL(req.url ?? '/', 'http://x')
-  for (const [k, v] of Object.entries(securityHeaders(req.headers.host))) res.setHeader(k, v)
+  const nonce = newNonce()
+  for (const [k, v] of Object.entries(securityHeaders(req.headers.host, nonce))) res.setHeader(k, v)
 
   if (url.pathname === '/mcp') {
     if (!store.safeEqual(req.headers.authorization?.match(/^Bearer (.+)$/)?.[1], store.state().mcpToken)) return res.writeHead(401).end()
@@ -452,7 +483,7 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
     return res.end('{}')
   }
 
-  if (!url.pathname.startsWith('/api/')) return serveStatic(url, res)
+  if (!url.pathname.startsWith('/api/')) return serveStatic(url, res, nonce)
   const auth = devices.authenticate(req)
   if (!auth) return json(res, 401, { error: 'unauthorized' })
   if (auth.device) track(auth.device.id, res)
@@ -472,8 +503,8 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
 http
   .createServer((req, res) =>
     handle(req, res).catch((e) => {
-      if (!(e instanceof store.NotFound || e instanceof Forbidden || e instanceof BadRequest)) console.error(e)
-      if (!res.headersSent) json(res, e instanceof store.NotFound ? 404 : e instanceof Forbidden ? 403 : e instanceof BadRequest ? 400 : 500, { error: e.message })
+      if (!(e instanceof store.NotFound || e instanceof Forbidden || e instanceof BadRequest || e instanceof git.GitError)) console.error(e)
+      if (!res.headersSent) json(res, e instanceof store.NotFound ? 404 : e instanceof Forbidden ? 403 : e instanceof BadRequest || e instanceof git.GitError ? 400 : 500, { error: e.message })
       else res.end()
     }),
   )

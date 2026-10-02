@@ -54,6 +54,8 @@ export interface Thread {
   needsYou: boolean
   error: string | null
   parentId?: string
+  // Set when the conversation works in its own git worktree instead of the project folder.
+  worktree?: { branch: string; path: string } | null
 }
 export interface ActivityEvent { id: number; type: 'thinking' | 'command' | 'edit' | 'note'; label: string; time: string; finishedAt?: string }
 export interface Decision {
@@ -260,7 +262,9 @@ export function getThread(p: Project, tid: string): Thread {
   return t
 }
 
-export function createThread(p: Project, init: { title: string; label?: string | null; agent?: AgentConfig; parentId?: string }): Thread {
+export const cwdOf = (p: Project, t: Thread) => t.worktree?.path ?? p.path
+
+export function createThread(p: Project, init: { title: string; label?: string | null; agent?: AgentConfig; parentId?: string; worktree?: { branch: string; path: string } | null }): Thread {
   const t: Thread = {
     id: newId(),
     title: init.title.slice(0, 300),
@@ -276,15 +280,18 @@ export function createThread(p: Project, init: { title: string; label?: string |
     error: null,
   }
   if (init.parentId) t.parentId = init.parentId
-  writeJson(path.join(threadDir(p, t.id), 'thread.json'), t)
+  if (init.worktree) t.worktree = init.worktree
+  saveThread(p, t)
   return t
 }
+
+export const saveThread = (p: Project, t: Thread) => writeJson(path.join(threadDir(p, t.id), 'thread.json'), t)
 
 export const hueFor = (s: string) => [...s].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7)
 
 export function updateThread(p: Project, tid: string, patch: Partial<Thread>): Thread {
   const t = { ...getThread(p, tid), ...patch, updatedAt: now() }
-  writeJson(path.join(threadDir(p, tid), 'thread.json'), t)
+  saveThread(p, t)
   return t
 }
 
@@ -296,7 +303,7 @@ export function appendMessage(p: Project, tid: string, m: Omit<Message, 'id' | '
   return msg
 }
 
-const writeMessages = (p: Project, tid: string, msgs: Message[]) =>
+export const writeMessages = (p: Project, tid: string, msgs: Message[]) =>
   fs.writeFileSync(path.join(threadDir(p, tid), 'messages.jsonl'), msgs.map((m) => JSON.stringify(m) + '\n').join(''))
 
 export function updateMessage(p: Project, tid: string, id: string, patch: Partial<Message>): Message {

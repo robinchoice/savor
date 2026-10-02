@@ -3,14 +3,15 @@ import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import {
   Asterisk, Hexagon, Code2, Sparkles, Orbit, Plus, Search, Layers, MessageSquare, Check, MoreHorizontal, PanelRight, FileText, Flag,
-  CircleAlert, ArrowUp, ArrowLeft, Pencil, Brain, Terminal, Wrench, ArrowRight, MessageSquareMore, Smartphone, Monitor, ShieldQuestion, CircleCheck, X, ChevronUp, ChevronDown, Paperclip,
+  CircleAlert, ArrowUp, ArrowLeft, Pencil, Brain, Terminal, Wrench, ArrowRight, MessageSquareMore, Smartphone, Monitor, ShieldQuestion, CircleCheck, X, ChevronUp, ChevronDown, Paperclip, GitBranch, GitMerge, Trash2,
 } from 'lucide-preact'
 import {
-  api, duration, formatDay, formatTime, go, PROVIDER_NAMES, useApi, type ActivityEvent, type AgentConfig, type Attachment, type Decision, type Message, type Proc, type Project, type Thread,
+  api, duration, formatDay, formatTime, go, PROVIDER_NAMES, useApi, type ActivityEvent, type AgentConfig, type Attachment, type Decision, type Message, type Proc, type Project, type Thread, type Worktree,
 } from './api'
 import { Composer, type Picked } from './Composer'
 import { transport } from './transport'
 import { Preview } from './Preview'
+import { CommitDialog } from './Commit'
 
 export function Markdown({ text }: { text: string }) {
   const html = useMemo(() => DOMPurify.sanitize(marked.parse(text, { async: false }) as string), [text])
@@ -41,6 +42,7 @@ type Filter = 'all' | 'needs' | 'working' | 'unread'
 
 export function Conversations({ project, threadId, isNew }: { project: Project; threadId?: string; isNew?: boolean }) {
   const [threads] = useApi<Thread[]>(`/projects/${project.id}/threads`, (e) => e.projectId === project.id && ['thread', 'status', 'message'].includes(e.type))
+  const [worktrees] = useApi<Worktree[]>(`/projects/${project.id}/worktrees`, (e) => e.projectId === project.id && e.type === 'thread')
   const [filter, setFilter] = useState<Filter>('all')
   const [query, setQuery] = useState('')
   const [showCompleted, setShowCompleted] = useState(() => localStorage.getItem('savor-show-completed') !== 'false')
@@ -57,6 +59,12 @@ export function Conversations({ project, threadId, isNew }: { project: Project; 
   const visible = all
     .filter((t) => filter === 'all' || (filter === 'needs' ? t.needsYou : filter === 'working' ? t.busy : t.unread))
     .filter((t) => !q || t.title.toLowerCase().includes(q) || t.label?.name.toLowerCase().includes(q))
+
+  // Conversations in a worktree are listed under it, worktrees without conversations too.
+  const groups = new Map<string, { branch: string; path: string; threads: Thread[] }>()
+  for (const w of worktrees ?? []) groups.set(w.path, { branch: w.branch, path: w.path, threads: [] })
+  for (const t of visible) if (t.worktree) (groups.get(t.worktree.path) ?? groups.set(t.worktree.path, { ...t.worktree, threads: [] }).get(t.worktree.path)!).threads.push(t)
+  const plain = visible.filter((t) => !t.worktree)
 
   const filterTab = (id: Filter, label: string, Icon?: any) => (
     <button class={`filter ${filter === id ? 'active' : ''} ${id === 'needs' && counts.needs ? 'attention' : ''}`} onClick={() => setFilter(id)}>
@@ -85,10 +93,18 @@ export function Conversations({ project, threadId, isNew }: { project: Project; 
           {filterTab('unread', 'Unread', MessageSquare)}
         </div>
         <div class="cards">
-          {visible.map((t) => (
+          {plain.map((t) => (
             <ThreadCard key={t.id} project={project} thread={t} active={t.id === threadId} />
           ))}
-          {threads && !visible.length && <p class="muted center">No conversations{filter !== 'all' ? ' in this filter' : ' yet'}.</p>}
+          {[...groups.values()].map((g) => (
+            <div class="wt-group" key={g.path}>
+              <WorktreeHead project={project} branch={g.branch} path={g.path} info={worktrees?.find((w) => w.path === g.path)} />
+              {g.threads.map((t) => (
+                <ThreadCard key={t.id} project={project} thread={t} active={t.id === threadId} />
+              ))}
+            </div>
+          ))}
+          {threads && !visible.length && !groups.size && <p class="muted center">No conversations{filter !== 'all' ? ' in this filter' : ' yet'}.</p>}
         </div>
         <footer class="conv-foot">
           <span>
@@ -100,6 +116,55 @@ export function Conversations({ project, threadId, isNew }: { project: Project; 
         </footer>
       </aside>
       {threadId ? <ThreadView key={threadId} project={project} threadId={threadId} /> : <NewConversation project={project} />}
+    </div>
+  )
+}
+
+function WorktreeHead({ project, branch, path, info }: { project: Project; branch: string; path: string; info?: Worktree }) {
+  const [menu, setMenu] = useState(false)
+  const [busy, setBusy] = useState('')
+  const [error, setError] = useState('')
+  const run = async (what: string, fn: () => Promise<unknown>) => {
+    setBusy(what)
+    try {
+      await fn()
+      setError('')
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setBusy('')
+    }
+  }
+  const merge = () => run('Merging…', () => api('POST', `/projects/${project.id}/worktrees/merge`, { path }))
+  const remove = () => {
+    if (!confirm(`Delete the worktree and branch “${branch}”? Unmerged changes are lost. Its conversations stay and continue in the project folder.`)) return
+    run('Deleting…', () => api('DELETE', `/projects/${project.id}/worktrees?path=${encodeURIComponent(path)}`))
+  }
+  return (
+    <div class="wt-head">
+      <GitBranch size={14} />
+      <span class="wt-name" title={path}>
+        {branch}
+      </span>
+      <span class="muted small">{busy || (info ? `${info.ahead ? `${info.ahead} commit${info.ahead === 1 ? '' : 's'} ahead` : 'nothing to merge'}${info.dirty ? ' · uncommitted changes' : ''}` : 'removed')}</span>
+      {info && (
+        <div class="menu-anchor">
+          <button class="icon-btn" title="Worktree actions" onClick={() => setMenu(!menu)}>
+            <MoreHorizontal size={15} />
+          </button>
+          {menu && (
+            <div class="menu right" onClick={() => setMenu(false)}>
+              <button disabled={!info.ahead} onClick={merge}>
+                <GitMerge size={14} /> Merge into the project
+              </button>
+              <button class="danger" onClick={remove}>
+                <Trash2 size={14} /> Delete worktree and branch
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+      {error && <div class="error-text small">{error}</div>}
     </div>
   )
 }
@@ -152,8 +217,9 @@ function ThreadCard({ project, thread: t, active }: { project: Project; thread: 
 
 function NewConversation({ project }: { project: Project }) {
   const [agent, setAgent] = useState<AgentConfig>(project.agent)
+  const [worktree, setWorktree] = useState<string | null>(null)
   const send = async (text: string, attachments: Attachment[]) => {
-    const t = await api<Thread>('POST', `/projects/${project.id}/threads`, { text, attachments, agent })
+    const t = await api<Thread>('POST', `/projects/${project.id}/threads`, { text, attachments, agent, worktree })
     go(`/p/${project.id}/t/${t.id}`)
   }
   return (
@@ -164,7 +230,7 @@ function NewConversation({ project }: { project: Project }) {
           Start a conversation in <b>{project.name}</b>. Each conversation gets its own agent session.
         </p>
       </div>
-      <Composer project={project} agent={agent} setAgent={setAgent} onSend={send} placeholder="Describe what you want…" autoFocus />
+      <Composer project={project} agent={agent} setAgent={setAgent} onSend={send} placeholder="Describe what you want…" worktree={worktree} setWorktree={setWorktree} autoFocus />
     </section>
   )
 }
@@ -180,6 +246,7 @@ function ThreadView({ project, threadId }: { project: Project; threadId: string 
   const [picked, setPicked] = useState<Picked[]>([])
   const [menu, setMenu] = useState(false)
   const [find, setFind] = useState<{ open: boolean; q: string; at: number }>({ open: false, q: '', at: 0 })
+  const [commit, setCommit] = useState<string | null>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const findRef = useRef<HTMLInputElement>(null)
 
@@ -262,6 +329,11 @@ function ThreadView({ project, threadId }: { project: Project; threadId: string 
                 {status.icon} {status.text}
               </span>
               {queued > 0 && <span class="status">{queued} queued</span>}
+              {thread.worktree && (
+                <span class="status worktree" title={thread.worktree.path}>
+                  <GitBranch size={12} /> {thread.worktree.branch}
+                </span>
+              )}
               <span class="path">
                 <FileText size={12} /> .savor/threads/{thread.id}/messages.jsonl
               </span>
@@ -334,6 +406,7 @@ function ThreadView({ project, threadId }: { project: Project; threadId: string 
               base={base}
               highlight={find.open ? find.q.trim() : ''}
               match={matches.includes(m.id) ? (m.id === currentMatch ? 'current' : 'match') : ''}
+              onCommit={setCommit}
             />
           ))}
           {busy && (
@@ -374,6 +447,7 @@ function ThreadView({ project, threadId }: { project: Project; threadId: string 
 
         <Composer
           project={project}
+          threadId={threadId}
           agent={thread.agent}
           setAgent={setAgent}
           onSend={send}
@@ -385,6 +459,7 @@ function ThreadView({ project, threadId }: { project: Project; threadId: string 
           clearPicked={(i) => setPicked(i < 0 ? [] : picked.filter((_, j) => j !== i))}
         />
       </section>
+      {commit && <CommitDialog project={project} hash={commit} threadId={threadId} onClose={() => setCommit(null)} />}
       {panel && (
         <aside class="side-panel">
           <div class="panel-tabs">
@@ -424,7 +499,7 @@ function Highlighted({ text, q }: { text: string; q: string }) {
 
 const attachmentLabel = (name: string) => name.replace(/^[0-9a-f]{16}-/, '')
 
-function MessageItem({ m, thread, decisions, active, base, highlight, match }: { m: Message; thread: Thread; decisions: Decision[]; active: boolean; base: string; highlight: string; match: string }) {
+function MessageItem({ m, thread, decisions, active, base, highlight, match, onCommit }: { m: Message; thread: Thread; decisions: Decision[]; active: boolean; base: string; highlight: string; match: string; onCommit: (hash: string) => void }) {
   const who = m.kind === 'user' ? (m.origin === 'remote' ? `You · ${m.device ?? 'remote device'}` : 'You') : PROVIDER_NAMES[m.modelInfo?.provider ?? thread.agent.provider]
   const worked = m.workTiming && Date.parse(m.workTiming.finishedAt) - Date.parse(m.workTiming.startedAt)
   const queued = m.kind === 'user' && m.delivered === false
@@ -486,9 +561,9 @@ function MessageItem({ m, thread, decisions, active, base, highlight, match }: {
           {m.commits?.length ? (
             <div class="commits">
               {m.commits.map((c) => (
-                <code key={c} title={c}>
-                  {c.slice(0, 7)}
-                </code>
+                <button key={c} class="commit" title={`Show what ${c} changed`} onClick={() => onCommit(c)}>
+                  <GitBranch size={12} /> {c.slice(0, 7)}
+                </button>
               ))}
             </div>
           ) : null}

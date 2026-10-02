@@ -36,7 +36,7 @@ export class ClaudeSession implements Session {
       '--input-format', 'stream-json',
       '--output-format', 'stream-json',
       '--verbose',
-      '--append-system-prompt', systemPrompt(p),
+      '--append-system-prompt', systemPrompt(p, thread),
       '--mcp-config', mcpConfig,
       '--allowedTools', 'mcp__savor',
       '--permission-mode', a.permissionMode || 'acceptEdits',
@@ -51,7 +51,7 @@ export class ClaudeSession implements Session {
     else args.push('--session-id', crypto.randomUUID())
 
     this.child = spawn(BIN.claude, args, {
-      cwd: p.path,
+      cwd: host.cwd,
       env: { ...process.env, MCP_TOOL_TIMEOUT: String(24 * 3600_000) },
       stdio: ['pipe', 'pipe', 'pipe'],
     })

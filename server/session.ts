@@ -24,9 +24,17 @@ const VERBOSITY = {
   high: 'Explain your reasoning and results in detail.',
 }
 
-export function systemPrompt(p: Project) {
+export function systemPrompt(p: Project, thread: Thread) {
   const role = store.readRole(p).trim()
-  return [PROTOCOL, `- ${VERBOSITY[p.verbosity]}`, role && `\nProject role and instructions (from ROLE.md):\n${role}`].filter(Boolean).join('\n')
+  const wt = thread.worktree
+  return [
+    PROTOCOL,
+    `- ${VERBOSITY[p.verbosity]}`,
+    wt && `- This conversation works in its own git worktree of the project at ${wt.path} (branch ${wt.branch}). Do all work there; the project folder ${p.path} is the main checkout, leave it alone.`,
+    role && `\nProject role and instructions (from ROLE.md):\n${role}`,
+  ]
+    .filter(Boolean)
+    .join('\n')
 }
 
 export interface TurnInput { prompt: string; images: string[] }
@@ -36,6 +44,8 @@ export interface ApprovalRequest { title: string; detail: string; options: Appro
 export interface Host {
   p: Project
   tid: string
+  // Where the agent works: the project folder, or the conversation's worktree.
+  cwd: string
   activity: Activity
   // The agent started work on its own (e.g. a background task finished): count the thread as working.
   working(): void
