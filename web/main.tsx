@@ -1,3 +1,4 @@
+import './monitoring'
 import { render } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
 import { Coffee, FolderOpen, Files as FilesIcon, Layers, MessageSquare, Moon, Plus, Server, SlidersHorizontal, Sun, Workflow as WorkflowIcon, ChevronDown, Smartphone, Bell, BellOff } from 'lucide-preact'

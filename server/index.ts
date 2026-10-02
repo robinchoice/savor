@@ -1,3 +1,4 @@
+import { captureException } from './monitoring.js'
 import http, { type IncomingMessage, type ServerResponse } from 'node:http'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -521,7 +522,10 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
 http
   .createServer((req, res) =>
     handle(req, res).catch((e) => {
-      if (!(e instanceof store.NotFound || e instanceof Forbidden || e instanceof BadRequest || e instanceof git.GitError)) console.error(e)
+      if (!(e instanceof store.NotFound || e instanceof Forbidden || e instanceof BadRequest || e instanceof git.GitError)) {
+        console.error(e)
+        captureException(e)
+      }
       if (!res.headersSent) json(res, e instanceof store.NotFound ? 404 : e instanceof Forbidden ? 403 : e instanceof BadRequest || e instanceof git.GitError ? 400 : 500, { error: e.message })
       else res.end()
     }),

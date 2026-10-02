@@ -195,7 +195,7 @@ test('pair through the relay and work on the project remotely', async () => {
       }),
   )
   assert.deepEqual(key, { webcrypto: true, extractable: false, raw: false }, 'the device key cannot be read out')
-  assert.ok(!(await page.evaluate(() => localStorage.getItem('savor-remote'))).includes('sk'), 'no secret in localStorage')
+  assert.deepEqual(Object.keys(JSON.parse(await page.evaluate(() => localStorage.getItem('savor-remote')))).sort(), ['daemonPk', 'name'], 'only public pairing metadata in localStorage')
 
   const tapped = fs.readFileSync(TAP, 'utf8')
   assert.ok(tapped.length > 1000, 'traffic went through the relay')

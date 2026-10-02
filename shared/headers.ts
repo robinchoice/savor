@@ -12,7 +12,7 @@ export function securityHeaders(host?: string, nonce?: string) {
       "script-src 'self'",
       `style-src 'self'${nonce ? ` 'nonce-${nonce}'` : ''}`,
       "img-src 'self' data: blob:",
-      `connect-src 'self'${ws}`,
+      `connect-src 'self'${ws} https://glitchtip.diespaetzles.lol`,
       "worker-src 'self'",
       "manifest-src 'self'",
       "object-src 'none'",
