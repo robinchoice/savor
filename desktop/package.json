@@ -32,7 +32,8 @@
     "appId": "dev.savor.app",
     "productName": "Savor",
     "files": [
-      "main.cjs"
+      "main.cjs",
+      "preload.cjs"
     ],
     "extraResources": [
       {

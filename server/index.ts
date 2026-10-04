@@ -1,11 +1,12 @@
 import { captureException } from './monitoring.js'
 import http, { type IncomingMessage, type ServerResponse } from 'node:http'
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import * as store from './store.js'
 import { emit, subscribe } from './events.js'
-import { HOST, PORT, PUBLIC_URL } from './config.js'
+import { HOST, PORT, PUBLIC_URL, VERSION } from './config.js'
 import * as agents from './agents.js'
 import * as browser from './browser.js'
 import * as processes from './processes.js'
@@ -19,7 +20,7 @@ import { isUnsafe, listAgents, mergeAgent } from './providers.js'
 import { nextRun, runWorkflow, syncSchedules, validateCron } from './scheduler.js'
 import * as git from './git.js'
 import { importSessions, listSessions } from './import.js'
-import { importEnjoy, listEnjoy } from './enjoy.js'
+import { importEnjoy, keepOutOfGit, listEnjoy } from './enjoy.js'
 import * as voice from './voice.js'
 
 // dist/web next to the sources in development, ../web next to the bundled dist/server/index.mjs.
@@ -79,7 +80,16 @@ function inputFrom(b: any, ctx: Ctx, p: store.Project, tid: string): agents.Inpu
 
 // ---- session ----
 
-route('GET', '/me', (_, __, ctx) => ({ origin: ctx.auth.origin, device: ctx.auth.device?.name ?? null, awake: awake.isAwake() }))
+const SYSTEM = `${({ linux: 'Linux', darwin: 'macOS', win32: 'Windows' } as Record<string, string>)[process.platform] ?? process.platform} ${process.arch}`
+route('GET', '/me', (_, __, ctx) => ({
+  origin: ctx.auth.origin,
+  device: ctx.auth.device?.name ?? null,
+  awake: awake.isAwake(),
+  host: os.hostname(),
+  version: VERSION,
+  system: SYSTEM,
+  projectsDir: store.projectsDir(),
+}))
 route('POST', '/awake', (_, b, ctx) => {
   localOnly(ctx)
   awake.setAwake(!!b.on)
@@ -170,7 +180,20 @@ route('GET', '/projects', () =>
 )
 route('POST', '/projects', (_, b, ctx) => {
   localOnly(ctx)
+  // A new project is a new folder with a git repository; an existing folder is opened as it is.
+  if (b.create && fs.existsSync(store.expand(String(b.path)))) throw new BadRequest('That folder already exists. Open it with “Open any folder”.')
   const p = store.addProject(b.path, b.name)
+  if (b.create) {
+    try {
+      git.git(p.path, 'init')
+    } catch {
+      // Without git the project works, only worktrees don't.
+    }
+    keepOutOfGit(p.path)
+    const s = store.state()
+    s.projectsDir = path.dirname(p.path)
+    store.saveState(s)
+  }
   emit({ type: 'projects' })
   return p
 })

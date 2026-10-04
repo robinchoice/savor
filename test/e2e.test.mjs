@@ -96,6 +96,7 @@ after(async () => {
 
 test('add a project and get a conclusion with next actions', async () => {
   await page.click('text=Projects')
+  await page.click('text=Open any folder')
   await page.fill('.menu-form input', PROJECT)
   await page.click('.menu-form button')
   await page.waitForSelector('text=What do you want to build?')
@@ -916,4 +917,75 @@ test('a draft stays with its conversation', async () => {
   await page.reload()
   await page.waitForSelector('.thread-head')
   assert.equal(await draft(), '')
+})
+
+test('a new project gets its own folder with a git repository', async () => {
+  const dir = path.join(TMP, 'new projects')
+  await page.click('text=Projects')
+  await page.click('text=Start new project')
+  await page.click('text=Change folder')
+  await page.fill('input[placeholder="Folder for new projects"]', dir)
+  await page.fill('input[placeholder="Name of the new project"]', 'Bakery Site')
+  await page.keyboard.press('Enter')
+  await page.waitForSelector('.project-tab.active:has-text("Bakery Site")')
+  await page.waitForSelector('text=What do you want to build?')
+  const folder = path.join(dir, 'bakery-site')
+  assert.ok(fs.existsSync(path.join(folder, '.git')), 'git repository')
+  assert.equal(execFileSync('git', ['status', '--porcelain'], { cwd: folder }).toString(), '', '.savor/ stays out of git')
+  // The next new project is offered the same folder, and a folder that exists is not taken over.
+  assert.ok((await api('GET', '/me')).body.projectsDir.endsWith('new projects'))
+  assert.equal((await api('POST', '/projects', { path: folder, name: 'Bakery Site', create: true })).status, 400)
+})
+
+test('appearance: theme, density and what a conversation shows stay on the device', async () => {
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
+  await page.goto(`${base}/#/p/${project.id}`)
+  await page.waitForSelector('.card .label-pill')
+  await page.click('button[title="Appearance"]')
+  await page.click('.appearance >> text=Light')
+  await page.waitForSelector('html[data-theme="light"]')
+  await page.click('.appearance >> text=Choose what to show')
+  await page.uncheck('.appearance label:has-text("Label") input')
+  await page.waitForSelector('.card .label-pill', { state: 'detached' })
+  await page.click('.appearance .density >> nth=0 >> text=Compact')
+  await page.waitForSelector('.card.compact')
+  await page.reload()
+  await page.waitForSelector('.card.compact')
+  assert.equal(await page.getAttribute('html', 'data-theme'), 'light')
+  // Back to the defaults.
+  await page.evaluate(() => ['savor-prefs', 'savor-theme'].forEach((k) => localStorage.removeItem(k)))
+  await page.reload()
+  await page.waitForSelector('.card .label-pill')
+})
+
+test('feedback opens the issue form on GitHub with the text and the version', async () => {
+  await page.context().route('https://github.com/**', (route) => route.fulfill({ body: 'ok' }))
+  await page.click('button[title="Send feedback"]')
+  await page.fill('.feedback-dialog textarea', 'Pins should be sortable')
+  const [issue] = await Promise.all([page.context().waitForEvent('page'), page.click('text=Continue on GitHub')])
+  await issue.waitForURL(/github\.com/)
+  const url = new URL(issue.url())
+  assert.equal(url.origin + url.pathname, 'https://github.com/robinchoice/savor/issues/new')
+  assert.equal(url.searchParams.get('title'), 'Pins should be sortable')
+  assert.match(url.searchParams.get('body'), /^Pins should be sortable\n\n---\nSavor \d+\.\d+\.\d+ · \w+ \w+$/)
+  await issue.close()
+  await page.click('.feedback-dialog >> text=Done')
+  await page.waitForSelector('.feedback-dialog', { state: 'detached' })
+})
+
+test('the account dialog shows this computer, its devices and agents', async () => {
+  const me = (await api('GET', '/me')).body
+  assert.equal(me.host, os.hostname())
+  await page.click('.account')
+  await page.waitForSelector(`.account-dialog >> text=Savor ${me.version}`)
+  await page.click('text=Connect a personal device')
+  await page.waitForSelector('.account-dialog .qr svg')
+  await page.click('.account-dialog summary:has-text("Agents")')
+  await page.waitForSelector('.account-dialog .setting:has-text("Claude Code") >> text=Signed in')
+  // The feedback button can leave the toolbar.
+  await page.uncheck('.account-dialog label:has-text("Show feedback in toolbar") input')
+  await page.waitForSelector('button[title="Send feedback"]', { state: 'detached' })
+  await page.check('.account-dialog label:has-text("Show feedback in toolbar") input')
+  await page.click('.account-dialog >> text=Done')
+  await page.waitForSelector('button[title="Send feedback"]')
 })

@@ -216,11 +216,11 @@ test('remote devices cannot manage devices or add projects', async () => {
   await page.click('.account')
   assert.equal(await page.locator('text=Devices & remote access').count(), 0)
   assert.equal(await page.locator('text=Forget this computer').count(), 1)
-  await page.click('.account')
+  await page.click('.account-dialog >> text=Done')
   await page.click('text=Projects')
-  await page.fill('.menu-form input', '/')
-  await page.click('.menu-form button')
-  await page.waitForSelector('text=Only available on this computer.')
+  await page.waitForSelector('text=Your projects')
+  assert.equal(await page.locator('text=Start new project').count(), 0)
+  assert.equal(await page.locator('text=Open any folder').count(), 0)
 })
 
 test('idle sockets cannot lock real devices out', async () => {

@@ -205,10 +205,17 @@ function ImportDialog({ project, onClose }: { project: Project; onClose: () => v
   )
 }
 
-interface DeviceRow { id: string; name: string; via: 'lan' | 'relay'; createdAt: string; lastSeenAt: string | null }
-interface RelayState { url: string | null; enabled: boolean; state: 'off' | 'connecting' | 'online' | 'error'; error?: string; id?: string }
+export interface DeviceRow { id: string; name: string; via: 'lan' | 'relay'; createdAt: string; lastSeenAt: string | null }
+export interface RelayState { url: string | null; enabled: boolean; state: 'off' | 'connecting' | 'online' | 'error'; error?: string; id?: string }
 
-const RELAY_LABEL = { off: 'Off', connecting: 'Connecting…', online: 'Connected', error: 'Not connected' }
+export const RELAY_LABEL = { off: 'Off', connecting: 'Connecting…', online: 'Connected', error: 'Not connected' }
+
+export function qr(text: string) {
+  const q = qrcode(0, 'M')
+  q.addData(text)
+  q.make()
+  return q.createSvgTag({ cellSize: 5, margin: 2, scalable: true })
+}
 
 export function Devices() {
   const [devices] = useApi<DeviceRow[]>('/devices', (e) => e.type === 'devices')
@@ -230,12 +237,6 @@ export function Devices() {
     }
   }
 
-  const qr = (text: string) => {
-    const q = qrcode(0, 'M')
-    q.addData(text)
-    q.make()
-    return q.createSvgTag({ cellSize: 5, margin: 2, scalable: true })
-  }
   const revoke = (d: DeviceRow) => confirm(`Revoke access for ${d.name}?`) && api('DELETE', `/devices/${d.id}`)
   const saveRelay = async (enabled: boolean) => {
     try {

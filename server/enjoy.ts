@@ -82,7 +82,7 @@ export function listEnjoy(): EnjoyProject[] {
 
 // Conversations are private. Unless the repository already ignores .savor/, it is excluded locally
 // (.git/info/exclude), so an imported history does not end up in a commit.
-function keepOutOfGit(dir: string) {
+export function keepOutOfGit(dir: string) {
   try {
     git(dir, 'check-ignore', '-q', '.savor/')
     return

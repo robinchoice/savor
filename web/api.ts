@@ -140,7 +140,10 @@ export interface Project {
 export interface Doc { id: string; title: string; content: string; updatedAt: string }
 export interface Workflow { id: string; name: string; prompt: string; cron: string | null; timezone: string; enabled: boolean; next: string[]; lastRunAt: string | null; nextRunAt?: string | null }
 export interface Proc { pid: number; name: string; cwd: string; command: string; url: string | null; log: string | null; threadId: string; startedAt: string }
-export interface Me { origin: 'local' | 'remote'; device: string | null; awake: boolean }
+export interface Me { origin: 'local' | 'remote'; device: string | null; awake: boolean; host: string; version: string; system: string; projectsDir: string }
+
+// The desktop shell's bridge (desktop/preload.cjs). A browser has none.
+export const desktop = (window as { savorDesktop?: { pickFolder(): Promise<string | null>; checkForUpdates(): Promise<string | null> } }).savorDesktop
 
 export const PROVIDER_NAMES: Record<string, string> = { claude: 'Claude Code', codex: 'Codex', opencode: 'OpenCode', grok: 'Grok Build', antigravity: 'Antigravity' }
 

@@ -12,6 +12,7 @@ import { Composer, type Picked } from './Composer'
 import { transport } from './transport'
 import { Preview } from './Preview'
 import { CommitDialog } from './Commit'
+import { usePrefs } from './prefs'
 
 export function Markdown({ text }: { text: string }) {
   const html = useMemo(() => DOMPurify.sanitize(marked.parse(text, { async: false }) as string), [text])
@@ -177,21 +178,42 @@ function ThreadCard({ project, thread: t, active }: { project: Project; thread: 
       setFirstOpen(d.decisions.find((x) => !x.resolved)?.title ?? pendingApproval?.approval?.title ?? null)
     })
   }, [t.needsYou, t.updatedAt])
+  const { conversations, show } = usePrefs()
   const href = `#/p/${project.id}/t/${t.id}`
+  // Compact: one line with the title, what the conversation is waiting for as a dot.
+  if (conversations === 'compact')
+    return (
+      <a href={href} class={`card compact ${active ? 'active' : ''} ${t.unread ? 'unread' : ''}`}>
+        <div class="card-title">{t.title}</div>
+        <span class="card-meta">
+          {t.busy && <span class="working-dot" title="Working" />}
+          {t.needsYou && <span class="working-dot needs" title="Needs you" />}
+          {t.error && !t.busy && <span class="working-dot error" title="Error" />}
+          {show.count && (
+            <span>
+              <MessageSquare size={13} /> {t.messageCount}
+            </span>
+          )}
+          {show.date && formatDay(t.updatedAt)}
+        </span>
+      </a>
+    )
   return (
     <a href={href} class={`card ${active ? 'active' : ''} ${t.unread ? 'unread' : ''}`}>
-      <div class="card-top">
-        <Label label={t.label} />
-        {t.busy && <span class="working-dot" title="Working" />}
-        <span class="count">
-          <MessageSquare size={14} /> {t.messageCount}
-        </span>
-      </div>
+      {((show.label && t.label) || t.busy || show.count) && (
+        <div class="card-top">
+          {show.label && <Label label={t.label} />}
+          {t.busy && <span class="working-dot" title="Working" />}
+          {show.count && (
+            <span class="count">
+              <MessageSquare size={14} /> {t.messageCount}
+            </span>
+          )}
+        </div>
+      )}
       <div class="card-title">{t.title}</div>
       <div class="card-meta">
-        <span>
-          {PROVIDER_NAMES[t.agent.provider] ?? t.agent.provider} · {formatDay(t.updatedAt)}
-        </span>
+        <span>{[show.agent && (PROVIDER_NAMES[t.agent.provider] ?? t.agent.provider), show.date && formatDay(t.updatedAt)].filter(Boolean).join(' · ')}</span>
         {t.completed && (
           <span class="completed-badge">
             <Check size={12} /> Completed

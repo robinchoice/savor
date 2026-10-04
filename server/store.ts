@@ -110,6 +110,8 @@ interface State {
   relay: { url: string | null; enabled: boolean }
   // Where paired devices reach this computer directly (LAN or VPN), when that is not PUBLIC_URL.
   publicUrl?: string | null
+  // The folder the last new project was created in.
+  projectsDir?: string
   // The daemon's long-term X25519 key for the relay tunnel (base64url secret key).
   identity: string
   relayToken: string
@@ -209,8 +211,20 @@ export function getProject(id: string): Project {
   return p
 }
 
+export const expand = (dir: string) => path.resolve(dir.replace(/^~(?=$|\/)/, os.homedir()))
+
+// Where a new project goes: next to the last one created, else into the folder most projects are in.
+export function projectsDir() {
+  const s = state()
+  const count = new Map<string, number>()
+  for (const p of s.projects) count.set(path.dirname(p.path), (count.get(path.dirname(p.path)) ?? 0) + 1)
+  const dir = s.projectsDir ?? [...count].sort((a, b) => b[1] - a[1])[0]?.[0] ?? path.join(os.homedir(), 'Projects')
+  const home = os.homedir() + '/'
+  return dir.startsWith(home) ? '~/' + dir.slice(home.length) : dir
+}
+
 export function addProject(dir: string, name?: string): Project {
-  const abs = path.resolve(dir.replace(/^~(?=$|\/)/, os.homedir()))
+  const abs = expand(dir)
   fs.mkdirSync(abs, { recursive: true })
   const s = state()
   const project = loadProject({ path: abs }) ?? {

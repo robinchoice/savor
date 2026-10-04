@@ -1,6 +1,6 @@
 // Savor desktop shell: starts the daemon and shows the UI in its own window.
 // The window keeps a persistent browser session, so logins inside previews and links survive restarts.
-const { app, BrowserWindow, dialog, shell } = require('electron')
+const { app, BrowserWindow, dialog, ipcMain, shell } = require('electron')
 const { execFileSync, spawn } = require('node:child_process')
 const fs = require('node:fs')
 const net = require('node:net')
@@ -52,13 +52,25 @@ async function createWindow() {
     return app.quit()
   }
   const { token } = JSON.parse(fs.readFileSync(stateFile, 'utf8'))
-  win = new BrowserWindow({ width: 1500, height: 950, backgroundColor: '#121212', title: 'Savor', autoHideMenuBar: true })
+  win = new BrowserWindow({ width: 1500, height: 950, backgroundColor: '#121212', title: 'Savor', autoHideMenuBar: true, webPreferences: { preload: path.join(__dirname, 'preload.cjs') } })
   win.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url)
     return { action: 'deny' }
   })
   win.loadURL(`http://localhost:${PORT}/?token=${token}`)
 }
+
+// Release builds carry app-update.yml pointing at GitHub Releases; AppImage, dmg and exe update themselves.
+const updater = () => (app.isPackaged && fs.existsSync(path.join(process.resourcesPath, 'app-update.yml')) ? require('electron-updater').autoUpdater : null)
+
+// What preload.cjs offers the UI. Only the Savor page itself may ask.
+const fromUi = (e) => new URL(e.senderFrame.url).origin === `http://localhost:${PORT}`
+ipcMain.handle('pick-folder', async (e) => (fromUi(e) ? ((await dialog.showOpenDialog(win, { properties: ['openDirectory', 'createDirectory'] })).filePaths[0] ?? null) : null))
+// Resolves to the newer version, which then downloads and installs on quit, or to null when this one is current.
+ipcMain.handle('check-for-updates', async (e) => {
+  const result = fromUi(e) ? await updater()?.checkForUpdates() : null
+  return result?.isUpdateAvailable ? result.updateInfo.version : null
+})
 
 if (!app.requestSingleInstanceLock()) app.quit()
 else {
@@ -68,9 +80,8 @@ else {
   })
   app.whenReady().then(() => {
     createWindow()
-    // Release builds carry app-update.yml pointing at GitHub Releases; AppImage, dmg and exe update themselves.
-    if (app.isPackaged && fs.existsSync(path.join(process.resourcesPath, 'app-update.yml'))) {
-      const { autoUpdater } = require('electron-updater')
+    const autoUpdater = updater()
+    if (autoUpdater) {
       autoUpdater.on('error', (e) => console.error('Update check failed:', e.message))
       autoUpdater.checkForUpdatesAndNotify().catch(() => {})
     }
