@@ -1,7 +1,7 @@
 ---
-title: Friday bug sweep
+title: Small-bug hunt
 blurb: Hunt for small bugs that never make it onto a ticket, and fix the safe ones.
-category: Keep the code healthy
+category: Maintenance
 schedule: 0 14 * * 5
 ---
 Go through the code changed in the last week and look for small bugs nobody filed: unhandled errors, forgotten awaits, off-by-one loops, race conditions around async state, inputs that are never validated, resources that are never closed.

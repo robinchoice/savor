@@ -1,5 +1,5 @@
 ---
-title: Weekly wins
+title: Week in review
 blurb: What got done this week, written so it feels like progress.
 category: Look back
 schedule: 0 16 * * 5

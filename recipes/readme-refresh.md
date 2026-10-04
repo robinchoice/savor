@@ -1,5 +1,5 @@
 ---
-title: README refresh
+title: README fact check
 blurb: Check every claim and command in the README against the code and fix what is stale.
 category: Write
 schedule: 0 10 1 * *

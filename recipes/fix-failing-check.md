@@ -1,7 +1,7 @@
 ---
-title: Fix a failing check
+title: Get CI green
 blurb: Find out why CI or the test suite is red and make it green.
-category: Ship it
+category: Review and release
 schedule:
 ---
 A check is failing in this project. Find out which one: run the project's own checks (tests, typecheck, lint, build), and look at the latest CI run with the `gh` CLI if it is available.

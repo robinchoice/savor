@@ -1,5 +1,5 @@
 ---
-title: Explain this codebase
+title: Codebase tour
 blurb: The document a new team member should read on day one.
 category: Write
 schedule:

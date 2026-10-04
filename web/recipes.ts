@@ -4,7 +4,7 @@ const files = import.meta.glob('../recipes/*.md', { query: '?raw', import: 'defa
 
 export interface Recipe { slug: string; title: string; blurb: string; category: string; schedule: string; prompt: string }
 
-export const CATEGORIES = ['Start your day', 'Keep the code healthy', 'Ship it', 'Write', 'Look back']
+export const CATEGORIES = ['Daily routine', 'Maintenance', 'Review and release', 'Write', 'Look back']
 
 export const RECIPES: Recipe[] = Object.entries(files)
   .map(([file, raw]) => {

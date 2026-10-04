@@ -1,7 +1,7 @@
 ---
-title: Find untested code
+title: Close test gaps
 blurb: Which important code has no tests, and tests for the three riskiest parts.
-category: Keep the code healthy
+category: Maintenance
 schedule: 0 10 * * 1
 ---
 Find the code in this project that matters most and is not covered by tests: things that handle money, authentication, user data, file writes, or that everything else depends on.

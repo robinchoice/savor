@@ -1,5 +1,5 @@
 ---
-title: Release notes people read
+title: User-facing changelog
 blurb: Turn the commits since the last release into notes written for users, not for git.
 category: Write
 schedule:

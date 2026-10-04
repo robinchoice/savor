@@ -1,7 +1,7 @@
 ---
-title: Prepare a release
+title: Release checklist
 blurb: Everything between the last tag and now, versioned, documented and checked.
-category: Ship it
+category: Review and release
 schedule:
 ---
 Prepare the next release of this project.

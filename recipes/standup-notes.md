@@ -1,7 +1,7 @@
 ---
 title: Standup notes
 blurb: Yesterday, today, blockers, written from the git history so you don't have to.
-category: Start your day
+category: Daily routine
 schedule: 0 9 * * 1-5
 ---
 Write my standup notes from this project's git history and working tree.

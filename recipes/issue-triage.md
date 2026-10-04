@@ -1,7 +1,7 @@
 ---
-title: Issue triage
+title: Sort new issues
 blurb: Sort new issues, spot duplicates and draft a first reply for each.
-category: Start your day
+category: Daily routine
 schedule: 30 9 * * 1-5
 ---
 Triage the open issues of this project that have no reply yet. Use the `gh` CLI if it is installed and signed in; otherwise tell me that and stop.

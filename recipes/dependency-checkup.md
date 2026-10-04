@@ -1,7 +1,7 @@
 ---
 title: Dependency checkup
 blurb: Outdated and vulnerable packages, with the safe updates already applied.
-category: Keep the code healthy
+category: Maintenance
 schedule: 0 7 * * 1
 ---
 Check this project's dependencies.

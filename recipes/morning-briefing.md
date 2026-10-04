@@ -1,7 +1,7 @@
 ---
-title: Morning briefing
+title: Daily project digest
 blurb: What changed since yesterday, what is broken, and three things worth doing today.
-category: Start your day
+category: Daily routine
 schedule: 0 8 * * 1-5
 ---
 Give me a morning briefing for this project.

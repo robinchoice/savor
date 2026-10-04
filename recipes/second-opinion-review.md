@@ -1,7 +1,7 @@
 ---
-title: Second-opinion review
+title: Strict branch review
 blurb: A strict review of the current branch before it goes anywhere.
-category: Ship it
+category: Review and release
 schedule:
 ---
 Review the changes on the current branch compared with the main branch as a careful, slightly skeptical reviewer would.

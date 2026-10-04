@@ -1,7 +1,7 @@
 ---
-title: Accessibility pass
+title: Accessibility audit
 blurb: Keyboard, labels, contrast and focus, checked page by page and fixed where it's clear.
-category: Keep the code healthy
+category: Maintenance
 schedule:
 ---
 Review the user interface of this project for accessibility. If the app runs locally, start it, open it in the preview and go through every screen; otherwise work from the source.
