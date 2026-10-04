@@ -50,7 +50,7 @@ export class AcpSession implements Session {
     const init = await this.rpc.request('initialize', {
       protocolVersion: 1,
       clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
-      clientInfo: { name: 'savor', version: '0.5.0' },
+      clientInfo: { name: 'savor', version: '0.5.1' },
     })
     const mcpServers = [{ type: 'http', name: 'savor', url: mcpUrl(p.id, tid), headers: [{ name: 'Authorization', value: `Bearer ${store.state().mcpToken}` }] }]
     const sid = sessionIdOf(this.thread, a.provider)
