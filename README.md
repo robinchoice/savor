@@ -237,3 +237,5 @@ Early. Known gaps:
 ## License
 
 AGPL-3.0-or-later
+
+The app ships the typefaces Geist and Geist Mono by The Geist Project Authors under the SIL Open Font License 1.1. The license text is in [`web/public/geist-license.txt`](web/public/geist-license.txt) and is part of every build.
