@@ -5,7 +5,7 @@ import path from 'node:path'
 import * as store from './store.js'
 import type { AgentConfig, Message, Origin, Project, Provider, Question, Thread } from './store.js'
 import { emit } from './events.js'
-import { BIN, mcpUrl } from './config.js'
+import { BIN, command, mcpUrl } from './config.js'
 import { Activity, configKey, systemPrompt, type Answer, type ApprovalRequest, type Host, type Session, type TurnInput } from './session.js'
 import { ClaudeSession } from './claude.js'
 import { CodexSession } from './codex.js'
@@ -346,7 +346,7 @@ class CommandSession implements Session {
     const out: string[] = []
     let stderr = ''
     activity.start('run', 'command', `${bin} (${this.provider})`)
-    const child = spawn(bin, args.map((a) => a.replace('{prompt}', full)), {
+    const child = spawn(...command(bin, args.map((a) => a.replace('{prompt}', full))), {
       cwd: this.host.cwd,
       env: { ...process.env, SAVOR_MCP_URL: mcpUrl(p.id, tid), SAVOR_MCP_TOKEN: store.state().mcpToken },
       stdio: ['ignore', 'pipe', 'pipe'],

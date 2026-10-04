@@ -3,7 +3,7 @@
 import { spawn } from 'node:child_process'
 import * as store from './store.js'
 import type { ApprovalOption, Thread } from './store.js'
-import { BIN, mcpUrl } from './config.js'
+import { BIN, command, mcpUrl } from './config.js'
 import { Rpc } from './jsonrpc.js'
 import { configKey, rememberSession, sessionIdOf, summarize, systemPrompt, type Host, type Session, type TurnInput } from './session.js'
 import type { ModelInfo } from './providers.js'
@@ -15,13 +15,13 @@ const MODES: Record<string, { sandbox: string; approvalPolicy: string; approvals
   'full-access': { sandbox: 'danger-full-access', approvalPolicy: 'never', approvalsReviewer: 'user' },
 }
 
-const CLIENT = { name: 'savor', title: 'Savor', version: '0.5.1' }
+const CLIENT = { name: 'savor', title: 'Savor', version: '0.5.2' }
 const CAPABILITIES = { experimentalApi: true, requestAttestation: false }
 
 function spawnAppServer(projectId?: string, threadId?: string) {
   const args = ['app-server']
   if (projectId && threadId) args.push('-c', `mcp_servers.savor.url=${JSON.stringify(mcpUrl(projectId, threadId))}`, '-c', 'mcp_servers.savor.bearer_token_env_var="SAVOR_MCP_TOKEN"')
-  return spawn(BIN.codex, args, { env: { ...process.env, SAVOR_MCP_TOKEN: store.state().mcpToken }, stdio: ['pipe', 'pipe', 'pipe'] })
+  return spawn(...command(BIN.codex, args), { env: { ...process.env, SAVOR_MCP_TOKEN: store.state().mcpToken }, stdio: ['pipe', 'pipe', 'pipe'] })
 }
 
 const ALLOW_SESSION_DENY: ApprovalOption[] = [

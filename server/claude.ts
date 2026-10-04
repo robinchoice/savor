@@ -8,7 +8,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import * as store from './store.js'
 import type { ApprovalOption, Thread } from './store.js'
-import { BIN, mcpUrl } from './config.js'
+import { BIN, command, mcpUrl } from './config.js'
 import { configKey, rememberSession, sessionIdOf, summarize, systemPrompt, type Host, type Session, type TurnInput } from './session.js'
 import type { ModelInfo } from './providers.js'
 
@@ -62,7 +62,7 @@ export class ClaudeSession implements Session {
     if (sid) args.push('--resume', sid)
     else args.push('--session-id', crypto.randomUUID())
 
-    this.child = spawn(BIN.claude, args, {
+    this.child = spawn(...command(BIN.claude, args), {
       cwd: host.cwd,
       env: { ...process.env, MCP_TOOL_TIMEOUT: String(24 * 3600_000) },
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -163,7 +163,7 @@ export class ClaudeSession implements Session {
 // A short run to learn which models Claude Code offers: the answer to its initialize request. No prompt is sent.
 export function probeClaude() {
   return new Promise<ModelInfo[]>((resolve) => {
-    const child = spawn(BIN.claude, ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--settings', JSON.stringify({ disableAllHooks: true })], { stdio: ['pipe', 'pipe', 'ignore'] })
+    const child = spawn(...command(BIN.claude, ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--settings', JSON.stringify({ disableAllHooks: true })]), { stdio: ['pipe', 'pipe', 'ignore'] })
     const done = (models: ModelInfo[]) => {
       clearTimeout(timer)
       child.kill('SIGTERM')

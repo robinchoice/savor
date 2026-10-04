@@ -1,7 +1,7 @@
 // What each agent can do (models, effort levels, permission modes) and whether it is installed and signed in.
 import { execFile } from 'node:child_process'
 import type { AgentConfig, Provider } from './store.js'
-import { BIN } from './config.js'
+import { BIN, command } from './config.js'
 import { probeCodex } from './codex.js'
 import { probeClaude } from './claude.js'
 
@@ -126,7 +126,7 @@ export function mergeAgent(current: AgentConfig, patch: Partial<AgentConfig>): A
 
 function run(bin: string, args: string[], env?: NodeJS.ProcessEnv) {
   return new Promise<{ ok: boolean; missing: boolean; out: string }>((resolve) => {
-    execFile(bin, args, { timeout: 10_000, env: { ...process.env, ...env }, maxBuffer: 4 * 1024 * 1024 }, (err, stdout, stderr) => {
+    execFile(...command(bin, args), { timeout: 10_000, env: { ...process.env, ...env }, maxBuffer: 4 * 1024 * 1024 }, (err, stdout, stderr) => {
       const missing = (err as NodeJS.ErrnoException | null)?.code === 'ENOENT'
       resolve({ ok: !err, missing, out: `${stdout}${stderr}`.trim() })
     })

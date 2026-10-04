@@ -3,6 +3,14 @@ import { spawn, type ChildProcess } from 'node:child_process'
 // Keeps the computer from sleeping so paired devices can reach it.
 let inhibitor: ChildProcess | null = null
 
+// Windows has no inhibitor command. PowerShell holds the execution state (ES_CONTINUOUS |
+// ES_SYSTEM_REQUIRED) for as long as it runs, and it ends when the daemon does.
+const WINDOWS_INHIBITOR = `
+$power = Add-Type -Name Power -Namespace Savor -PassThru -MemberDefinition '[DllImport("kernel32.dll")] public static extern uint SetThreadExecutionState(uint flags);'
+[void]$power::SetThreadExecutionState([uint32]2147483649)
+Wait-Process -Id ${process.pid}
+`
+
 export const isAwake = () => !!inhibitor
 
 export function setAwake(on: boolean) {
@@ -12,11 +20,12 @@ export function setAwake(on: boolean) {
     return
   }
   if (inhibitor) return
-  if (process.platform === 'win32') throw new Error('Keep awake is not supported on Windows yet.')
   const [cmd, ...args] =
     process.platform === 'darwin'
       ? ['caffeinate', '-dims']
-      : ['systemd-inhibit', '--what=idle:sleep', '--who=Savor', '--why=Keep agents reachable', 'sleep', 'infinity']
+      : process.platform === 'win32'
+        ? ['powershell', '-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(WINDOWS_INHIBITOR, 'utf16le').toString('base64')]
+        : ['systemd-inhibit', '--what=idle:sleep', '--who=Savor', '--why=Keep agents reachable', 'sleep', 'infinity']
   const child = spawn(cmd, args, { stdio: 'ignore' })
   child.on('exit', () => inhibitor === child && (inhibitor = null))
   child.on('error', () => inhibitor === child && (inhibitor = null))

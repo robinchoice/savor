@@ -6,7 +6,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import * as store from './store.js'
 import type { Provider, Thread } from './store.js'
-import { BIN, mcpUrl } from './config.js'
+import { BIN, command, mcpUrl } from './config.js'
 import { Rpc, RpcError } from './jsonrpc.js'
 import { configKey, rememberSession, sessionIdOf, summarize, systemPrompt, type Host, type Session, type TurnInput } from './session.js'
 
@@ -38,7 +38,7 @@ export class AcpSession implements Session {
     const { p } = host
     this.config = configKey(thread.agent)
     const cmd = acpCommand(thread.agent.provider, p.id, thread.id)
-    const child = spawn(cmd.bin, cmd.args, { cwd: host.cwd, env: { ...process.env, ...cmd.env }, stdio: ['pipe', 'pipe', 'pipe'] })
+    const child = spawn(...command(cmd.bin, cmd.args), { cwd: host.cwd, env: { ...process.env, ...cmd.env }, stdio: ['pipe', 'pipe', 'pipe'] })
     this.rpc = new Rpc(child, { notification: (m, params) => this.onNotification(m, params), request: (m, params) => this.onRequest(m, params) })
     this.rpc.exited.then(({ code, signal }) => host.closed(this.stopping || signal === 'SIGTERM' ? 'Turn stopped.' : `${cmd.bin} exited with ${code}: ${this.rpc.stderrTail}`))
     this.ready = this.init()
@@ -50,7 +50,7 @@ export class AcpSession implements Session {
     const init = await this.rpc.request('initialize', {
       protocolVersion: 1,
       clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
-      clientInfo: { name: 'savor', version: '0.5.1' },
+      clientInfo: { name: 'savor', version: '0.5.2' },
     })
     const mcpServers = [{ type: 'http', name: 'savor', url: mcpUrl(p.id, tid), headers: [{ name: 'Authorization', value: `Bearer ${store.state().mcpToken}` }] }]
     const sid = sessionIdOf(this.thread, a.provider)

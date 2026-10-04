@@ -41,7 +41,8 @@ export function listWorktrees(p: Project): Worktree[] {
   const root = worktreesDir(p) + path.sep
   const list: Worktree[] = []
   for (const block of out.split('\n\n')) {
-    const dir = block.match(/^worktree (.+)$/m)?.[1]
+    // Git prints forward slashes on Windows too.
+    const dir = path.normalize(block.match(/^worktree (.+)$/m)?.[1] ?? '')
     const branch = block.match(/^branch refs\/heads\/(.+)$/m)?.[1]
     if (!dir || !branch || !dir.startsWith(root)) continue
     let ahead = 0
