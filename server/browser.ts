@@ -17,6 +17,9 @@ interface Session { page: Page; cdp: CDPSession; errors: string[]; frame: string
 const profiles = new Map<string, Promise<BrowserContext>>()
 const sessions = new Map<string, Session>()
 export const VIEWPORT = { width: 1280, height: 800 }
+// The UI asks for the size of the space it has for the page, within these bounds.
+const SMALLEST = { width: 320, height: 240 }
+const LARGEST = { width: 3840, height: 2160 }
 
 function executable() {
   const candidates = [
@@ -86,7 +89,7 @@ export async function open(projectId: string, tid: string, url: string) {
       broadcast(created, data)
       cdp.send('Page.screencastFrameAck', { sessionId }).catch(() => {})
     })
-    await cdp.send('Page.startScreencast', { format: 'jpeg', quality: 70, maxWidth: VIEWPORT.width, maxHeight: VIEWPORT.height })
+    await cdp.send('Page.startScreencast', { format: 'jpeg', quality: 70, maxWidth: LARGEST.width, maxHeight: LARGEST.height })
     sessions.set(tid, (s = created))
   }
   await s.page.goto(url, { waitUntil: 'domcontentloaded' })
@@ -104,6 +107,12 @@ export async function watch(tid: string, res: ServerResponse) {
 }
 
 export const has = (tid: string) => sessions.has(tid)
+
+// Agent and user share the page, so the size the user's space gives it is the size the agent sees too.
+export function resize(tid: string, width: number, height: number) {
+  const within = (n: number, min: number, max: number) => Math.round(Math.min(max, Math.max(min, Number(n) || min)))
+  return session(tid).page.setViewportSize({ width: within(width, SMALLEST.width, LARGEST.width), height: within(height, SMALLEST.height, LARGEST.height) })
+}
 export const screenshot = (tid: string) => session(tid).page.screenshot({ type: 'png' })
 
 export async function inspect(tid: string) {

@@ -203,8 +203,7 @@ test('pair through the relay and work on the project remotely', async () => {
 })
 
 test('the live preview streams through the tunnel', async () => {
-  await page.click('button[title="Side panel"]')
-  await page.click('.panel-tabs >> text=Preview')
+  await page.click('.modes [title="Browser"]')
   await page.fill('.preview-bar input', relayBase + '/healthz')
   assert.equal(await page.inputValue('.preview-bar input'), relayBase + '/healthz')
   await page.keyboard.press('Enter')

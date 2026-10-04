@@ -23,6 +23,8 @@ interface Props {
   // New conversations can ask for a worktree of a new branch.
   worktree?: string | null
   setWorktree?: (branch: string | null) => void
+  // Beside the preview with the chat out of sight: just the text, what was picked, and send.
+  compact?: boolean
 }
 
 const MAX_FILES = 8
@@ -109,8 +111,21 @@ export function Composer(props: Props) {
     ref.current?.focus()
   }
 
+  const sendButtons = (
+    <>
+      {props.busy && props.onStop && (
+        <button class="send stop" title="Stop" onClick={props.onStop}>
+          <Square size={13} />
+        </button>
+      )}
+      <button class="send" title={props.busy ? 'Queue (Enter): sent after the current turn' : 'Send'} disabled={!canSend} onClick={submit}>
+        {props.busy ? <ListPlus size={16} /> : <ArrowUp size={16} />}
+      </button>
+    </>
+  )
+
   return (
-    <div class="composer" ref={composerRef} onDragOver={(e) => e.preventDefault()} onDrop={(e) => (e.preventDefault(), addFiles(e.dataTransfer?.files ?? [], true))}>
+    <div class={`composer ${props.compact ? 'compact' : ''}`} ref={composerRef} onDragOver={(e) => e.preventDefault()} onDrop={(e) => (e.preventDefault(), addFiles(e.dataTransfer?.files ?? [], true))}>
       {(files.length > 0 || (props.picked?.length ?? 0) > 0) && (
         <div class="attachments">
           {files.map((f, i) =>
@@ -163,50 +178,49 @@ export function Composer(props: Props) {
             }
           }}
         />
-        <div class="menu-anchor">
-          <button class="mention-btn" onClick={() => setPopover(popover === 'mention' ? null : 'mention')}>
-            <AtSign size={13} /> Docs, workflows and files
-          </button>
-          {popover === 'mention' && <MentionMenu project={props.project} onPick={insert} />}
-        </div>
-      </div>
-      <div class="composer-bottom">
-        <button class="icon-btn" title="Attach files" onClick={() => fileRef.current?.click()}>
-          <Plus size={18} />
-        </button>
-        <input ref={fileRef} type="file" multiple hidden onChange={(e) => (addFiles(e.currentTarget.files ?? []), (e.currentTarget.value = ''))} />
-        <div class="menu-anchor">
-          <button class="agent-btn" onClick={() => setPopover(popover === 'agent' ? null : 'agent')}>
-            <ProviderIcon provider={props.agent.provider} />
-            <span>
-              <b>{PROVIDER_NAMES[props.agent.provider] ?? props.agent.provider}</b>
-              <small>{agentSummary(props.agent, info)}</small>
-            </span>
-            <ChevronDown size={14} />
-          </button>
-          {popover === 'agent' && <AgentMenu agent={props.agent} agents={agents ?? []} setAgent={setAgent} close={() => setPopover(null)} />}
-        </div>
-        {efforts.length > 0 && (
-          <div class="segmented quick-effort" aria-label="Reasoning effort">
-            {efforts.map((effort) => (
-              <button key={effort} type="button" class={props.agent.reasoning === effort ? 'selected' : ''} aria-pressed={props.agent.reasoning === effort} onClick={() => setAgent({ ...props.agent, reasoning: effort })}>
-                {cap(effort)}
-              </button>
-            ))}
+        {props.compact ? (
+          sendButtons
+        ) : (
+          <div class="menu-anchor">
+            <button class="mention-btn" onClick={() => setPopover(popover === 'mention' ? null : 'mention')}>
+              <AtSign size={13} /> Docs, workflows and files
+            </button>
+            {popover === 'mention' && <MentionMenu project={props.project} onPick={insert} />}
           </div>
         )}
-        <BranchPicker project={props.project} threadId={props.threadId} worktree={props.worktree} setWorktree={props.setWorktree} open={popover === 'branch'} toggle={() => setPopover(popover === 'branch' ? null : 'branch')} />
-        <div class="spacer" />
-        <VoiceButton onText={insert} onError={setError} />
-        {props.busy && props.onStop && (
-          <button class="send stop" title="Stop" onClick={props.onStop}>
-            <Square size={13} />
-          </button>
-        )}
-        <button class="send" title={props.busy ? 'Queue (Enter): sent after the current turn' : 'Send'} disabled={!canSend} onClick={submit}>
-          {props.busy ? <ListPlus size={16} /> : <ArrowUp size={16} />}
-        </button>
       </div>
+      {!props.compact && (
+        <div class="composer-bottom">
+          <button class="icon-btn" title="Attach files" onClick={() => fileRef.current?.click()}>
+            <Plus size={18} />
+          </button>
+          <input ref={fileRef} type="file" multiple hidden onChange={(e) => (addFiles(e.currentTarget.files ?? []), (e.currentTarget.value = ''))} />
+          <div class="menu-anchor">
+            <button class="agent-btn" onClick={() => setPopover(popover === 'agent' ? null : 'agent')}>
+              <ProviderIcon provider={props.agent.provider} />
+              <span>
+                <b>{PROVIDER_NAMES[props.agent.provider] ?? props.agent.provider}</b>
+                <small>{agentSummary(props.agent, info)}</small>
+              </span>
+              <ChevronDown size={14} />
+            </button>
+            {popover === 'agent' && <AgentMenu agent={props.agent} agents={agents ?? []} setAgent={setAgent} close={() => setPopover(null)} />}
+          </div>
+          {efforts.length > 0 && (
+            <div class="segmented quick-effort" aria-label="Reasoning effort">
+              {efforts.map((effort) => (
+                <button key={effort} type="button" class={props.agent.reasoning === effort ? 'selected' : ''} aria-pressed={props.agent.reasoning === effort} onClick={() => setAgent({ ...props.agent, reasoning: effort })}>
+                  {cap(effort)}
+                </button>
+              ))}
+            </div>
+          )}
+          <BranchPicker project={props.project} threadId={props.threadId} worktree={props.worktree} setWorktree={props.setWorktree} open={popover === 'branch'} toggle={() => setPopover(popover === 'branch' ? null : 'branch')} />
+          <div class="spacer" />
+          <VoiceButton onText={insert} onError={setError} />
+          {sendButtons}
+        </div>
+      )}
     </div>
   )
 }

@@ -1004,3 +1004,63 @@ test('the account dialog shows this computer, its devices and agents', async () 
   await page.click('.account-dialog >> text=Done')
   await page.waitForSelector('button[title="Send feedback"]')
 })
+
+test('browser mode gives the page the stage and draws it in the size of that space', async (t) => {
+  const site = http.createServer((_, res) => res.setHeader('content-type', 'text/html').end('<h1>Brotzeit</h1>')).listen(0)
+  t.after(() => site.close())
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
+  const thread = (await api('POST', `/projects/${project.id}/threads`, { text: 'build a page' })).body
+  const threadBase = `/projects/${project.id}/threads/${thread.id}`
+  await page.goto(`${base}/#/p/${project.id}/t/${thread.id}`)
+  await page.waitForSelector('text=Echo: build a page')
+  // Without a preview the conversation is a chat with the list beside it.
+  assert.deepEqual([await page.isVisible('.conv-list'), await page.isVisible('.stage')], [true, false])
+
+  // The first preview opens the browser: the list makes room, and the page is as large as the stage.
+  assert.equal((await api('POST', `${threadBase}/browser/open`, { url: `http://127.0.0.1:${site.address().port}/` })).status, 200)
+  await page.waitForSelector('.stage .screen')
+  assert.equal(await page.isVisible('.conv-list'), false)
+  const sizes = () => page.evaluate(() => {
+    const img = document.querySelector('.screen'), wrap = document.querySelector('.screen-wrap')
+    return { frame: [img.naturalWidth, img.naturalHeight], space: [wrap.clientWidth, wrap.clientHeight], shown: [img.width, img.height] }
+  })
+  const told = async () => assert.fail('timed out: ' + JSON.stringify([await sizes(), await page.locator('.preview .error-text').allTextContents()]))
+  await until(async () => {
+    const { frame, space } = await sizes()
+    return frame[0] === space[0] && frame[1] === space[1]
+  }).catch(told)
+  // The phone layout is drawn one to one, the desktop layout scaled down to the space.
+  await page.click('.devices >> text=390')
+  await until(async () => (await sizes()).frame[0] === 390).catch(told)
+  await page.click('.devices >> text=1280')
+  await until(async () => (await sizes()).frame[0] === 1280).catch(told)
+  const desktop = await sizes()
+  assert.equal(desktop.shown[0], desktop.space[0])
+  await page.click('.devices >> text=Fit')
+
+  // With the chat hidden, a small composer stays over the page and shows what the agent answers.
+  await page.click('[title="Hide chat"]')
+  await page.waitForSelector('.float .composer')
+  assert.equal(await page.isVisible('.thread-head'), false)
+  await send('make it warmer')
+  await page.click('.bubble:has-text("Echo: make it warmer")')
+  await page.waitForSelector('.messages >> text=Echo: make it warmer')
+
+  // Back in the chat, a card under the answer leads to the preview. The choice stays with the conversation.
+  await page.click('.modes [title="Chat"]')
+  await page.waitForSelector('.conv-list')
+  await page.waitForSelector('.preview-card')
+  await page.reload()
+  await page.waitForSelector('.thread-head')
+  assert.equal(await page.isVisible('.stage'), false)
+  await page.click('.preview-card')
+  await page.waitForSelector('.stage .screen')
+
+  // On a phone the page takes the whole view, and finding in the conversation leads back to the chat.
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.waitForSelector('.float .composer')
+  assert.equal(await page.isVisible('.messages'), false)
+  await page.keyboard.press('Control+f')
+  await page.waitForSelector('.find-bar input')
+  await page.setViewportSize({ width: 1400, height: 900 })
+})
