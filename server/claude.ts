@@ -10,8 +10,15 @@ import * as store from './store.js'
 import type { ApprovalOption, Thread } from './store.js'
 import { BIN, mcpUrl } from './config.js'
 import { configKey, rememberSession, sessionIdOf, summarize, systemPrompt, type Host, type Session, type TurnInput } from './session.js'
+import type { ModelInfo } from './providers.js'
 
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
+
+// Savor ends the process once nothing is pending, so Claude's own timers and notifications would
+// never fire. They are switched off, and the prompt names what to use instead.
+const UNAVAILABLE = ['ScheduleWakeup', 'CronCreate', 'PushNotification', 'RemoteTrigger']
+const UNAVAILABLE_NOTE = `
+- ${UNAVAILABLE.join(', ')} are switched off here: Savor closes your process once no background work is pending, so timers and session crons would never fire, and there is no terminal for notifications. To wait, wait inside the turn or run the wait as a background command. For anything later or recurring, save a workflow with create_workflow (cron and timezone); Savor's scheduler runs it and shows the result. To notify the user, send your conclusion.`
 
 const describe = (tool: string, input: any) =>
   tool === 'Bash' ? String(input?.command ?? '') : /^(Edit|Write|MultiEdit|NotebookEdit)$/.test(tool) ? String(input?.file_path ?? '') : JSON.stringify(input, null, 2).slice(0, 1500)
@@ -36,16 +43,21 @@ export class ClaudeSession implements Session {
       '--input-format', 'stream-json',
       '--output-format', 'stream-json',
       '--verbose',
-      '--append-system-prompt', systemPrompt(p, thread),
+      '--append-system-prompt', systemPrompt(p, thread) + UNAVAILABLE_NOTE,
       '--mcp-config', mcpConfig,
       '--allowedTools', 'mcp__savor',
+      '--disallowed-tools', UNAVAILABLE.join(','),
       '--permission-mode', a.permissionMode || 'acceptEdits',
       '--permission-prompts', 'host',
       '--permission-prompt-tool', 'stdio',
+      // Hooks expect a terminal session; here they would run unseen in every conversation.
+      '--settings', JSON.stringify({ disableAllHooks: true, fastMode: a.fast, ultracode: a.reasoning === 'ultracode' }),
+      '--chrome',
     ]
     if (a.model) args.push('--model', a.model)
-    if (EFFORTS.includes(a.reasoning)) args.push('--effort', a.reasoning)
-    if (a.fast) args.push('--settings', JSON.stringify({ fastMode: true }))
+    // Ultracode is a setting on top of the highest regular effort.
+    const effort = a.reasoning === 'ultracode' ? 'xhigh' : a.reasoning
+    if (EFFORTS.includes(effort)) args.push('--effort', effort)
     const sid = sessionIdOf(thread, 'claude')
     if (sid) args.push('--resume', sid)
     else args.push('--session-id', crypto.randomUUID())
@@ -146,4 +158,37 @@ export class ClaudeSession implements Session {
     if (choice === 'deny') return this.respond(requestId, { behavior: 'deny', message: 'The user denied this action.' })
     this.respond(requestId, { behavior: 'allow', updatedInput: input, ...(choice === 'always' && { updatedPermissions: persist }) })
   }
+}
+
+// A short run to learn which models Claude Code offers: the answer to its initialize request. No prompt is sent.
+export function probeClaude() {
+  return new Promise<ModelInfo[]>((resolve) => {
+    const child = spawn(BIN.claude, ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--settings', JSON.stringify({ disableAllHooks: true })], { stdio: ['pipe', 'pipe', 'ignore'] })
+    const done = (models: ModelInfo[]) => {
+      clearTimeout(timer)
+      child.kill('SIGTERM')
+      resolve(models)
+    }
+    const timer = setTimeout(() => done([]), 15_000)
+    child.on('error', () => done([])).on('exit', () => done([]))
+    readline.createInterface({ input: child.stdout! }).on('line', (line) => {
+      let ev: any
+      try {
+        ev = JSON.parse(line)
+      } catch {
+        return
+      }
+      if (ev.type !== 'control_response') return
+      const models = (ev.response?.response?.models ?? []) as { value: string; displayName?: string; description?: string; supportedEffortLevels?: string[] }[]
+      done(
+        models.map((m) => ({
+          id: m.value === 'default' ? '' : m.value,
+          label: m.displayName ?? m.value,
+          detail: m.description,
+          efforts: m.supportedEffortLevels?.length ? [...m.supportedEffortLevels, 'ultracode'] : [],
+        })),
+      )
+    })
+    child.stdin!.write(JSON.stringify({ type: 'control_request', request_id: crypto.randomUUID(), request: { subtype: 'initialize' } }) + '\n')
+  })
 }

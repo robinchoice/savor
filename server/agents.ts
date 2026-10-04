@@ -103,6 +103,16 @@ export function stop(tid: string) {
   current(tid)?.kill()
 }
 
+// The conversation was deleted: end its session, and nothing it still reports touches the removed records.
+export function forget(tid: string) {
+  const s = sessions.get(tid)
+  sessions.delete(tid)
+  clearTimeout(s?.idleTimer)
+  s?.session.kill()
+  for (const state of [busy, requests, turnConclusion, turnOrigin]) state.delete(tid)
+  stopped.delete(tid)
+}
+
 const current = (tid: string) => sessions.get(tid)?.session
 
 // Close idle sessions unless the thread still owns background processes.
@@ -218,7 +228,7 @@ function hostFor(p: Project, thread: Thread, holder: { session?: Session }): Hos
     p,
     tid,
     cwd: store.cwdOf(p, thread),
-    activity: new Activity(p, tid),
+    activity: new Activity(p, tid, mine),
     working: () => mine() && beginTurn(p, tid),
     approve: (req) => askApproval(p, tid, req),
     ask: (qs) => askQuestions(p, tid, qs),

@@ -45,7 +45,7 @@ export function Conversations({ project, threadId, isNew }: { project: Project; 
   const [worktrees] = useApi<Worktree[]>(`/projects/${project.id}/worktrees`, (e) => e.projectId === project.id && e.type === 'thread')
   const [filter, setFilter] = useState<Filter>('all')
   const [query, setQuery] = useState('')
-  const [showCompleted, setShowCompleted] = useState(() => localStorage.getItem('savor-show-completed') !== 'false')
+  const [showCompleted, setShowCompleted] = useState(() => localStorage.getItem('savor-show-completed') === 'true')
   useEffect(() => localStorage.setItem('savor-show-completed', String(showCompleted)), [showCompleted])
 
   const all = (threads ?? []).filter((t) => showCompleted || !t.completed || t.id === threadId)

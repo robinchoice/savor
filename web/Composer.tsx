@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
 import { ArrowUp, AtSign, Bookmark, ChevronDown, FileText, FolderGit2, GitBranch, ListPlus, Mic, Plus, Square, Trash2, Workflow as WorkflowIcon, X, Zap, Crosshair } from 'lucide-preact'
-import { api, agentSummary, cap, PROVIDER_NAMES, readFileAsDataUrl, useAgents, useApi, type AgentConfig, type Attachment, type Project, type ProviderInfo, type Preset, type Workflow } from './api'
+import { api, agentSummary, cap, PROVIDER_NAMES, readFileAsDataUrl, useAgents, useApi, type AgentConfig, type Attachment, type Doc, type Project, type ProviderInfo, type Preset, type Workflow } from './api'
 import { ProviderIcon } from './Conversations'
 import { record, type Recording } from './voice'
 
@@ -36,7 +36,11 @@ const pickedContext = (picked: Picked[]) =>
     .join('')
 
 export function Composer(props: Props) {
-  const [text, setText] = useState('')
+  // What was typed but not sent stays with its conversation.
+  const draftKey = `savor-draft:${props.threadId ?? `new:${props.project.id}`}`
+  const [text, setText] = useState(() => localStorage.getItem(draftKey) ?? '')
+  // Saved in the same tick as the keystroke: leaving the conversation right away must not lose it.
+  useLayoutEffect(() => (text ? localStorage.setItem(draftKey, text) : localStorage.removeItem(draftKey)), [text])
   const [files, setFiles] = useState<(Attachment & { image: boolean })[]>([])
   const [error, setError] = useState('')
   const [popover, setPopover] = useState<'mention' | 'agent' | 'branch' | null>(null)
@@ -161,7 +165,7 @@ export function Composer(props: Props) {
         />
         <div class="menu-anchor">
           <button class="mention-btn" onClick={() => setPopover(popover === 'mention' ? null : 'mention')}>
-            <AtSign size={13} /> Files and workflows
+            <AtSign size={13} /> Docs, workflows and files
           </button>
           {popover === 'mention' && <MentionMenu project={props.project} onPick={insert} />}
         </div>
@@ -281,15 +285,24 @@ function MentionMenu({ project, onPick }: { project: Project; onPick: (s: string
   const [q, setQ] = useState('')
   const [files, setFiles] = useState<string[]>([])
   const [workflows, setWorkflows] = useState<Workflow[]>([])
+  const [docs, setDocs] = useState<Doc[]>([])
   useEffect(() => void api<Workflow[]>('GET', `/projects/${project.id}/workflows`).then(setWorkflows), [])
+  useEffect(() => void api<Doc[]>('GET', `/projects/${project.id}/docs`).then(setDocs), [])
   useEffect(() => {
     const t = setTimeout(() => api<string[]>('GET', `/projects/${project.id}/files/search?q=${encodeURIComponent(q)}`).then(setFiles), 120)
     return () => clearTimeout(t)
   }, [q])
   const wfs = workflows.filter((w) => w.name.toLowerCase().includes(q.toLowerCase()))
+  const matching = docs.filter((d) => d.title.toLowerCase().includes(q.toLowerCase()))
   return (
     <div class="menu up mention">
-      <input autoFocus placeholder="Search files and workflows…" value={q} onInput={(e) => setQ(e.currentTarget.value)} />
+      <input autoFocus placeholder="Search documents, workflows and files…" value={q} onInput={(e) => setQ(e.currentTarget.value)} />
+      {matching.length > 0 && <div class="menu-label">Documents</div>}
+      {matching.slice(0, 8).map((d) => (
+        <button key={d.id} onClick={() => onPick(`@document:"${d.title}" (id ${d.id})`)}>
+          <FileText size={14} /> {d.title}
+        </button>
+      ))}
       {wfs.length > 0 && <div class="menu-label">Workflows</div>}
       {wfs.map((w) => (
         <button key={w.id} onClick={() => onPick(`@workflow:"${w.name}" (id ${w.id})`)}>
@@ -358,6 +371,7 @@ function AgentMenu({ agent, agents, setAgent, close }: { agent: AgentConfig; age
       {info?.models.length ? (
         <select value={agent.model} onChange={(e) => set({ model: e.currentTarget.value })}>
           {!info.models.some((m) => m.id === '') && <option value="">Default</option>}
+          {!info.models.some((m) => m.id === agent.model) && agent.model && <option value={agent.model}>{agent.model}</option>}
           {info.models.map((m) => (
             <option key={m.id} value={m.id} title={m.detail}>
               {m.label}

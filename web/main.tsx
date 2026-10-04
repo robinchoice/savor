@@ -1,7 +1,7 @@
 import './monitoring'
 import { render } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
-import { Coffee, FolderOpen, Files as FilesIcon, Layers, MessageSquare, Moon, Plus, Server, SlidersHorizontal, Sun, Workflow as WorkflowIcon, ChevronDown, Smartphone, Bell, BellOff } from 'lucide-preact'
+import { Coffee, Download, FolderOpen, Pin, PinOff, Search, Files as FilesIcon, Layers, MessageSquare, Moon, Plus, Server, SlidersHorizontal, Sun, Workflow as WorkflowIcon, ChevronDown, Smartphone, Bell, BellOff } from 'lucide-preact'
 import { api, connectEvents, go, Unauthorized, useApi, useEvent, type Me, type Project } from './api'
 import { Conversations } from './Conversations'
 import { FilesView } from './Files'
@@ -10,6 +10,7 @@ import { Settings, Devices, Pair, RemotePair } from './Settings'
 import { loadProfile, remote, setTransport, forgetProfile } from './transport'
 import { ProcessesPopover } from './Processes'
 import { useNotifications, useNotificationToggle } from './notify'
+import { EnjoyImport, EnjoyOffer, useEnjoyProjects } from './EnjoyImport'
 import './style.css'
 
 function useRoute() {
@@ -33,6 +34,13 @@ function useTheme() {
 }
 
 export const initial = (name: string) => (name.trim()[0] ?? '?').toLowerCase()
+
+// Text on a project color: dark on light tints, white on the others.
+export function inkOn(tint: string) {
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(tint.slice(i, i + 2), 16))
+  return 0.299 * r + 0.587 * g + 0.114 * b > 170 ? '#1b1c1f' : '#fff'
+}
+const avatarStyle = (tint: string) => ({ background: tint, color: inkOn(tint) })
 
 function App() {
   const [me, setMe] = useState<Me | null | false>(null)
@@ -65,7 +73,7 @@ function App() {
   }, [mode])
   useNotifications(route[2] === 't' ? route[3] : undefined, projects)
   useEffect(() => {
-    if (projects?.length && route[0] !== 'p' && route[0] !== 'devices') go(`/p/${projects[0].id}`)
+    if (projects?.length && route[0] !== 'p' && route[0] !== 'devices') go(`/p/${(projects.find((p) => p.pinned) ?? projects[0]).id}`)
   }, [projects, route[0]])
 
   if (route[0] === 'pair') return <Pair code={route[1]} />
@@ -109,7 +117,7 @@ function App() {
   }
 
   return (
-    <div class="app" style={project ? { '--tint': project.tint } : undefined}>
+    <div class="app" style={project ? { '--tint': project.tint, '--tint-ink': inkOn(project.tint) } : undefined}>
       {mode === 'relay' && !link.connected && <div class="link-banner">Reconnecting to your computer…</div>}
       <TopBar projects={projects ?? []} active={project} me={me} setMe={setMe} theme={theme} toggleTheme={toggleTheme} />
       {project && <SubBar project={project} section={section} />}
@@ -120,6 +128,7 @@ function App() {
 
 function TopBar({ projects, active, me, setMe, theme, toggleTheme }: { projects: Project[]; active?: Project; me: Me; setMe: (m: Me) => void; theme: string; toggleTheme: () => void }) {
   const [menu, setMenu] = useState<'projects' | 'account' | null>(null)
+  const [enjoyOpen, setEnjoyOpen] = useState(false)
   const [canNotify, notifyOn, toggleNotify] = useNotificationToggle()
   const toggleAwake = async () => setMe({ ...me, ...(await api('POST', '/awake', { on: !me.awake })) })
 
@@ -127,9 +136,9 @@ function TopBar({ projects, active, me, setMe, theme, toggleTheme }: { projects:
     <header class="topbar">
       <img class="logo" src="/icon.svg" alt="Savor" />
       <nav class="project-tabs">
-        {projects.map((p) => (
+        {projects.filter((p) => p.pinned || p.id === active?.id).map((p) => (
           <a key={p.id} href={`#/p/${p.id}`} class={`project-tab ${p.id === active?.id ? 'active' : ''}`}>
-            <span class="avatar" style={{ background: p.tint }}>
+            <span class="avatar" style={avatarStyle(p.tint)}>
               {initial(p.name)}
             </span>
             <span class="name">{p.name}</span>
@@ -153,7 +162,8 @@ function TopBar({ projects, active, me, setMe, theme, toggleTheme }: { projects:
           <button class="pill" onClick={() => setMenu(menu === 'projects' ? null : 'projects')}>
             <FolderOpen size={15} /> Projects <ChevronDown size={14} />
           </button>
-          {menu === 'projects' && <ProjectsMenu projects={projects} close={() => setMenu(null)} />}
+          {menu === 'projects' && <ProjectsMenu projects={projects} close={() => setMenu(null)} onEnjoy={() => (setMenu(null), setEnjoyOpen(true))} />}
+          {enjoyOpen && <EnjoyImport onClose={() => setEnjoyOpen(false)} />}
         </div>
         {me.origin === 'local' && (
           <button class={`icon-btn ${me.awake ? 'on' : ''}`} title={me.awake ? 'Keeping this computer awake' : 'Keep this computer awake'} onClick={toggleAwake}>
@@ -188,7 +198,9 @@ function TopBar({ projects, active, me, setMe, theme, toggleTheme }: { projects:
   )
 }
 
-function ProjectsMenu({ projects, close }: { projects: Project[]; close: () => void }) {
+function ProjectsMenu({ projects, close, onEnjoy }: { projects: Project[]; close: () => void; onEnjoy: () => void }) {
+  const enjoy = useEnjoyProjects()
+  const [query, setQuery] = useState('')
   const [path, setPath] = useState('')
   const [error, setError] = useState('')
   const ref = useRef<HTMLDivElement>(null)
@@ -207,17 +219,33 @@ function ProjectsMenu({ projects, close }: { projects: Project[]; close: () => v
       setError((err as Error).message)
     }
   }
+  const q = query.trim().toLowerCase()
+  const shown = projects.filter((p) => !q || p.name.toLowerCase().includes(q) || p.path.toLowerCase().includes(q))
+  const pin = (e: Event, p: Project) => {
+    e.preventDefault()
+    e.stopPropagation()
+    api('PATCH', `/projects/${p.id}`, { pinned: !p.pinned }).catch((err: Error) => setError(err.message))
+  }
   return (
     <div class="menu right wide" ref={ref}>
-      {projects.map((p) => (
+      {projects.length > 8 && (
+        <label class="search">
+          <Search size={15} />
+          <input autoFocus placeholder="Find a project…" value={query} onInput={(e) => setQuery(e.currentTarget.value)} />
+        </label>
+      )}
+      {shown.map((p) => (
         <a key={p.id} href={`#/p/${p.id}`} onClick={close}>
-          <span class="avatar small" style={{ background: p.tint }}>
+          <span class="avatar small" style={avatarStyle(p.tint)}>
             {initial(p.name)}
           </span>
           <span>
             {p.name}
             <small class="mono">{p.path}</small>
           </span>
+          <button class={`icon-btn pin ${p.pinned ? 'on' : ''}`} title={p.pinned ? 'Unpin: remove the tab' : 'Pin as a tab'} onClick={(e) => pin(e, p)}>
+            {p.pinned ? <Pin size={14} /> : <PinOff size={14} />}
+          </button>
         </a>
       ))}
       <form onSubmit={add} class="menu-form">
@@ -227,6 +255,11 @@ function ProjectsMenu({ projects, close }: { projects: Project[]; close: () => v
         </button>
       </form>
       {error && <div class="error-text">{error}</div>}
+      {enjoy.length > 0 && (
+        <button onClick={onEnjoy}>
+          <Download size={15} /> Import from Enjoy…
+        </button>
+      )}
     </div>
   )
 }
@@ -270,6 +303,7 @@ function Welcome() {
       <img src="/icon.svg" alt="" />
       <h2>Open a project</h2>
       <p class="muted">Use Projects → Add to point Savor at a folder. Conversations, documents and workflows live in its <code>.savor/</code> directory.</p>
+      <EnjoyOffer />
     </div>
   )
 }

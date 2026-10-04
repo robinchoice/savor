@@ -19,6 +19,7 @@ import { isUnsafe, listAgents, mergeAgent } from './providers.js'
 import { nextRun, runWorkflow, syncSchedules, validateCron } from './scheduler.js'
 import * as git from './git.js'
 import { importSessions, listSessions } from './import.js'
+import { importEnjoy, listEnjoy } from './enjoy.js'
 import * as voice from './voice.js'
 
 // dist/web next to the sources in development, ../web next to the bundled dist/server/index.mjs.
@@ -88,7 +89,18 @@ route('GET', '/devices', (_, __, ctx) => (localOnly(ctx), devices.listDevices())
 route('POST', '/devices/pairing', (_, __, ctx) => {
   localOnly(ctx)
   const pairing = devices.createPairing()
-  return { ...pairing, url: `${PUBLIC_URL}/#/pair/${pairing.code}`, relayUrl: pairingLink(pairing.code) }
+  return { ...pairing, url: `${store.state().publicUrl ?? PUBLIC_URL}/#/pair/${pairing.code}`, relayUrl: pairingLink(pairing.code) }
+})
+// The address paired devices use without a relay, e.g. this computer's name in a VPN.
+route('GET', '/devices/address', (_, __, ctx) => (localOnly(ctx), { url: store.state().publicUrl ?? null, fallback: PUBLIC_URL }))
+route('PUT', '/devices/address', (_, b, ctx) => {
+  localOnly(ctx)
+  const url = typeof b.url === 'string' && b.url.trim() ? b.url.trim().replace(/\/$/, '') : null
+  if (url && !/^https?:\/\//.test(url)) throw new BadRequest('The address must start with https:// or http://.')
+  const s = store.state()
+  s.publicUrl = url
+  store.saveState(s)
+  return { url, fallback: PUBLIC_URL }
 })
 route('GET', '/agents', (_, __, ctx) => listAgents(ctx.query.has('refresh')))
 route('GET', '/presets', () => store.listPresets())
@@ -162,6 +174,16 @@ route('POST', '/projects', (_, b, ctx) => {
   emit({ type: 'projects' })
   return p
 })
+// Projects that live in Enjoy on this computer, and bringing them over with their records.
+route('GET', '/enjoy', (_, __, ctx) => (localOnly(ctx), listEnjoy()))
+route('POST', '/enjoy', (_, b, ctx) => {
+  localOnly(ctx)
+  const results = importEnjoy((b.paths ?? []).map(String))
+  syncSchedules()
+  emit({ type: 'projects' })
+  for (const r of results) for (const type of ['thread', 'documents', 'workflows'] as const) emit({ type, projectId: r.projectId })
+  return results
+})
 route('GET', '/projects/:pid/role', (params) => ({ role: store.readRole(project(params)) }))
 route('PATCH', '/projects/:pid', (params, b, ctx) => {
   const p = project(params)
@@ -170,7 +192,7 @@ route('PATCH', '/projects/:pid', (params, b, ctx) => {
   const roleChanged = typeof b.role === 'string' && b.role !== store.readRole(p)
   if (roleChanged || (agent && JSON.stringify(agent) !== JSON.stringify(p.agent))) localOnly(ctx)
   if (roleChanged) store.saveRole(p, b.role)
-  const patch = Object.fromEntries(Object.entries(b).filter(([k]) => ['name', 'tint', 'agent', 'verbosity', 'paused'].includes(k)))
+  const patch = Object.fromEntries(Object.entries(b).filter(([k]) => ['name', 'tint', 'agent', 'verbosity', 'paused', 'pinned'].includes(k)))
   if (agent) patch.agent = agent
   const updated = store.updateProject(p.id, patch)
   emit({ type: 'projects' })
@@ -234,7 +256,7 @@ route('PATCH', '/projects/:pid/threads/:tid', (params, b, ctx) => {
 })
 route('DELETE', '/projects/:pid/threads/:tid', (params) => {
   const p = project(params)
-  agents.stop(params.tid)
+  agents.forget(params.tid)
   fs.rmSync(path.join(p.path, '.savor', 'threads', path.basename(params.tid)), { recursive: true, force: true })
   emit({ type: 'thread', projectId: p.id, threadId: params.tid })
   return {}

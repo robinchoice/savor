@@ -8,6 +8,7 @@
 // - "slow: <text>" → acknowledges, waits for the test's release file or an interrupt, then echoes
 // - anything else → acknowledgement plus a conclusion echoing the input with one suggestion
 // `--version` and `auth status` answer like the real CLI, so Savor lists the fake as installed.
+// Started without an MCP config it is Savor's probe and answers the initialize request with its models.
 import readline from 'node:readline'
 import crypto from 'node:crypto'
 import fs from 'node:fs'
@@ -22,6 +23,19 @@ if (args[0] === '--version') {
 if (args[0] === 'auth' && args[1] === 'status') {
   console.log(JSON.stringify({ loggedIn: true, email: 'fake@claude.test' }))
   process.exit(0)
+}
+if (!args.includes('--mcp-config')) {
+  readline.createInterface({ input: process.stdin }).on('line', (line) => {
+    const msg = JSON.parse(line)
+    if (msg.request?.subtype !== 'initialize') return
+    const models = [
+      { value: 'default', displayName: 'Default (recommended)', supportedEffortLevels: ['low', 'high'] },
+      { value: 'fake-fable[1m]', displayName: 'Fable', description: 'Fake Fable', supportedEffortLevels: ['low', 'high', 'max'] },
+      { value: 'fake-haiku', displayName: 'Haiku' },
+    ]
+    console.log(JSON.stringify({ type: 'control_response', response: { subtype: 'success', request_id: msg.request_id, response: { models } } }))
+  })
+  await new Promise(() => {})
 }
 const config = args[args.indexOf('--mcp-config') + 1]
 const mcp = JSON.parse(fs.readFileSync(config, 'utf8')).mcpServers.savor

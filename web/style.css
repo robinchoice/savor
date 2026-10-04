@@ -58,7 +58,7 @@ small { display: block; font-size: 12px; }
 
 button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; padding: 0; }
 button:disabled { opacity: 0.45; cursor: default; }
-button.primary, .button.primary { background: var(--tint); color: #fff; border-radius: 8px; padding: 7px 14px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }
+button.primary, .button.primary { background: var(--tint); color: var(--tint-ink, #fff); border-radius: 8px; padding: 7px 14px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }
 button.ghost { border: 1px solid var(--line-strong); border-radius: 8px; padding: 6px 12px; display: inline-flex; align-items: center; gap: 6px; }
 button.ghost:hover { background: var(--card-hover); }
 button.ghost.small { padding: 3px 9px; font-size: 12px; }
@@ -109,6 +109,10 @@ main { min-height: 0; overflow: hidden; }
 .menu > a:hover, .menu > button:hover, .menu > button.selected { background: var(--card-hover); }
 .menu > button.selected { color: var(--tint); }
 .menu small { color: var(--muted); font-size: 11px; }
+.menu > a > span:not(.avatar) { flex: 1; min-width: 0; }
+.menu .pin { flex: none; opacity: 0.45; }
+.menu .pin.on, .menu > a:hover .pin { opacity: 1; }
+.menu > .search { margin: 2px 2px 6px; }
 .menu-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--faint); padding: 8px 10px 4px; }
 .menu-form { display: flex; gap: 6px; padding: 6px; border-top: 1px solid var(--line); margin-top: 4px; }
 .menu > input, .menu > select { margin: 2px 4px; width: calc(100% - 8px); }
@@ -121,7 +125,7 @@ main { min-height: 0; overflow: hidden; }
 .conv-head { display: flex; align-items: center; gap: 12px; padding: 18px 16px 12px; }
 .conv-head h2 { font-size: 19px; font-weight: 500; flex: 1; }
 .conv-head-icon { color: var(--tint); }
-.new-btn { width: 34px; height: 34px; border-radius: 9px; background: var(--tint); color: #fff; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 0 rgb(0 0 0 / 0.3); }
+.new-btn { width: 34px; height: 34px; border-radius: 9px; background: var(--tint); color: var(--tint-ink, #fff); display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 0 rgb(0 0 0 / 0.3); }
 .search { display: flex; align-items: center; gap: 8px; margin: 0 14px; padding: 0 10px; background: var(--card-hover); border-radius: 8px; color: var(--muted); }
 .search input { border: 0; background: none; padding: 9px 0; }
 .filters { display: flex; gap: 4px; padding: 14px 12px 8px; }
@@ -252,7 +256,7 @@ main { min-height: 0; overflow: hidden; }
 .agent-btn small { color: var(--muted); font-size: 11px; line-height: 1.2; }
 .branch-btn { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; color: var(--muted); padding: 5px 8px; border-radius: 8px; }
 .send { width: 30px; height: 30px; border-radius: 8px; background: var(--raised); border: 1px solid var(--line-strong); display: flex; align-items: center; justify-content: center; color: var(--muted); }
-.send:not(:disabled):hover { color: #fff; background: var(--tint); border-color: var(--tint); }
+.send:not(:disabled):hover { color: var(--tint-ink, #fff); background: var(--tint); border-color: var(--tint); }
 .send.stop { color: var(--red); }
 .voice { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--muted); white-space: nowrap; }
 .voice .icon-btn.recording { color: var(--red); background: color-mix(in srgb, var(--red) 14%, transparent); }
@@ -278,7 +282,7 @@ main { min-height: 0; overflow: hidden; }
 .new-thread .menu.up { top: calc(100% + 8px); bottom: auto; }
 .segmented { display: flex; gap: 2px; padding: 2px 4px; flex-wrap: wrap; }
 .segmented button { padding: 4px 9px; border-radius: 6px; font-size: 12px; border: 1px solid var(--line); }
-.segmented button.selected { background: var(--tint); color: #fff; border-color: var(--tint); }
+.segmented button.selected { background: var(--tint); color: var(--tint-ink, #fff); border-color: var(--tint); }
 .toggle-row { display: flex; align-items: center; gap: 8px; padding: 8px 10px; }
 .toggle-row input { margin-left: auto; }
 .done { margin: 8px 4px 2px; justify-content: center; }

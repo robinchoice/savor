@@ -92,7 +92,8 @@ const counters = new Map<string, number>()
 export class Activity {
   private ids = new Map<string, number>()
   private last = store.now()
-  constructor(private p: Project, private tid: string) {}
+  // `live` is false once the session was replaced or its conversation deleted; what it logs then is dropped.
+  constructor(private p: Project, private tid: string, private live: () => boolean) {}
 
   private nextId() {
     const n = (counters.get(this.tid) ?? store.readActivity(this.p, this.tid).length) + 1
@@ -101,6 +102,7 @@ export class Activity {
   }
 
   start(key: string, type: store.ActivityEvent['type'], label: string) {
+    if (!this.live()) return
     const id = this.nextId()
     this.ids.set(key, id)
     store.appendActivity(this.p, this.tid, { id, type, label: label.slice(0, 300), time: store.now() })
@@ -109,7 +111,7 @@ export class Activity {
 
   finish(key: string) {
     const id = this.ids.get(key)
-    if (!id) return
+    if (!id || !this.live()) return
     this.ids.delete(key)
     this.last = store.now()
     store.appendActivity(this.p, this.tid, { id, finishedAt: this.last })
@@ -118,6 +120,7 @@ export class Activity {
 
   // Events that arrive complete (thinking, text) span the time since the previous event.
   instant(type: store.ActivityEvent['type'], label: string) {
+    if (!this.live()) return
     const finishedAt = store.now()
     store.appendActivity(this.p, this.tid, { id: this.nextId(), type, label: label.slice(0, 300), time: this.last, finishedAt })
     this.last = finishedAt

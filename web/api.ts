@@ -121,6 +121,8 @@ export interface Thread {
 export interface Worktree { branch: string; path: string; ahead: number; dirty: boolean }
 export interface CommitFile { path: string; additions: number | null; deletions: number | null; patch: string }
 export interface Commit { hash: string; subject: string; body: string; author: string; date: string; files: CommitFile[] }
+export interface EnjoyProject { path: string; name: string; missing: boolean; projectId: string | null; conversations: number; added: number; documents: number; workflows: number }
+export interface EnjoyResult { path: string; projectId: string; added: number; updated: number; kept: number; documents: number; workflows: number }
 export interface ImportableSession { provider: 'claude' | 'codex'; id: string; title: string; startedAt: string; messages: number; imported: boolean }
 export interface Decision { id: string; groupId: string; title: string; body: string; options: string[]; selected: number | null; answer: string | null; resolved: boolean }
 export interface ActivityEvent { id: number; type: 'thinking' | 'command' | 'edit' | 'note'; label: string; time: string; finishedAt?: string }
@@ -132,6 +134,7 @@ export interface Project {
   agent: AgentConfig
   verbosity: 'low' | 'medium' | 'high'
   paused: boolean
+  pinned: boolean
   counts: { working: number; unread: number; needsYou: number }
 }
 export interface Doc { id: string; title: string; content: string; updatedAt: string }

@@ -216,6 +216,19 @@ export function Devices() {
   const [relayUrl, setRelayUrl] = useState<string | null>(null)
   const [error, setError] = useState('')
   const [pairing, setPairing] = useState<{ code: string; url: string; relayUrl: string | null; expiresAt: string } | null>(null)
+  const [address, setAddress] = useState<{ url: string | null; fallback: string } | null>(null)
+  const [addressDraft, setAddressDraft] = useState<string | null>(null)
+  useEffect(() => void api('GET', '/devices/address').then(setAddress), [])
+  const saveAddress = async () => {
+    try {
+      setAddress(await api('PUT', '/devices/address', { url: addressDraft ?? '' }))
+      setAddressDraft(null)
+      setPairing(null)
+      setError('')
+    } catch (e) {
+      setError((e as Error).message)
+    }
+  }
 
   const qr = (text: string) => {
     const q = qrcode(0, 'M')
@@ -276,8 +289,24 @@ export function Devices() {
         <p class="muted">
           {relay?.state === 'online'
             ? 'The QR code opens Savor through the relay.'
-            : 'Without a relay, the device has to reach this computer directly: same network, or a VPN such as Tailscale, with Savor started as SAVOR_HOST=0.0.0.0.'}
+            : 'Without a relay, the device has to reach this computer directly: same network, or a VPN such as Tailscale.'}
         </p>
+        {relay?.state !== 'online' && (
+          <div class="row wide">
+            <label>
+              Address of this computer for paired devices{' '}
+              <small class="muted">
+                e.g. the HTTPS address <code>tailscale serve {new URL(address?.fallback ?? 'http://localhost:4317').port}</code> gives it, or its LAN address with Savor started as SAVOR_HOST=0.0.0.0
+              </small>
+              <input placeholder={address?.fallback ?? ''} value={addressDraft ?? address?.url ?? ''} onInput={(e) => setAddressDraft(e.currentTarget.value)} />
+            </label>
+            {addressDraft !== null && addressDraft !== (address?.url ?? '') && (
+              <button class="ghost" onClick={saveAddress}>
+                Save
+              </button>
+            )}
+          </div>
+        )}
         <div class="row">
           <button class="primary" onClick={async () => setPairing(await api('POST', '/devices/pairing'))}>
             <Smartphone size={15} /> Pair a device

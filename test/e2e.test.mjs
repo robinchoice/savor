@@ -77,20 +77,22 @@ before(async () => {
       FAKE_AGENT_LOG: AGENT_LOG,
       CLAUDE_CONFIG_DIR: path.join(TMP, 'claude'),
       CODEX_HOME: path.join(TMP, 'codex'),
+      SAVOR_ENJOY_DIR: path.join(TMP, 'enjoy'),
     },
     stdio: ['ignore', 'pipe', 'inherit'],
   })
   await new Promise((resolve) => server.stdout.on('data', (d) => d.toString().includes('Savor running') && resolve()))
   token = JSON.parse(fs.readFileSync(path.join(HOME, 'state.json'), 'utf8')).token
   browser = await chromium.launch({ executablePath: process.env.SAVOR_CHROMIUM, args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'] })
-  page = await browser.newPage({ viewport: { width: 1400, height: 900 } })
+  page = await browser.newPage({ viewport: { width: 1400, height: 900 }, locale: 'en-US' })
   await page.goto(`${base}/?token=${token}`)
 })
 
 after(async () => {
   await browser?.close()
   server?.kill()
-  fs.rmSync(TMP, { recursive: true, force: true })
+  // The daemon's preview browser may still be closing its profile.
+  fs.rmSync(TMP, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 })
 })
 
 test('add a project and get a conclusion with next actions', async () => {
@@ -293,6 +295,10 @@ test('the agent list reports what is installed, signed in and offered', async ()
   const by = Object.fromEntries(agents.map((a) => [a.id, a]))
   assert.equal(by.claude.signedIn, true)
   assert.equal(by.claude.account, 'fake@claude.test')
+  // Claude's models come from the CLI: "default" is Savor's empty model, and Ultracode sits on top of the effort levels.
+  assert.deepEqual(by.claude.models.map((m) => m.id), ['', 'fake-fable[1m]', 'fake-haiku'])
+  assert.deepEqual(by.claude.models[1].efforts, ['low', 'high', 'max', 'ultracode'])
+  assert.deepEqual(by.claude.models[2].efforts, [])
   assert.ok(by.codex.models.some((m) => m.id === 'fake-model' && m.efforts.includes('high')))
   assert.equal(by.codex.account, 'fake@codex.test')
   assert.ok(by.opencode.models.some((m) => m.id === 'fake/model'))
@@ -380,6 +386,23 @@ test('voice input rejects missing or incomplete PCM', async () => {
   }
 })
 
+test('deleting a conversation whose agent session is still open leaves the daemon running', async () => {
+  const [project] = (await api('GET', '/projects')).body
+  const t = `/projects/${project.id}/threads`
+  // One with an idle session after its turn, one deleted in the middle of a turn.
+  const idle = (await api('POST', t, { text: 'delete me' })).body
+  await until(async () => (await api('GET', `${t}/${idle.id}`)).body.messages.some((m) => m.text === 'Echo: delete me'))
+  const working = (await api('POST', t, { text: 'slow: delete me too' })).body
+  await until(async () => (await api('GET', `${t}/${working.id}`)).body.messages.some((m) => m.text === 'On it.'))
+  assert.equal((await api('DELETE', `${t}/${idle.id}`)).status, 200)
+  assert.equal((await api('DELETE', `${t}/${working.id}`)).status, 200)
+  // The sessions end a moment later; the daemon has to survive that.
+  await new Promise((r) => setTimeout(r, 1000))
+  assert.equal((await api('GET', '/me')).status, 200)
+  assert.equal((await api('GET', `${t}/${idle.id}`)).status, 404)
+  assert.equal((await api('GET', '/projects')).body.find((p) => p.id === project.id).counts.working, 0)
+})
+
 test('workflows run in a new conversation', async () => {
   const [project] = (await api('GET', '/projects')).body
   const wf = (await api('POST', `/projects/${project.id}/workflows`, { name: 'Nightly', prompt: 'nightly check', cron: '0 3 * * *' })).body
@@ -399,6 +422,14 @@ test('auth: tokens, pairing and remote limits', async () => {
   assert.equal((await api('GET', '/me', undefined, device)).body.origin, 'remote')
   assert.equal((await api('POST', '/devices/pairing', undefined, device)).status, 403)
   assert.equal((await api('POST', '/projects', { path: '/' }, device)).status, 403)
+  assert.equal((await api('GET', '/enjoy', undefined, device)).status, 403)
+  // Pairing links use the address set for direct connections, which only this computer can change.
+  assert.equal((await api('PUT', '/devices/address', { url: 'https://evil.example' }, device)).status, 403)
+  assert.equal((await api('PUT', '/devices/address', { url: 'ftp://x' })).status, 400)
+  assert.equal((await api('PUT', '/devices/address', { url: 'https://desk.tailnet.example/' })).body.url, 'https://desk.tailnet.example')
+  assert.match((await api('POST', '/devices/pairing')).body.url, /^https:\/\/desk\.tailnet\.example\/#\/pair\/[0-9A-F]{10}$/)
+  assert.equal((await api('PUT', '/devices/address', { url: '' })).body.url, null)
+  assert.ok((await api('POST', '/devices/pairing')).body.url.startsWith('http://localhost:'))
   const again = await fetch(`${base}/api/pair`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code: pairing.code, name: 'x' }) })
   assert.equal(again.status, 400)
 
@@ -708,4 +739,182 @@ test('files open in the code editor, markdown and documents in the rich editor',
   })
   assert.equal(doc.content, '# Plan\n\nShip it\n')
   await page.waitForSelector('.editor-page >> text=Saved')
+})
+
+test('Enjoy projects come over with their records and continue with the same agent session', async () => {
+  // An Enjoy store as Enjoy writes it: an index of project folders, YAML records, markdown with front matter.
+  const folder = path.join(TMP, 'from-enjoy')
+  const enjoy = path.join(TMP, 'enjoy', 'projects', 'demo-1a2b3c4d')
+  const thread = (id, extra = '') => `version: 2
+id: ${id}
+title: Fix the login
+sessionId: enjoy-session-${id}
+reasoning: ultracode
+provider: claude
+model: fake-fable[1m]
+fast: false
+permissionMode: auto
+status: idle
+createdAt: 2026-10-01T10:00:00.000Z
+label:
+  name: Login fix
+  hue: 210
+agentSessions:
+  - provider: claude
+    sessionId: enjoy-session-${id}
+productPreview:
+  title: Demo
+  url: http://localhost:5173/
+requests: []
+messages:
+  - id: ${id}
+    role: user
+    text: please fix the login
+    createdAt: 2026-10-01T10:00:00.000Z
+    delivered: true
+    read: true
+    images:
+      - .enjoy/attachments/shot.png
+    inputSource: local
+  - id: req1-acknowledgement
+    role: assistant
+    text: Looking into it.
+    createdAt: 2026-10-01T10:00:05.000Z
+    read: true
+  - id: req1-conclusion
+    role: assistant
+    text: "Fixed in **auth.ts**."
+    createdAt: 2026-10-01T10:02:00.000Z
+    read: true
+    suggestions:
+      - Add a test for it
+    commits:
+      - ${'a'.repeat(40)}
+    workTiming:
+      startedAt: 2026-10-01T10:00:00.000Z
+      finishedAt: 2026-10-01T10:02:00.000Z
+${extra}`
+  fs.mkdirSync(folder)
+  execFileSync('git', ['init', '-q'], { cwd: folder })
+  for (const sub of ['threads/aaaa1111', 'decisions', 'docs', 'recipes', 'attachments']) fs.mkdirSync(path.join(enjoy, sub), { recursive: true })
+  fs.writeFileSync(path.join(TMP, 'enjoy', 'projects', 'projects.json'), JSON.stringify({ version: 1, projects: { [folder]: 'demo-1a2b3c4d', [path.join(TMP, 'gone')]: 'gone-00000000' } }))
+  fs.writeFileSync(path.join(enjoy, 'config.yml'), 'name: Demo from Enjoy\ntint: "#ffcbe2"\nverbosity: low\npaused: false\nlastAgentConfig:\n  provider: claude\n  model: fake-fable[1m]\n  reasoning: ultracode\n  fast: false\n  permissionMode: auto\n')
+  fs.writeFileSync(path.join(enjoy, 'ROLE.md'), 'Answer in German.\n')
+  fs.writeFileSync(path.join(enjoy, 'threads/aaaa1111/messages.md'), thread('aaaa1111'))
+  fs.writeFileSync(path.join(enjoy, 'threads/aaaa1111/activity.md'), 'version: 2\nevents:\n  - id: 1\n    type: files\n    name: Edit\n    label: Edit · auth.ts\n    time: 2026-10-01T10:01:00.000Z\n    finishedAt: 2026-10-01T10:01:30.000Z\n')
+  fs.writeFileSync(path.join(enjoy, 'decisions/req0-conclusion-question-0.md'), '---\nid: req0-conclusion-question-0\ntitle: Which provider?\noptions:\n  - GitHub\n  - Google\nselected: 1\nresolved: true\nthreadId: aaaa1111\nkind: product\ngroupId: req0-conclusion\ncreatedAt: 2026-10-01T09:00:00.000Z\n---\n')
+  fs.writeFileSync(path.join(enjoy, 'docs/Plan.md'), '---\ntitle: Login plan\nid: doc1\ncreatedAt: 2026-10-01T09:00:00.000Z\nupdatedAt: 2026-10-01T09:30:00.000Z\n---\n# Login plan\n\nFirst the session cookie.\n')
+  fs.writeFileSync(path.join(enjoy, 'recipes/wf1.md'), '---\nid: wf1\nname: Weekly check\ncron: 0 9 * * 1\ntimezone: Europe/Berlin\nsourceRequest: check weekly\n---\nCheck the login every week.\n')
+  fs.writeFileSync(path.join(enjoy, 'attachments/shot.png'), 'png')
+  // Claude Code's transcript of the first conversation's session; the others have none.
+  const transcripts = path.join(TMP, 'claude', 'projects', folder.replace(/[^a-zA-Z0-9]/g, '-'))
+  fs.mkdirSync(transcripts, { recursive: true })
+  fs.writeFileSync(path.join(transcripts, 'enjoy-session-aaaa1111.jsonl'), '')
+  fs.mkdirSync(path.join(TMP, 'enjoy', 'projects', 'gone-00000000'))
+  fs.writeFileSync(path.join(TMP, 'enjoy', 'projects', 'gone-00000000', 'config.yml'), 'name: Gone\n')
+
+  await page.goto(`${base}/`)
+  await page.click('text=Projects')
+  await page.click('text=Import from Enjoy…')
+  await page.waitForSelector('.import-row:has-text("Demo from Enjoy") >> text=1 conversation · 1 document · 1 workflow')
+  // A project whose folder is gone can't be chosen.
+  assert.equal(await page.locator('.import-row:has-text("Gone") input').isDisabled(), true)
+  await page.click('.dialog-foot button.primary')
+  await page.waitForSelector('text=Imported 1 conversation, 1 document and 1 workflow from 1 project.')
+  await page.click('.dialog .link')
+
+  const p = (await api('GET', '/projects')).body.find((x) => x.path === folder)
+  assert.deepEqual([p.name, p.tint, p.verbosity], ['Demo from Enjoy', '#ffcbe2', 'low'])
+  assert.deepEqual(p.agent, { provider: 'claude', model: 'fake-fable[1m]', reasoning: 'ultracode', fast: false, permissionMode: 'auto' })
+  assert.equal((await api('GET', `/projects/${p.id}/role`)).body.role, 'Answer in German.\n')
+  // The history is private, so the repository does not see it.
+  assert.equal(execFileSync('git', ['status', '--porcelain'], { cwd: folder }).toString(), '')
+
+  await page.click('.card:has-text("Fix the login")')
+  await page.waitForSelector('.label-pill:has-text("Login fix")')
+  await page.waitForSelector('.msg-card.conclusion strong:has-text("auth.ts")')
+  await page.waitForSelector('.next-actions >> text=Add a test for it')
+  const t = `/projects/${p.id}/threads/aaaa1111`
+  const before = (await api('GET', t)).body
+  assert.deepEqual(before.messages.map((m) => m.kind), ['user', 'ack', 'conclusion'])
+  assert.deepEqual(before.messages[0].images, ['shot.png'])
+  assert.deepEqual(before.messages[2].commits, ['a'.repeat(40)])
+  assert.deepEqual([before.thread.completed, before.thread.preview, before.thread.label.hue], [false, 'http://localhost:5173/', 210])
+  assert.deepEqual(before.decisions.map((d) => [d.title, d.options[d.selected], d.resolved]), [['Which provider?', 'Google', true]])
+  assert.deepEqual((await api('GET', `${t}/activity`)).body.map((e) => [e.type, e.label]), [['edit', 'Edit · auth.ts']])
+  assert.equal((await fetch(`${base}/api${t}/attachments/shot.png`, { headers: { cookie: `savor_token=${token}` } })).status, 200)
+  const docs = (await api('GET', `/projects/${p.id}/docs`)).body
+  assert.deepEqual(docs.map((d) => [d.id, d.title, d.content, d.updatedAt]), [['doc1', 'Login plan', 'First the session cookie.', '2026-10-01T09:30:00.000Z']])
+  const workflows = (await api('GET', `/projects/${p.id}/workflows`)).body
+  assert.deepEqual(workflows.map((w) => [w.id, w.name, w.prompt, w.cron, w.timezone, w.enabled]), [['wf1', 'Weekly check', 'Check the login every week.', '0 9 * * 1', 'Europe/Berlin', true]])
+
+  // A follow-up resumes the session the conversation had in Enjoy, with the same settings.
+  await send('and now?')
+  await page.waitForSelector('text=Echo: and now?')
+  const run = fs.readFileSync(AGENT_LOG, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((r) => r.agent === 'claude' && r.cwd === folder).at(-1)
+  const arg = (flag) => run.argv[run.argv.indexOf(flag) + 1]
+  assert.deepEqual([arg('--resume'), arg('--model'), arg('--effort'), arg('--permission-mode')], ['enjoy-session-aaaa1111', 'fake-fable[1m]', 'xhigh', 'auto'])
+  assert.deepEqual(JSON.parse(arg('--settings')), { disableAllHooks: true, fastMode: false, ultracode: true })
+  assert.equal(arg('--disallowed-tools'), 'ScheduleWakeup,CronCreate,PushNotification,RemoteTrigger')
+  assert.ok(run.argv.includes('--chrome'))
+  assert.match(arg('--append-system-prompt'), /Answer in German\./)
+
+  // Importing again: what happened in Enjoy since comes in, what was continued in Savor stays.
+  fs.mkdirSync(path.join(enjoy, 'threads/bbbb2222'))
+  fs.writeFileSync(path.join(enjoy, 'threads/bbbb2222/messages.md'), thread('bbbb2222').replace('status: idle', 'status: completed'))
+  fs.mkdirSync(path.join(enjoy, 'threads/cccc3333'))
+  fs.writeFileSync(path.join(enjoy, 'threads/cccc3333/messages.md'), thread('cccc3333'))
+  fs.writeFileSync(path.join(enjoy, 'threads/aaaa1111/messages.md'), thread('aaaa1111', '  - id: later\n    role: user\n    text: written in Enjoy later\n    createdAt: 2026-10-02T10:00:00.000Z\n'))
+  const second = (await api('POST', '/enjoy', { paths: [folder] })).body[0]
+  assert.deepEqual([second.added, second.updated, second.kept, second.documents, second.workflows], [2, 0, 1, 0, 0])
+  assert.ok((await api('GET', t)).body.messages.some((m) => m.text === 'Echo: and now?'))
+  const done = (await api('GET', `/projects/${p.id}/threads/bbbb2222`)).body.thread
+  assert.deepEqual([done.completed, done.preview], [true, null])
+  // A Claude session whose transcript is gone is not resumed; the conversation starts a new one.
+  assert.deepEqual([before.thread.agentSessions, done.agentSessions], [[{ provider: 'claude', sessionId: 'enjoy-session-aaaa1111' }], []])
+  // What changes in Savor alone (here: reopening a completed conversation) survives the next import.
+  await api('PATCH', `/projects/${p.id}/threads/bbbb2222`, { completed: false })
+  fs.writeFileSync(path.join(enjoy, 'threads/cccc3333/messages.md'), thread('cccc3333', '  - id: later\n    role: user\n    text: written in Enjoy later\n    createdAt: 2026-10-02T10:00:00.000Z\n'))
+  const third = (await api('POST', '/enjoy', { paths: [folder] })).body[0]
+  assert.deepEqual([third.added, third.updated, third.kept], [0, 1, 2])
+  assert.equal((await api('GET', `/projects/${p.id}/threads/cccc3333`)).body.messages.at(-1).text, 'written in Enjoy later')
+  assert.equal((await api('GET', `/projects/${p.id}/threads/bbbb2222`)).body.thread.completed, false)
+})
+
+test('unpinned projects leave the tab bar and stay in the Projects menu', async () => {
+  const other = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
+  const row = `.menu a[href="#/p/${other.id}"]`
+  await page.click('text=Projects')
+  await page.click(`${row} .pin`)
+  await page.waitForSelector(`.project-tab[href="#/p/${other.id}"]`, { state: 'detached' })
+  assert.equal((await api('GET', '/projects')).body.find((p) => p.id === other.id).pinned, false)
+  // Opened from the menu, it has a tab for as long as it is the project on screen.
+  await page.click(row)
+  await page.waitForSelector(`.project-tab.active[href="#/p/${other.id}"]`)
+  await page.click('text=Projects')
+  await page.click(`${row} .pin`)
+  await until(async () => (await api('GET', '/projects')).body.find((p) => p.id === other.id).pinned)
+  await page.keyboard.press('Escape')
+  await page.click('.conv-head h2')
+})
+
+test('a draft stays with its conversation', async () => {
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
+  const [one, other] = (await api('GET', `/projects/${project.id}/threads`)).body
+  const draft = () => page.inputValue('.composer textarea')
+  await page.goto(`${base}/#/p/${project.id}/t/${one.id}`)
+  await page.waitForSelector('.thread-head')
+  await page.fill('.composer textarea', 'half a thought')
+  await page.goto(`${base}/#/p/${project.id}/t/${other.id}`)
+  await page.waitForSelector(`.card.active[href="#/p/${project.id}/t/${other.id}"]`)
+  assert.equal(await draft(), '')
+  await page.goto(`${base}/#/p/${project.id}/t/${one.id}`)
+  await page.waitForSelector(`.card.active[href="#/p/${project.id}/t/${one.id}"]`)
+  assert.equal(await draft(), 'half a thought')
+  // Sending it clears the draft.
+  await page.press('.composer textarea', 'Enter')
+  await page.waitForSelector('text=Echo: half a thought')
+  await page.reload()
+  await page.waitForSelector('.thread-head')
+  assert.equal(await draft(), '')
 })

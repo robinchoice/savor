@@ -3,6 +3,7 @@ import { execFile } from 'node:child_process'
 import type { AgentConfig, Provider } from './store.js'
 import { BIN } from './config.js'
 import { probeCodex } from './codex.js'
+import { probeClaude } from './claude.js'
 
 export interface ModeInfo { id: string; label: string; detail: string; unsafe?: boolean }
 export interface ModelInfo { id: string; label: string; detail?: string; efforts?: string[] }
@@ -34,7 +35,7 @@ export const STATIC: Record<Provider, Static> = {
       { id: 'sonnet', label: 'Sonnet' },
       { id: 'haiku', label: 'Haiku' },
     ],
-    efforts: ['low', 'medium', 'high', 'xhigh', 'max'],
+    efforts: ['low', 'medium', 'high', 'xhigh', 'max', 'ultracode'],
     defaultEffort: 'high',
     modes: [
       { id: 'acceptEdits', label: 'Accept edits', detail: 'File edits run without asking. Commands and other actions ask first.' },
@@ -140,12 +141,12 @@ const probes: Record<Provider, () => Promise<Probe>> = {
   async claude() {
     const v = await run(BIN.claude, ['--version'])
     if (v.missing) return { installed: false, version: null, signedIn: null, account: null }
-    const status = await run(BIN.claude, ['auth', 'status'])
+    const [status, models] = await Promise.all([run(BIN.claude, ['auth', 'status']), probeClaude()])
     let auth: any = null
     try {
       auth = JSON.parse(status.out.slice(status.out.indexOf('{')))
     } catch {}
-    return { installed: true, version: version(v.out), signedIn: auth ? !!auth.loggedIn : false, account: auth?.email ?? null }
+    return { installed: true, version: version(v.out), signedIn: auth ? !!auth.loggedIn : false, account: auth?.email ?? null, models }
   },
   async codex() {
     const v = await run(BIN.codex, ['--version'])

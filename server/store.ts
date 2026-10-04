@@ -15,6 +15,8 @@ export interface Project {
   agent: AgentConfig
   verbosity: 'low' | 'medium' | 'high'
   paused: boolean
+  // Pinned projects are tabs; the others are reached through the Projects menu.
+  pinned: boolean
 }
 export interface Question { title: string; body: string; options: string[] }
 export type Origin = 'local' | 'remote'
@@ -56,6 +58,8 @@ export interface Thread {
   parentId?: string
   // Set when the conversation works in its own git worktree instead of the project folder.
   worktree?: { branch: string; path: string } | null
+  // Set by the import from Enjoy: what the conversation looked like there when it was last brought over.
+  imported?: { messages: number; completed: boolean; open: number }
 }
 export interface ActivityEvent { id: number; type: 'thinking' | 'command' | 'edit' | 'note'; label: string; time: string; finishedAt?: string }
 export interface Decision {
@@ -104,6 +108,8 @@ interface State {
   presets: Preset[]
   providers: Record<string, { command: string[] }>
   relay: { url: string | null; enabled: boolean }
+  // Where paired devices reach this computer directly (LAN or VPN), when that is not PUBLIC_URL.
+  publicUrl?: string | null
   // The daemon's long-term X25519 key for the relay tunnel (base64url secret key).
   identity: string
   relayToken: string
@@ -187,12 +193,12 @@ export function deletePreset(id: string) {
 // ---- projects ----
 
 const TINTS = ['#2878ef', '#e0735a', '#9b6bd6', '#3fa37a', '#d69a2d', '#d6567f', '#4aa3c9']
-const dataDir = (p: { path: string }) => path.join(p.path, '.savor')
+export const dataDir = (p: { path: string }) => path.join(p.path, '.savor')
 export const defaultAgent = (): AgentConfig => ({ provider: 'claude', model: '', reasoning: 'high', fast: false, permissionMode: 'acceptEdits' })
 
 function loadProject(ref: { path: string }): Project | null {
   const p = readJson<(Partial<Project> & Pick<Project, 'id' | 'name'>) | null>(path.join(ref.path, '.savor', 'project.json'), null)
-  return p && ({ tint: TINTS[0], verbosity: 'medium', paused: false, ...p, agent: { ...defaultAgent(), ...p.agent }, path: ref.path } as Project)
+  return p && ({ tint: TINTS[0], verbosity: 'medium', paused: false, pinned: true, ...p, agent: { ...defaultAgent(), ...p.agent }, path: ref.path } as Project)
 }
 
 export const listProjects = (): Project[] => state().projects.flatMap((ref) => loadProject(ref) ?? [])
@@ -215,6 +221,7 @@ export function addProject(dir: string, name?: string): Project {
     agent: defaultAgent(),
     verbosity: 'medium' as const,
     paused: false,
+    pinned: true,
   }
   writeJson(path.join(abs, '.savor', 'project.json'), project)
   if (!s.projects.some((r) => r.id === project.id)) {
