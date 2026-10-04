@@ -16,7 +16,7 @@ import { addWorktree } from './git.js'
 const ok = (data: unknown) => ({ content: [{ type: 'text' as const, text: typeof data === 'string' ? data : JSON.stringify(data) }] })
 
 function buildServer(p: Project, tid: string) {
-  const server = new McpServer({ name: 'savor', version: '0.5.2' })
+  const server = new McpServer({ name: 'savor', version: '0.5.3' })
   const threadUrl = (id: string) => appUrl(`/p/${p.id}/t/${id}`)
   const touchThread = () => emit({ type: 'thread', projectId: p.id, threadId: tid })
   const modelInfo = () => store.getThread(p, tid).agent
