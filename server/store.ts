@@ -194,7 +194,7 @@ export function deletePreset(id: string) {
 
 // ---- projects ----
 
-const TINTS = ['#2878ef', '#e0735a', '#9b6bd6', '#3fa37a', '#d69a2d', '#d6567f', '#4aa3c9']
+const TINTS = ['#b5654a', '#8b6bc7', '#3f9a78', '#c59a3d', '#c8577a', '#4a9bb8', '#7a8794']
 export const dataDir = (p: { path: string }) => path.join(p.path, '.savor')
 export const defaultAgent = (): AgentConfig => ({ provider: 'claude', model: '', reasoning: 'high', fast: false, permissionMode: 'acceptEdits' })
 

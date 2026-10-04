@@ -3,7 +3,7 @@
   "short_name": "Savor",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#1b1a18",
-  "theme_color": "#1b1a18",
+  "background_color": "#111113",
+  "theme_color": "#0d0d0f",
   "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
 }

@@ -1,7 +1,7 @@
 import './monitoring'
 import { render } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
-import { Coffee, Download, Folder, FolderOpen, Monitor, Pin, Search, Files as FilesIcon, Layers, MessageSquare, Moon, Plus, Server, SlidersHorizontal, Sun, Workflow as WorkflowIcon, ChevronDown, Smartphone, X } from 'lucide-preact'
+import { Coffee, Download, Folder, FolderOpen, Monitor, Pin, Search, Files as FilesIcon, MessageSquare, Moon, Plus, Server, SlidersHorizontal, Sun, Workflow as WorkflowIcon, ChevronDown, Smartphone, X } from 'lucide-preact'
 import { api, connectEvents, desktop, go, Unauthorized, useApi, useEvent, type Me, type Project } from './api'
 import { Conversations } from './Conversations'
 import { FilesView } from './Files'
@@ -13,6 +13,8 @@ import { useNotifications } from './notify'
 import { EnjoyImport, EnjoyOffer, useEnjoyProjects } from './EnjoyImport'
 import { AccountDialog, AppearanceMenu, FeedbackDialog } from './Account'
 import { usePrefs } from './prefs'
+import '@fontsource-variable/geist'
+import '@fontsource-variable/geist-mono'
 import './style.css'
 
 function useRoute() {
@@ -109,7 +111,7 @@ function App() {
   }
 
   return (
-    <div class="app" style={project ? { '--tint': project.tint, '--tint-ink': inkOn(project.tint) } : undefined}>
+    <div class="app">
       {mode === 'relay' && !link.connected && <div class="link-banner">Reconnecting to your computer…</div>}
       <TopBar projects={projects ?? []} active={project} me={me} setMe={setMe} />
       {project && <SubBar project={project} section={section} />}
@@ -186,13 +188,12 @@ const Counts = ({ project: p }: { project: Project }) => (
   <>
     {p.counts.working > 0 && (
       <span class="badge working" title="Working">
-        <Layers size={13} /> {p.counts.working}
+        <span class="ring busy" /> {p.counts.working}
       </span>
     )}
     {p.counts.needsYou + p.counts.unread > 0 && (
-      <span class="badge unread" title="Needs you / unread">
-        <MessageSquare size={14} />
-        <i>{p.counts.needsYou + p.counts.unread}</i>
+      <span class="badge unread" title="Your turn or unread">
+        <span class={`ring ${p.counts.needsYou ? 'needs' : 'unread'}`} /> {p.counts.needsYou + p.counts.unread}
       </span>
     )}
   </>

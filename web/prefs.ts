@@ -19,7 +19,7 @@ let prefs: Prefs = {
   show: { label: true, agent: true, date: true, count: true },
   feedbackButton: true,
   ...JSON.parse(localStorage.getItem(KEY) ?? '{}'),
-  theme: (localStorage.getItem('savor-theme') as Theme | null) ?? 'dark',
+  theme: (localStorage.getItem('savor-theme') as Theme | null) ?? 'system',
 }
 const listeners = new Set<(p: Prefs) => void>()
 const systemDark = matchMedia('(prefers-color-scheme: dark)')
