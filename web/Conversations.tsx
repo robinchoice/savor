@@ -2,8 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import {
-  Asterisk, Hexagon, Code2, Sparkles, Orbit, Plus, Search, Layers, MessageSquare, Check, MoreHorizontal, PanelLeft, PanelRight, FileText, Flag, Globe,
-  CircleAlert, ArrowUp, ArrowLeft, Pencil, Brain, Terminal, Wrench, ArrowRight, MessageSquareMore, Smartphone, Monitor, ShieldQuestion, CircleCheck, X, ChevronUp, ChevronDown, ChevronRight, Paperclip, GitBranch, GitMerge, Trash2, Copy,
+  Asterisk, Hexagon, Code2, Sparkles, Orbit, Plus, Search, MessageSquare, Check, MoreHorizontal, PanelLeft, PanelRight, FileText, Globe,
+  CircleAlert, ArrowUp, ArrowLeft, Pencil, Brain, Terminal, Wrench, ArrowRight, Smartphone, Monitor, ShieldQuestion, X, ChevronUp, ChevronDown, ChevronRight, Paperclip, GitBranch, GitMerge, Trash2, Copy,
 } from 'lucide-preact'
 import {
   api, cap, duration, formatDay, formatTime, go, PROVIDER_NAMES, useApi, type ActivityEvent, type AgentConfig, type Attachment, type Decision, type Message, type Proc, type Project, type Thread, type Worktree,
@@ -67,9 +67,9 @@ export function Conversations({ project, threadId, isNew }: { project: Project; 
   for (const t of visible) if (t.worktree) (groups.get(t.worktree.path) ?? groups.set(t.worktree.path, { ...t.worktree, threads: [] }).get(t.worktree.path)!).threads.push(t)
   const plain = visible.filter((t) => !t.worktree)
 
-  const filterTab = (id: Filter, label: string, Icon?: any) => (
+  const filterTab = (id: Filter, label: string, ring?: string) => (
     <button class={`filter ${filter === id ? 'active' : ''} ${id === 'needs' && counts.needs ? 'attention' : ''}`} onClick={() => setFilter(id)}>
-      {Icon && <Icon size={13} />} {label} <b>{counts[id]}</b>
+      {ring && <span class={`ring ${ring}`} />} {label} <b>{counts[id]}</b>
     </button>
   )
 
@@ -77,7 +77,6 @@ export function Conversations({ project, threadId, isNew }: { project: Project; 
     <div class={`conversations ${threadId || isNew ? 'has-detail' : ''}`}>
       <aside class="conv-list">
         <div class="conv-head">
-          <MessageSquareMore size={26} class="conv-head-icon" />
           <h2>Conversations</h2>
           <a class="new-btn" href={`#/p/${project.id}/new`} title="New conversation">
             <Plus size={18} />
@@ -89,9 +88,9 @@ export function Conversations({ project, threadId, isNew }: { project: Project; 
         </label>
         <div class="filters">
           {filterTab('all', 'All')}
-          {filterTab('needs', 'Needs you')}
-          {filterTab('working', 'Working', Layers)}
-          {filterTab('unread', 'Unread', MessageSquare)}
+          {filterTab('needs', 'Your turn', 'needs')}
+          {filterTab('working', 'Working', 'busy')}
+          {filterTab('unread', 'Unread', 'unread')}
         </div>
         <div class="cards">
           {plain.map((t) => (
@@ -112,7 +111,7 @@ export function Conversations({ project, threadId, isNew }: { project: Project; 
             {all.length} conversation{all.length === 1 ? '' : 's'}
           </span>
           <label>
-            <input type="checkbox" checked={showCompleted} onChange={(e) => setShowCompleted(e.currentTarget.checked)} /> Show completed
+            <input type="checkbox" checked={showCompleted} onChange={(e) => setShowCompleted(e.currentTarget.checked)} /> Show finished
           </label>
         </footer>
       </aside>
@@ -180,15 +179,16 @@ function ThreadCard({ project, thread: t, active }: { project: Project; thread: 
   }, [t.needsYou, t.updatedAt])
   const { conversations, show } = usePrefs()
   const href = `#/p/${project.id}/t/${t.id}`
+  // The ring from the logo says what the conversation is waiting for.
+  const state = t.needsYou ? 'needs' : t.busy ? 'busy' : t.error ? 'error' : t.unread ? 'unread' : t.completed ? 'done' : ''
+  const ring = <span class={`ring ${state}`} title={{ busy: 'Working', needs: 'Your turn', error: 'Error', unread: 'Unread', done: 'Finished', '': 'Ready' }[state]} />
   // Compact: one line with the title, what the conversation is waiting for as a dot.
   if (conversations === 'compact')
     return (
       <a href={href} class={`card compact ${active ? 'active' : ''} ${t.unread ? 'unread' : ''}`}>
         <div class="card-title">{t.title}</div>
         <span class="card-meta">
-          {t.busy && <span class="working-dot" title="Working" />}
-          {t.needsYou && <span class="working-dot needs" title="Needs you" />}
-          {t.error && !t.busy && <span class="working-dot error" title="Error" />}
+          {ring}
           {show.count && (
             <span>
               <MessageSquare size={13} /> {t.messageCount}
@@ -200,23 +200,24 @@ function ThreadCard({ project, thread: t, active }: { project: Project; thread: 
     )
   return (
     <a href={href} class={`card ${active ? 'active' : ''} ${t.unread ? 'unread' : ''}`}>
-      {((show.label && t.label) || t.busy || show.count) && (
-        <div class="card-top">
-          {show.label && <Label label={t.label} />}
-          {t.busy && <span class="working-dot" title="Working" />}
-          {show.count && (
-            <span class="count">
-              <MessageSquare size={14} /> {t.messageCount}
-            </span>
-          )}
-        </div>
-      )}
+      <div class="card-top">
+        {show.label && <Label label={t.label} />}
+        <span class="card-state">
+          {state === 'needs' && 'Your turn'}
+          {ring}
+        </span>
+        {show.count && (
+          <span class="count">
+            <MessageSquare size={14} /> {t.messageCount}
+          </span>
+        )}
+      </div>
       <div class="card-title">{t.title}</div>
       <div class="card-meta">
         <span>{[show.agent && (PROVIDER_NAMES[t.agent.provider] ?? t.agent.provider), show.date && formatDay(t.updatedAt)].filter(Boolean).join(' · ')}</span>
         {t.completed && (
           <span class="completed-badge">
-            <Check size={12} /> Completed
+            <Check size={12} /> Finished
           </span>
         )}
         {t.error && !t.busy && (
@@ -227,10 +228,8 @@ function ThreadCard({ project, thread: t, active }: { project: Project; thread: 
       </div>
       {t.needsYou && firstOpen && (
         <div class="needs-row">
-          <b>Needs you</b> <span>{firstOpen}</span>
-          <span class="respond">
-            Respond <ArrowRight size={13} />
-          </span>
+          <span>{firstOpen}</span>
+          <span class="respond">Answer</span>
         </div>
       )}
     </a>
@@ -369,14 +368,14 @@ function ThreadView({ project, threadId }: { project: Project; threadId: string 
   const canComplete = !busy && !thread.completed && last?.kind === 'conclusion' && !openDecisions
   const queued = messages.filter((m) => m.kind === 'user' && m.delivered === false).length
   const status = busy
-    ? { icon: <Layers size={13} />, text: 'Working', cls: 'working' }
+    ? { icon: <span class="ring busy" />, text: 'Working', cls: 'working' }
     : thread.needsYou
-      ? { icon: <Flag size={13} />, text: 'Needs input', cls: 'needs' }
+      ? { icon: <span class="ring needs" />, text: 'Your turn', cls: 'needs' }
       : thread.error
         ? { icon: <CircleAlert size={13} />, text: 'Error', cls: 'error' }
         : thread.completed
-          ? { icon: <CircleCheck size={13} />, text: 'Completed', cls: 'done' }
-          : { icon: <MessageSquare size={13} />, text: 'Ready', cls: '' }
+          ? { icon: <span class="ring done" />, text: 'Finished', cls: 'done' }
+          : { icon: <span class="ring" />, text: 'Ready', cls: '' }
   const running = activity?.filter((a) => !a.finishedAt && (!data.startedAt || a.time >= data.startedAt)).at(-1)
   const workingLabel = running ? { thinking: 'Thinking', command: 'Running a command', edit: 'Editing files', note: 'Working' }[running.type] : 'Working'
 
@@ -423,7 +422,7 @@ function ThreadView({ project, threadId }: { project: Project; threadId: string 
 
   // On a phone and beside the preview, the header keeps only the menu and the switch.
   const compactHead = browserMode || narrow
-  const said = thread.needsYou ? 'Needs your input' : last && last.kind !== 'user' && messages.length > seen ? last.text : ''
+  const said = thread.needsYou ? 'Your turn' : last && last.kind !== 'user' && messages.length > seen ? last.text : ''
   const bubble = busy ? (
     <button class="bubble" title="Show the conversation" onClick={showChat}>
       <span class="spinner" /> {workingLabel}
@@ -481,7 +480,7 @@ function ThreadView({ project, threadId }: { project: Project; threadId: string 
             </div>
             <div class="head-actions">
               {!compactHead && (
-                <button class={`square ${thread.completed ? 'on' : ''}`} title={thread.completed ? 'Reopen' : 'Mark as completed'} onClick={() => patch({ completed: !thread.completed })}>
+                <button class={`square ${thread.completed ? 'on' : ''}`} title={thread.completed ? 'Reopen' : 'Finish'} onClick={() => patch({ completed: !thread.completed })}>
                   <Check size={17} />
                 </button>
               )}
@@ -497,7 +496,7 @@ function ThreadView({ project, threadId }: { project: Project; threadId: string 
                   </button>
                   {menu && (
                     <div class="menu right" onClick={() => setMenu(false)}>
-                      {compactHead && <button onClick={() => patch({ completed: !thread.completed })}>{thread.completed ? 'Reopen' : 'Mark as completed'}</button>}
+                      {compactHead && <button onClick={() => patch({ completed: !thread.completed })}>{thread.completed ? 'Reopen' : 'Finish'}</button>}
                       {compactHead && <button onClick={openFind}>Find in conversation</button>}
                       {compactHead && <button onClick={showActivity}>Show activity</button>}
                       <button onClick={rename}>Rename label</button>
@@ -577,9 +576,7 @@ function ThreadView({ project, threadId }: { project: Project; threadId: string 
                 )}
                 {showNext && lastConclusion ? (
                   <div class="next-actions">
-                    <div class="next-head">
-                      <Sparkles size={14} /> Potential next actions
-                    </div>
+                    <div class="next-head">Next steps</div>
                     {lastConclusion.suggestions!.map((s) => (
                       <div class="next-row" key={s}>
                         <button class="next-text" onClick={() => send(s)}>
@@ -602,7 +599,7 @@ function ThreadView({ project, threadId }: { project: Project; threadId: string 
                   <span>
                     <Check size={16} />
                   </span>
-                  Mark as completed
+                  Finish
                 </button>
               )}
 
@@ -709,7 +706,7 @@ function MessageItem({ m, thread, decisions, active, base, highlight, match, onC
       <div class="msg-head">
         <Avatar m={m} thread={thread} /> <b>{who}</b> <span class="muted">{formatTime(m.ts)}</span>
         {worked ? <span class="muted">Worked for {duration(worked)}</span> : null}
-        {m.kind === 'question' && <span class="muted">Needs your input</span>}
+        {m.kind === 'question' && <span class="muted">Your turn</span>}
         {m.modelInfo?.model && <span class="muted">{m.modelInfo.model}{m.modelInfo.reasoning && ` · ${cap(m.modelInfo.reasoning)} effort`}</span>}
         {m.text && <button class="icon-btn copy-message" title={copyState || 'Copy message'} aria-label={copyState || 'Copy message'} onClick={copy}>{copyState === 'Copied' ? <Check size={13} /> : <Copy size={13} />}</button>}
         {copyState && <span class="muted" role="status">{copyState}</span>}
@@ -801,14 +798,9 @@ function Questions({ decisions, active, base }: { decisions: Decision[]; active:
   return (
     <div class="msg-card questions">
       <div class="q-head">
-        <span class="q-icon">
-          <MessageSquare size={17} />
-        </span>
         <div>
-          <b>{n === 1 ? 'One thing before I continue' : 'A few things before I continue'}</b>
-          <small>
-            {n} question{n === 1 ? '' : 's'} · One reply
-          </small>
+          <b>{n === 1 ? 'Your decision' : 'Your decisions'}</b>
+          <small>{n === 1 ? 'One question' : `${n} questions, answered in one reply`}</small>
         </div>
       </div>
       {decisions.map((d, i) => (
@@ -844,7 +836,7 @@ function Questions({ decisions, active, base }: { decisions: Decision[]; active:
       {open && (
         <div class="q-actions">
           <button class="primary" disabled={!complete || sending} onClick={submit}>
-            Send reply <ArrowUp size={14} />
+            {n === 1 ? 'Send answer' : 'Send answers'}
           </button>
         </div>
       )}

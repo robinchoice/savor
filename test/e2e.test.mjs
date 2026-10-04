@@ -105,7 +105,7 @@ test('add a project and get a conclusion with next actions', async () => {
   await page.waitForSelector('.label-pill:has-text("Fake agent test")')
   await page.waitForSelector('.next-actions >> text=Do it again')
   await page.click('.mark-complete')
-  await page.waitForSelector('.status:has-text("Completed")')
+  await page.waitForSelector('.status:has-text("Finished")')
 })
 
 test('agent settings fit the viewport and effort is directly selectable', async () => {
@@ -203,10 +203,10 @@ test('historical approvals render and failed conversation loads can be retried',
 test('questions are answered in one reply', async () => {
   await newConversation()
   await send('ask: Ship it?')
-  await page.waitForSelector('text=One thing before I continue')
-  assert.equal(await page.locator('.filter.attention').count(), 1, 'Needs you filter lights up')
+  await page.waitForSelector('text=Your decision')
+  assert.equal(await page.locator('.filter.attention').count(), 1, 'Your turn filter lights up')
   await page.click('.option:has-text("Yes")')
-  await page.click('text=Send reply')
+  await page.click('text=Send answer')
   await page.waitForSelector('text=Selected: Yes')
 })
 
@@ -225,9 +225,9 @@ test('approvals are routed to the user, "Always allow" remembers the rule', asyn
 test("an agent's own clarifying questions become decisions", async () => {
   await newConversation()
   await send('native-ask: Which color?')
-  await page.waitForSelector('text=One thing before I continue')
+  await page.waitForSelector('text=Your decision')
   await page.click('.option:has-text("Green")')
-  await page.click('text=Send reply')
+  await page.click('text=Send answer')
   await page.waitForSelector('text=Answered: Green')
 })
 

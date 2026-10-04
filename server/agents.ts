@@ -270,7 +270,7 @@ function askQuestions(p: Project, tid: string, qs: Question[]) {
   store.updateMessage(p, tid, msg.id, { decisionIds: decisions.map((d) => d.id) })
   store.updateThread(p, tid, { unread: true, needsYou: true })
   emit({ type: 'thread', projectId: p.id, threadId: tid })
-  notify(p, tid, `Needs your input: ${qs[0]?.title ?? ''}`)
+  notify(p, tid, `Your turn: ${qs[0]?.title ?? ''}`)
   return new Promise<Answer[]>((resolve) => questions.set(msg.id, resolve))
 }
 
@@ -302,7 +302,7 @@ export function answerDecisions(p: Project, tid: string, answers: { id: string; 
   if (lines.length && !delivered) send(p, tid, { text: lines.join('\n\n'), origin, device })
 }
 
-// "Needs you" = open questions or pending approvals in the thread.
+// "Your turn" = open questions or pending approvals in the thread.
 export function refreshNeedsYou(p: Project, tid: string) {
   const needsYou = store.listDecisions(p, tid).some((d) => !d.resolved) || store.readMessages(p, tid).some((m) => m.approval?.status === 'pending')
   store.updateThread(p, tid, { needsYou })

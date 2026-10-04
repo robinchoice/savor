@@ -49,8 +49,8 @@
 ## Features
 
 - **Projects as tabs**, each with its own color. Badges show which agents are working and which conversations need you.
-- **Conversations**: every task gets its own agent session. You can send new messages while an agent is working; Claude Code picks them up in the running turn. Turns the agent starts on its own, for example when a background task finishes, show up as working too. You get search, filters (All / Needs you / Working / Unread), colored labels, "Mark as completed" and a "Show completed" toggle.
-- **Message protocol over MCP**: one acknowledgement and one conclusion per input, idempotent updates. Agents send acknowledgements, results, blocking questions, "potential next actions" and commit hashes. Their raw output goes to an activity log (thinking, commands, edits, tool calls, with durations).
+- **Conversations**: every task gets its own agent session. You can send new messages while an agent is working; Claude Code picks them up in the running turn. Turns the agent starts on its own, for example when a background task finishes, show up as working too. You get search, filters (All / Your turn / Working / Unread), colored labels, "Finish" and a "Show finished" toggle.
+- **Message protocol over MCP**: one acknowledgement and one conclusion per input, idempotent updates. Agents send acknowledgements, results, blocking questions, "next steps" and commit hashes. Their raw output goes to an activity log (thinking, commands, edits, tool calls, with durations).
 - **Questions**: questions become decision records with options and a free-text answer. You answer them all in one reply. An agent's own clarifying questions (Claude's `AskUserQuestion`, Codex's user input requests) show up the same way.
 - **Queue**: messages you send while the agent works wait as *Queued* and go out after the turn, or right away with "Stop work and send now".
 - **Agent picker per conversation**: agent, model, reasoning level, fast mode and permissions, with the models and modes each installed agent actually offers. Save a combination as a **preset**. You can switch agents mid-conversation, and the new agent gets the visible history handed over.
@@ -237,3 +237,5 @@ Early. Known gaps:
 ## License
 
 AGPL-3.0-or-later
+
+The app ships the typefaces Geist and Geist Mono by The Geist Project Authors under the SIL Open Font License 1.1. The license text is in [`web/public/geist-license.txt`](web/public/geist-license.txt) and is part of every build.
