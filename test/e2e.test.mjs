@@ -91,8 +91,7 @@ before(async () => {
 after(async () => {
   await browser?.close()
   server?.kill()
-  // The daemon's preview browser may still be closing its profile.
-  fs.rmSync(TMP, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 })
+  fs.rmSync(TMP, { recursive: true, force: true })
 })
 
 test('add a project and get a conclusion with next actions', async () => {
@@ -745,7 +744,8 @@ test('Enjoy projects come over with their records and continue with the same age
   // An Enjoy store as Enjoy writes it: an index of project folders, YAML records, markdown with front matter.
   const folder = path.join(TMP, 'from-enjoy')
   const enjoy = path.join(TMP, 'enjoy', 'projects', 'demo-1a2b3c4d')
-  const thread = (id, extra = '') => `version: 2
+  // The conversation this test opens in the UI has no preview, so the daemon does not start a preview browser for it.
+  const thread = (id, extra = '', preview = id === 'aaaa1111' ? '' : 'productPreview:\n  title: Demo\n  url: http://localhost:5173/\n') => `version: 2
 id: ${id}
 title: Fix the login
 sessionId: enjoy-session-${id}
@@ -762,10 +762,7 @@ label:
 agentSessions:
   - provider: claude
     sessionId: enjoy-session-${id}
-productPreview:
-  title: Demo
-  url: http://localhost:5173/
-requests: []
+${preview}requests: []
 messages:
   - id: ${id}
     role: user
@@ -839,7 +836,7 @@ ${extra}`
   assert.deepEqual(before.messages.map((m) => m.kind), ['user', 'ack', 'conclusion'])
   assert.deepEqual(before.messages[0].images, ['shot.png'])
   assert.deepEqual(before.messages[2].commits, ['a'.repeat(40)])
-  assert.deepEqual([before.thread.completed, before.thread.preview, before.thread.label.hue], [false, 'http://localhost:5173/', 210])
+  assert.deepEqual([before.thread.completed, before.thread.preview, before.thread.label.hue], [false, null, 210])
   assert.deepEqual(before.decisions.map((d) => [d.title, d.options[d.selected], d.resolved]), [['Which provider?', 'Google', true]])
   assert.deepEqual((await api('GET', `${t}/activity`)).body.map((e) => [e.type, e.label]), [['edit', 'Edit · auth.ts']])
   assert.equal((await fetch(`${base}/api${t}/attachments/shot.png`, { headers: { cookie: `savor_token=${token}` } })).status, 200)
@@ -869,7 +866,9 @@ ${extra}`
   assert.deepEqual([second.added, second.updated, second.kept, second.documents, second.workflows], [2, 0, 1, 0, 0])
   assert.ok((await api('GET', t)).body.messages.some((m) => m.text === 'Echo: and now?'))
   const done = (await api('GET', `/projects/${p.id}/threads/bbbb2222`)).body.thread
+  // An open conversation keeps its preview; a completed one's usually points at a server that is gone.
   assert.deepEqual([done.completed, done.preview], [true, null])
+  assert.equal((await api('GET', `/projects/${p.id}/threads/cccc3333`)).body.thread.preview, 'http://localhost:5173/')
   // A Claude session whose transcript is gone is not resumed; the conversation starts a new one.
   assert.deepEqual([before.thread.agentSessions, done.agentSessions], [[{ provider: 'claude', sessionId: 'enjoy-session-aaaa1111' }], []])
   // What changes in Savor alone (here: reopening a completed conversation) survives the next import.
