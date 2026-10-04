@@ -1,7 +1,7 @@
 {
   "name": "savor-desktop",
   "productName": "Savor",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Local-first workspace for CLI coding agents",
   "private": true,
   "license": "AGPL-3.0-or-later",
@@ -57,10 +57,24 @@
     },
     "mac": {
       "target": [
-        "dmg",
-        "zip"
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
       ],
-      "category": "public.app-category.developer-tools"
+      "category": "public.app-category.developer-tools",
+      "identity": "-",
+      "hardenedRuntime": false
     },
     "win": {
       "target": "nsis"
