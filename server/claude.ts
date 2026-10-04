@@ -20,6 +20,10 @@ const UNAVAILABLE = ['ScheduleWakeup', 'CronCreate', 'PushNotification', 'Remote
 const UNAVAILABLE_NOTE = `
 - ${UNAVAILABLE.join(', ')} are switched off here: Savor closes your process once no background work is pending, so timers and session crons would never fire, and there is no terminal for notifications. To wait, wait inside the turn or run the wait as a background command. For anything later or recurring, save a workflow with create_workflow (cron and timezone); Savor's scheduler runs it and shows the result. To notify the user, send your conclusion.`
 
+// A Claude Code older than the options Savor passes refuses to start.
+const exitError = (code: number | null, stderr: string) =>
+  /unknown option/.test(stderr) ? `Claude Code is too old for Savor (${stderr}). Update it with \`claude update\` and send your message again.` : `claude exited with ${code}: ${stderr}`
+
 const describe = (tool: string, input: any) =>
   tool === 'Bash' ? String(input?.command ?? '') : /^(Edit|Write|MultiEdit|NotebookEdit)$/.test(tool) ? String(input?.file_path ?? '') : JSON.stringify(input, null, 2).slice(0, 1500)
 
@@ -72,7 +76,7 @@ export class ClaudeSession implements Session {
     readline.createInterface({ input: this.child.stdout! }).on('line', (l) => this.onLine(l))
     this.child.stderr!.on('data', (d) => (this.stderr = (this.stderr + d).slice(-4000)))
     this.child.on('error', (e) => host.closed(e.message))
-    this.child.on('exit', (code, signal) => host.closed(this.stopping || signal === 'SIGTERM' ? 'Turn stopped.' : `claude exited with ${code}: ${this.stderr.trim()}`))
+    this.child.on('exit', (code, signal) => host.closed(this.stopping || signal === 'SIGTERM' ? 'Turn stopped.' : exitError(code, this.stderr.trim())))
   }
 
   start({ prompt, images }: TurnInput) {

@@ -148,6 +148,21 @@ test('errors retain their provider after switching agents', async () => {
   await api('PATCH', `/projects/${project.id}`, { agent: project.agent })
 })
 
+test('a Claude Code that is too old says how to update it', async () => {
+  const [project] = (await api('GET', '/projects')).body
+  fs.writeFileSync(AGENT_LOG + '.outdated', '')
+  const t = (await api('POST', `/projects/${project.id}/threads`, { text: 'hello', agent: project.agent })).body
+  const route = `/projects/${project.id}/threads/${t.id}`
+  await until(async () => (await api('GET', route)).body.messages.some((m) => m.kind === 'error'))
+  fs.rmSync(AGENT_LOG + '.outdated')
+  assert.equal(
+    (await api('GET', route)).body.messages.find((m) => m.kind === 'error').text,
+    "Claude Code is too old for Savor (error: unknown option '--permission-prompts'). Update it with `claude update` and send your message again.",
+  )
+  await api('POST', `${route}/messages`, { text: 'hello again' })
+  await until(async () => (await api('GET', route)).body.messages.some((m) => m.kind === 'conclusion' && m.text === 'Echo: hello again'))
+})
+
 test('historical approvals render and failed conversation loads can be retried', async () => {
   const [project] = (await api('GET', '/projects')).body
   const t = (await api('POST', `/projects/${project.id}/threads`, { text: 'historical approval' })).body

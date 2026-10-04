@@ -7,6 +7,7 @@
 // - "native-ask: <question>" → an AskUserQuestion control request with the options Blue/Green
 // - "slow: <text>" → acknowledges, waits for the test's release file or an interrupt, then echoes
 // - anything else → acknowledgement plus a conclusion echoing the input with one suggestion
+// While the test's outdated file exists it refuses to start, like a release that lacks an option.
 // `--version` and `auth status` answer like the real CLI, so Savor lists the fake as installed.
 // Started without an MCP config it is Savor's probe and answers the initialize request with its models.
 import readline from 'node:readline'
@@ -36,6 +37,10 @@ if (!args.includes('--mcp-config')) {
     console.log(JSON.stringify({ type: 'control_response', response: { subtype: 'success', request_id: msg.request_id, response: { models } } }))
   })
   await new Promise(() => {})
+}
+if (fs.existsSync(process.env.FAKE_AGENT_LOG + '.outdated')) {
+  console.error("error: unknown option '--permission-prompts'")
+  process.exit(1)
 }
 const config = args[args.indexOf('--mcp-config') + 1]
 const mcp = JSON.parse(fs.readFileSync(config, 'utf8')).mcpServers.savor
