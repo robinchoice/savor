@@ -16,7 +16,7 @@ import * as awake from './awake.js'
 import { closeDevice, pairingLink, relayStatus, startRelay } from './relay-client.js'
 import { newNonce, securityHeaders, withNonce } from '../shared/headers.js'
 import { handleMcp } from './mcp.js'
-import { isUnsafe, listAgents, listSkills, mergeAgent } from './providers.js'
+import { isUnsafe, listAgents, listSkills, listUsage, mergeAgent } from './providers.js'
 import { nextRun, runs, runWorkflow, syncSchedules, validateCron } from './scheduler.js'
 import * as git from './git.js'
 import { importSessions, listSessions } from './import.js'
@@ -113,6 +113,7 @@ route('PUT', '/devices/address', (_, b, ctx) => {
   return { url, fallback: PUBLIC_URL }
 })
 route('GET', '/agents', (_, __, ctx) => listAgents(ctx.query.has('refresh')))
+route('GET', '/usage', () => listUsage())
 route('GET', '/presets', () => store.listPresets())
 route('POST', '/presets', (_, b, ctx) => {
   localOnly(ctx)

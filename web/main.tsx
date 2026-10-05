@@ -14,6 +14,7 @@ import { useNotifications } from './notify'
 import { EnjoyImport, EnjoyOffer, useEnjoyProjects } from './EnjoyImport'
 import { AccountDialog, AppearanceMenu, FeedbackDialog } from './Account'
 import { usePrefs } from './prefs'
+import { UsageMeter } from './Usage'
 import '@fontsource-variable/geist'
 import '@fontsource-variable/geist-mono'
 import './style.css'
@@ -159,6 +160,7 @@ function TopBar({ projects, active, all, me, setMe }: { projects: Project[]; act
         ))}
       </nav>
       <div class="topbar-right">
+        <UsageMeter />
         <div class="menu-anchor">
           <button class="pill" onClick={() => setMenu(menu === 'projects' ? null : 'projects')}>
             <FolderOpen size={15} /> Projects <ChevronDown size={14} />

@@ -3,6 +3,7 @@ import { ArrowUp, AtSign, Bookmark, ChevronDown, FileText, FolderGit2, GitBranch
 import { api, agentSummary, cap, PROVIDER_NAMES, readFileAsDataUrl, useAgents, useApi, type AgentConfig, type Attachment, type Doc, type Project, type ProviderInfo, type Preset, type Skill, type Workflow } from './api'
 import { ProviderIcon } from './Conversations'
 import { record, type Recording } from './voice'
+import { UsageLeft, useUsage } from './Usage'
 
 export interface Picked { selector: string; text: string; html: string; styles: Record<string, string>; url: string }
 
@@ -410,6 +411,7 @@ function AgentMenu({ agent, agents, setAgent, close }: { agent: AgentConfig; age
     return () => { observer.disconnect(); removeEventListener('resize', place) }
   }, [])
   const info = agents.find((a) => a.id === agent.provider)
+  const usage = useUsage().find((u) => u.provider === agent.provider)
   const [presets] = useApi<Preset[]>('/presets', (e) => e.type === 'presets')
   const [presetName, setPresetName] = useState('')
   const [error, setError] = useState('')
@@ -439,6 +441,7 @@ function AgentMenu({ agent, agents, setAgent, close }: { agent: AgentConfig; age
           </span>
         </button>
       ))}
+      {usage && <UsageLeft usage={usage} />}
       <div class="menu-label">Model</div>
       {info?.models.length ? (
         <select value={agent.model} onChange={(e) => set({ model: e.currentTarget.value })}>

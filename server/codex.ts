@@ -208,4 +208,7 @@ export const probeCodex = () =>
     }
   })
 
+// The account's rate limits: how much of each window is used and when it resets.
+export const codexUsage = () => probe(async (rpc) => (await rpc.request('account/rateLimits/read', {})).rateLimits)
+
 export const codexSkills = (cwd: string) => probe<SkillInfo[]>(async (rpc) => (await skillsIn(rpc, cwd)).map((s) => ({ name: s.name, description: s.description })))
