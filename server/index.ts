@@ -588,6 +588,23 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
   res.writeHead(404).end()
 }
 
+// Run as a service from an AppImage (desktop/main.cjs --daemon): once an update has replaced the
+// AppImage and no agent is working, exit so the service manager starts the new version.
+function exitOnUpdate(file: string) {
+  const id = (s?: fs.Stats) => s && `${s.ino}:${s.mtimeMs}:${s.size}`
+  const installed = id(fs.statSync(file))
+  let last = installed
+  setInterval(() => {
+    const now = id(fs.statSync(file, { throwIfNoEntry: false }))
+    // Wait until the new file stays the same for a minute, in case it is still being written.
+    const settled = now && now !== installed && now === last
+    last = now
+    if (!settled || agents.anyBusy()) return
+    console.log('Savor was updated, exiting so the new version starts')
+    process.exit(0)
+  }, 60_000)
+}
+
 http
   .createServer((req, res) =>
     handle(req, res).catch((e) => {
@@ -603,5 +620,6 @@ http
     syncSchedules()
     processes.watchProcesses()
     startRelay()
+    if (process.env.SAVOR_EXIT_ON_UPDATE) exitOnUpdate(process.env.SAVOR_EXIT_ON_UPDATE)
     console.log(`Savor running — open ${PUBLIC_URL}/?token=${store.state().token}`)
   })

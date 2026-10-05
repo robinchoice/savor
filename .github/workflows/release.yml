@@ -1,7 +1,9 @@
 name: Release
 
 # Push a tag like v0.2.0 to build the desktop app for Linux, macOS and Windows and publish it as a
-# GitHub release. Installed apps pick up new releases through electron-updater.
+# GitHub release. Installed apps pick up new releases through electron-updater. The relay image goes
+# to GHCR; where the repo variable COOLIFY_URL is set, the relay running in Coolify is updated too,
+# reached through the tailnet (secrets TS_AUTHKEY, COOLIFY_TOKEN, COOLIFY_UUID, variable TS_LOGIN_SERVER).
 on:
   push:
     tags: ['v*']
@@ -50,3 +52,53 @@ jobs:
       - run: gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false --latest
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  relay:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # The image only copies dist/, so both platforms build without emulation.
+      - uses: docker/build-push-action@v7
+        with:
+          context: dist
+          file: relay/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}-relay:${{ steps.version.outputs.version }}
+            ghcr.io/${{ github.repository }}-relay:latest
+
+  deploy-relay:
+    needs: relay
+    if: vars.COOLIFY_URL != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: tailscale/github-action@v4
+        with:
+          authkey: ${{ secrets.TS_AUTHKEY }}
+          args: --login-server=${{ vars.TS_LOGIN_SERVER }}
+      - name: Deploy the new image
+        env:
+          COOLIFY_URL: ${{ vars.COOLIFY_URL }}
+          COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+          COOLIFY_UUID: ${{ secrets.COOLIFY_UUID }}
+        run: |
+          curl -fsS -X PATCH -H "Authorization: Bearer $COOLIFY_TOKEN" -H 'content-type: application/json' \
+            -d "{\"docker_registry_image_tag\": \"${GITHUB_REF_NAME#v}\"}" "$COOLIFY_URL/api/v1/applications/$COOLIFY_UUID"
+          curl -fsS -H "Authorization: Bearer $COOLIFY_TOKEN" "$COOLIFY_URL/api/v1/deploy?uuid=$COOLIFY_UUID"

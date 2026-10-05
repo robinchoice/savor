@@ -33,6 +33,7 @@ const approvals = new Map<string, (choice: string) => void>() // approval messag
 const questions = new Map<string, (answers: Answer[]) => void>() // decision group id → resolver
 
 export const isBusy = (tid: string) => busy.has(tid)
+export const anyBusy = () => busy.size > 0
 export const startedAt = (tid: string) => busy.get(tid)
 // An agent that acknowledged and ended its turn without a conclusion waits for the background processes its conversation owns.
 export function awaitsBackground(p: Project, tid: string) {

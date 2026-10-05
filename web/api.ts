@@ -148,7 +148,7 @@ export interface Proc { pid: number; name: string; cwd: string; command: string;
 export interface Me { origin: 'local' | 'remote'; device: string | null; awake: boolean; host: string; version: string; system: string; projectsDir: string }
 
 // The desktop shell's bridge (desktop/preload.cjs). A browser has none.
-export const desktop = (window as { savorDesktop?: { pickFolder(): Promise<string | null>; checkForUpdates(): Promise<string | null> } }).savorDesktop
+export const desktop = (window as { savorDesktop?: { pickFolder(): Promise<string | null>; checkForUpdates(): Promise<string | null>; installUpdate(): Promise<void> } }).savorDesktop
 
 export const PROVIDER_NAMES: Record<string, string> = { claude: 'Claude Code', codex: 'Codex', opencode: 'OpenCode', grok: 'Grok Build', antigravity: 'Antigravity' }
 

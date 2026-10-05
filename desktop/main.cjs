@@ -1,7 +1,7 @@
 // Savor desktop shell: starts the daemon and shows the UI in its own window.
 // The window keeps a persistent browser session, so logins inside previews and links survive restarts.
 const { app, BrowserWindow, Menu, clipboard, dialog, ipcMain, shell } = require('electron')
-const { execFileSync, spawn } = require('node:child_process')
+const { execFileSync, spawn, spawnSync } = require('node:child_process')
 const fs = require('node:fs')
 const net = require('node:net')
 const os = require('node:os')
@@ -37,10 +37,11 @@ function daemonEnv() {
   return env
 }
 
+const daemonEntry = () => (app.isPackaged ? path.join(process.resourcesPath, 'savor', 'server', 'index.mjs') : path.join(__dirname, '..', 'bin', 'savor.js'))
+
 async function ensureDaemon() {
   if (await portOpen()) return
-  const entry = app.isPackaged ? path.join(process.resourcesPath, 'savor', 'server', 'index.mjs') : path.join(__dirname, '..', 'bin', 'savor.js')
-  daemon = spawn(process.execPath, [entry], { env: daemonEnv(), stdio: 'inherit' })
+  daemon = spawn(process.execPath, [daemonEntry()], { env: daemonEnv(), stdio: 'inherit' })
   for (let i = 0; i < 100 && !(await portOpen()); i++) await new Promise((r) => setTimeout(r, 100))
 }
 
@@ -103,10 +104,28 @@ const updater = () => (app.isPackaged && fs.existsSync(path.join(process.resourc
 const fromUi = (e) => new URL(e.senderFrame.url).origin === `http://localhost:${PORT}`
 ipcMain.handle('pick-folder', async (e) => (fromUi(e) ? ((await dialog.showOpenDialog(win, { properties: ['openDirectory', 'createDirectory'] })).filePaths[0] ?? null) : null))
 // Resolves to the newer version, which then downloads and installs on quit, or to null when this one is current.
+let download = null
 ipcMain.handle('check-for-updates', async (e) => {
   const result = fromUi(e) ? await updater()?.checkForUpdates() : null
-  return result?.isUpdateAvailable ? result.updateInfo.version : null
+  if (!result?.isUpdateAvailable) return null
+  download = result.downloadPromise
+  return result.updateInfo.version
 })
+// Waits for the download, then replaces the app and starts it again.
+ipcMain.handle('install-update', async (e) => {
+  if (!fromUi(e) || !download) return
+  await download
+  updater().quitAndInstall()
+})
+
+// `--daemon`: only the daemon, without a window, e.g. as a system service. The AppImage then is the
+// installation: the daemon exits once the AppImage was replaced by an update and no agent is working,
+// and the service manager starts the new version. Running it synchronously keeps Electron from
+// initializing a display.
+if (process.argv.includes('--daemon')) {
+  const env = { ...daemonEnv(), ...(process.env.APPIMAGE && { SAVOR_EXIT_ON_UPDATE: process.env.APPIMAGE }) }
+  process.exit(spawnSync(process.execPath, [daemonEntry()], { env, stdio: 'inherit' }).status ?? 1)
+}
 
 if (!app.requestSingleInstanceLock()) app.quit()
 else {

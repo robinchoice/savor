@@ -231,9 +231,16 @@ export function AccountDialog({ me, projects, toggleAwake, open, onClose }: { me
   const enjoy = useEnjoyProjects()
   const [canNotify, notifyOn, toggleNotify] = useNotificationToggle()
   const [update, setUpdate] = useState('')
+  const [available, setAvailable] = useState(false)
   const checkUpdate = async () => {
     setUpdate('checking…')
-    setUpdate(await desktop!.checkForUpdates().then((v) => (v ? `${v} is downloading and installs when you quit Savor` : 'up to date'), () => 'could not check for updates'))
+    const version = await desktop!.checkForUpdates().catch(() => undefined)
+    setUpdate(version ? `${version} is available` : version === null ? 'up to date' : 'could not check for updates')
+    setAvailable(!!version)
+  }
+  const installUpdate = () => {
+    setUpdate('installing, Savor restarts…')
+    desktop!.installUpdate().catch(() => setUpdate('could not install the update'))
   }
   const forget = () => confirm('Forget this computer on this device? You will need to pair again.') && forgetProfile().then(() => location.reload())
   return (
@@ -260,8 +267,8 @@ export function AccountDialog({ me, projects, toggleAwake, open, onClose }: { me
                 </small>
               </div>
               {desktop && (
-                <button class="ghost small" onClick={checkUpdate}>
-                  Check for updates
+                <button class="ghost small" onClick={available ? installUpdate : checkUpdate}>
+                  {available ? 'Install and restart' : 'Check for updates'}
                 </button>
               )}
             </div>
