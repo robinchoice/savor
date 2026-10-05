@@ -6,7 +6,7 @@ import type { ApprovalOption, Thread } from './store.js'
 import { BIN, command, mcpUrl } from './config.js'
 import { Rpc } from './jsonrpc.js'
 import { configKey, rememberSession, sessionIdOf, summarize, systemPrompt, type Host, type Session, type TurnInput } from './session.js'
-import type { ModelInfo } from './providers.js'
+import type { ModelInfo, SkillInfo } from './providers.js'
 
 const MODES: Record<string, { sandbox: string; approvalPolicy: string; approvalsReviewer: string }> = {
   'read-only': { sandbox: 'read-only', approvalPolicy: 'on-request', approvalsReviewer: 'user' },
@@ -23,6 +23,10 @@ function spawnAppServer(projectId?: string, threadId?: string) {
   if (projectId && threadId) args.push('-c', `mcp_servers.savor.url=${JSON.stringify(mcpUrl(projectId, threadId))}`, '-c', 'mcp_servers.savor.bearer_token_env_var="SAVOR_MCP_TOKEN"')
   return spawn(...command(BIN.codex, args), { env: { ...process.env, SAVOR_MCP_TOKEN: store.state().mcpToken }, stdio: ['pipe', 'pipe', 'pipe'] })
 }
+
+// The skills Codex finds for a folder: its own, the user's and the repository's.
+const skillsIn = async (rpc: Rpc, cwd: string) =>
+  (((await rpc.request('skills/list', { cwds: [cwd] })).data[0]?.skills ?? []) as { name: string; description: string; path: string; enabled: boolean }[]).filter((s) => s.enabled)
 
 const ALLOW_SESSION_DENY: ApprovalOption[] = [
   { id: 'accept', label: 'Allow', kind: 'allow' },
@@ -62,14 +66,18 @@ export class CodexSession implements Session {
     rememberSession(p, tid, 'codex', this.threadId)
   }
 
-  start({ prompt, images }: TurnInput) {
+  start({ context, input, images }: TurnInput) {
     this.lastText = ''
     this.failure = null
-    const input = [{ type: 'text', text: prompt, text_elements: [] }, ...images.map((path) => ({ type: 'localImage', path }))]
+    const items: unknown[] = [{ type: 'text', text: context + input, text_elements: [] }, ...images.map((path) => ({ type: 'localImage', path }))]
+    const name = input.match(/^\/(\S+)/)?.[1]
     const effort = this.thread.agent.reasoning || null
     this.ready
       .then(async () => {
-        const r = await this.rpc.request('turn/start', { threadId: this.threadId, input, ...(effort && { effort }) })
+        // A slash command that names a skill hands Codex the skill itself, as a $mention does in its own UI.
+        const skill = name && (await skillsIn(this.rpc, this.host.cwd)).find((s) => s.name === name)
+        if (skill) items.push({ type: 'skill', name: skill.name, path: skill.path })
+        const r = await this.rpc.request('turn/start', { threadId: this.threadId, input: items, ...(effort && { effort }) })
         this.turnId = r.turn.id
       })
       .catch((e: Error) => this.host.ended({ error: e.message }))
@@ -171,14 +179,24 @@ export class CodexSession implements Session {
   }
 }
 
-// A short app-server run to learn whether Codex is signed in and which models it offers.
-export async function probeCodex(): Promise<{ signedIn: boolean; account: string | null; models: ModelInfo[] }> {
+// A short app-server run to ask Codex something outside a conversation.
+async function probe<T>(ask: (rpc: Rpc) => Promise<T>) {
   const child = spawnAppServer()
   const rpc = new Rpc(child, { notification: () => {}, request: async () => ({}) })
   const timer = setTimeout(() => child.kill('SIGTERM'), 15_000)
   try {
     await rpc.request('initialize', { clientInfo: CLIENT, capabilities: CAPABILITIES })
     rpc.notify('initialized', {})
+    return await ask(rpc)
+  } finally {
+    clearTimeout(timer)
+    rpc.end()
+  }
+}
+
+// Whether Codex is signed in and which models it offers.
+export const probeCodex = () =>
+  probe<{ signedIn: boolean; account: string | null; models: ModelInfo[] }>(async (rpc) => {
     const account = await rpc.request('account/read', { refreshToken: false })
     const models = account.account ? await rpc.request('model/list', { limit: 100 }) : { data: [] }
     return {
@@ -188,8 +206,6 @@ export async function probeCodex(): Promise<{ signedIn: boolean; account: string
         .filter((m) => !m.hidden)
         .map((m) => ({ id: m.model, label: m.displayName ?? m.model, detail: m.description, efforts: (m.supportedReasoningEfforts ?? []).map((e: any) => e.reasoningEffort) })),
     }
-  } finally {
-    clearTimeout(timer)
-    rpc.end()
-  }
-}
+  })
+
+export const codexSkills = (cwd: string) => probe<SkillInfo[]>(async (rpc) => (await skillsIn(rpc, cwd)).map((s) => ({ name: s.name, description: s.description })))

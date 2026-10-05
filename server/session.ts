@@ -37,7 +37,9 @@ export function systemPrompt(p: Project, thread: Thread) {
     .join('\n')
 }
 
-export interface TurnInput { prompt: string; images: string[] }
+// `input` is what the user sent. It stays apart from the context in front of it, because an agent only
+// reads a slash command at the very start of an input.
+export interface TurnInput { context: string; input: string; images: string[] }
 export interface Answer { selected: number | null; answer: string | null }
 export interface ApprovalRequest { title: string; detail: string; options: ApprovalOption[] }
 

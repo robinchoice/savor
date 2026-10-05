@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
 import { ArrowUp, AtSign, Bookmark, ChevronDown, FileText, FolderGit2, GitBranch, ListPlus, Mic, Plus, Square, Trash2, Workflow as WorkflowIcon, X, Zap, Crosshair } from 'lucide-preact'
-import { api, agentSummary, cap, PROVIDER_NAMES, readFileAsDataUrl, useAgents, useApi, type AgentConfig, type Attachment, type Doc, type Project, type ProviderInfo, type Preset, type Workflow } from './api'
+import { api, agentSummary, cap, PROVIDER_NAMES, readFileAsDataUrl, useAgents, useApi, type AgentConfig, type Attachment, type Doc, type Project, type ProviderInfo, type Preset, type Skill, type Workflow } from './api'
 import { ProviderIcon } from './Conversations'
 import { record, type Recording } from './voice'
 
@@ -52,6 +52,25 @@ export function Composer(props: Props) {
   const agents = useAgents()
   const info = agents?.find((a) => a.id === props.agent.provider)
   const efforts = info?.models.find((m) => m.id === props.agent.model)?.efforts ?? info?.efforts ?? []
+
+  // The skills of the chosen agent are fetched up front, so "/" opens the list right away.
+  const [skills, setSkills] = useState<Skill[]>()
+  const [slashOpen, setSlashOpen] = useState(false)
+  const [chosen, setChosen] = useState(0)
+  useEffect(() => {
+    let current = true
+    setSkills(undefined)
+    api<Skill[]>('GET', `/projects/${props.project.id}/skills?provider=${props.agent.provider}`).then((s) => current && setSkills(s))
+    return () => void (current = false)
+  }, [props.project.id, props.agent.provider])
+  // Agents read a slash command only as the first word of a message: the list is open while that word is typed.
+  const slash = slashOpen && !popover && /^\/\S*$/.test(text) ? text.slice(1).toLowerCase() : null
+  const rank = (s: Skill) => (s.name.toLowerCase().startsWith(slash!) ? 0 : 1)
+  const matches = slash === null ? [] : (skills ?? []).filter((s) => s.name.toLowerCase().includes(slash)).sort((a, b) => rank(a) - rank(b))
+  const pickSkill = (s: Skill) => {
+    setText(`/${s.name} `)
+    ref.current?.focus()
+  }
 
   useEffect(() => {
     if (!popover) return
@@ -156,6 +175,27 @@ export function Composer(props: Props) {
         </div>
       )}
       {error && <div class="error-text pad">{error}</div>}
+      {slash !== null && (!skills || matches.length > 0) && (
+        <div class="menu up slash">
+          {!skills && <div class="menu-label">Loading skills…</div>}
+          {matches.map((s, i) => (
+            <button
+              key={s.name}
+              class={i === chosen ? 'selected' : ''}
+              title={s.description}
+              ref={(el) => {
+                if (i === chosen) el?.scrollIntoView({ block: 'nearest' })
+              }}
+              // The textarea keeps the focus.
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => pickSkill(s)}
+            >
+              <b>/{s.name}</b>
+              <small>{s.description}</small>
+            </button>
+          ))}
+        </div>
+      )}
       <div class="composer-top">
         <textarea
           ref={ref}
@@ -163,7 +203,12 @@ export function Composer(props: Props) {
           autoFocus={props.autoFocus}
           value={text}
           placeholder={props.placeholder}
-          onInput={(e) => setText(e.currentTarget.value)}
+          onInput={(e) => {
+            setText(e.currentTarget.value)
+            setSlashOpen(true)
+            setChosen(0)
+          }}
+          onBlur={() => setSlashOpen(false)}
           onPaste={(e) => {
             const pasted = [...(e.clipboardData?.files ?? [])]
             if (pasted.length) {
@@ -172,7 +217,18 @@ export function Composer(props: Props) {
             }
           }}
           onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+            if (e.isComposing) return
+            const pick = matches[chosen]
+            if (pick && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+              e.preventDefault()
+              setChosen((chosen + (e.key === 'ArrowDown' ? 1 : matches.length - 1)) % matches.length)
+            } else if (pick && (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey && text !== `/${pick.name}`))) {
+              // Enter completes the name; once it is written out, Enter sends.
+              e.preventDefault()
+              pickSkill(pick)
+            } else if (slash !== null && e.key === 'Escape') {
+              setSlashOpen(false)
+            } else if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault()
               submit()
             }

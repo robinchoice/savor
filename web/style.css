@@ -266,7 +266,7 @@ main { min-height: 0; overflow: hidden; }
 .mark-complete span { display: flex; }
 .mark-complete:hover { background: var(--card); color: var(--text); }
 
-.composer { margin: 0 auto 20px; width: calc(100% - 56px); max-width: 760px; border-radius: 16px; background: var(--card); transition: box-shadow 0.22s ease; }
+.composer { position: relative; margin: 0 auto 20px; width: calc(100% - 56px); max-width: 760px; border-radius: 16px; background: var(--card); transition: box-shadow 0.22s ease; }
 .composer:focus-within { box-shadow: 0 0 0 1px var(--raised), var(--shadow); }
 .composer-top { display: flex; align-items: flex-start; gap: 8px; padding: 10px 10px 4px 14px; }
 .composer textarea { border: 0; background: none; padding: 4px 0; resize: none; min-height: 28px; }
@@ -310,6 +310,11 @@ main { min-height: 0; overflow: hidden; }
 .done { margin: 8px 4px 2px; justify-content: center; }
 .mention { width: 380px; }
 .mention button { font-size: 13px; }
+.slash { left: 0; right: 0; max-height: min(340px, 50vh); }
+.new-thread .slash { max-height: 30vh; }
+.slash button { font-size: 13px; }
+.slash button b { font-weight: 500; white-space: nowrap; }
+.slash button small { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .provider-icon { flex: none; }
 
 .new-thread { justify-content: center; padding-bottom: 12vh; }

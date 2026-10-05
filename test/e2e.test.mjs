@@ -1040,6 +1040,42 @@ test('a draft stays with its conversation', async () => {
   assert.equal(await draft(), '')
 })
 
+test('typing / lists the skills of the agent and runs the one picked', async () => {
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
+  const skills = async (provider) => (await api('GET', `/projects/${project.id}/skills?provider=${provider}`)).body.map((s) => s.name)
+  // Each agent reports its own skills. Of Claude Code's built-in commands only its skills are listed, and
+  // the skills Codex has switched off stay out.
+  assert.deepEqual(await skills('claude'), ['greet', 'tools:lint', 'code-review'])
+  assert.deepEqual(await skills('codex'), ['greet'])
+  assert.deepEqual(await skills('grok'), [])
+
+  await page.goto(`${base}/#/p/${project.id}/new`)
+  await page.waitForSelector('text=What do you want to build?')
+  await page.fill('.composer textarea', '/')
+  await page.waitForSelector('.slash button.selected:has-text("/greet")')
+  assert.equal(await page.locator('.slash button').count(), 3)
+  // The list narrows while the name is typed, and Enter completes the name instead of sending.
+  await page.keyboard.type('li')
+  await page.waitForSelector('.slash button.selected:has-text("/tools:lint")')
+  await page.keyboard.press('Enter')
+  assert.equal(await page.inputValue('.composer textarea'), '/tools:lint ')
+  assert.equal(await page.locator('.slash').count(), 0)
+  await page.fill('.composer textarea', '/')
+  await page.keyboard.press('ArrowDown')
+  await page.waitForSelector('.slash button.selected:has-text("/tools:lint")')
+  await page.keyboard.press('ArrowUp')
+  await page.keyboard.press('Tab')
+  await page.keyboard.type('Robin')
+  await page.keyboard.press('Enter')
+  // Claude Code got the command as a text block of its own, which is where it runs slash commands.
+  await page.waitForSelector('text=Skill greet Robin')
+
+  // Codex gets the skill itself next to the text.
+  const thread = (await api('POST', `/projects/${project.id}/threads`, { text: '/greet Robin', agent: { provider: 'codex', permissionMode: 'default' } })).body
+  await until(async () => (await api('GET', `/projects/${project.id}/threads/${thread.id}`)).body.messages.some((m) => m.text === 'Codex skill: greet from /fake/skills/greet/SKILL.md'))
+  await api('PATCH', `/projects/${project.id}`, { agent: project.agent })
+})
+
 test('a new project gets its own folder with a git repository', async () => {
   const dir = path.join(TMP, 'new projects')
   await page.click('text=Projects')

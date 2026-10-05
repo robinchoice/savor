@@ -6,10 +6,12 @@
 // - "approve: <anything>" → permission prompt via a can_use_tool control request, then the verdict
 // - "native-ask: <question>" → an AskUserQuestion control request with the options Blue/Green
 // - "slow: <text>" → acknowledges, waits for the test's release file or an interrupt, then echoes
+// - a last text block of its own that starts with "/" → "Skill <name and arguments>", the way Claude Code runs slash commands
 // - anything else → acknowledgement plus a conclusion echoing the input with one suggestion
 // While the test's outdated file exists it refuses to start, like a release that lacks an option.
 // `--version` and `auth status` answer like the real CLI, so Savor lists the fake as installed.
-// Started without an MCP config it is Savor's probe and answers the initialize request with its models.
+// Started without an MCP config it is Savor's probe and answers the initialize request with its models and
+// commands, and the context usage request with its skills.
 import readline from 'node:readline'
 import crypto from 'node:crypto'
 import fs from 'node:fs'
@@ -28,13 +30,21 @@ if (args[0] === 'auth' && args[1] === 'status') {
 if (!args.includes('--mcp-config')) {
   readline.createInterface({ input: process.stdin }).on('line', (line) => {
     const msg = JSON.parse(line)
+    const answer = (response) => console.log(JSON.stringify({ type: 'control_response', response: { subtype: 'success', request_id: msg.request_id, response } }))
+    if (msg.request?.subtype === 'get_context_usage') return answer({ skills: { skillFrontmatter: [{ name: 'greet', source: 'userSettings' }, { name: 'code-review', source: 'built-in' }] } })
     if (msg.request?.subtype !== 'initialize') return
     const models = [
       { value: 'default', displayName: 'Default (recommended)', supportedEffortLevels: ['low', 'high'] },
       { value: 'fake-fable[1m]', displayName: 'Fable', description: 'Fake Fable', supportedEffortLevels: ['low', 'high', 'max'] },
       { value: 'fake-haiku', displayName: 'Haiku' },
     ]
-    console.log(JSON.stringify({ type: 'control_response', response: { subtype: 'success', request_id: msg.request_id, response: { models } } }))
+    const commands = [
+      { name: 'greet', description: 'Say hello to someone (user)', argumentHint: '<name>' },
+      { name: 'tools:lint', description: '(tools) Check the code', argumentHint: '' },
+      { name: 'code-review', description: 'Review the current diff', argumentHint: '', builtin: true },
+      { name: 'compact', description: 'Free up context by summarizing the conversation so far', argumentHint: '', builtin: true },
+    ]
+    answer({ models, commands })
   })
   await new Promise(() => {})
 }
@@ -64,8 +74,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 let started = false
 let interrupted = false
 
-async function turn(text) {
-  const input = text.slice(text.indexOf('New input:\n') + 'New input:\n'.length).trim()
+async function turn(text, command) {
+  const input = command ?? text.slice(text.indexOf('New input:\n') + 'New input:\n'.length).trim()
   if (!started) out({ type: 'system', subtype: 'init', session_id: sessionId })
   started = true
   interrupted = false
@@ -95,6 +105,8 @@ async function turn(text) {
       tool_use_id: 'toolu_ask',
     })
     await call('send_conclusion_message', { text: `Answered: ${verdict.updatedInput?.answers?.[question] ?? verdict.behavior}` })
+  } else if (command) {
+    await call('send_conclusion_message', { text: `Skill ${command.slice(1)}` })
   } else if (input.startsWith('slow:')) {
     await call('send_acknowledgement_message', { text: 'On it.' })
     const release = process.env.FAKE_AGENT_LOG + '.release'
@@ -115,6 +127,9 @@ rl.on('line', (line) => {
     if (msg.request.subtype === 'interrupt') interrupted = true
     return out({ type: 'control_response', response: { subtype: 'success', request_id: msg.request_id, response: {} } })
   }
-  if (msg.type === 'user') turn(msg.message.content[0].text)
+  if (msg.type === 'user') {
+    const texts = msg.message.content.filter((c) => c.type === 'text').map((c) => c.text)
+    turn(texts[0], texts.length > 1 && texts.at(-1).startsWith('/') ? texts.at(-1) : null)
+  }
 })
 rl.on('close', () => client.close().then(() => process.exit(0)))
