@@ -55,12 +55,11 @@ export function FilesView({ project, rest }: { project: Project; rest: string[] 
 }
 
 function Tree({ project, path, active }: { project: Project; path: string; active?: string }) {
-  const [entries, setEntries] = useState<Entry[]>([])
+  const [entries] = useApi<Entry[]>(`/projects/${project.id}/files?path=${encodeURIComponent(path)}`, () => false)
   const [open, setOpen] = useState<Record<string, boolean>>({})
-  useEffect(() => void api<Entry[]>('GET', `/projects/${project.id}/files?path=${encodeURIComponent(path)}`).then(setEntries), [path])
   return (
     <div class="tree">
-      {entries.map((e) =>
+      {entries?.map((e) =>
         e.dir ? (
           <div key={e.path}>
             <button class="tree-item" onClick={() => setOpen({ ...open, [e.path]: !open[e.path] })}>

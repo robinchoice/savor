@@ -14,7 +14,9 @@ export interface Transport {
 
 export const direct: Transport = {
   async request(method, path, body) {
-    const r = await fetch(path, { method, headers: method === 'GET' ? {} : { 'content-type': 'application/json' }, body })
+    const r = await fetch(path, { method, headers: method === 'GET' ? {} : { 'content-type': 'application/json' }, body }).catch(() => {
+      throw new Error('Savor is not reachable, the daemon is probably restarting.')
+    })
     return { status: r.status, type: r.headers.get('content-type') ?? '', body: await r.text() }
   },
   stream(path, onData) {

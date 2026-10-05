@@ -1,7 +1,7 @@
 import type { ServerResponse } from 'node:http'
 
 export interface SavorEvent {
-  type: 'message' | 'thread' | 'status' | 'activity' | 'documents' | 'workflows' | 'processes' | 'projects' | 'browser' | 'devices' | 'notify' | 'presets' | 'terminal' | 'review'
+  type: 'connected' | 'message' | 'thread' | 'status' | 'activity' | 'documents' | 'workflows' | 'processes' | 'projects' | 'browser' | 'devices' | 'notify' | 'presets' | 'terminal' | 'review'
   projectId?: string
   threadId?: string
   title?: string
@@ -19,6 +19,8 @@ const clients = new Set<ServerResponse>()
 
 export function subscribe(res: ServerResponse) {
   openStream(res)
+  // Sent on every (re)connect, so the UI refetches what it missed while the daemon was away.
+  res.write(`data: ${JSON.stringify({ type: 'connected' })}\n\n`)
   clients.add(res)
   res.on('close', () => clients.delete(res))
 }

@@ -21,8 +21,11 @@ type Listener = (e: SavorEvent) => void
 const listeners = new Set<Listener>()
 
 export function connectEvents() {
+  let connected = false
   transport.stream('/api/events', (data) => {
     const e = JSON.parse(data)
+    // The first connect needs no refetch, every later one follows a daemon restart or a lost connection.
+    if (e.type === 'connected' && !connected) return void (connected = true)
     listeners.forEach((l) => l(e))
   })
 }
@@ -49,7 +52,7 @@ export function useApi<T>(path: string | null, refetchOn: (e: SavorEvent) => boo
     setError(undefined)
     load()
   }, [load])
-  useEvent((e) => refetchOn(e) && load(), [load])
+  useEvent((e) => (e.type === 'connected' || refetchOn(e)) && load(), [load])
   return [data, load, error]
 }
 
