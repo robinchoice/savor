@@ -6,6 +6,7 @@
 // - "approve: <anything>" → permission prompt via a can_use_tool control request, then the verdict
 // - "native-ask: <question>" → an AskUserQuestion control request with the options Blue/Green
 // - "slow: <text>" → acknowledges, waits for the test's release file or an interrupt, then echoes
+// - "background: <text>" → acknowledges, registers a process it started and ends the turn without a conclusion
 // - anything else → acknowledgement plus a conclusion echoing the input with one suggestion
 // While the test's outdated file exists it refuses to start, like a release that lacks an option.
 // `--version` and `auth status` answer like the real CLI, so Savor lists the fake as installed.
@@ -13,6 +14,7 @@
 import readline from 'node:readline'
 import crypto from 'node:crypto'
 import fs from 'node:fs'
+import { spawn } from 'node:child_process'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 
@@ -100,6 +102,11 @@ async function turn(text) {
     const release = process.env.FAKE_AGENT_LOG + '.release'
     while (!interrupted && (!fs.existsSync(release) || fs.readFileSync(release, 'utf8') !== input)) await sleep(20)
     if (!interrupted) await call('send_conclusion_message', { text: `Echo: ${input.slice(5).trim()}` })
+  } else if (input.startsWith('background:')) {
+    await call('send_acknowledgement_message', { text: 'On it.' })
+    const job = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60_000)'], { detached: true, stdio: 'ignore' })
+    job.unref()
+    await call('register_process', { pid: job.pid, name: input.slice('background:'.length).trim(), command: 'node -e …' })
   } else {
     await call('send_acknowledgement_message', { text: 'On it.' })
     await call('send_conclusion_message', { text: `Echo: ${input}`, suggestions: ['Do it again'] })

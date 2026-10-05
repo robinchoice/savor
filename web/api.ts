@@ -117,6 +117,7 @@ export interface Thread {
   worktree?: { branch: string; path: string } | null
   workflow?: { id: string; name: string; trigger: Run['trigger']; due?: string }
   busy?: boolean
+  waiting?: boolean
   messageCount?: number
 }
 export interface Worktree { branch: string; path: string; ahead: number; dirty: boolean }

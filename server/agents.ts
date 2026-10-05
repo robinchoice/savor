@@ -103,9 +103,19 @@ function pump(p: Project, tid: string) {
   if (next) deliver(p, tid, next)
 }
 
-export function stop(tid: string) {
+export function stop(p: Project, tid: string) {
   stopped.add(tid)
-  current(tid)?.kill()
+  const s = sessions.get(tid)
+  if (busy.has(tid)) return s?.session.kill()
+  // Between turns the agent may still wait for background work. Its process goes right away, so the
+  // next input starts a fresh one, and the request it still owed a conclusion for ends here.
+  sessions.delete(tid)
+  clearTimeout(s?.idleTimer)
+  s?.session.kill()
+  if (store.getThread(p, tid).error || !awaitsBackground(p, tid)) return
+  store.updateThread(p, tid, { error: 'Turn stopped.' })
+  post(p, tid, { kind: 'error', text: 'Turn stopped.' })
+  emit({ type: 'status', projectId: p.id, threadId: tid })
 }
 
 // The conversation was deleted: end its session, and nothing it still reports touches the removed records.

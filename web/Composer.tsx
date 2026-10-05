@@ -12,6 +12,7 @@ interface Props {
   setAgent: (a: AgentConfig) => Promise<unknown> | void
   onSend: (text: string, attachments: Attachment[]) => Promise<void> | void
   busy?: boolean
+  // Set while there is an agent to stop: in a turn, or waiting for background work between turns.
   onStop?: () => void
   placeholder: string
   draft?: string
@@ -113,7 +114,7 @@ export function Composer(props: Props) {
 
   const sendButtons = (
     <>
-      {props.busy && props.onStop && (
+      {props.onStop && (
         <button class="send stop" title="Stop" onClick={props.onStop}>
           <Square size={13} />
         </button>

@@ -230,9 +230,12 @@ route('DELETE', '/projects/:pid', (params, _, ctx) => {
 
 // ---- threads ----
 
+// Between turns, but the agent still waits for background work it started.
+const waiting = (p: store.Project, t: store.Thread) => !t.error && agents.awaitsBackground(p, t.id)
+
 route('GET', '/projects/:pid/threads', (params) => {
   const p = project(params)
-  return store.listThreads(p).map((t) => ({ ...t, busy: agents.isBusy(t.id), messageCount: store.readMessages(p, t.id).length }))
+  return store.listThreads(p).map((t) => ({ ...t, busy: agents.isBusy(t.id), waiting: waiting(p, t), messageCount: store.readMessages(p, t.id).length }))
 })
 route('POST', '/projects/:pid/threads', (params, b, ctx) => {
   const p = project(params)
@@ -254,6 +257,7 @@ route('GET', '/projects/:pid/threads/:tid', (params) => {
   return {
     thread,
     busy: agents.isBusy(thread.id),
+    waiting: waiting(p, thread),
     startedAt: agents.startedAt(thread.id),
     messages: store.readMessages(p, thread.id),
     decisions: store.listDecisions(p, thread.id),
@@ -297,7 +301,7 @@ route('DELETE', '/projects/:pid/threads/:tid/messages/:mid', (params) => {
   return {}
 })
 route('POST', '/projects/:pid/threads/:tid/stop', (params) => {
-  agents.stop(params.tid)
+  agents.stop(project(params), params.tid)
   return {}
 })
 route('POST', '/projects/:pid/threads/:tid/approvals/:mid', (params, b) => {
@@ -381,7 +385,7 @@ route('DELETE', '/projects/:pid/worktrees', (params, _, ctx) => {
   const wt = git.listWorktrees(p).find((w) => w.path === ctx.query.get('path'))
   if (!wt) throw new store.NotFound('worktree')
   for (const t of store.listThreads(p).filter((t) => t.worktree?.path === wt.path)) {
-    agents.stop(t.id)
+    agents.stop(p, t.id)
     store.updateThread(p, t.id, { worktree: null, agentSessions: [], completed: true })
   }
   git.removeWorktree(p, wt.path)
