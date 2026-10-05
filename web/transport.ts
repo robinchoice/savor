@@ -54,13 +54,19 @@ function keyStore<T>(mode: IDBTransactionMode, op: (store: IDBObjectStore) => ID
   })
 }
 
+// Stores the new key and reads it back: WebKit apps other than Safari (Firefox or Chrome on iOS)
+// store a CryptoKey but can't read it again, so those fall back to a raw key too.
 async function createDeviceKey(): Promise<StoredKey> {
   try {
     const pair = (await crypto.subtle.generateKey({ name: 'X25519' }, false, ['deriveBits'])) as CryptoKeyPair
-    return { privateKey: pair.privateKey, pk: new Uint8Array(await crypto.subtle.exportKey('raw', pair.publicKey)) }
-  } catch {
-    return t.keypair()
-  }
+    const key = { privateKey: pair.privateKey, pk: new Uint8Array(await crypto.subtle.exportKey('raw', pair.publicKey)) }
+    await keyStore('readwrite', (s) => s.put(key, 'device'))
+    const back = await keyStore<StoredKey | undefined>('readonly', (s) => s.get('device'))
+    if (back && 'privateKey' in back && back.privateKey instanceof CryptoKey) return key
+  } catch {}
+  const raw = t.keypair()
+  await keyStore('readwrite', (s) => s.put(raw, 'device'))
+  return raw
 }
 
 function deviceKey(stored: StoredKey): t.DeviceKey {
@@ -124,7 +130,6 @@ export async function pairThroughRelay(daemonPkText: string, code: string, name:
     throw new Error(JSON.parse(reply).error === 'pairing failed' ? 'Pairing code invalid or expired.' : 'Pairing failed.')
   }
   if (!result.paired) throw new Error('Pairing failed.')
-  await keyStore('readwrite', (s) => s.put(key, 'device'))
   localStorage.setItem(PROFILE_KEY, JSON.stringify({ daemonPk: daemonPkText, name }))
 }
 
