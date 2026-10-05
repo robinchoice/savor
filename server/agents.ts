@@ -120,13 +120,41 @@ export function forget(tid: string) {
 
 const current = (tid: string) => sessions.get(tid)?.session
 
-// Close idle sessions unless the thread still owns background processes.
+// Background work inside the agent's own process (shell commands, subagents). It ends with the process.
+export const runsBackground = (tid: string) => !!current(tid)?.background?.()
+
+// Between turns with a conclusion still owed: the agent waits for a process it registered or for
+// background work of its own. A stop or a failure ends that.
+export function waiting(p: Project, t: Thread) {
+  const r = requests.get(t.id)
+  return !t.error && (awaitsBackground(p, t.id) || (!busy.has(t.id) && !!r?.ack && !r.conclusion && runsBackground(t.id)))
+}
+
+// The user's Stop. A running turn ends with its process. Between turns the process goes right away,
+// with what it runs in the background, so the next input starts a fresh one. An agent that waited
+// there still owed a conclusion: that request ends the way a stopped turn does.
+export function stopAgent(p: Project, tid: string) {
+  if (busy.has(tid)) return stop(tid)
+  const thread = store.getThread(p, tid)
+  const waited = waiting(p, thread)
+  const s = sessions.get(tid)
+  sessions.delete(tid)
+  clearTimeout(s?.idleTimer)
+  s?.session.kill()
+  stopped.add(tid)
+  if (waited) {
+    beginTurn(p, tid)
+    endTurn(p, tid, { error: 'Turn stopped.' }, thread.agent)
+  } else emit({ type: 'status', projectId: p.id, threadId: tid })
+}
+
+// Close idle sessions unless the conversation still has background work.
 export function maybeClose(p: Project, tid: string) {
   const s = sessions.get(tid)
   if (!s || busy.has(tid)) return
   clearTimeout(s.idleTimer)
   const owns = store.listProcs(p).some((pr) => pr.threadId === tid)
-  if (!owns) s.idleTimer = setTimeout(() => s.session.end(), IDLE_CLOSE_MS)
+  if (!owns && !runsBackground(tid)) s.idleTimer = setTimeout(() => s.session.end(), IDLE_CLOSE_MS)
 }
 
 function beginTurn(p: Project, tid: string) {
@@ -237,6 +265,11 @@ function hostFor(p: Project, thread: Thread, holder: { session?: Session }): Hos
     working: () => mine() && beginTurn(p, tid),
     approve: (req) => askApproval(p, tid, req),
     ask: (qs) => askQuestions(p, tid, qs),
+    backgroundChanged: () => {
+      if (!mine()) return
+      emit({ type: 'status', projectId: p.id, threadId: tid })
+      maybeClose(p, tid)
+    },
     ended: (result) => mine() && endTurn(p, tid, result, thread.agent),
     closed: (error) => {
       if (!mine()) return

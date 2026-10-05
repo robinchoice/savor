@@ -232,7 +232,7 @@ route('DELETE', '/projects/:pid', (params, _, ctx) => {
 
 route('GET', '/projects/:pid/threads', (params) => {
   const p = project(params)
-  return store.listThreads(p).map((t) => ({ ...t, busy: agents.isBusy(t.id), messageCount: store.readMessages(p, t.id).length }))
+  return store.listThreads(p).map((t) => ({ ...t, busy: agents.isBusy(t.id), waiting: agents.waiting(p, t), messageCount: store.readMessages(p, t.id).length }))
 })
 route('POST', '/projects/:pid/threads', (params, b, ctx) => {
   const p = project(params)
@@ -254,6 +254,8 @@ route('GET', '/projects/:pid/threads/:tid', (params) => {
   return {
     thread,
     busy: agents.isBusy(thread.id),
+    waiting: agents.waiting(p, thread),
+    background: agents.runsBackground(thread.id),
     startedAt: agents.startedAt(thread.id),
     messages: store.readMessages(p, thread.id),
     decisions: store.listDecisions(p, thread.id),
@@ -297,7 +299,7 @@ route('DELETE', '/projects/:pid/threads/:tid/messages/:mid', (params) => {
   return {}
 })
 route('POST', '/projects/:pid/threads/:tid/stop', (params) => {
-  agents.stop(params.tid)
+  agents.stopAgent(project(params), params.tid)
   return {}
 })
 route('POST', '/projects/:pid/threads/:tid/approvals/:mid', (params, b) => {

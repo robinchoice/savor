@@ -42,7 +42,7 @@ export const Label = ({ label }: { label: Thread['label'] }) =>
 type Filter = 'all' | 'needs' | 'working' | 'unread'
 
 export function Conversations({ project, threadId, isNew }: { project: Project; threadId?: string; isNew?: boolean }) {
-  const [threads] = useApi<Thread[]>(`/projects/${project.id}/threads`, (e) => e.projectId === project.id && ['thread', 'status', 'message'].includes(e.type))
+  const [threads] = useApi<Thread[]>(`/projects/${project.id}/threads`, (e) => e.projectId === project.id && ['thread', 'status', 'message', 'processes'].includes(e.type))
   const [worktrees] = useApi<Worktree[]>(`/projects/${project.id}/worktrees`, (e) => e.projectId === project.id && e.type === 'thread')
   const [filter, setFilter] = useState<Filter>('all')
   const [query, setQuery] = useState('')
@@ -53,12 +53,12 @@ export function Conversations({ project, threadId, isNew }: { project: Project; 
   const counts = {
     all: all.length,
     needs: all.filter((t) => t.needsYou).length,
-    working: all.filter((t) => t.busy).length,
+    working: all.filter((t) => t.busy || t.waiting).length,
     unread: all.filter((t) => t.unread).length,
   }
   const q = query.toLowerCase()
   const visible = all
-    .filter((t) => filter === 'all' || (filter === 'needs' ? t.needsYou : filter === 'working' ? t.busy : t.unread))
+    .filter((t) => filter === 'all' || (filter === 'needs' ? t.needsYou : filter === 'working' ? t.busy || t.waiting : t.unread))
     .filter((t) => !q || t.title.toLowerCase().includes(q) || t.label?.name.toLowerCase().includes(q))
 
   // Conversations in a worktree are listed under it, worktrees without conversations too.
@@ -180,8 +180,8 @@ function ThreadCard({ project, thread: t, active }: { project: Project; thread: 
   const { conversations, show } = usePrefs()
   const href = `#/p/${project.id}/t/${t.id}`
   // The ring from the logo says what the conversation is waiting for.
-  const state = t.needsYou ? 'needs' : t.busy ? 'busy' : t.error ? 'error' : t.unread ? 'unread' : t.completed ? 'done' : ''
-  const ring = <span class={`ring ${state}`} title={{ busy: 'Working', needs: 'Your turn', error: 'Error', unread: 'Unread', done: 'Finished', '': 'Ready' }[state]} />
+  const state = t.needsYou ? 'needs' : t.busy || t.waiting ? 'busy' : t.error === STOPPED ? 'stopped' : t.error ? 'error' : t.unread ? 'unread' : t.completed ? 'done' : ''
+  const ring = <span class={`ring ${state}`} title={{ busy: 'Working', needs: 'Your turn', stopped: 'Stopped', error: 'Error', unread: 'Unread', done: 'Finished', '': 'Ready' }[state]} />
   // Compact: one line with the title, what the conversation is waiting for as a dot.
   if (conversations === 'compact')
     return (
@@ -220,7 +220,7 @@ function ThreadCard({ project, thread: t, active }: { project: Project; thread: 
             <Check size={12} /> Finished
           </span>
         )}
-        {t.error && !t.busy && (
+        {t.error && t.error !== STOPPED && !t.busy && (
           <span class="error-badge">
             <CircleAlert size={12} /> Error
           </span>
@@ -256,7 +256,12 @@ function NewConversation({ project }: { project: Project }) {
   )
 }
 
-interface ThreadData { thread: Thread; busy: boolean; startedAt?: string; messages: Message[]; decisions: Decision[]; processes: Proc[] }
+// Between turns: the agent ended its turn without a conclusion and continues when its background work is done.
+const WAITING = 'Waiting for background work'
+// What the daemon records as the error of a turn the user stopped. That is not a failure.
+const STOPPED = 'Turn stopped.'
+
+interface ThreadData { thread: Thread; busy: boolean; waiting: boolean; background: boolean; startedAt?: string; messages: Message[]; decisions: Decision[]; processes: Proc[] }
 
 // Phones and narrow windows, where chat and page do not fit side by side.
 function useNarrow() {
@@ -272,7 +277,7 @@ function useNarrow() {
 
 function ThreadView({ project, threadId }: { project: Project; threadId: string }) {
   const base = `/projects/${project.id}/threads/${threadId}`
-  const [data, reload, loadError] = useApi<ThreadData>(base, (e) => e.threadId === threadId && ['message', 'thread', 'status'].includes(e.type))
+  const [data, reload, loadError] = useApi<ThreadData>(base, (e) => (e.threadId === threadId && ['message', 'thread', 'status'].includes(e.type)) || (e.projectId === project.id && e.type === 'processes'))
   const [activity] = useApi<ActivityEvent[]>(`${base}/activity`, (e) => e.threadId === threadId && (e.type === 'activity' || e.type === 'status'))
   // Chat or browser: the first preview of a conversation opens the browser, after that the last choice stands.
   const viewKey = `savor-view:${threadId}`
@@ -349,7 +354,9 @@ function ThreadView({ project, threadId }: { project: Project; threadId: string 
       </div>
     </section>
   )
-  const { thread, messages, decisions, busy } = data
+  const { thread, messages, decisions, busy, waiting } = data
+  // An agent can be stopped while it works, waits, or still runs background work after its conclusion.
+  const stoppable = busy || waiting || data.background
   let messageAgent = messages.find((m) => m.modelInfo)?.modelInfo ?? thread.agent
   const attributedMessages = messages.map((m) => {
     messageAgent = m.modelInfo ?? messageAgent
@@ -359,6 +366,7 @@ function ThreadView({ project, threadId }: { project: Project; threadId: string 
   const send = (text: string, attachments: Attachment[] = []) => api('POST', `${base}/messages`, { text, attachments })
   const setAgent = (agent: AgentConfig) => api('PATCH', base, { agent })
   const patch = (b: object) => api('PATCH', base, b)
+  const stop = () => api('POST', `${base}/stop`)
 
   const lastUser = messages.map((m) => m.kind).lastIndexOf('user')
   const last = messages[messages.length - 1]
@@ -367,10 +375,12 @@ function ThreadView({ project, threadId }: { project: Project; threadId: string 
   const showNext = !busy && last?.kind === 'conclusion' && !openDecisions && last.suggestions?.length
   const canComplete = !busy && !thread.completed && last?.kind === 'conclusion' && !openDecisions
   const queued = messages.filter((m) => m.kind === 'user' && m.delivered === false).length
-  const status = busy
-    ? { icon: <span class="ring busy" />, text: 'Working', cls: 'working' }
+  const status = busy || waiting
+    ? { icon: <span class="ring busy" />, text: busy ? 'Working' : WAITING, cls: 'working' }
     : thread.needsYou
       ? { icon: <span class="ring needs" />, text: 'Your turn', cls: 'needs' }
+      : thread.error === STOPPED
+        ? { icon: <span class="ring" />, text: 'Stopped', cls: '' }
       : thread.error
         ? { icon: <CircleAlert size={13} />, text: 'Error', cls: 'error' }
         : thread.completed
@@ -423,9 +433,9 @@ function ThreadView({ project, threadId }: { project: Project; threadId: string 
   // On a phone and beside the preview, the header keeps only the menu and the switch.
   const compactHead = browserMode || narrow
   const said = thread.needsYou ? 'Your turn' : last && last.kind !== 'user' && messages.length > seen ? last.text : ''
-  const bubble = busy ? (
+  const bubble = busy || waiting ? (
     <button class="bubble" title="Show the conversation" onClick={showChat}>
-      <span class="spinner" /> {workingLabel}
+      <span class="spinner" /> {busy ? workingLabel : WAITING}
       {elapsed && <span class="muted"> · {elapsed}</span>}
     </button>
   ) : said ? (
@@ -441,7 +451,7 @@ function ThreadView({ project, threadId }: { project: Project; threadId: string 
       setAgent={setAgent}
       onSend={send}
       busy={busy}
-      onStop={() => api('POST', `${base}/stop`)}
+      onStop={stoppable ? stop : undefined}
       placeholder={floating ? 'Tell the agent what to change…' : busy ? 'Add a follow-up (queued until the agent is done)…' : 'Add a follow-up...'}
       draft={draft}
       picked={picked}
@@ -469,7 +479,8 @@ function ThreadView({ project, threadId }: { project: Project; threadId: string 
                 <span class={`status ${status.cls}`}>
                   {status.icon} {status.text}{busy && elapsed ? ` · ${elapsed}` : ''}
                 </span>
-                {busy && <button class="status stop-work" onClick={() => api('POST', `${base}/stop`)}>Stop</button>}
+                {data.background && !busy && !waiting && <span class="status">Background work running</span>}
+                {stoppable && <button class="status stop-work" onClick={stop}>Stop</button>}
                 {queued > 0 && <span class="status">{queued} queued</span>}
                 {thread.worktree && (
                   <span class="status worktree" title={thread.worktree.path}>
@@ -501,7 +512,7 @@ function ThreadView({ project, threadId }: { project: Project; threadId: string 
                       {compactHead && <button onClick={showActivity}>Show activity</button>}
                       <button onClick={rename}>Rename label</button>
                       <button onClick={() => navigator.clipboard.writeText(`${project.path}/.savor/threads/${thread.id}/messages.jsonl`)}>Copy file path</button>
-                      {busy && <button onClick={() => api('POST', `${base}/stop`)}>Stop agent</button>}
+                      {stoppable && <button onClick={stop}>Stop agent</button>}
                       <button class="danger" onClick={remove}>
                         Delete conversation
                       </button>
@@ -570,9 +581,9 @@ function ThreadView({ project, threadId }: { project: Project; threadId: string 
                     onPreview={() => setView('browser')}
                   />
                 ))}
-                {busy && (
+                {(busy || waiting) && (
                   <button class="working-row" title="Show activity" onClick={showActivity}>
-                    <span class="spinner" /> {workingLabel}{elapsed && <span class="muted"> · {elapsed}</span>} <ChevronRight size={13} />
+                    <span class="spinner" /> {busy ? workingLabel : WAITING}{elapsed && <span class="muted"> · {elapsed}</span>} <ChevronRight size={13} />
                   </button>
                 )}
                 {showNext && lastConclusion ? (
@@ -737,7 +748,7 @@ function MessageItem({ m, thread, workflow, decisions, active, base, highlight, 
         {copyState && <span class="muted" role="status">{copyState}</span>}
       </div>
       {(m.text || m.images?.length || m.files?.length) && (
-        <div class={`msg-card ${m.kind}`}>
+        <div class={`msg-card ${m.kind}${m.kind === 'error' && m.text === STOPPED ? ' stopped' : ''}`}>
           {m.images?.length ? (
             <div class="msg-images">
               {m.images.map((img) => (

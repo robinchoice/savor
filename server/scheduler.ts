@@ -45,7 +45,7 @@ function dueSlot(wf: Workflow) {
 }
 
 // Still at it: in a turn, or waiting for background work it started.
-const working = (p: Project, t: Thread) => agents.isBusy(t.id) || (!t.error && agents.awaitsBackground(p, t.id))
+const working = (p: Project, t: Thread) => agents.isBusy(t.id) || agents.waiting(p, t)
 
 // A run of the workflow that still works or waits for the user.
 const openRun = (p: Project, wf: Workflow) => store.listThreads(p).find((t) => t.workflow?.id === wf.id && !t.completed && (working(p, t) || t.needsYou))
@@ -107,7 +107,7 @@ export interface Run {
   at: string
   trigger: 'scheduled' | 'manual' | 'caught'
   due?: string
-  status: 'working' | 'needs' | 'failed' | 'finished' | 'skipped'
+  status: 'working' | 'needs' | 'stopped' | 'failed' | 'finished' | 'skipped'
   // The run's conversation; for a skipped time, the conversation that was in its way.
   threadId: string
   summary: string
@@ -134,7 +134,7 @@ export function runs(p: Project, wf: Workflow, threads = store.listThreads(p), l
         at,
         trigger: t.workflow!.trigger,
         due: t.workflow!.due,
-        status: working(p, t) ? 'working' : t.needsYou ? 'needs' : t.error || last?.kind === 'error' ? 'failed' : 'finished',
+        status: working(p, t) ? 'working' : t.needsYou ? 'needs' : t.error === 'Turn stopped.' ? 'stopped' : t.error || last?.kind === 'error' ? 'failed' : 'finished',
         threadId: t.id,
         summary: plain(t.error ?? last?.text ?? ''),
         workedMs: messages.reduce((ms, m) => ms + (m.workTiming ? Date.parse(m.workTiming.finishedAt) - Date.parse(m.workTiming.startedAt) : 0), 0),

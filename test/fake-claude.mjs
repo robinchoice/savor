@@ -4,6 +4,10 @@
 // Savor's MCP tools:
 // - "ask: <question>" → conclusion with that question and the options Yes/No
 // - "approve: <anything>" → permission prompt via a can_use_tool control request, then the verdict
+// - "background: <text>" → acknowledges, registers a process it started and ends the turn without a conclusion
+// - "own-background: <text>" → acknowledges, reports a background task of its own and ends the turn; once the
+//   test's release file names the input, the task is done and it concludes in a turn it starts by itself
+// - "own-server: <text>" → reports a background task of its own that keeps running after the conclusion
 // - "native-ask: <question>" → an AskUserQuestion control request with the options Blue/Green
 // - "slow: <text>" → acknowledges, waits for the test's release file or an interrupt, then echoes
 // - a last text block of its own that starts with "/" → "Skill <name and arguments>", the way Claude Code runs slash commands
@@ -15,6 +19,7 @@
 import readline from 'node:readline'
 import crypto from 'node:crypto'
 import fs from 'node:fs'
+import { spawn } from 'node:child_process'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 
@@ -70,6 +75,10 @@ const control = (request) =>
     out({ type: 'control_request', request_id, request })
   })
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+const released = async (input) => {
+  const release = process.env.FAKE_AGENT_LOG + '.release'
+  while (!fs.existsSync(release) || fs.readFileSync(release, 'utf8') !== input) await sleep(20)
+}
 
 let started = false
 let interrupted = false
@@ -96,6 +105,22 @@ async function turn(text, command) {
       tool_use_id: 'toolu_fake',
     })
     await call('send_conclusion_message', { text: `Permission: ${verdict.behavior}${verdict.updatedPermissions?.length ? ' always' : ''}` })
+  } else if (input.startsWith('background:')) {
+    await call('send_acknowledgement_message', { text: 'On it.' })
+    const job = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60_000)'], { detached: true, stdio: 'ignore' })
+    job.unref()
+    await call('register_process', { pid: job.pid, name: input.slice('background:'.length).trim(), command: 'node -e …' })
+  } else if (input.startsWith('own-background:') || input.startsWith('own-server:')) {
+    await call('send_acknowledgement_message', { text: 'On it.' })
+    out({ type: 'system', subtype: 'background_tasks_changed', tasks: [{ task_id: 'b1', task_type: 'local_bash', description: input }] })
+    if (input.startsWith('own-server:')) await call('send_conclusion_message', { text: `Echo: ${input}` })
+    else
+      released(input).then(async () => {
+        out({ type: 'system', subtype: 'background_tasks_changed', tasks: [] })
+        out({ type: 'system', subtype: 'task_notification', task_id: 'b1', status: 'completed' })
+        await call('send_conclusion_message', { text: `Echo: ${input}` })
+        out({ type: 'result', subtype: 'success', is_error: false, result: 'done' })
+      })
   } else if (input.startsWith('native-ask:')) {
     const question = input.slice('native-ask:'.length).trim()
     const verdict = await control({

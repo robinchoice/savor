@@ -252,6 +252,75 @@ test('input during a turn waits in the queue; "send now" interrupts', async () =
   assert.equal(await page.locator('text=Echo: third').count(), 0, 'the interrupted turn did not conclude')
 })
 
+test('stop ends a running turn, and the next input starts the agent again', async () => {
+  await newConversation()
+  await send('slow: stop me')
+  await page.waitForSelector('.working-row')
+  await send('queued behind it')
+  await page.waitForSelector('.msg.queued >> text=queued behind it')
+  await page.click('.composer .send.stop')
+  await page.waitForSelector('.msg-card.error:has-text("Turn stopped.")')
+  await page.waitForSelector('.composer .send.stop', { state: 'detached' })
+  assert.equal(await page.locator('.stop-work').count(), 0)
+  assert.equal(await page.locator('.msg.queued').count(), 1, 'what was queued stays queued after a stop')
+  assert.equal(await page.locator('text=Echo: stop me').count(), 0, 'the stopped turn did not conclude')
+  await page.waitForSelector('.thread-sub .status:has-text("Stopped")')
+  assert.equal(await page.locator('.thread-sub .status.error').count() + (await page.locator('.card.active .error-badge').count()), 0, 'a stop is not an error')
+
+  await page.click('.queued-row >> text=Remove')
+  await send('after the stop')
+  await page.waitForSelector('text=Echo: after the stop')
+})
+
+test('an agent that waits for background work between turns can be stopped', async () => {
+  await newConversation()
+  await send('background: long build')
+  await page.waitForSelector('.thread-sub .working:has-text("Waiting for background work")')
+  await page.waitForSelector('.working-row:has-text("Waiting for background work")')
+  const [, projectId, threadId] = page.url().match(/#\/p\/([^/]+)\/t\/([^/]+)/)
+  const t = `/projects/${projectId}/threads/${threadId}`
+  assert.equal((await api('GET', `/projects/${projectId}/threads`)).body.find((x) => x.id === threadId).waiting, true)
+
+  await page.click('.composer .send.stop')
+  await page.waitForSelector('.msg-card.error:has-text("Turn stopped.")')
+  await page.waitForSelector('.composer .send.stop', { state: 'detached' })
+  assert.equal(await page.locator('.stop-work').count(), 0)
+  const { waiting, processes } = (await api('GET', t)).body
+  assert.equal(waiting, false)
+  assert.equal(processes.length, 1, 'the process the agent started keeps running')
+
+  await send('after the wait')
+  await page.waitForSelector('text=Echo: after the wait')
+  assert.equal((await api('POST', `/projects/${projectId}/processes/${processes[0].pid}/kill`)).status, 200)
+})
+
+test("background work inside the agent's own process counts as waiting and can be stopped", async () => {
+  await newConversation()
+  await send('own-background: first build')
+  await page.waitForSelector('.thread-sub .working:has-text("Waiting for background work")')
+  await page.click('.stop-work')
+  await page.waitForSelector('.msg-card.error:has-text("Turn stopped.")')
+  await page.waitForSelector('.stop-work', { state: 'detached' })
+
+  // Left alone, the agent continues by itself when its background work is done.
+  await send('own-background: second build')
+  await page.waitForSelector('.thread-sub .working:has-text("Waiting for background work")')
+  fs.writeFileSync(AGENT_LOG + '.release', 'own-background: second build')
+  await page.waitForSelector('text=Echo: own-background: second build')
+  await page.waitForSelector('.stop-work', { state: 'detached' })
+})
+
+test('background work an agent leaves running after its conclusion can be stopped', async () => {
+  await newConversation()
+  await send('own-server: dev server')
+  await page.waitForSelector('text=Echo: own-server: dev server')
+  await page.waitForSelector('.thread-sub .status:has-text("Background work running")')
+  await page.click('.composer .send.stop')
+  await page.waitForSelector('.thread-sub .status:has-text("Background work running")', { state: 'detached' })
+  assert.equal(await page.locator('.composer .send.stop').count(), 0)
+  assert.equal(await page.locator('.msg-card.error').count(), 0, 'no request was cut off, so nothing is reported')
+})
+
 test('queued messages can be removed before they are sent', async () => {
   const [project] = (await api('GET', '/projects')).body
   const thread = (await api('POST', `/projects/${project.id}/threads`, { text: 'slow: busy' })).body
