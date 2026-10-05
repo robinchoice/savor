@@ -34,13 +34,10 @@ const questions = new Map<string, (answers: Answer[]) => void>() // decision gro
 
 export const isBusy = (tid: string) => busy.has(tid)
 export const startedAt = (tid: string) => busy.get(tid)
-export const runsBackground = (tid: string) => !!current(tid)?.background?.()
-// Background work of a conversation: the processes its agent registered, and what the agent runs inside its own process.
-const hasBackground = (p: Project, tid: string) => store.listProcs(p).some((pr) => pr.threadId === tid) || runsBackground(tid)
-// An agent that acknowledged and ended its turn without a conclusion waits for its background work.
+// An agent that acknowledged and ended its turn without a conclusion waits for the background processes its conversation owns.
 export function awaitsBackground(p: Project, tid: string) {
   const r = requests.get(tid)
-  return !busy.has(tid) && !!r?.ack && !r.conclusion && hasBackground(p, tid)
+  return !busy.has(tid) && !!r?.ack && !r.conclusion && store.listProcs(p).some((pr) => pr.threadId === tid)
 }
 export const markConcluded = (tid: string, messageId: string) => turnConclusion.set(tid, messageId)
 export const originOf = (tid: string): Origin => turnOrigin.get(tid) ?? 'local'
@@ -106,22 +103,9 @@ function pump(p: Project, tid: string) {
   if (next) deliver(p, tid, next)
 }
 
-export function stop(p: Project, tid: string) {
+export function stop(tid: string) {
   stopped.add(tid)
-  const s = sessions.get(tid)
-  if (busy.has(tid)) return s?.session.kill()
-  // Between turns the agent may still wait for background work. Its process goes right away, with
-  // what it runs in the background, so the next input starts a fresh one. A request it still owed a
-  // conclusion for ends here.
-  const waiting = !store.getThread(p, tid).error && awaitsBackground(p, tid)
-  sessions.delete(tid)
-  clearTimeout(s?.idleTimer)
-  s?.session.kill()
-  if (waiting) {
-    store.updateThread(p, tid, { error: 'Turn stopped.' })
-    post(p, tid, { kind: 'error', text: 'Turn stopped.' })
-  }
-  emit({ type: 'status', projectId: p.id, threadId: tid })
+  current(tid)?.kill()
 }
 
 // The conversation was deleted: end its session, and nothing it still reports touches the removed records.
@@ -136,12 +120,41 @@ export function forget(tid: string) {
 
 const current = (tid: string) => sessions.get(tid)?.session
 
+// Background work inside the agent's own process (shell commands, subagents). It ends with the process.
+export const runsBackground = (tid: string) => !!current(tid)?.background?.()
+
+// Between turns with a conclusion still owed: the agent waits for a process it registered or for
+// background work of its own. A stop or a failure ends that.
+export function waiting(p: Project, t: Thread) {
+  const r = requests.get(t.id)
+  return !t.error && (awaitsBackground(p, t.id) || (!busy.has(t.id) && !!r?.ack && !r.conclusion && runsBackground(t.id)))
+}
+
+// The user's Stop. A running turn ends with its process. Between turns the process goes right away,
+// with what it runs in the background, so the next input starts a fresh one. An agent that waited
+// there still owed a conclusion: that request ends the way a stopped turn does.
+export function stopAgent(p: Project, tid: string) {
+  if (busy.has(tid)) return stop(tid)
+  const thread = store.getThread(p, tid)
+  const waited = waiting(p, thread)
+  const s = sessions.get(tid)
+  sessions.delete(tid)
+  clearTimeout(s?.idleTimer)
+  s?.session.kill()
+  stopped.add(tid)
+  if (waited) {
+    beginTurn(p, tid)
+    endTurn(p, tid, { error: 'Turn stopped.' }, thread.agent)
+  } else emit({ type: 'status', projectId: p.id, threadId: tid })
+}
+
 // Close idle sessions unless the conversation still has background work.
 export function maybeClose(p: Project, tid: string) {
   const s = sessions.get(tid)
   if (!s || busy.has(tid)) return
   clearTimeout(s.idleTimer)
-  if (!hasBackground(p, tid)) s.idleTimer = setTimeout(() => s.session.end(), IDLE_CLOSE_MS)
+  const owns = store.listProcs(p).some((pr) => pr.threadId === tid)
+  if (!owns && !runsBackground(tid)) s.idleTimer = setTimeout(() => s.session.end(), IDLE_CLOSE_MS)
 }
 
 function beginTurn(p: Project, tid: string) {

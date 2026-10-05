@@ -45,7 +45,7 @@ function dueSlot(wf: Workflow) {
 }
 
 // Still at it: in a turn, or waiting for background work it started.
-const working = (p: Project, t: Thread) => agents.isBusy(t.id) || (!t.error && agents.awaitsBackground(p, t.id))
+const working = (p: Project, t: Thread) => agents.isBusy(t.id) || agents.waiting(p, t)
 
 // A run of the workflow that still works or waits for the user.
 const openRun = (p: Project, wf: Workflow) => store.listThreads(p).find((t) => t.workflow?.id === wf.id && !t.completed && (working(p, t) || t.needsYou))
