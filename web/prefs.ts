@@ -14,6 +14,8 @@ export interface Prefs {
   // Browser mode: how wide the chat beside the page is, and the size the page is drawn in.
   chatWidth: number
   previewDevice: Device
+  // Workflow groups marked as “Not a duplicate” in All projects.
+  notDuplicates: string[]
 }
 
 const KEY = 'savor-prefs'
@@ -24,6 +26,7 @@ let prefs: Prefs = {
   feedbackButton: true,
   chatWidth: 420,
   previewDevice: 'fit',
+  notDuplicates: [],
   ...JSON.parse(localStorage.getItem(KEY) ?? '{}'),
   theme: (localStorage.getItem('savor-theme') as Theme | null) ?? 'system',
 }

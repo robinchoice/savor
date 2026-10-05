@@ -167,6 +167,15 @@ export const agentSummary = (a: AgentConfig, info?: ProviderInfo) =>
 
 export const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
+export const initial = (name: string) => (name.trim()[0] ?? '?').toLowerCase()
+
+// Text on a project color: dark on light tints, white on the others.
+export function inkOn(tint: string) {
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(tint.slice(i, i + 2), 16))
+  return 0.299 * r + 0.587 * g + 0.114 * b > 170 ? '#1b1c1f' : '#fff'
+}
+export const avatarStyle = (tint: string) => ({ background: tint, color: inkOn(tint) })
+
 export const formatDay = (iso: string) => new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
 export const formatTime = (iso: string) => new Date(iso).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
 // What set a workflow run off. A run that was caught up says when it had been due.

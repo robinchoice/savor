@@ -12,9 +12,9 @@ const SCHEDULES: [string, string][] = [
   ['0 * * * *', 'Every hour'],
 ]
 
-const STATUS: Record<Run['status'], [ring: string, label: string]> = { working: ['busy', 'Working'], needs: ['needs', 'Your turn'], stopped: ['', 'Stopped'], failed: ['error', 'Failed'], finished: ['done', 'Finished'], skipped: ['skipped', 'Skipped'] }
-const when = (iso: string) => new Date(iso).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
-const schedule = (w: Workflow) => (w.cron ? w.scheduleLabel || describeCron(w.cron) : 'Manual')
+export const STATUS: Record<Run['status'], [ring: string, label: string]> = { working: ['busy', 'Working'], needs: ['needs', 'Your turn'], stopped: ['', 'Stopped'], failed: ['error', 'Failed'], finished: ['done', 'Finished'], skipped: ['skipped', 'Skipped'] }
+export const when = (iso: string) => new Date(iso).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+export const schedule = (w: Workflow) => (w.cron ? w.scheduleLabel || describeCron(w.cron) : 'Manual')
 // A run changes with its conversation, so the runs follow the project's conversations too.
 const runsChanged = (project: Project) => (e: SavorEvent) => (e.type === 'workflows' || e.type === 'thread' || e.type === 'status') && e.projectId === project.id
 

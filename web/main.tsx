@@ -1,11 +1,12 @@
 import './monitoring'
 import { render } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
-import { Coffee, Download, Folder, FolderOpen, Monitor, Pin, PinOff, Search, Files as FilesIcon, MessageSquare, Moon, Plus, Server, SlidersHorizontal, Sun, Workflow as WorkflowIcon, ChevronDown, Smartphone, X } from 'lucide-preact'
-import { api, connectEvents, desktop, go, Unauthorized, useApi, useEvent, type Me, type Project } from './api'
+import { Coffee, Download, Folder, FolderOpen, Monitor, Pin, PinOff, Search, Files as FilesIcon, MessageSquare, Moon, Plus, Server, SlidersHorizontal, Sun, Workflow as WorkflowIcon, ChevronDown, Layers, Smartphone, X } from 'lucide-preact'
+import { api, avatarStyle, connectEvents, desktop, go, initial, Unauthorized, useApi, useEvent, type Me, type Project } from './api'
 import { Conversations } from './Conversations'
 import { FilesView } from './Files'
 import { Workflows } from './Workflows'
+import { AllProjects } from './Overview'
 import { Settings, Devices, Pair, RemotePair } from './Settings'
 import { loadProfile, remote, setTransport } from './transport'
 import { ProcessesPopover } from './Processes'
@@ -27,15 +28,6 @@ function useRoute() {
   }, [])
   return route
 }
-
-export const initial = (name: string) => (name.trim()[0] ?? '?').toLowerCase()
-
-// Text on a project color: dark on light tints, white on the others.
-export function inkOn(tint: string) {
-  const [r, g, b] = [1, 3, 5].map((i) => parseInt(tint.slice(i, i + 2), 16))
-  return 0.299 * r + 0.587 * g + 0.114 * b > 170 ? '#1b1c1f' : '#fff'
-}
-const avatarStyle = (tint: string) => ({ background: tint, color: inkOn(tint) })
 
 function App() {
   const [me, setMe] = useState<Me | null | false>(null)
@@ -67,7 +59,7 @@ function App() {
   }, [mode, link.connected])
   useNotifications(route[2] === 't' ? route[3] : undefined, projects)
   useEffect(() => {
-    if (projects?.length && route[0] !== 'p' && route[0] !== 'devices') go(`/p/${(projects.find((p) => p.pinned) ?? projects[0]).id}`)
+    if (projects?.length && route[0] !== 'p' && route[0] !== 'all' && route[0] !== 'devices') go(`/p/${(projects.find((p) => p.pinned) ?? projects[0]).id}`)
   }, [projects, route[0]])
 
   if (route[0] === 'pair') return <Pair code={route[1]} />
@@ -97,12 +89,13 @@ function App() {
       </div>
     )
 
-  // Routes: p/:pid[/t/:tid | /files/... | /workflows[/:id] | /settings] | devices
+  // Routes: p/:pid[/t/:tid | /files/... | /workflows[/:id] | /settings] | all[/:section] | devices
   const [, pid, section, ...rest] = route
   const project = projects?.find((p) => p.id === pid)
 
   let main = <Welcome />
   if (route[0] === 'devices') main = <Devices />
+  else if (route[0] === 'all') main = <AllProjects projects={projects ?? []} section={route[1]} />
   else if (project) {
     if (section === 'files') main = <FilesView key={project.id} project={project} rest={rest} />
     else if (section === 'workflows') main = <Workflows key={project.id} project={project} rest={rest} />
@@ -113,18 +106,20 @@ function App() {
   return (
     <div class="app">
       {mode === 'relay' && !link.connected && <div class="link-banner">Reconnecting to your computer…</div>}
-      <TopBar projects={projects ?? []} active={project} me={me} setMe={setMe} />
+      <TopBar projects={projects ?? []} active={project} all={route[0] === 'all'} me={me} setMe={setMe} />
       {project && <SubBar project={project} section={section} />}
+      {route[0] === 'all' && <AllBar section={route[1]} />}
       <main>{main}</main>
     </div>
   )
 }
 
-function TopBar({ projects, active, me, setMe }: { projects: Project[]; active?: Project; me: Me; setMe: (m: Me) => void }) {
+function TopBar({ projects, active, all, me, setMe }: { projects: Project[]; active?: Project; all: boolean; me: Me; setMe: (m: Me) => void }) {
   const [menu, setMenu] = useState<'projects' | 'appearance' | null>(null)
   const [dialog, setDialog] = useState<'account' | 'feedback' | 'enjoy' | null>(null)
   const { theme, feedbackButton } = usePrefs()
   const ThemeIcon = theme === 'system' ? Monitor : theme === 'dark' ? Moon : Sun
+  const total = (k: keyof Project['counts']) => projects.reduce((n, p) => n + p.counts[k], 0)
   const toggleAwake = async () => setMe({ ...me, ...(await api('POST', '/awake', { on: !me.awake })) })
   const togglePin = (e: Event, p: Project) => {
     e.preventDefault()
@@ -143,6 +138,12 @@ function TopBar({ projects, active, me, setMe }: { projects: Project[]; active?:
     <header class="topbar">
       <img class="logo" src="/icon.svg" alt="Savor" />
       <nav class="project-tabs">
+        <a href="#/all" class={`project-tab all-tab ${all ? 'active' : ''}`} title="Conversations and workflows of all projects">
+          <Layers size={16} />
+          <span class="name">All</span>
+          <Counts project={{ counts: { working: total('working'), unread: total('unread'), needsYou: total('needsYou') } }} />
+        </a>
+        <span class="tab-sep" />
         {projects.filter((p) => p.pinned || p.id === active?.id).map((p) => (
           <a key={p.id} href={`#/p/${p.id}`} class={`project-tab ${p.id === active?.id ? 'active' : ''}`}>
             <span class="avatar" style={avatarStyle(p.tint)}>
@@ -192,7 +193,7 @@ function TopBar({ projects, active, me, setMe }: { projects: Project[]; active?:
   )
 }
 
-const Counts = ({ project: p }: { project: Project }) => (
+const Counts = ({ project: p }: { project: Pick<Project, 'counts'> }) => (
   <>
     {p.counts.working > 0 && (
       <span class="badge working" title="Working">
@@ -372,6 +373,20 @@ function SubBar({ project, section }: { project: Project; section?: string }) {
           <SlidersHorizontal size={16} />
         </a>
       </div>
+    </div>
+  )
+}
+
+function AllBar({ section }: { section?: string }) {
+  const tab = (id: string, label: string, Icon: any) => (
+    <a href={`#/all/${id}`} class={`subtab ${(section ?? 'conversations') === id ? 'active' : ''}`}>
+      <Icon size={15} /> {label}
+    </a>
+  )
+  return (
+    <div class="subbar">
+      {tab('conversations', 'Conversations', MessageSquare)}
+      {tab('workflows', 'Workflows', WorkflowIcon)}
     </div>
   )
 }

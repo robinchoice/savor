@@ -1,6 +1,6 @@
 // Savor desktop shell: starts the daemon and shows the UI in its own window.
 // The window keeps a persistent browser session, so logins inside previews and links survive restarts.
-const { app, BrowserWindow, dialog, ipcMain, shell } = require('electron')
+const { app, BrowserWindow, Menu, clipboard, dialog, ipcMain, shell } = require('electron')
 const { execFileSync, spawn } = require('node:child_process')
 const fs = require('node:fs')
 const net = require('node:net')
@@ -44,6 +44,38 @@ async function ensureDaemon() {
   for (let i = 0; i < 100 && !(await portOpen()); i++) await new Promise((r) => setTimeout(r, 100))
 }
 
+// Electron shows no context menu on its own; this one offers what a browser would for links, images, selections and fields.
+function contextMenu(contents, params) {
+  const groups = []
+  if (params.misspelledWord) {
+    const fixes = params.dictionarySuggestions.slice(0, 5).map((word) => ({ label: word, click: () => contents.replaceMisspelling(word) }))
+    groups.push(fixes.length ? fixes : [{ label: 'No suggestions', enabled: false }])
+  }
+  if (params.linkURL)
+    groups.push([
+      { label: 'Open Link in Browser', click: () => shell.openExternal(params.linkURL) },
+      { label: 'Copy Link', click: () => clipboard.writeText(params.linkURL) },
+    ])
+  if (params.mediaType === 'image')
+    groups.push([
+      { label: 'Copy Image', click: () => contents.copyImageAt(params.x, params.y) },
+      { label: 'Copy Image Address', click: () => clipboard.writeText(params.srcURL) },
+    ])
+  const flags = params.editFlags
+  if (params.isEditable)
+    groups.push([
+      { role: 'undo', enabled: flags.canUndo },
+      { role: 'redo', enabled: flags.canRedo },
+      { type: 'separator' },
+      { role: 'cut', enabled: flags.canCut },
+      { role: 'copy', enabled: flags.canCopy },
+      { role: 'paste', enabled: flags.canPaste },
+      { role: 'selectAll', enabled: flags.canSelectAll },
+    ])
+  else if (params.selectionText.trim()) groups.push([{ role: 'copy' }])
+  return Menu.buildFromTemplate(groups.flatMap((group, i) => (i ? [{ type: 'separator' }, ...group] : group)))
+}
+
 async function createWindow() {
   await ensureDaemon()
   const stateFile = path.join(HOME, 'state.json')
@@ -56,6 +88,10 @@ async function createWindow() {
   win.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url)
     return { action: 'deny' }
+  })
+  win.webContents.on('context-menu', (_e, params) => {
+    const menu = contextMenu(win.webContents, params)
+    if (menu.items.length) menu.popup({ window: win })
   })
   win.loadURL(`http://localhost:${PORT}/?token=${token}`)
 }

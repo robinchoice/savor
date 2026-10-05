@@ -719,3 +719,34 @@ details.box[open] > summary .chev { transform: rotate(180deg); }
   .msg { animation: none; }
   .ring.busy { animation: none; border-style: dashed; }
 }
+
+/* All projects */
+.tab-sep { width: 1px; height: 18px; background: var(--line-strong); margin: 0 4px; flex: none; align-self: center; }
+.all-tab { padding: 0 10px; }
+.overview { max-width: 980px; margin: 0 auto; padding: 20px 24px 40px; display: flex; flex-direction: column; gap: 10px; }
+.overview .filters { padding: 0; flex-wrap: wrap; align-items: center; }
+.overview .filters label.check { margin-left: auto; }
+.ov-group { display: flex; align-items: center; gap: 8px; padding: 14px 4px 4px; }
+.ov-row { display: flex; align-items: center; gap: 12px; padding: 9px 12px; border-radius: 10px; transition: background 0.18s ease; }
+.ov-row:hover { background: var(--card-hover); }
+.ov-title { flex: 1; min-width: 0; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ov-meta { display: inline-flex; align-items: center; gap: 4px; color: var(--faint); font-size: 12px; white-space: nowrap; }
+.ov-tag { font-size: 11px; color: var(--muted); background: var(--card); border-radius: 5px; padding: 0 6px; }
+.ov-flag { font-size: 11px; font-weight: 600; color: var(--attn-ink); background: var(--attn-bg); border-radius: 5px; padding: 0 6px; }
+.ov-flag.soft { background: none; color: var(--attn); border: 1px solid color-mix(in srgb, var(--attn) 40%, transparent); }
+.dup-box { border: 1px solid color-mix(in srgb, var(--attn) 30%, transparent); background: color-mix(in srgb, var(--attn) 7%, transparent); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+.dup-head { display: flex; align-items: center; gap: 8px; color: var(--attn); font-weight: 500; }
+.dup { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; background: var(--card); border-radius: 10px; padding: 9px 12px; }
+.dup.soft { background: none; border: 1px dashed var(--line-strong); }
+.dup-item { display: inline-flex; align-items: center; gap: 6px; }
+.dup-actions { margin-left: auto; display: flex; gap: 6px; }
+.compare-dialog { width: min(100%, 1100px); }
+.compare { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; padding: 14px 16px; overflow-y: auto; min-height: 0; }
+.compare-side { display: flex; flex-direction: column; gap: 8px; background: var(--card); border-radius: 10px; padding: 12px; min-width: 0; }
+.compare-prompt { font-size: 12px; color: var(--muted); max-height: 50vh; overflow-y: auto; }
+.compare-prompt mark { background: color-mix(in srgb, var(--green) 16%, transparent); color: var(--text); border-radius: 2px; }
+@media (max-width: 720px) {
+  .overview { padding: 14px 12px 30px; }
+  .overview .wide-only { display: none; }
+  .dup-actions { margin-left: 0; }
+}

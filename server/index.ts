@@ -450,12 +450,10 @@ const saveWorkflowRoute = (params: Params, b: any, ctx: Ctx, id?: string) => {
   emit({ type: 'workflows', projectId: params.pid })
   return wf
 }
-route('GET', '/projects/:pid/workflows', (params) => {
-  const p = project(params)
-  const threads = store.listThreads(p)
-  // The list shows the latest run that started; a time skipped since then is in the workflow's runs.
-  return store.listWorkflows(p).map((wf) => ({ ...wf, nextRunAt: nextRun(wf), lastRun: runs(p, { ...wf, skipped: [] }, threads, 1)[0] ?? null }))
-})
+// The list shows the latest run that started; a time skipped since then is in the workflow's runs.
+const listWorkflows = (p: store.Project, threads = store.listThreads(p)) =>
+  store.listWorkflows(p).map((wf) => ({ ...wf, nextRunAt: nextRun(wf), lastRun: runs(p, { ...wf, skipped: [] }, threads, 1)[0] ?? null }))
+route('GET', '/projects/:pid/workflows', (params) => listWorkflows(project(params)))
 route('GET', '/projects/:pid/workflows/:id/runs', (params) => runs(project(params), store.getWorkflow(project(params), params.id)))
 route('POST', '/projects/:pid/workflows', (params, b, ctx) => saveWorkflowRoute(params, b, ctx))
 route('PUT', '/projects/:pid/workflows/:id', (params, b, ctx) => saveWorkflowRoute(params, b, ctx, params.id))
@@ -466,6 +464,19 @@ route('DELETE', '/projects/:pid/workflows/:id', (params) => {
   return {}
 })
 route('POST', '/projects/:pid/workflows/:id/run', (params, _, ctx) => runWorkflow(params.pid, params.id, ctx.auth.origin))
+
+// ---- all projects ----
+
+// Every project's conversations and workflows in one list, each with the project it belongs to.
+route('GET', '/overview', () => {
+  const threads = [], workflows = []
+  for (const p of store.listProjects()) {
+    const list = store.listThreads(p)
+    threads.push(...list.map((t) => ({ ...t, projectId: p.id, busy: agents.isBusy(t.id), waiting: agents.waiting(p, t) })))
+    workflows.push(...listWorkflows(p, list).map((wf) => ({ ...wf, projectId: p.id })))
+  }
+  return { threads, workflows }
+})
 
 // ---- processes ----
 
