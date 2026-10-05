@@ -107,7 +107,7 @@ export interface Run {
   at: string
   trigger: 'scheduled' | 'manual' | 'caught'
   due?: string
-  status: 'working' | 'needs' | 'failed' | 'finished' | 'skipped'
+  status: 'working' | 'needs' | 'stopped' | 'failed' | 'finished' | 'skipped'
   // The run's conversation; for a skipped time, the conversation that was in its way.
   threadId: string
   summary: string
@@ -134,7 +134,7 @@ export function runs(p: Project, wf: Workflow, threads = store.listThreads(p), l
         at,
         trigger: t.workflow!.trigger,
         due: t.workflow!.due,
-        status: working(p, t) ? 'working' : t.needsYou ? 'needs' : t.error || last?.kind === 'error' ? 'failed' : 'finished',
+        status: working(p, t) ? 'working' : t.needsYou ? 'needs' : t.error === 'Turn stopped.' ? 'stopped' : t.error || last?.kind === 'error' ? 'failed' : 'finished',
         threadId: t.id,
         summary: plain(t.error ?? last?.text ?? ''),
         workedMs: messages.reduce((ms, m) => ms + (m.workTiming ? Date.parse(m.workTiming.finishedAt) - Date.parse(m.workTiming.startedAt) : 0), 0),

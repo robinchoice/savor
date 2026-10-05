@@ -34,10 +34,13 @@ const questions = new Map<string, (answers: Answer[]) => void>() // decision gro
 
 export const isBusy = (tid: string) => busy.has(tid)
 export const startedAt = (tid: string) => busy.get(tid)
-// An agent that acknowledged and ended its turn without a conclusion waits for the background processes its conversation owns.
+export const runsBackground = (tid: string) => !!current(tid)?.background?.()
+// Background work of a conversation: the processes its agent registered, and what the agent runs inside its own process.
+const hasBackground = (p: Project, tid: string) => store.listProcs(p).some((pr) => pr.threadId === tid) || runsBackground(tid)
+// An agent that acknowledged and ended its turn without a conclusion waits for its background work.
 export function awaitsBackground(p: Project, tid: string) {
   const r = requests.get(tid)
-  return !busy.has(tid) && !!r?.ack && !r.conclusion && store.listProcs(p).some((pr) => pr.threadId === tid)
+  return !busy.has(tid) && !!r?.ack && !r.conclusion && hasBackground(p, tid)
 }
 export const markConcluded = (tid: string, messageId: string) => turnConclusion.set(tid, messageId)
 export const originOf = (tid: string): Origin => turnOrigin.get(tid) ?? 'local'
@@ -107,14 +110,17 @@ export function stop(p: Project, tid: string) {
   stopped.add(tid)
   const s = sessions.get(tid)
   if (busy.has(tid)) return s?.session.kill()
-  // Between turns the agent may still wait for background work. Its process goes right away, so the
-  // next input starts a fresh one, and the request it still owed a conclusion for ends here.
+  // Between turns the agent may still wait for background work. Its process goes right away, with
+  // what it runs in the background, so the next input starts a fresh one. A request it still owed a
+  // conclusion for ends here.
+  const waiting = !store.getThread(p, tid).error && awaitsBackground(p, tid)
   sessions.delete(tid)
   clearTimeout(s?.idleTimer)
   s?.session.kill()
-  if (store.getThread(p, tid).error || !awaitsBackground(p, tid)) return
-  store.updateThread(p, tid, { error: 'Turn stopped.' })
-  post(p, tid, { kind: 'error', text: 'Turn stopped.' })
+  if (waiting) {
+    store.updateThread(p, tid, { error: 'Turn stopped.' })
+    post(p, tid, { kind: 'error', text: 'Turn stopped.' })
+  }
   emit({ type: 'status', projectId: p.id, threadId: tid })
 }
 
@@ -130,13 +136,12 @@ export function forget(tid: string) {
 
 const current = (tid: string) => sessions.get(tid)?.session
 
-// Close idle sessions unless the thread still owns background processes.
+// Close idle sessions unless the conversation still has background work.
 export function maybeClose(p: Project, tid: string) {
   const s = sessions.get(tid)
   if (!s || busy.has(tid)) return
   clearTimeout(s.idleTimer)
-  const owns = store.listProcs(p).some((pr) => pr.threadId === tid)
-  if (!owns) s.idleTimer = setTimeout(() => s.session.end(), IDLE_CLOSE_MS)
+  if (!hasBackground(p, tid)) s.idleTimer = setTimeout(() => s.session.end(), IDLE_CLOSE_MS)
 }
 
 function beginTurn(p: Project, tid: string) {
@@ -247,6 +252,11 @@ function hostFor(p: Project, thread: Thread, holder: { session?: Session }): Hos
     working: () => mine() && beginTurn(p, tid),
     approve: (req) => askApproval(p, tid, req),
     ask: (qs) => askQuestions(p, tid, qs),
+    backgroundChanged: () => {
+      if (!mine()) return
+      emit({ type: 'status', projectId: p.id, threadId: tid })
+      maybeClose(p, tid)
+    },
     ended: (result) => mine() && endTurn(p, tid, result, thread.agent),
     closed: (error) => {
       if (!mine()) return

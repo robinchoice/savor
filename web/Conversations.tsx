@@ -180,8 +180,8 @@ function ThreadCard({ project, thread: t, active }: { project: Project; thread: 
   const { conversations, show } = usePrefs()
   const href = `#/p/${project.id}/t/${t.id}`
   // The ring from the logo says what the conversation is waiting for.
-  const state = t.needsYou ? 'needs' : t.busy || t.waiting ? 'busy' : t.error ? 'error' : t.unread ? 'unread' : t.completed ? 'done' : ''
-  const ring = <span class={`ring ${state}`} title={{ busy: 'Working', needs: 'Your turn', error: 'Error', unread: 'Unread', done: 'Finished', '': 'Ready' }[state]} />
+  const state = t.needsYou ? 'needs' : t.busy || t.waiting ? 'busy' : t.error === STOPPED ? 'stopped' : t.error ? 'error' : t.unread ? 'unread' : t.completed ? 'done' : ''
+  const ring = <span class={`ring ${state}`} title={{ busy: 'Working', needs: 'Your turn', stopped: 'Stopped', error: 'Error', unread: 'Unread', done: 'Finished', '': 'Ready' }[state]} />
   // Compact: one line with the title, what the conversation is waiting for as a dot.
   if (conversations === 'compact')
     return (
@@ -220,7 +220,7 @@ function ThreadCard({ project, thread: t, active }: { project: Project; thread: 
             <Check size={12} /> Finished
           </span>
         )}
-        {t.error && !t.busy && (
+        {t.error && t.error !== STOPPED && !t.busy && (
           <span class="error-badge">
             <CircleAlert size={12} /> Error
           </span>
@@ -258,8 +258,10 @@ function NewConversation({ project }: { project: Project }) {
 
 // Between turns: the agent ended its turn without a conclusion and continues when its background work is done.
 const WAITING = 'Waiting for background work'
+// What the daemon records as the error of a turn the user stopped. That is not a failure.
+const STOPPED = 'Turn stopped.'
 
-interface ThreadData { thread: Thread; busy: boolean; waiting: boolean; startedAt?: string; messages: Message[]; decisions: Decision[]; processes: Proc[] }
+interface ThreadData { thread: Thread; busy: boolean; waiting: boolean; background: boolean; startedAt?: string; messages: Message[]; decisions: Decision[]; processes: Proc[] }
 
 // Phones and narrow windows, where chat and page do not fit side by side.
 function useNarrow() {
@@ -353,6 +355,8 @@ function ThreadView({ project, threadId }: { project: Project; threadId: string 
     </section>
   )
   const { thread, messages, decisions, busy, waiting } = data
+  // An agent can be stopped while it works, waits, or still runs background work after its conclusion.
+  const stoppable = busy || waiting || data.background
   let messageAgent = messages.find((m) => m.modelInfo)?.modelInfo ?? thread.agent
   const attributedMessages = messages.map((m) => {
     messageAgent = m.modelInfo ?? messageAgent
@@ -375,6 +379,8 @@ function ThreadView({ project, threadId }: { project: Project; threadId: string 
     ? { icon: <span class="ring busy" />, text: busy ? 'Working' : WAITING, cls: 'working' }
     : thread.needsYou
       ? { icon: <span class="ring needs" />, text: 'Your turn', cls: 'needs' }
+      : thread.error === STOPPED
+        ? { icon: <span class="ring" />, text: 'Stopped', cls: '' }
       : thread.error
         ? { icon: <CircleAlert size={13} />, text: 'Error', cls: 'error' }
         : thread.completed
@@ -445,7 +451,7 @@ function ThreadView({ project, threadId }: { project: Project; threadId: string 
       setAgent={setAgent}
       onSend={send}
       busy={busy}
-      onStop={busy || waiting ? stop : undefined}
+      onStop={stoppable ? stop : undefined}
       placeholder={floating ? 'Tell the agent what to change…' : busy ? 'Add a follow-up (queued until the agent is done)…' : 'Add a follow-up...'}
       draft={draft}
       picked={picked}
@@ -473,7 +479,8 @@ function ThreadView({ project, threadId }: { project: Project; threadId: string 
                 <span class={`status ${status.cls}`}>
                   {status.icon} {status.text}{busy && elapsed ? ` · ${elapsed}` : ''}
                 </span>
-                {(busy || waiting) && <button class="status stop-work" onClick={stop}>Stop</button>}
+                {data.background && !busy && !waiting && <span class="status">Background work running</span>}
+                {stoppable && <button class="status stop-work" onClick={stop}>Stop</button>}
                 {queued > 0 && <span class="status">{queued} queued</span>}
                 {thread.worktree && (
                   <span class="status worktree" title={thread.worktree.path}>
@@ -505,7 +512,7 @@ function ThreadView({ project, threadId }: { project: Project; threadId: string 
                       {compactHead && <button onClick={showActivity}>Show activity</button>}
                       <button onClick={rename}>Rename label</button>
                       <button onClick={() => navigator.clipboard.writeText(`${project.path}/.savor/threads/${thread.id}/messages.jsonl`)}>Copy file path</button>
-                      {(busy || waiting) && <button onClick={stop}>Stop agent</button>}
+                      {stoppable && <button onClick={stop}>Stop agent</button>}
                       <button class="danger" onClick={remove}>
                         Delete conversation
                       </button>
@@ -741,7 +748,7 @@ function MessageItem({ m, thread, workflow, decisions, active, base, highlight, 
         {copyState && <span class="muted" role="status">{copyState}</span>}
       </div>
       {(m.text || m.images?.length || m.files?.length) && (
-        <div class={`msg-card ${m.kind}`}>
+        <div class={`msg-card ${m.kind}${m.kind === 'error' && m.text === STOPPED ? ' stopped' : ''}`}>
           {m.images?.length ? (
             <div class="msg-images">
               {m.images.map((img) => (

@@ -142,7 +142,7 @@ export interface Project {
 export interface Doc { id: string; title: string; content: string; updatedAt: string }
 export interface Workflow { id: string; name: string; prompt: string; collection: string; cron: string | null; timezone: string; scheduleLabel: string | null; enabled: boolean; catchUp: boolean; next: string[]; lastRunAt: string | null; nextRunAt?: string | null; lastRun?: Run | null }
 // A run of a workflow. A skipped one has no conversation of its own: threadId is the conversation that was in its way.
-export interface Run { at: string; trigger: 'scheduled' | 'manual' | 'caught'; due?: string; status: 'working' | 'needs' | 'failed' | 'finished' | 'skipped'; threadId: string; summary: string; workedMs: number }
+export interface Run { at: string; trigger: 'scheduled' | 'manual' | 'caught'; due?: string; status: 'working' | 'needs' | 'stopped' | 'failed' | 'finished' | 'skipped'; threadId: string; summary: string; workedMs: number }
 export interface Proc { pid: number; name: string; cwd: string; command: string; url: string | null; log: string | null; threadId: string; startedAt: string }
 export interface Me { origin: 'local' | 'remote'; device: string | null; awake: boolean; host: string; version: string; system: string; projectsDir: string }
 

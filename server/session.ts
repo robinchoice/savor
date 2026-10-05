@@ -47,6 +47,8 @@ export interface Host {
   // Where the agent works: the project folder, or the conversation's worktree.
   cwd: string
   activity: Activity
+  // Background work the agent runs inside its own process started or ended.
+  backgroundChanged(): void
   // The agent started work on its own (e.g. a background task finished): count the thread as working.
   working(): void
   approve(req: ApprovalRequest): Promise<string>
@@ -63,6 +65,8 @@ export interface Session {
   // Finish the current turn and exit; kill ends the process right away.
   end(): void
   kill(): void
+  // Whether the agent runs background work inside its own process (shell commands, subagents). It ends with the process.
+  background?(): boolean
 }
 
 export const configKey = (a: AgentConfig) => JSON.stringify([a.provider, a.model, a.reasoning, a.fast, a.permissionMode])

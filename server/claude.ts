@@ -30,6 +30,7 @@ const describe = (tool: string, input: any) =>
 export class ClaudeSession implements Session {
   readonly config: string
   private child: ChildProcess
+  private tasks = 0
   private stderr = ''
   private stopping = false
 
@@ -103,6 +104,10 @@ export class ClaudeSession implements Session {
     this.child.kill('SIGTERM')
   }
 
+  background() {
+    return this.tasks > 0
+  }
+
   private write(msg: unknown) {
     if (this.child.stdin?.writable) this.child.stdin.write(JSON.stringify(msg) + '\n')
   }
@@ -117,6 +122,11 @@ export class ClaudeSession implements Session {
       return
     }
     const { p, tid, activity } = this.host
+    // Claude names the background tasks that still run (shell commands, subagents) whenever that list changes.
+    if (ev.type === 'system' && ev.subtype === 'background_tasks_changed') {
+      this.tasks = ev.tasks?.length ?? 0
+      return this.host.backgroundChanged()
+    }
     if (ev.type === 'assistant' || ev.type === 'user' || (ev.type === 'system' && ['init', 'task_notification'].includes(ev.subtype))) this.host.working()
     if (ev.type === 'system' && ev.subtype === 'init' && ev.session_id) {
       rememberSession(p, tid, 'claude', ev.session_id)

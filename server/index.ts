@@ -258,6 +258,7 @@ route('GET', '/projects/:pid/threads/:tid', (params) => {
     thread,
     busy: agents.isBusy(thread.id),
     waiting: waiting(p, thread),
+    background: agents.runsBackground(thread.id),
     startedAt: agents.startedAt(thread.id),
     messages: store.readMessages(p, thread.id),
     decisions: store.listDecisions(p, thread.id),

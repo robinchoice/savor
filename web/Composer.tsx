@@ -12,7 +12,7 @@ interface Props {
   setAgent: (a: AgentConfig) => Promise<unknown> | void
   onSend: (text: string, attachments: Attachment[]) => Promise<void> | void
   busy?: boolean
-  // Set while there is an agent to stop: in a turn, or waiting for background work between turns.
+  // Set while there is an agent to stop: in a turn, or with background work between turns.
   onStop?: () => void
   placeholder: string
   draft?: string
