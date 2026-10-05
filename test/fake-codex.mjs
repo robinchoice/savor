@@ -4,6 +4,7 @@
 // bearer token comes from the environment variable they name).
 // - "approve: <anything>" → item/commandExecution/requestApproval, then "Codex permission: <decision>"
 // - "ask-native: <question>" → item/tool/requestUserInput with the options Red/Blue, then "Codex answered: <label>"
+// - a skill item in the input → "Codex skill: <name> from <path>"
 // - anything else → "Codex echo: <input>"
 import fs from 'node:fs'
 import readline from 'node:readline'
@@ -53,8 +54,11 @@ async function runTurn(params) {
   notify('turn/started', { threadId, turn })
   notify('item/started', { threadId, turnId, item: { type: 'commandExecution', id: 'cmd1', command: 'echo hi', cwd: '.', status: 'inProgress' } })
   notify('item/completed', { threadId, turnId, item: { type: 'commandExecution', id: 'cmd1', command: 'echo hi', cwd: '.', status: 'completed' } })
+  const skill = params.input.find((i) => i.type === 'skill')
   let reply
-  if (input.startsWith('approve:')) {
+  if (skill) {
+    reply = `Codex skill: ${skill.name} from ${skill.path}`
+  } else if (input.startsWith('approve:')) {
     const { decision } = await serverRequest('item/commandExecution/requestApproval', { threadId, turnId, itemId: 'cmd2', command: 'rm -rf build', cwd: '.', startedAtMs: Date.now() })
     reply = `Codex permission: ${decision}`
   } else if (input.startsWith('ask-native:')) {
@@ -102,6 +106,10 @@ rl.on('line', (line) => {
       return reply({ account: { type: 'chatgpt', email: 'fake@codex.test', planType: 'plus' }, requiresOpenaiAuth: true })
     case 'model/list':
       return reply({ data: [{ id: 'fake-model', model: 'fake-model', displayName: 'Fake model', description: 'For tests', hidden: false, supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'high' }], isDefault: true }], nextCursor: null })
+    case 'skills/list': {
+      const skill = (name, enabled) => ({ name, description: `The ${name} skill`, path: `/fake/skills/${name}/SKILL.md`, scope: 'user', enabled })
+      return reply({ data: [{ cwd: msg.params.cwds[0], errors: [], skills: [skill('greet', true), skill('retired', false)] }] })
+    }
     case 'thread/start':
       return reply({ thread: { id: threadId }, model: msg.params.model ?? 'fake-model' })
     case 'thread/resume':

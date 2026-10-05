@@ -2,11 +2,12 @@
 import { execFile } from 'node:child_process'
 import type { AgentConfig, Provider } from './store.js'
 import { BIN, command } from './config.js'
-import { probeCodex } from './codex.js'
+import { codexSkills, probeCodex } from './codex.js'
 import { probeClaude } from './claude.js'
 
 export interface ModeInfo { id: string; label: string; detail: string; unsafe?: boolean }
 export interface ModelInfo { id: string; label: string; detail?: string; efforts?: string[] }
+export interface SkillInfo { name: string; description: string }
 export interface ProviderInfo {
   id: Provider
   name: string
@@ -141,7 +142,7 @@ const probes: Record<Provider, () => Promise<Probe>> = {
   async claude() {
     const v = await run(BIN.claude, ['--version'])
     if (v.missing) return { installed: false, version: null, signedIn: null, account: null }
-    const [status, models] = await Promise.all([run(BIN.claude, ['auth', 'status']), probeClaude()])
+    const [status, { models }] = await Promise.all([run(BIN.claude, ['auth', 'status']), probeClaude()])
     let auth: any = null
     try {
       auth = JSON.parse(status.out.slice(status.out.indexOf('{')))
@@ -187,5 +188,24 @@ export function listAgents(refresh = false): Promise<ProviderInfo[]> {
     }),
   )
   cache = { at: Date.now(), list }
+  return list
+}
+
+// The skills an agent offers in a folder, as the agent itself reports them: its own, the user's, the
+// project's and those of its plugins.
+const skillProbes: Record<string, (cwd: string) => Promise<SkillInfo[]>> = {
+  claude: (cwd) => probeClaude(cwd).then((r) => r.skills),
+  codex: (cwd) => codexSkills(cwd).catch(() => []),
+}
+const skillCache = new Map<string, { at: number; list: Promise<SkillInfo[]> }>()
+
+export async function listSkills(provider: string, cwd: string): Promise<SkillInfo[]> {
+  const probe = skillProbes[provider]
+  if (!probe || !(await listAgents()).find((a) => a.id === provider)?.installed) return []
+  const key = `${provider} ${cwd}`
+  const hit = skillCache.get(key)
+  if (hit && Date.now() - hit.at < CACHE_MS) return hit.list
+  const list = probe(cwd)
+  skillCache.set(key, { at: Date.now(), list })
   return list
 }

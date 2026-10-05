@@ -193,7 +193,7 @@ function turnInput(p: Project, thread: Thread, msg: Message): TurnInput {
   }
   const files = (msg.files ?? []).map((f) => path.join(dir, f))
   const attached = files.length ? `\n\nAttached files:\n${files.join('\n')}` : ''
-  return { prompt: `${handover(p, thread)}Savor context:\n${JSON.stringify(context)}\n\nNew input:\n${msg.text}${attached}`, images: (msg.images ?? []).map((f) => path.join(dir, f)) }
+  return { context: `${handover(p, thread)}Savor context:\n${JSON.stringify(context)}\n\nNew input:\n`, input: `${msg.text}${attached}`, images: (msg.images ?? []).map((f) => path.join(dir, f)) }
 }
 
 // ---- sessions ----
@@ -342,12 +342,12 @@ class CommandSession implements Session {
     this.provider = thread.agent.provider
   }
 
-  start({ prompt }: TurnInput) {
+  start({ context, input }: TurnInput) {
     const { p, tid, activity } = this.host
     const [bin, ...args] = store.state().providers[this.provider]?.command ?? DEFAULT_COMMANDS[this.provider] ?? [BIN.antigravity, '-p', '{prompt}']
     const thread = store.getThread(p, tid)
     const first = !thread.agentSessions.length
-    const full = first ? `${systemPrompt(p, thread)}\n\n${prompt}` : prompt
+    const full = first ? `${systemPrompt(p, thread)}\n\n${context}${input}` : context + input
     const out: string[] = []
     let stderr = ''
     activity.start('run', 'command', `${bin} (${this.provider})`)

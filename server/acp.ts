@@ -69,12 +69,12 @@ export class AcpSession implements Session {
     if (a.model) await this.rpc.request('session/set_model', { sessionId: this.sessionId, modelId: a.model }).catch(() => {})
   }
 
-  start({ prompt, images }: TurnInput) {
+  start({ context, input, images }: TurnInput) {
     this.text = ''
     // ACP has no system prompt: the protocol goes in front of the first prompt of a session.
     const first = !sessionIdOf(this.thread, this.thread.agent.provider)
     const content = [
-      { type: 'text', text: first ? `${systemPrompt(this.host.p, this.thread)}\n\n${prompt}` : prompt },
+      { type: 'text', text: first ? `${systemPrompt(this.host.p, this.thread)}\n\n${context}${input}` : context + input },
       ...images.map((file) => ({ type: 'image', data: fs.readFileSync(file).toString('base64'), mimeType: MIME[path.extname(file).slice(1).toLowerCase()] ?? 'image/png' })),
     ]
     this.ready

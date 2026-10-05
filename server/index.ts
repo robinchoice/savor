@@ -16,7 +16,7 @@ import * as awake from './awake.js'
 import { closeDevice, pairingLink, relayStatus, startRelay } from './relay-client.js'
 import { newNonce, securityHeaders, withNonce } from '../shared/headers.js'
 import { handleMcp } from './mcp.js'
-import { isUnsafe, listAgents, mergeAgent } from './providers.js'
+import { isUnsafe, listAgents, listSkills, mergeAgent } from './providers.js'
 import { nextRun, runs, runWorkflow, syncSchedules, validateCron } from './scheduler.js'
 import * as git from './git.js'
 import { importSessions, listSessions } from './import.js'
@@ -394,6 +394,7 @@ route('DELETE', '/projects/:pid/worktrees', (params, _, ctx) => {
 
 route('GET', '/projects/:pid/files', (params, _, ctx) => files.list(project(params), ctx.query.get('path') ?? ''))
 route('GET', '/projects/:pid/files/search', (params, _, ctx) => files.search(project(params), ctx.query.get('q') ?? ''))
+route('GET', '/projects/:pid/skills', (params, _, ctx) => listSkills(ctx.query.get('provider') ?? '', project(params).path))
 route('GET', '/projects/:pid/file', (params, _, ctx) => files.read(project(params), ctx.query.get('path') ?? ''))
 route('PUT', '/projects/:pid/file', (params, b) => {
   const p = project(params)

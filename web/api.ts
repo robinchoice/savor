@@ -101,6 +101,7 @@ export interface ProviderInfo {
   fast: boolean
   signIn: string
 }
+export interface Skill { name: string; description: string }
 export interface Preset { id: string; name: string; agent: AgentConfig }
 export interface Thread {
   id: string

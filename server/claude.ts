@@ -10,7 +10,7 @@ import * as store from './store.js'
 import type { ApprovalOption, Thread } from './store.js'
 import { BIN, command, mcpUrl } from './config.js'
 import { configKey, rememberSession, sessionIdOf, summarize, systemPrompt, type Host, type Session, type TurnInput } from './session.js'
-import type { ModelInfo } from './providers.js'
+import type { ModelInfo, SkillInfo } from './providers.js'
 
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
 
@@ -79,14 +79,14 @@ export class ClaudeSession implements Session {
     this.child.on('exit', (code, signal) => host.closed(this.stopping || signal === 'SIGTERM' ? 'Turn stopped.' : exitError(code, this.stderr.trim())))
   }
 
-  start({ prompt, images }: TurnInput) {
-    const content = [
-      { type: 'text', text: prompt },
-      ...images.map((file) => ({
-        type: 'image',
-        source: { type: 'base64', media_type: `image/${path.extname(file).slice(1).toLowerCase().replace('jpg', 'jpeg')}`, data: fs.readFileSync(file).toString('base64') },
-      })),
-    ]
+  start({ context, input, images }: TurnInput) {
+    const pictures = images.map((file) => ({
+      type: 'image',
+      source: { type: 'base64', media_type: `image/${path.extname(file).slice(1).toLowerCase().replace('jpg', 'jpeg')}`, data: fs.readFileSync(file).toString('base64') },
+    }))
+    // Claude Code runs a slash command only when the last text block starts with it. What stands in
+    // front of that block still reaches the model.
+    const content = input.startsWith('/') ? [{ type: 'text', text: context }, ...pictures, { type: 'text', text: input }] : [{ type: 'text', text: context + input }, ...pictures]
     this.write({ type: 'user', message: { role: 'user', content } })
   }
 
@@ -164,17 +164,20 @@ export class ClaudeSession implements Session {
   }
 }
 
-// A short run to learn which models Claude Code offers: the answer to its initialize request. No prompt is sent.
-export function probeClaude() {
-  return new Promise<ModelInfo[]>((resolve) => {
-    const child = spawn(...command(BIN.claude, ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--settings', JSON.stringify({ disableAllHooks: true })]), { stdio: ['pipe', 'pipe', 'ignore'] })
-    const done = (models: ModelInfo[]) => {
+// A short run to learn which models and skills Claude Code offers in a folder: the answers to its
+// initialize and context usage requests. No prompt is sent.
+export function probeClaude(cwd?: string) {
+  return new Promise<{ models: ModelInfo[]; skills: SkillInfo[] }>((resolve) => {
+    const child = spawn(...command(BIN.claude, ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--settings', JSON.stringify({ disableAllHooks: true })]), { cwd, stdio: ['pipe', 'pipe', 'ignore'] })
+    const done = (models: ModelInfo[] = [], skills: SkillInfo[] = []) => {
       clearTimeout(timer)
       child.kill('SIGTERM')
-      resolve(models)
+      resolve({ models, skills })
     }
-    const timer = setTimeout(() => done([]), 15_000)
-    child.on('error', () => done([])).on('exit', () => done([]))
+    const timer = setTimeout(() => done(), 15_000)
+    child.on('error', () => done()).on('exit', () => done())
+    const ask = (subtype: string) => child.stdin!.write(JSON.stringify({ type: 'control_request', request_id: crypto.randomUUID(), request: { subtype } }) + '\n')
+    let offer: any
     readline.createInterface({ input: child.stdout! }).on('line', (line) => {
       let ev: any
       try {
@@ -183,7 +186,15 @@ export function probeClaude() {
         return
       }
       if (ev.type !== 'control_response') return
-      const models = (ev.response?.response?.models ?? []) as { value: string; displayName?: string; description?: string; supportedEffortLevels?: string[] }[]
+      if (!offer) {
+        offer = ev.response?.response ?? {}
+        return ask('get_context_usage')
+      }
+      const models = (offer.models ?? []) as { value: string; displayName?: string; description?: string; supportedEffortLevels?: string[] }[]
+      const commands = (offer.commands ?? []) as { name: string; description?: string; builtin?: boolean }[]
+      // Most built-in commands steer the terminal UI (/color, /focus, /config). Of those, only the ones
+      // Claude Code keeps among its skills (/code-review, /init) are listed.
+      const builtinSkills = new Set(((ev.response?.response?.skills?.skillFrontmatter ?? []) as { name: string }[]).map((s) => s.name))
       done(
         models.map((m) => ({
           id: m.value === 'default' ? '' : m.value,
@@ -191,8 +202,9 @@ export function probeClaude() {
           detail: m.description,
           efforts: m.supportedEffortLevels?.length ? [...m.supportedEffortLevels, 'ultracode'] : [],
         })),
+        commands.filter((c) => !c.builtin || builtinSkills.has(c.name)).map((c) => ({ name: c.name, description: c.description ?? '' })),
       )
     })
-    child.stdin!.write(JSON.stringify({ type: 'control_request', request_id: crypto.randomUUID(), request: { subtype: 'initialize' } }) + '\n')
+    ask('initialize')
   })
 }
