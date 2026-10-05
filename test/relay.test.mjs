@@ -243,6 +243,20 @@ test('revoking the device cuts its open tunnel at once', async () => {
 })
 
 // Last: fills this address's rate-limit window.
+test('a relay that accepts but never answers does not leave the daemon connecting', async () => {
+  const held = []
+  const silent = net.createServer((c) => held.push(c)).listen(0)
+  try {
+    await local('PUT', '/relay', { url: `http://127.0.0.1:${silent.address().port}`, enabled: true })
+    await until(async () => (await local('GET', '/relay')).state === 'error', HANDSHAKE_MS * 3)
+  } finally {
+    silent.close()
+    for (const c of held) c.destroy()
+    await local('PUT', '/relay', { url: relayBase, enabled: true })
+    await until(async () => (await local('GET', '/relay')).state === 'online')
+  }
+})
+
 test('spoofed X-Forwarded-For does not bypass the rate limit', async () => {
   const outcomes = []
   for (let i = 0; i < 70; i++) {

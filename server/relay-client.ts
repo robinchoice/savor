@@ -66,21 +66,30 @@ function connect(url: string) {
   setStatus({ state: 'connecting' })
   const ws = new WebSocket(`${url.replace(/^http/, 'ws').replace(/\/$/, '')}/daemon`)
   socket = ws
+  const closed = (reason: string) => {
+    clearTimeout(login)
+    if (socket !== ws) return
+    socket = null
+    for (const c of conns.values()) c.dispose()
+    setStatus({ state: 'error', error: reason })
+    retryTimer = setTimeout(() => connect(url), retryDelay)
+    retryDelay = Math.min(retryDelay * 2, 60_000)
+  }
+  // A relay that accepts the connection but never logs the daemon in would leave it connecting forever,
+  // e.g. while a proxy switches to a new relay container. Closing a socket that is still connecting
+  // fires no close event in Node, so this retries on its own.
+  const login = setTimeout(() => (ws.close(), closed('The relay did not answer.')), HANDSHAKE_MS)
   ws.onmessage = (ev) => {
     if (socket !== ws) return
     try {
-      onRelayMessage(ws, JSON.parse(String(ev.data)))
+      const m = JSON.parse(String(ev.data))
+      if (m.t === 'ready') clearTimeout(login)
+      onRelayMessage(ws, m)
     } catch (e) {
       console.error('relay message rejected:', (e as Error).message)
     }
   }
-  ws.onclose = (ev) => {
-    if (socket !== ws) return
-    for (const c of conns.values()) c.dispose()
-    setStatus({ state: 'error', error: ev.reason || `Connection closed (${ev.code})` })
-    retryTimer = setTimeout(() => connect(url), retryDelay)
-    retryDelay = Math.min(retryDelay * 2, 60_000)
-  }
+  ws.onclose = (ev) => closed(ev.reason || `Connection closed (${ev.code})`)
 }
 
 function onRelayMessage(ws: WebSocket, m: any) {

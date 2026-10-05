@@ -90,9 +90,10 @@ before(async () => {
 
 after(async () => {
   await browser?.close()
-  // The daemon may still write state while it shuts down.
-  if (server && server.exitCode === null) await new Promise((resolve) => (server.once('exit', resolve), server.kill()))
-  fs.rmSync(TMP, { recursive: true, force: true, maxRetries: 5 })
+  server?.kill()
+  // The daemon's preview browser and agents outlive it for a moment, and the browser keeps writing its profile.
+  await until(() => !execFileSync('ps', ['-eo', 'args']).toString().includes(TMP))
+  fs.rmSync(TMP, { recursive: true, force: true })
 })
 
 test('add a project and get a conclusion with next actions', async () => {
