@@ -1,5 +1,5 @@
-// Git for projects: worktrees per conversation, merging them back, and commit diffs.
-import { execFileSync } from 'node:child_process'
+// Git for projects: worktrees per conversation, merging them back, and diffs of commits and changes.
+import { execFileSync, spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import * as store from './store.js'
@@ -89,27 +89,43 @@ export function deleteBranch(p: Project, branch: string) {
   git(p.path, 'branch', '-D', branch)
 }
 
-// ---- commits ----
+// ---- commits and changes ----
 
 export interface CommitFile { path: string; additions: number | null; deletions: number | null; patch: string }
 export interface Commit { hash: string; subject: string; body: string; author: string; date: string; files: CommitFile[] }
 
 const MAX_PATCH = 200_000
 
+// The files of a patch as `git diff` or `git show -p` print it, each with its hunks.
+function patchFiles(out: string): CommitFile[] {
+  const files: CommitFile[] = []
+  for (const chunk of out.split(/^(?=diff --git )/m)) {
+    const file = chunk.match(/^diff --git a\/.* b\/(.+)$/m)?.[1]
+    if (!file) continue
+    const at = chunk.search(/^@@/m)
+    const body = at >= 0 ? chunk.slice(at) : ''
+    const lines = body.split('\n')
+    const count = (sign: string) => (/^Binary files /m.test(chunk) ? null : lines.filter((l) => l[0] === sign).length)
+    files.push({ path: file, additions: count('+'), deletions: count('-'), patch: body.length > MAX_PATCH ? body.slice(0, MAX_PATCH) + '\n… (truncated)' : body })
+  }
+  return files
+}
+
 export function showCommit(cwd: string, hash: string): Commit {
   if (!/^[0-9a-f]{7,64}$/.test(hash)) throw new GitError('Not a commit hash.')
   const [full, author, date, subject, body] = git(cwd, 'show', '-s', '--format=%H%x00%an%x00%aI%x00%s%x00%b', hash).split('\0')
-  const stats = new Map<string, { additions: number | null; deletions: number | null }>()
-  for (const line of git(cwd, 'show', '--format=', '--numstat', hash).split('\n')) {
-    const [a, d, file] = line.split('\t')
-    if (file) stats.set(file.replace(/^.*=> /, '').replace(/[{}]/g, ''), { additions: a === '-' ? null : Number(a), deletions: d === '-' ? null : Number(d) })
-  }
-  const files: CommitFile[] = []
-  for (const chunk of git(cwd, 'show', '--format=', '--no-color', '-p', hash).split(/^(?=diff --git )/m)) {
-    const file = chunk.match(/^diff --git a\/.* b\/(.+)$/m)?.[1]
-    if (!file) continue
-    const body = chunk.slice(chunk.search(/^@@/m) >= 0 ? chunk.search(/^@@/m) : chunk.length)
-    files.push({ path: file, ...(stats.get(file) ?? { additions: null, deletions: null }), patch: body.length > MAX_PATCH ? body.slice(0, MAX_PATCH) + '\n… (truncated)' : body })
-  }
-  return { hash: full, subject, body: (body ?? '').trim(), author, date, files }
+  return { hash: full, subject, body: (body ?? '').trim(), author, date, files: patchFiles(git(cwd, 'show', '--format=', '--no-color', '-p', hash)) }
 }
+
+// Everything in `cwd` that differs from `base`, committed or not, new files included.
+export function changes(cwd: string, base = 'HEAD'): CommitFile[] {
+  // `git diff --no-index` exits with 1 when the files differ, which a new file always does.
+  const added = git(cwd, 'ls-files', '--others', '--exclude-standard', '-z')
+    .split('\0')
+    .filter(Boolean)
+    .map((file) => spawnSync('git', ['diff', '--no-index', '--no-color', '--', '/dev/null', file], { cwd, maxBuffer: 32 * 1024 * 1024 }).stdout.toString().trim())
+  return patchFiles([git(cwd, 'diff', '--no-color', base), ...added].join('\n'))
+}
+
+// Where a worktree's branch left the project's current branch.
+export const baseOf = (p: Project, cwd: string) => git(cwd, 'merge-base', 'HEAD', git(p.path, 'rev-parse', 'HEAD'))

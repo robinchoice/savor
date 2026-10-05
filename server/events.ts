@@ -1,7 +1,7 @@
 import type { ServerResponse } from 'node:http'
 
 export interface SavorEvent {
-  type: 'message' | 'thread' | 'status' | 'activity' | 'documents' | 'workflows' | 'processes' | 'projects' | 'browser' | 'devices' | 'notify' | 'presets' | 'terminal'
+  type: 'message' | 'thread' | 'status' | 'activity' | 'documents' | 'workflows' | 'processes' | 'projects' | 'browser' | 'devices' | 'notify' | 'presets' | 'terminal' | 'review'
   projectId?: string
   threadId?: string
   title?: string

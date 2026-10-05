@@ -3,7 +3,7 @@ import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import {
   Asterisk, Hexagon, Code2, Sparkles, Orbit, Plus, Search, MessageSquare, Check, MoreHorizontal, PanelLeft, PanelRight, FileText, Globe,
-  CircleAlert, ArrowUp, ArrowLeft, Pencil, Brain, Terminal, Wrench, ArrowRight, Smartphone, Monitor, ShieldQuestion, X, ChevronUp, ChevronDown, ChevronRight, Paperclip, GitBranch, GitMerge, Trash2, Copy, Workflow as WorkflowIcon,
+  CircleAlert, ArrowUp, ArrowLeft, Pencil, Brain, Terminal, Wrench, ArrowRight, Smartphone, Monitor, ShieldQuestion, X, ChevronUp, ChevronDown, ChevronRight, Paperclip, GitBranch, GitMerge, Trash2, Copy, FileDiff, Workflow as WorkflowIcon,
 } from 'lucide-preact'
 import {
   api, cap, duration, formatDay, formatTime, go, PROVIDER_NAMES, runTrigger, useApi, type ActivityEvent, type AgentConfig, type Attachment, type Decision, type Message, type Proc, type Project, type Thread, type Worktree,
@@ -11,7 +11,7 @@ import {
 import { Composer, type Picked } from './Composer'
 import { transport } from './transport'
 import { Preview } from './Preview'
-import { CommitDialog } from './Commit'
+import { Changes, type ReviewComment, type Source } from './Changes'
 import { setPrefs, usePrefs } from './prefs'
 
 export function Markdown({ text }: { text: string }) {
@@ -279,7 +279,7 @@ function ThreadView({ project, threadId }: { project: Project; threadId: string 
   const base = `/projects/${project.id}/threads/${threadId}`
   const [data, reload, loadError] = useApi<ThreadData>(base, (e) => (e.threadId === threadId && ['message', 'thread', 'status'].includes(e.type)) || (e.projectId === project.id && e.type === 'processes'))
   const [activity] = useApi<ActivityEvent[]>(`${base}/activity`, (e) => e.threadId === threadId && (e.type === 'activity' || e.type === 'status'))
-  // Chat or browser: the first preview of a conversation opens the browser, after that the last choice stands.
+  // Chat, browser or changes: the first preview of a conversation opens the browser, after that the last choice stands.
   const viewKey = `savor-view:${threadId}`
   const [view, setViewState] = useState(() => localStorage.getItem(viewKey))
   const [chatHidden, setChatHidden] = useState(false)
@@ -290,7 +290,7 @@ function ThreadView({ project, threadId }: { project: Project; threadId: string 
   const { chatWidth } = usePrefs()
   const layoutRef = useRef<HTMLDivElement>(null)
   // Moving the composer between chat and page starts it fresh, so a suggestion taken up earlier must not come back.
-  const setView = (v: 'chat' | 'browser') => {
+  const setView = (v: 'chat' | 'browser' | 'changes') => {
     localStorage.setItem(viewKey, v)
     setViewState(v)
     setDraft(undefined)
@@ -305,7 +305,10 @@ function ThreadView({ project, threadId }: { project: Project; threadId: string 
   const [picked, setPicked] = useState<Picked[]>([])
   const [menu, setMenu] = useState(false)
   const [find, setFind] = useState<{ open: boolean; q: string; at: number }>({ open: false, q: '', at: 0 })
-  const [commit, setCommit] = useState<string | null>(null)
+  // The changes shown: the worktree since it branched off, uncommitted changes, or a commit.
+  const [source, setSource] = useState<Source | null>(null)
+  const [review] = useApi<ReviewComment[]>(`${base}/review`, (e) => e.threadId === threadId && e.type === 'review')
+  const saveReview = (comments: ReviewComment[]) => api('PUT', `${base}/review`, { comments })
   const [titleOpen, setTitleOpen] = useState<string | null>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const findRef = useRef<HTMLInputElement>(null)
@@ -317,7 +320,9 @@ function ThreadView({ project, threadId }: { project: Project; threadId: string 
     return () => clearInterval(timer)
   }, [data?.busy])
 
-  const browserMode = (view ?? (data?.thread.preview ? 'browser' : 'chat')) === 'browser'
+  const mode = view ?? (data?.thread.preview ? 'browser' : 'chat')
+  // Browser and changes both sit beside the chat.
+  const browserMode = mode !== 'chat'
   const floating = browserMode && (chatHidden || narrow)
   useEffect(() => setSeen(data?.messages.length ?? 0), [floating, !data])
   useEffect(() => {
@@ -457,6 +462,8 @@ function ThreadView({ project, threadId }: { project: Project; threadId: string 
       draft={draft}
       picked={picked}
       clearPicked={(i) => setPicked(i < 0 ? [] : picked.filter((_, j) => j !== i))}
+      review={review}
+      setReview={saveReview}
       compact={floating}
     />
   )
@@ -530,11 +537,15 @@ function ThreadView({ project, threadId }: { project: Project; threadId: string 
                 )}
               </div>
               <div class="modes">
-                <button class={browserMode ? '' : 'on'} aria-pressed={!browserMode} title="Chat" onClick={() => setView('chat')}>
+                <button class={mode === 'chat' ? 'on' : ''} aria-pressed={mode === 'chat'} title="Chat" onClick={() => setView('chat')}>
                   <MessageSquare size={15} /> <span>Chat</span>
                 </button>
-                <button class={browserMode ? 'on' : ''} aria-pressed={browserMode} title="Browser" onClick={() => setView('browser')}>
+                <button class={mode === 'browser' ? 'on' : ''} aria-pressed={mode === 'browser'} title="Browser" onClick={() => setView('browser')}>
                   <Globe size={15} /> <span>Browser</span>
+                </button>
+                <button class={mode === 'changes' ? 'on' : ''} aria-pressed={mode === 'changes'} title="Changes" onClick={() => setView('changes')}>
+                  <FileDiff size={15} /> <span>Changes</span>
+                  {review?.length ? <i class="mode-count">{review.length}</i> : null}
                 </button>
               </div>
             </div>
@@ -580,7 +591,10 @@ function ThreadView({ project, threadId }: { project: Project; threadId: string 
                     base={base}
                     highlight={find.open ? find.q.trim() : ''}
                     match={matches.includes(m.id) ? (m.id === currentMatch ? 'current' : 'match') : ''}
-                    onCommit={setCommit}
+                    onCommit={(hash) => {
+                      setSource(hash)
+                      setView('changes')
+                    }}
                     preview={!browserMode && m.id === lastConclusion?.id && thread.preview}
                     onPreview={() => setView('browser')}
                   />
@@ -624,11 +638,25 @@ function ThreadView({ project, threadId }: { project: Project; threadId: string 
           )}
         </section>
       )}
-      {commit && <CommitDialog project={project} hash={commit} threadId={threadId} onClose={() => setCommit(null)} />}
       {browserMode && !chatHidden && <div class="split-handle" onPointerDown={resize} />}
       {browserMode && (
         <section class="stage">
-          <Preview base={base} threadId={threadId} url={thread.preview} onPick={(p) => setPicked([...picked, p])} narrow={narrow} chatHidden={chatHidden} onToggleChat={toggleChat} />
+          {mode === 'changes' ? (
+            <Changes
+              project={project}
+              thread={thread}
+              commits={[...messages].reverse().flatMap((m) => m.commits ?? [])}
+              source={source ?? (thread.worktree ? 'base' : 'uncommitted')}
+              setSource={setSource}
+              comments={review ?? []}
+              saveComments={saveReview}
+              narrow={narrow}
+              chatHidden={chatHidden}
+              onToggleChat={toggleChat}
+            />
+          ) : (
+            <Preview base={base} threadId={threadId} url={thread.preview} onPick={(p) => setPicked([...picked, p])} narrow={narrow} chatHidden={chatHidden} onToggleChat={toggleChat} />
+          )}
           {floating && (
             <div class="float">
               {bubble}
