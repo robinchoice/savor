@@ -56,11 +56,7 @@ async function send(text) {
   await page.keyboard.press('Enter')
 }
 
-before(async () => {
-  port = await freePort()
-  base = `http://127.0.0.1:${port}`
-  fs.mkdirSync(PROJECT)
-  fs.writeFileSync(WHISPER_MODEL, '')
+async function startDaemon() {
   const entry = fs.existsSync(path.join(ROOT, 'dist/server/index.mjs')) ? 'dist/server/index.mjs' : 'bin/savor.js'
   server = spawn(process.execPath, [path.join(ROOT, entry)], {
     env: {
@@ -82,6 +78,14 @@ before(async () => {
     stdio: ['ignore', 'pipe', 'inherit'],
   })
   await new Promise((resolve) => server.stdout.on('data', (d) => d.toString().includes('Savor running') && resolve()))
+}
+
+before(async () => {
+  port = await freePort()
+  base = `http://127.0.0.1:${port}`
+  fs.mkdirSync(PROJECT)
+  fs.writeFileSync(WHISPER_MODEL, '')
+  await startDaemon()
   token = JSON.parse(fs.readFileSync(path.join(HOME, 'state.json'), 'utf8')).token
   browser = await chromium.launch({ executablePath: process.env.SAVOR_CHROMIUM, args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'] })
   page = await browser.newPage({ viewport: { width: 1400, height: 900 }, locale: 'en-US' })
@@ -1460,4 +1464,29 @@ test('browser mode gives the page the stage and draws it in the size of that spa
   await page.keyboard.press('Control+f')
   await page.waitForSelector('.find-bar input')
   await page.setViewportSize({ width: 1400, height: 900 })
+})
+
+test('a turn cut off by a restart continues in the same agent session', async () => {
+  const [project] = (await api('GET', '/projects')).body
+  const t = `/projects/${project.id}/threads`
+  const thread = (await api('POST', t, { text: 'slow: survive' })).body
+  const read = async () => (await api('GET', `${t}/${thread.id}`)).body
+  await until(async () => (await read()).messages.some((m) => m.text === 'On it.'))
+  assert.equal((await api('POST', `${t}/${thread.id}/messages`, { text: 'after the restart' })).body.delivered, false)
+
+  server.kill()
+  await new Promise((resolve) => server.on('exit', resolve))
+  await startDaemon()
+
+  // The conversation is working again without anyone sending something, in the session the agent had.
+  await until(async () => (await read()).busy)
+  const sessionId = (await read()).thread.agentSessions[0].sessionId
+  await until(() => agentRuns().some((r) => r.agent === 'claude' && r.argv[r.argv.indexOf('--resume') + 1] === sessionId))
+  fs.writeFileSync(AGENT_LOG + '.release', 'slow: survive')
+  await until(async () => (await read()).messages.some((m) => m.text === 'Echo: survive (after a restart)'))
+  // What was queued follows, and the request kept its one acknowledgement.
+  await until(async () => (await read()).messages.some((m) => m.text === 'Echo: after the restart'))
+  const { messages, thread: saved } = await read()
+  assert.equal(messages.filter((m) => m.kind === 'ack' && m.ts < messages.find((m) => m.text === 'after the restart').ts).length, 1)
+  assert.equal(saved.workingSince, null)
 })

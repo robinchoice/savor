@@ -48,7 +48,7 @@ function buildServer(p: Project, tid: string) {
       inputSchema: { text: z.string().min(1) },
     },
     async ({ text }) => {
-      const r = agents.request(tid)
+      const r = agents.request(p, tid)
       if (r.ack && r.ack.text !== text) throw new Error('This request already has a different acknowledgement message.')
       r.ack ??= { text, id: agents.post(p, tid, { kind: 'ack', text, modelInfo: modelInfo() }).id }
       return ok({ id: r.ack.id })
@@ -63,7 +63,7 @@ function buildServer(p: Project, tid: string) {
       inputSchema: { idempotencyKey: z.string().regex(/^[\w-]{1,100}$/), text: z.string().min(1) },
     },
     async ({ idempotencyKey, text }) => {
-      const r = agents.request(tid)
+      const r = agents.request(p, tid)
       const prev = r.updates.get(idempotencyKey)
       if (prev && prev.text !== text) throw new Error(`idempotencyKey ${idempotencyKey} was already used with different text.`)
       if (!prev) r.updates.set(idempotencyKey, { text, id: agents.post(p, tid, { kind: 'update', text, modelInfo: modelInfo() }).id })
@@ -90,8 +90,8 @@ function buildServer(p: Project, tid: string) {
       if (!text && !questions?.length) throw new Error('Provide text, questions, or both.')
       const unrecommended = questions?.find((q) => q.options.length && (q.recommended ?? Infinity) >= q.options.length)
       if (unrecommended) throw new Error(`Set recommended to the index of the option you recommend for "${unrecommended.title}" and explain why in its body.`)
-      const r = agents.request(tid)
-      const key = JSON.stringify([text, questions, suggestions, commits])
+      const r = agents.request(p, tid)
+      const key = agents.conclusionKey({ text, questions, suggestions, commits })
       if (r.conclusion) {
         if (r.conclusion.key !== key) throw new Error('This request already has a conclusion. Finish your turn and wait for new input.')
         return ok({ id: r.conclusion.id, note: 'Already delivered. Finish your turn now.' })
@@ -182,7 +182,7 @@ function buildServer(p: Project, tid: string) {
     { description: 'Save a workflow. With a cron expression Savor runs it on schedule in a new conversation.', inputSchema: workflowShape },
     async (wf) => {
       if (wf.cron) validateCron(wf.cron, wf.timezone)
-      const saved = store.saveWorkflow(p, wf, agents.originOf(tid))
+      const saved = store.saveWorkflow(p, wf, agents.originOf(p, tid))
       syncSchedules()
       emit({ type: 'workflows', projectId: p.id })
       return ok({ id: saved.id, url: wfUrl(saved.id) })
@@ -200,7 +200,7 @@ function buildServer(p: Project, tid: string) {
       const prev = store.getWorkflow(p, id)
       if (revision !== revisionOf(prev)) throw new Error('The workflow changed since you read it. Read it again and apply your change to that.')
       const clean = Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined))
-      store.saveWorkflow(p, { ...prev, ...clean }, agents.originOf(tid))
+      store.saveWorkflow(p, { ...prev, ...clean }, agents.originOf(p, tid))
       syncSchedules()
       emit({ type: 'workflows', projectId: p.id })
       return ok({ id, url: wfUrl(id) })
@@ -208,7 +208,7 @@ function buildServer(p: Project, tid: string) {
   )
 
   server.registerTool('run_workflow', { description: 'Run a workflow now in a new conversation.', inputSchema: { id: z.string() } }, async ({ id }) => {
-    const t = runWorkflow(p.id, id, agents.originOf(tid))
+    const t = runWorkflow(p.id, id, agents.originOf(p, tid))
     return ok({ threadId: t.id, url: threadUrl(t.id) })
   })
 
@@ -251,8 +251,8 @@ function buildServer(p: Project, tid: string) {
         worktree: worktree ? addWorktree(target, worktree) : here ? store.getThread(p, tid).worktree : null,
       })
       emit({ type: 'thread', projectId: target.id, threadId: t.id })
-      const origin = agents.originOf(tid)
-      const device = agents.deviceOf(tid)
+      const origin = agents.originOf(p, tid)
+      const device = agents.deviceOf(p, tid)
       agents.send(target, t.id, { text: prompt, origin, device })
       // Input from a paired device that lands in another project shows up there, not only in this conversation.
       if (!here && origin === 'remote') {

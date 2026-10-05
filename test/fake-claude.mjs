@@ -10,6 +10,7 @@
 // - "own-server: <text>" → reports a background task of its own that keeps running after the conclusion
 // - "native-ask: <question>" → an AskUserQuestion control request with the options Blue/Green
 // - "slow: <text>" → acknowledges, waits for the test's release file or an interrupt, then echoes
+//   (and says so when Savor told it that a restart cut the turn off)
 // - a last text block of its own that starts with "/" → "Skill <name and arguments>", the way Claude Code runs slash commands
 // - anything else → acknowledgement plus a conclusion echoing the input with one suggestion
 // While the test's outdated file exists it refuses to start, like a release that lacks an option.
@@ -136,7 +137,7 @@ async function turn(text, command) {
     await call('send_acknowledgement_message', { text: 'On it.' })
     const release = process.env.FAKE_AGENT_LOG + '.release'
     while (!interrupted && (!fs.existsSync(release) || fs.readFileSync(release, 'utf8') !== input)) await sleep(20)
-    if (!interrupted) await call('send_conclusion_message', { text: `Echo: ${input.slice(5).trim()}` })
+    if (!interrupted) await call('send_conclusion_message', { text: `Echo: ${input.slice(5).trim()}${text.includes('Savor was restarted') ? ' (after a restart)' : ''}` })
   } else {
     await call('send_acknowledgement_message', { text: 'On it.' })
     await call('send_conclusion_message', { text: `Echo: ${input}`, suggestions: ['Do it again'] })

@@ -27,8 +27,6 @@ export interface RequestState {
 const requests = new Map<string, RequestState>()
 const busy = new Map<string, string>() // threadId → turn start
 const turnConclusion = new Map<string, string>()
-const turnOrigin = new Map<string, Origin>()
-const turnDevice = new Map<string, string | undefined>()
 const sessions = new Map<string, { session: Session; idleTimer?: NodeJS.Timeout }>()
 const stopped = new Set<string>() // threads whose last turn the user stopped: don't pump the queue
 const approvals = new Map<string, (choice: string) => void>() // approval message id → resolver
@@ -39,16 +37,41 @@ export const anyBusy = () => busy.size > 0
 export const startedAt = (tid: string) => busy.get(tid)
 // An agent that acknowledged and ended its turn without a conclusion waits for the background processes its conversation owns.
 export function awaitsBackground(p: Project, tid: string) {
-  const r = requests.get(tid)
-  return !busy.has(tid) && !!r?.ack && !r.conclusion && store.listProcs(p).some((pr) => pr.threadId === tid)
+  if (busy.has(tid) || !store.listProcs(p).some((pr) => pr.threadId === tid)) return false
+  const r = request(p, tid)
+  return !!r.ack && !r.conclusion
 }
 export const markConcluded = (tid: string, messageId: string) => turnConclusion.set(tid, messageId)
-export const originOf = (tid: string): Origin => turnOrigin.get(tid) ?? 'local'
-export const deviceOf = (tid: string) => turnDevice.get(tid)
 
-export function request(tid: string) {
+// Where the input the agent is working on came from, and which device sent it. Both are read from the stored message, so they hold
+// after a restart; a request without an input counts as remote.
+export function originOf(p: Project, tid: string): Origin {
+  const input = inputOf(p, tid)
+  return input ? input.origin ?? 'local' : 'remote'
+}
+export const deviceOf = (p: Project, tid: string) => inputOf(p, tid)?.device
+const inputOf = (p: Project, tid: string) => store.readMessages(p, tid).find((m) => m.id === request(p, tid).inputId)
+
+export const conclusionKey = (m: Pick<Message, 'text' | 'questions' | 'suggestions' | 'commits'>) => JSON.stringify([m.text, m.questions, m.suggestions, m.commits])
+
+// A request that is not in memory is read back from the thread's messages, so after a restart an
+// input still gets only one acknowledgement and one conclusion.
+export function request(p: Project, tid: string) {
   let r = requests.get(tid)
-  if (!r) requests.set(tid, (r = { inputId: '', updates: new Map() }))
+  if (r) return r
+  const msgs = store.readMessages(p, tid)
+  let i = msgs.length - 1
+  while (i >= 0 && !(msgs[i].kind === 'user' && msgs[i].delivered !== false)) i--
+  const sent = i < 0 ? [] : msgs.slice(i + 1)
+  const ack = sent.find((m) => m.kind === 'ack')
+  const conclusion = sent.find((m) => m.kind === 'conclusion')
+  r = {
+    inputId: msgs[i]?.id ?? '',
+    ack: ack && { text: ack.text ?? '', id: ack.id },
+    conclusion: conclusion && { key: conclusionKey(conclusion), id: conclusion.id },
+    updates: new Map(),
+  }
+  requests.set(tid, r)
   return r
 }
 
@@ -94,11 +117,10 @@ export function removeQueued(p: Project, tid: string, mid: string) {
 }
 
 function deliver(p: Project, tid: string, msg: Message) {
-  const thread = store.updateThread(p, tid, { needsYou: false })
+  const startedAt = store.now()
+  const thread = store.updateThread(p, tid, { needsYou: false, workingSince: startedAt })
   store.updateMessage(p, tid, msg.id, { delivered: true })
-  requests.set(tid, { inputId: msg.id, startedAt: store.now(), updates: new Map() })
-  turnOrigin.set(tid, msg.origin ?? 'local')
-  turnDevice.set(tid, msg.device)
+  requests.set(tid, { inputId: msg.id, startedAt, updates: new Map() })
   const session = sessionFor(p, thread)
   beginTurn(p, tid)
   session.start(turnInput(p, thread, msg))
@@ -121,7 +143,7 @@ export function forget(tid: string) {
   sessions.delete(tid)
   clearTimeout(s?.idleTimer)
   s?.session.kill()
-  for (const state of [busy, requests, turnConclusion, turnOrigin, turnDevice]) state.delete(tid)
+  for (const state of [busy, requests, turnConclusion]) state.delete(tid)
   stopped.delete(tid)
 }
 
@@ -182,7 +204,7 @@ function endTurn(p: Project, tid: string, result: { text?: string; error?: strin
     store.updateThread(p, tid, { error: null })
     // Fallback for agents that ignore the message protocol: surface their final text. An agent that
     // acknowledged and ended its turn without a conclusion is waiting for background work.
-    const r = request(tid)
+    const r = request(p, tid)
     if (!r.ack && !r.conclusion && !r.updates.size && result.text?.trim()) {
       const msg = post(p, tid, { kind: 'conclusion', text: result.text, modelInfo: agent })
       r.conclusion = { key: '', id: msg.id }
@@ -193,8 +215,11 @@ function endTurn(p: Project, tid: string, result: { text?: string; error?: strin
   }
   const mid = turnConclusion.get(tid)
   // Work time counts from the input, including time spent waiting for background tasks.
-  if (mid) store.updateMessage(p, tid, mid, { workTiming: { startedAt: request(tid).startedAt ?? startedAt, finishedAt: store.now() } })
+  if (mid) store.updateMessage(p, tid, mid, { workTiming: { startedAt: request(p, tid).startedAt ?? startedAt, finishedAt: store.now() } })
   busy.delete(tid)
+  // An agent that waits for background work still owes its conclusion: the mark stays, so a restart
+  // picks the request up again.
+  if (result.error || !awaitsBackground(p, tid)) store.updateThread(p, tid, { workingSince: null })
   emit({ type: 'status', projectId: p.id, threadId: tid })
   emit({ type: 'message', projectId: p.id, threadId: tid })
   maybeClose(p, tid)
@@ -215,7 +240,7 @@ function handover(p: Project, thread: Thread) {
   return history.length ? `Earlier in this conversation (handled by another agent):\n${history.join('\n\n')}\n\n` : ''
 }
 
-function turnInput(p: Project, thread: Thread, msg: Message): TurnInput {
+function turnInput(p: Project, thread: Thread, msg: Message, note = ''): TurnInput {
   const dir = store.attachmentDir(p, thread.id)
   const context = {
     requestOrigin: msg.origin ?? 'local',
@@ -228,7 +253,7 @@ function turnInput(p: Project, thread: Thread, msg: Message): TurnInput {
   }
   const files = (msg.files ?? []).map((f) => path.join(dir, f))
   const attached = files.length ? `\n\nAttached files:\n${files.join('\n')}` : ''
-  return { context: `${handover(p, thread)}Savor context:\n${JSON.stringify(context)}\n\nNew input:\n`, input: `${msg.text}${attached}`, images: (msg.images ?? []).map((f) => path.join(dir, f)) }
+  return { context: `${handover(p, thread)}Savor context:\n${JSON.stringify(context)}\n\n${note}New input:\n`, input: `${msg.text}${attached}`, images: (msg.images ?? []).map((f) => path.join(dir, f)) }
 }
 
 // ---- sessions ----
@@ -356,13 +381,50 @@ export function refreshNeedsYou(p: Project, tid: string) {
 
 function cancelPending(p: Project, tid: string) {
   for (const m of store.readMessages(p, tid)) {
-    if (m.approval?.status === 'pending' && approvals.has(m.id)) {
+    if (m.approval?.status === 'pending') {
       store.updateMessage(p, tid, m.id, { approval: { ...m.approval, status: 'resolved', choice: m.approval.options.find((o) => o.kind === 'deny')?.id } })
       approvals.delete(m.id)
     }
     if (m.kind === 'question' && questions.has(m.id)) questions.delete(m.id)
   }
   refreshNeedsYou(p, tid)
+}
+
+// ---- restarts ----
+
+const INTERRUPTED = `Savor was restarted while you were working on the input below. Your process was cut off, and so was whatever command or tool call was running. Check what is already done before you repeat anything, then finish the work. This is still the same request: do not acknowledge it again.\n\n`
+
+// A turn that the end of the daemon cut off continues at the next start. The agent resumes its own
+// session and is told what happened, so it decides what to redo; Savor repeats nothing by itself.
+export function resumeInterrupted() {
+  for (const p of store.listProjects())
+    for (const thread of store.listThreads(p)) {
+      if (!thread.workingSince) continue
+      const tid = thread.id
+      // Whoever asked for these approvals is gone; the agent asks again when it gets there.
+      cancelPending(p, tid)
+      const r = request(p, tid)
+      const input = store.readMessages(p, tid).find((m) => m.id === r.inputId)
+      const waitsForYou = store.getThread(p, tid).needsYou
+      if (input && !r.conclusion && !waitsForYou) {
+        r.startedAt = thread.workingSince
+        const session = sessionFor(p, thread)
+        beginTurn(p, tid)
+        session.start(turnInput(p, thread, input, INTERRUPTED))
+        continue
+      }
+      store.updateThread(p, tid, { workingSince: null })
+      // An open question restarts the work with its answer, and what is queued follows that.
+      if (!waitsForYou) pump(p, tid)
+    }
+}
+
+// The daemon is going down: its agents go with it, and their turns continue at the next start. The
+// sessions are let go first, so their ends don't close the turns.
+export function shutdown() {
+  const all = [...sessions.values()]
+  sessions.clear()
+  for (const { session } of all) session.kill()
 }
 
 // ---- agents without a stable headless protocol (Antigravity) ----

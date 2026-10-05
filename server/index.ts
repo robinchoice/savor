@@ -775,5 +775,9 @@ http
     processes.watchProcesses()
     startRelay()
     if (process.env.SAVOR_EXIT_ON_UPDATE) exitOnUpdate(process.env.SAVOR_EXIT_ON_UPDATE)
+    agents.resumeInterrupted()
     console.log(`Savor running — open ${PUBLIC_URL}/?token=${store.state().token}`)
   })
+
+// The browser module exits once its browsers are closed.
+for (const signal of ['SIGINT', 'SIGTERM'] as const) process.once(signal, () => agents.shutdown())

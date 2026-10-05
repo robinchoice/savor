@@ -55,6 +55,9 @@ export interface Thread {
   completed: boolean
   needsYou: boolean
   error: string | null
+  // When the agent got the input it still owes work on. It is on disk so that a turn cut off by a
+  // restart is found again.
+  workingSince?: string | null
   parentId?: string
   // Set when the conversation works in its own git worktree instead of the project folder.
   worktree?: { branch: string; path: string } | null
