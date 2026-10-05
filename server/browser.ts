@@ -55,7 +55,7 @@ function profile(projectId: string) {
         executablePath: exe,
         headless: true,
         viewport: VIEWPORT,
-        // Leave SIGINT/SIGTERM to Node so Ctrl+C still stops the daemon; the browser exits with it.
+        // The daemon closes the browsers itself when it stops (see below).
         handleSIGINT: false,
         handleSIGTERM: false,
         handleSIGHUP: false,
@@ -66,6 +66,14 @@ function profile(projectId: string) {
   }
   return ctx
 }
+
+// Close the browsers before the daemon exits, so Chromium is done writing its profiles. A second
+// Ctrl+C stops the daemon right away.
+for (const signal of ['SIGINT', 'SIGTERM'] as const)
+  process.once(signal, async () => {
+    await Promise.allSettled([...profiles.values()].map((ctx) => ctx.then((c) => c.close())))
+    process.exit(0)
+  })
 
 function session(tid: string) {
   const s = sessions.get(tid)

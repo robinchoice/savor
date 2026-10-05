@@ -73,7 +73,8 @@ export function Composer(props: Props) {
     ref.current?.focus()
   }
 
-  useEffect(() => {
+  // A layout effect, so Escape works from the first frame the popover shows.
+  useLayoutEffect(() => {
     if (!popover) return
     const outside = (e: PointerEvent) => {
       if (!composerRef.current?.contains(e.target as Node)) setPopover(null)
