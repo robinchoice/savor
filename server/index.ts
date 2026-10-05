@@ -13,6 +13,7 @@ import * as processes from './processes.js'
 import * as devices from './devices.js'
 import * as files from './files.js'
 import * as awake from './awake.js'
+import * as terminal from './terminal.js'
 import { closeDevice, pairingLink, relayStatus, startRelay } from './relay-client.js'
 import { newNonce, securityHeaders, withNonce } from '../shared/headers.js'
 import { handleMcp } from './mcp.js'
@@ -225,6 +226,7 @@ route('PATCH', '/projects/:pid', (params, b, ctx) => {
 route('DELETE', '/projects/:pid', (params, _, ctx) => {
   localOnly(ctx)
   store.removeProject(params.pid)
+  terminal.stopProject(params.pid)
   emit({ type: 'projects' })
   return {}
 })
@@ -387,9 +389,68 @@ route('DELETE', '/projects/:pid/worktrees', (params, _, ctx) => {
     agents.stop(t.id)
     store.updateThread(p, t.id, { worktree: null, agentSessions: [], completed: true })
   }
+  terminal.stop(wt.path)
   git.removeWorktree(p, wt.path)
   git.deleteBranch(p, wt.branch)
   emit({ type: 'thread', projectId: p.id })
+  return {}
+})
+
+// ---- terminal ----
+
+// The terminal is a shell on this computer. Paired devices only get it once it was switched on here.
+route('GET', '/terminal', (_, __, ctx) => (localOnly(ctx), { remote: !!store.state().terminalRemote }))
+route('PUT', '/terminal', (_, b, ctx) => {
+  localOnly(ctx)
+  const s = store.state()
+  s.terminalRemote = !!b.remote
+  store.saveState(s)
+  if (!s.terminalRemote) terminal.disconnectRemote()
+  emit({ type: 'terminal' })
+  return { remote: s.terminalRemote }
+})
+const terminalAllowed = (ctx: Ctx) => {
+  if (ctx.auth.origin !== 'local' && !store.state().terminalRemote)
+    throw new Forbidden('The terminal is off for paired devices. Turn it on at your computer under Devices & remote access.')
+}
+// Where a terminal can run: the project folder and its worktrees, each with the conversations in it.
+function terminalPlaces(p: store.Project) {
+  const threads = store.listThreads(p)
+  return [{ path: p.path, branch: null as string | null }, ...git.listWorktrees(p).map((w) => ({ path: w.path, branch: w.branch }))].map((place) => ({
+    ...place,
+    running: terminal.running(place.path),
+    threads: place.branch ? threads.filter((t) => t.worktree?.path === place.path).map((t) => t.id) : [],
+  }))
+}
+function terminalPlace(p: store.Project, cwd: unknown) {
+  if (!terminalPlaces(p).some((place) => place.path === cwd)) throw new store.NotFound('terminal folder')
+  return cwd as string
+}
+route('GET', '/projects/:pid/terminal', (params, _, ctx) => (terminalAllowed(ctx), terminalPlaces(project(params))))
+route('GET', '/projects/:pid/terminal/stream', (params, _, ctx) => {
+  terminalAllowed(ctx)
+  terminal.watch(terminalPlace(project(params), ctx.query.get('path')), ctx.res, ctx.auth.origin !== 'local')
+})
+route('POST', '/projects/:pid/terminal/open', async (params, b, ctx) => {
+  terminalAllowed(ctx)
+  await terminal.start(params.pid, terminalPlace(project(params), b.path), b.cols, b.rows)
+  return {}
+})
+route('POST', '/projects/:pid/terminal/restart', async (params, b, ctx) => {
+  terminalAllowed(ctx)
+  const cwd = terminalPlace(project(params), b.path)
+  terminal.stop(cwd)
+  await terminal.start(params.pid, cwd, b.cols, b.rows)
+  return {}
+})
+route('POST', '/projects/:pid/terminal/input', (params, b, ctx) => {
+  terminalAllowed(ctx)
+  terminal.input(params.pid, String(b.path), String(b.data ?? ''))
+  return {}
+})
+route('POST', '/projects/:pid/terminal/resize', (params, b, ctx) => {
+  terminalAllowed(ctx)
+  terminal.resize(params.pid, String(b.path), b.cols, b.rows)
   return {}
 })
 

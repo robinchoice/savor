@@ -799,6 +799,55 @@ test('agents can start conversations in a worktree', async () => {
   await api('DELETE', `/projects/${project.id}/worktrees?path=${encodeURIComponent(child.worktree.path)}`)
 })
 
+test('the terminal runs a shell per folder and worktree, on paired devices only once allowed here', async () => {
+  const [project] = (await api('GET', '/projects')).body
+  const t = `/projects/${project.id}/terminal`
+  const thread = (await api('POST', `/projects/${project.id}/threads`, { text: 'terminal work', worktree: 'term/wt' })).body
+
+  // The panel follows the open conversation into its worktree, and the shell runs there.
+  await page.goto(`${base}/#/p/${project.id}/t/${thread.id}`)
+  await page.click('.subbar button[title^="Terminal"]')
+  await page.waitForSelector('.terminal-place.on >> text=term/wt')
+  await page.waitForFunction(() => document.querySelector('.terminal-screen .xterm-rows')?.textContent.trim())
+  await page.click('.terminal-screen')
+  await page.keyboard.type('pwd; echo $((6*7))-terminal\n')
+  await page.waitForSelector('.terminal-screen >> text=42-terminal')
+  assert.ok((await page.textContent('.terminal-screen')).includes(path.basename(thread.worktree.path)))
+  const places = (await api('GET', t)).body
+  assert.deepEqual(places.map((p) => [p.branch, p.running]), [[null, false], ['term/wt', true]])
+  assert.deepEqual(places[1].threads, [thread.id])
+  assert.equal((await api('POST', `${t}/open`, { path: TMP, cols: 80, rows: 24 })).status, 404)
+
+  // Paired devices get it only once it is switched on at this computer, and lose it when it is switched off.
+  const device = await pairDevice('CI terminal')
+  const wt = thread.worktree.path
+  assert.equal((await api('GET', t, undefined, device)).status, 403)
+  assert.equal((await api('POST', `${t}/input`, { path: wt, data: 'touch from-device\r' }, device)).status, 403)
+  assert.equal((await api('PUT', '/terminal', { remote: true }, device)).status, 403)
+  assert.equal((await api('PUT', '/terminal', { remote: true })).body.remote, true)
+  assert.equal((await api('GET', t, undefined, device)).status, 200)
+  const stream = await fetch(`${base}/api${t}/stream?path=${encodeURIComponent(wt)}`, { headers: { cookie: device } })
+  const reader = stream.body.getReader()
+  let seen = ''
+  while (!seen.includes('42-terminal')) seen += new TextDecoder().decode((await reader.read()).value)
+  await api('POST', `${t}/input`, { path: wt, data: 'touch from-device\r' }, device)
+  await until(() => fs.existsSync(path.join(wt, 'from-device')))
+  await api('PUT', '/terminal', { remote: false })
+  const outcome = await Promise.race([
+    (async () => {
+      for (;;) if ((await reader.read()).done) return 'ended'
+    })().catch(() => 'ended'),
+    new Promise((resolve) => setTimeout(() => resolve('still open'), 3000)),
+  ])
+  assert.equal(outcome, 'ended')
+  assert.equal((await api('GET', t, undefined, device)).status, 403)
+
+  // Deleting the worktree ends its shell.
+  await page.click('.terminal-bar button[title^="Close"]')
+  await api('DELETE', `/projects/${project.id}/worktrees?path=${encodeURIComponent(wt)}`)
+  assert.deepEqual((await api('GET', t)).body.map((p) => [p.path, p.running]), [[project.path, false]])
+})
+
 test('Claude Code and Codex sessions of the project can be imported and continue', async () => {
   const [project] = (await api('GET', '/projects')).body
   const rec = (o) => JSON.stringify(o) + '\n'

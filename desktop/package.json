@@ -54,7 +54,19 @@
         "AppImage"
       ],
       "category": "Development",
-      "syncDesktopName": true
+      "syncDesktopName": true,
+      "extraResources": [
+        {
+          "from": "../node_modules/node-pty",
+          "to": "savor/node_modules/node-pty",
+          "filter": [
+            "package.json",
+            "lib/**/*.js",
+            "!lib/**/*.test.js",
+            "prebuilds/linux-*/**"
+          ]
+        }
+      ]
     },
     "mac": {
       "target": [
@@ -76,10 +88,35 @@
       "category": "public.app-category.developer-tools",
       "artifactName": "${productName}-${version}-${arch}.${ext}",
       "identity": "-",
-      "hardenedRuntime": false
+      "hardenedRuntime": false,
+      "extraResources": [
+        {
+          "from": "../node_modules/node-pty",
+          "to": "savor/node_modules/node-pty",
+          "filter": [
+            "package.json",
+            "lib/**/*.js",
+            "!lib/**/*.test.js",
+            "prebuilds/darwin-*/**"
+          ]
+        }
+      ]
     },
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "extraResources": [
+        {
+          "from": "../node_modules/node-pty",
+          "to": "savor/node_modules/node-pty",
+          "filter": [
+            "package.json",
+            "lib/**/*.js",
+            "!lib/**/*.test.js",
+            "prebuilds/win32-x64/**",
+            "!**/*.pdb"
+          ]
+        }
+      ]
     },
     "publish": [
       {

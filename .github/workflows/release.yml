@@ -35,6 +35,20 @@ jobs:
       - run: npm ci
       - run: npm ci
         working-directory: desktop
+      # The terminal runs on node-pty, a native module. electron-builder ships its prebuilt binaries for
+      # each platform (see extraResources in desktop/package.json); this checks they run in Electron's Node.
+      - name: Check the terminal's native module
+        shell: bash
+        working-directory: desktop
+        env:
+          ELECTRON_RUN_AS_NODE: '1'
+        run: |
+          npx electron -e "
+            const win = process.platform === 'win32'
+            const p = require('../node_modules/node-pty').spawn(win ? 'cmd.exe' : 'sh', win ? ['/c', 'echo pty ok'] : ['-c', 'echo pty ok'], {})
+            let out = ''
+            p.onData((d) => (out += d).includes('pty ok') && process.exit(0))
+            setTimeout(() => process.exit(1), 10000)"
       - name: Use the tag as app version
         shell: bash
         working-directory: desktop

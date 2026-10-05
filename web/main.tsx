@@ -10,6 +10,7 @@ import { AllProjects } from './Overview'
 import { Settings, Devices, Pair, RemotePair } from './Settings'
 import { loadProfile, remote, setTransport } from './transport'
 import { ProcessesPopover } from './Processes'
+import { TerminalButton, TerminalPanel } from './Terminal'
 import { useNotifications } from './notify'
 import { EnjoyImport, EnjoyOffer, useEnjoyProjects } from './EnjoyImport'
 import { AccountDialog, AppearanceMenu, FeedbackDialog } from './Account'
@@ -35,6 +36,7 @@ function App() {
   const [mode, setMode] = useState<'direct' | 'relay' | null>(null)
   const [link, setLink] = useState<{ connected: boolean; error?: string }>({ connected: true })
   const route = useRoute()
+  const { terminalOpen, terminalMax } = usePrefs()
   const [projects] = useApi<Project[]>(me ? '/projects' : null, (e) => ['projects', 'thread', 'status'].includes(e.type))
 
   // Served by a relay: talk to the paired computer through the encrypted tunnel.
@@ -105,12 +107,13 @@ function App() {
   }
 
   return (
-    <div class="app">
+    <div class={`app ${project && terminalOpen && terminalMax ? 'terminal-max' : ''}`}>
       {mode === 'relay' && !link.connected && <div class="link-banner">Reconnecting to your computer…</div>}
       <TopBar projects={projects ?? []} active={project} all={route[0] === 'all'} me={me} setMe={setMe} />
       {project && <SubBar project={project} section={section} />}
       {route[0] === 'all' && <AllBar section={route[1]} />}
       <main>{main}</main>
+      {project && terminalOpen && <TerminalPanel key={project.id} project={project} threadId={section === 't' ? rest[0] : undefined} />}
     </div>
   )
 }
@@ -364,6 +367,7 @@ function SubBar({ project, section }: { project: Project; section?: string }) {
       {tab('files', 'Files', FilesIcon, `#/p/${project.id}/files`)}
       {tab('workflows', 'Workflows', WorkflowIcon, `#/p/${project.id}/workflows`)}
       <div class="subbar-right">
+        <TerminalButton project={project} />
         <div class="menu-anchor">
           <button class={`icon-btn ${procCount ? 'on' : ''}`} title="Background processes" onClick={() => setProcsOpen(!procsOpen)}>
             <Server size={16} />

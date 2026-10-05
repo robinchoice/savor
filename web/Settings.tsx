@@ -220,6 +220,7 @@ export function qr(text: string) {
 export function Devices() {
   const [devices] = useApi<DeviceRow[]>('/devices', (e) => e.type === 'devices')
   const [relay] = useApi<RelayState>('/relay', (e) => e.type === 'devices')
+  const [terminal] = useApi<{ remote: boolean }>('/terminal', (e) => e.type === 'terminal')
   const [relayUrl, setRelayUrl] = useState<string | null>(null)
   const [error, setError] = useState('')
   const [pairing, setPairing] = useState<{ code: string; url: string; relayUrl: string | null; expiresAt: string } | null>(null)
@@ -325,6 +326,16 @@ export function Devices() {
             </div>
           </div>
         )}
+
+        <h2>Terminal</h2>
+        <label class="check">
+          <input type="checkbox" checked={!!terminal?.remote} onChange={(e) => api('PUT', '/terminal', { remote: e.currentTarget.checked })} /> Allow the terminal on paired devices
+        </label>
+        <p class="muted">
+          {terminal?.remote
+            ? 'Paired devices can open a shell on this computer in every project folder and worktree, and run any command as you. Revoking a device ends its terminals right away.'
+            : 'The terminal is a shell on this computer. It is always available here, and off for paired devices.'}
+        </p>
 
         <h2>Paired devices</h2>
         {devices && !devices.length && <p class="muted">None yet.</p>}

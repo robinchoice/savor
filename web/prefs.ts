@@ -16,6 +16,10 @@ export interface Prefs {
   previewDevice: Device
   // Workflow groups marked as “Not a duplicate” in All projects.
   notDuplicates: string[]
+  // The terminal panel below the project.
+  terminalOpen: boolean
+  terminalHeight: number
+  terminalMax: boolean
 }
 
 const KEY = 'savor-prefs'
@@ -27,6 +31,9 @@ let prefs: Prefs = {
   chatWidth: 420,
   previewDevice: 'fit',
   notDuplicates: [],
+  terminalOpen: false,
+  terminalHeight: 300,
+  terminalMax: false,
   ...JSON.parse(localStorage.getItem(KEY) ?? '{}'),
   theme: (localStorage.getItem('savor-theme') as Theme | null) ?? 'system',
 }
