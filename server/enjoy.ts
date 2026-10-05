@@ -127,7 +127,8 @@ function messagesOf(th: any, decisions: Decision[]): Message[] {
   const messages: Message[] = (th.messages ?? []).map((m: any): Message => {
     const base = { id: String(m.id), ts: String(m.createdAt), ...(m.modelInfo && { modelInfo: agentFrom(m.modelInfo) }) }
     // What was still waiting in Enjoy's queue is history here, not something to send again.
-    if (m.role === 'user') return { ...base, kind: 'user', text: m.text ?? '', images: (m.images ?? []).map((i: string) => path.basename(i)), origin: m.inputSource === 'remote' ? 'remote' : 'local', delivered: true }
+    // Enjoy keeps the instructions of a workflow run on the conversation and leaves the message that starts it empty.
+    if (m.role === 'user') return { ...base, kind: 'user', text: m.text || (m.automated && th.recipeRun?.instructions) || '', images: (m.images ?? []).map((i: string) => path.basename(i)), origin: m.inputSource === 'remote' ? 'remote' : 'local', delivered: true }
     const kind = base.id.endsWith('-acknowledgement') ? 'ack' : base.id.endsWith('-conclusion') ? 'conclusion' : 'update'
     const ids = decisions.filter((d) => d.groupId === base.id).map((d) => d.id).sort()
     return { ...base, kind, text: m.text ?? '', ...(m.suggestions?.length && { suggestions: m.suggestions }), ...(m.commits?.length && { commits: m.commits }), ...(m.workTiming && { workTiming: m.workTiming }), ...(ids.length > 0 && { decisionIds: ids }) }
@@ -164,6 +165,8 @@ function threadOf(s: Source, th: any, messages: Message[], decisions: Decision[]
     needsYou: !completed && decisions.some((d) => !d.resolved && d.groupId === last?.id),
     error: null,
     imported: { messages: messages.length, completed, open: decisions.filter((d) => !d.resolved).length },
+    // A run of a workflow keeps its place in the workflow's runs.
+    ...(th.recipeRun?.recipeId && { workflow: { id: path.basename(String(th.recipeRun.recipeId)), name: String(th.title ?? 'Workflow'), trigger: th.recipeRun.trigger === 'scheduled' ? ('scheduled' as const) : ('manual' as const) } }),
   }
 }
 
@@ -244,10 +247,14 @@ function importProject(s: Source): EnjoyResult {
     if (mine && (mine.updatedAt || fs.statSync(file).mtime.toISOString()) >= updatedAt) continue
     const wf: Workflow = {
       enabled: true,
+      catchUp: true,
       next: [],
       lastRunAt: null,
+      skipped: [],
       origin: 'local',
       ...mine,
+      // Enjoy ran the schedule so far: nothing from before the import is caught up.
+      settledAt: store.now(),
       id,
       name: String(meta.name),
       prompt: body,

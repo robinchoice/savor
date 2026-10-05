@@ -142,7 +142,7 @@ function buildServer(p: Project, tid: string) {
 
   const wfUrl = (id: string) => appUrl(`/p/${p.id}/workflows/${id}`)
   // A workflow as an agent read it: update_workflow applies only while it is still that.
-  const revisionOf = (wf: store.Workflow) => store.hash(JSON.stringify([wf.name, wf.prompt, wf.collection, wf.cron, wf.timezone, wf.scheduleLabel, wf.enabled, wf.next]))
+  const revisionOf = (wf: store.Workflow) => store.hash(JSON.stringify([wf.name, wf.prompt, wf.collection, wf.cron, wf.timezone, wf.scheduleLabel, wf.enabled, wf.catchUp, wf.next]))
   const workflowShape = {
     name: z.string().min(1),
     prompt: z.string().min(1).describe('Instructions the agent receives on each run'),
@@ -151,6 +151,7 @@ function buildServer(p: Project, tid: string) {
     timezone: z.string().optional().describe('IANA timezone, defaults to the host timezone'),
     scheduleLabel: z.string().nullable().optional().describe('The schedule in plain words, in the user’s language, e.g. “Mondays at 9:00”'),
     enabled: z.boolean().optional(),
+    catchUp: z.boolean().optional().describe('Whether a scheduled time that passed while Savor was not running is run once at the next start (default true)'),
     next: z.array(z.string()).optional().describe('IDs of workflows to continue with after this one (a chain)'),
   }
 

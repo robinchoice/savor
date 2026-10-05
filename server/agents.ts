@@ -34,6 +34,11 @@ const questions = new Map<string, (answers: Answer[]) => void>() // decision gro
 
 export const isBusy = (tid: string) => busy.has(tid)
 export const startedAt = (tid: string) => busy.get(tid)
+// An agent that acknowledged and ended its turn without a conclusion waits for the background processes its conversation owns.
+export function awaitsBackground(p: Project, tid: string) {
+  const r = requests.get(tid)
+  return !busy.has(tid) && !!r?.ack && !r.conclusion && store.listProcs(p).some((pr) => pr.threadId === tid)
+}
 export const markConcluded = (tid: string, messageId: string) => turnConclusion.set(tid, messageId)
 export const originOf = (tid: string): Origin => turnOrigin.get(tid) ?? 'local'
 

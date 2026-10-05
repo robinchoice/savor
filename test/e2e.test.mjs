@@ -454,6 +454,73 @@ test('workflows run in a new conversation', async () => {
   assert.deepEqual([saved.prompt, saved.cron], ['nightly check, thoroughly', '0 4 * * *'])
 })
 
+test('a workflow lists its runs, catches up a missed time and skips one while a run is open', async () => {
+  const [project] = (await api('GET', '/projects')).body
+  const list = `/projects/${project.id}/workflows`
+  // Due once a year, so the test decides when a scheduled time counts as missed.
+  const wf = (await api('POST', list, { name: 'Yearly', prompt: 'yearly check', cron: '0 0 1 1 *' })).body
+  const w = `${list}/${wf.id}`
+  const file = path.join(PROJECT, '.savor/workflows', `${wf.id}.json`)
+  const runs = async () => (await api('GET', `${w}/runs`)).body
+  const threadFile = (id) => path.join(PROJECT, '.savor/threads', id, 'thread.json')
+  const patchFile = (f, patch) => fs.writeFileSync(f, JSON.stringify({ ...JSON.parse(fs.readFileSync(f, 'utf8')), ...patch }))
+  // Savor was not running at the last scheduled time: what it had settled lies before it. Any save looks at the schedules again.
+  const miss = async (name) => {
+    patchFile(file, { settledAt: '2000-01-01T00:00:00.000Z' })
+    await api('PUT', w, { name })
+  }
+  assert.deepEqual(await runs(), [])
+
+  const manual = (await api('POST', `${w}/run`)).body
+  await until(async () => (await runs())[0].status === 'finished')
+  let all = await runs()
+  assert.deepEqual([all[0].trigger, all[0].threadId, all[0].summary], ['manual', manual.id, 'Echo: Run workflow “Yearly”: yearly check'])
+  assert.ok(all[0].workedMs >= 0)
+
+  // The missed time is caught up once, as a run of its own kind that knows when it was due.
+  await miss('Yearly check')
+  await until(async () => (await runs()).length === 2 && (await runs())[0].status === 'finished')
+  all = await runs()
+  assert.equal(all[0].trigger, 'caught')
+  assert.ok(Date.parse(all[0].due) < Date.now() - 60_000)
+  const caught = all[0].threadId
+  assert.deepEqual((await api('GET', `/projects/${project.id}/threads/${caught}`)).body.thread.workflow, { id: wf.id, name: 'Yearly check', trigger: 'caught', due: all[0].due })
+
+  // While a run waits for an answer, the next scheduled time is skipped and points at that run.
+  patchFile(threadFile(caught), { needsYou: true })
+  await miss('Yearly')
+  all = await runs()
+  assert.deepEqual([all.length, all[0].status, all.find((r) => r.status === 'skipped').threadId], [3, 'needs', caught])
+  // The list shows the run that is open, not the time skipped after it.
+  assert.deepEqual((await api('GET', list)).body.find((x) => x.id === wf.id).lastRun.status, 'needs')
+  patchFile(threadFile(caught), { needsYou: false })
+
+  // A workflow that does not catch up lets the missed time pass.
+  await api('PUT', w, { catchUp: false })
+  await miss('Yearly')
+  assert.equal((await runs()).length, 3)
+  assert.notEqual(JSON.parse(fs.readFileSync(file, 'utf8')).settledAt, '2000-01-01T00:00:00.000Z')
+
+  // The workflow opens on its runs; a run opens its conversation, which starts with the workflow instead of a typed message.
+  await page.goto(`${base}/#/p/${project.id}/workflows/${wf.id}`)
+  await page.waitForSelector('.wf-over h1:has-text("Yearly")')
+  await page.waitForSelector('.side-list .card:has-text("Yearly") .last-run:has-text("Finished")')
+  await page.waitForSelector('.run.skipped >> text=was still open')
+  await page.click('.run.finished:has-text("Caught up")')
+  await page.waitForSelector('.wf-chip:has-text("Yearly check") >> text=Caught up')
+  assert.equal(await page.locator('.msg.user').count(), 0)
+  await page.click('.wf-chip')
+  await page.waitForSelector('.wf-chip-body >> text=yearly check')
+  await page.click('.wf-chip-body a')
+  await page.waitForSelector('.wf-over')
+  // Editing is one step away, and leads back.
+  await page.click('.wf-actions a')
+  await page.waitForSelector('.form')
+  assert.equal(await page.isChecked('.form label.with-hint input'), false)
+  await page.click('.back-link')
+  await page.waitForSelector('.wf-over')
+})
+
 test('auth: tokens, pairing and remote limits', async () => {
   assert.equal((await api('GET', '/projects', undefined, '')).status, 401)
   const pairing = (await api('POST', '/devices/pairing')).body
@@ -903,7 +970,9 @@ ${extra}`
   fs.mkdirSync(path.join(enjoy, 'threads/bbbb2222'))
   fs.writeFileSync(path.join(enjoy, 'threads/bbbb2222/messages.md'), thread('bbbb2222').replace('status: idle', 'status: completed'))
   fs.mkdirSync(path.join(enjoy, 'threads/cccc3333'))
-  fs.writeFileSync(path.join(enjoy, 'threads/cccc3333/messages.md'), thread('cccc3333'))
+  // This one was a run of the workflow in Enjoy, which keeps the instructions on the conversation.
+  const asRun = (yaml) => yaml.replace('version: 2', 'version: 2\nrecipeRun:\n  recipeId: wf1\n  trigger: scheduled\n  instructions: Check the login every week.').replace('text: please fix the login', 'text: ""\n    automated: true')
+  fs.writeFileSync(path.join(enjoy, 'threads/cccc3333/messages.md'), asRun(thread('cccc3333')))
   fs.writeFileSync(path.join(enjoy, 'threads/aaaa1111/messages.md'), thread('aaaa1111', '  - id: later\n    role: user\n    text: written in Enjoy later\n    createdAt: 2026-10-02T10:00:00.000Z\n'))
   // The workflow was paused in Savor after Enjoy's last change to it.
   await api('PUT', `/projects/${p.id}/workflows/wf1`, { enabled: false })
@@ -914,12 +983,15 @@ ${extra}`
   const done = (await api('GET', `/projects/${p.id}/threads/bbbb2222`)).body.thread
   // An open conversation keeps its preview; a completed one's usually points at a server that is gone.
   assert.deepEqual([done.completed, done.preview], [true, null])
-  assert.equal((await api('GET', `/projects/${p.id}/threads/cccc3333`)).body.thread.preview, 'http://localhost:5173/')
+  const ran = (await api('GET', `/projects/${p.id}/threads/cccc3333`)).body
+  assert.equal(ran.thread.preview, 'http://localhost:5173/')
+  assert.deepEqual([ran.thread.workflow, ran.messages[0].text], [{ id: 'wf1', name: ran.thread.title, trigger: 'scheduled' }, 'Check the login every week.'])
+  assert.deepEqual((await api('GET', `/projects/${p.id}/workflows/wf1/runs`)).body.map((r) => [r.threadId, r.trigger]), [['cccc3333', 'scheduled']])
   // A Claude session whose transcript is gone is not resumed; the conversation starts a new one.
   assert.deepEqual([before.thread.agentSessions, done.agentSessions], [[{ provider: 'claude', sessionId: 'enjoy-session-aaaa1111' }], []])
   // What changes in Savor alone (here: reopening a completed conversation) survives the next import.
   await api('PATCH', `/projects/${p.id}/threads/bbbb2222`, { completed: false })
-  fs.writeFileSync(path.join(enjoy, 'threads/cccc3333/messages.md'), thread('cccc3333', '  - id: later\n    role: user\n    text: written in Enjoy later\n    createdAt: 2026-10-02T10:00:00.000Z\n'))
+  fs.writeFileSync(path.join(enjoy, 'threads/cccc3333/messages.md'), asRun(thread('cccc3333', '  - id: later\n    role: user\n    text: written in Enjoy later\n    createdAt: 2026-10-02T10:00:00.000Z\n')))
   // A workflow changed in Enjoy after its last edit in Savor comes in again and stays paused.
   fs.writeFileSync(path.join(enjoy, 'recipes/wf1.md'), recipe('Login', 'Check the login every Monday.', '2099-01-01T00:00:00.000Z'))
   const third = (await api('POST', '/enjoy', { paths: [folder] })).body[0]

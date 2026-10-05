@@ -115,6 +115,7 @@ export interface Thread {
   needsYou: boolean
   error: string | null
   worktree?: { branch: string; path: string } | null
+  workflow?: { id: string; name: string; trigger: Run['trigger']; due?: string }
   busy?: boolean
   messageCount?: number
 }
@@ -138,7 +139,9 @@ export interface Project {
   counts: { working: number; unread: number; needsYou: number }
 }
 export interface Doc { id: string; title: string; content: string; updatedAt: string }
-export interface Workflow { id: string; name: string; prompt: string; collection: string; cron: string | null; timezone: string; scheduleLabel: string | null; enabled: boolean; next: string[]; lastRunAt: string | null; nextRunAt?: string | null }
+export interface Workflow { id: string; name: string; prompt: string; collection: string; cron: string | null; timezone: string; scheduleLabel: string | null; enabled: boolean; catchUp: boolean; next: string[]; lastRunAt: string | null; nextRunAt?: string | null; lastRun?: Run | null }
+// A run of a workflow. A skipped one has no conversation of its own: threadId is the conversation that was in its way.
+export interface Run { at: string; trigger: 'scheduled' | 'manual' | 'caught'; due?: string; status: 'working' | 'needs' | 'failed' | 'finished' | 'skipped'; threadId: string; summary: string; workedMs: number }
 export interface Proc { pid: number; name: string; cwd: string; command: string; url: string | null; log: string | null; threadId: string; startedAt: string }
 export interface Me { origin: 'local' | 'remote'; device: string | null; awake: boolean; host: string; version: string; system: string; projectsDir: string }
 
@@ -164,6 +167,9 @@ export const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
 export const formatDay = (iso: string) => new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
 export const formatTime = (iso: string) => new Date(iso).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+// What set a workflow run off. A run that was caught up says when it had been due.
+export const runTrigger = (r: { trigger: Run['trigger']; due?: string }) =>
+  r.trigger === 'caught' ? `Caught up, was due ${new Date(r.due!).toLocaleString(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit' })}` : r.trigger === 'manual' ? 'Manual' : 'Scheduled'
 export function duration(ms: number) {
   const s = Math.round(ms / 1000)
   if (s < 60) return `${s} second${s === 1 ? '' : 's'}`

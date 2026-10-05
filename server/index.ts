@@ -17,7 +17,7 @@ import { closeDevice, pairingLink, relayStatus, startRelay } from './relay-clien
 import { newNonce, securityHeaders, withNonce } from '../shared/headers.js'
 import { handleMcp } from './mcp.js'
 import { isUnsafe, listAgents, mergeAgent } from './providers.js'
-import { nextRun, runWorkflow, syncSchedules, validateCron } from './scheduler.js'
+import { nextRun, runs, runWorkflow, syncSchedules, validateCron } from './scheduler.js'
 import * as git from './git.js'
 import { importSessions, listSessions } from './import.js'
 import { importEnjoy, keepOutOfGit, listEnjoy } from './enjoy.js'
@@ -440,14 +440,20 @@ const saveWorkflowRoute = (params: Params, b: any, ctx: Ctx, id?: string) => {
   } catch (e) {
     throw new BadRequest(`Invalid schedule: ${(e as Error).message}`)
   }
-  const { name, prompt, collection, cron, timezone, scheduleLabel, enabled, next } = b
-  const fields = Object.fromEntries(Object.entries({ name, prompt, collection, cron, timezone, scheduleLabel, enabled, next }).filter(([, v]) => v !== undefined))
+  const { name, prompt, collection, cron, timezone, scheduleLabel, enabled, catchUp, next } = b
+  const fields = Object.fromEntries(Object.entries({ name, prompt, collection, cron, timezone, scheduleLabel, enabled, catchUp, next }).filter(([, v]) => v !== undefined))
   const wf = store.saveWorkflow(project(params), { ...(fields as { name: string; prompt: string }), ...(id && { id }) }, ctx.auth.origin)
   syncSchedules()
   emit({ type: 'workflows', projectId: params.pid })
   return wf
 }
-route('GET', '/projects/:pid/workflows', (params) => store.listWorkflows(project(params)).map((wf) => ({ ...wf, nextRunAt: nextRun(wf) })))
+route('GET', '/projects/:pid/workflows', (params) => {
+  const p = project(params)
+  const threads = store.listThreads(p)
+  // The list shows the latest run that started; a time skipped since then is in the workflow's runs.
+  return store.listWorkflows(p).map((wf) => ({ ...wf, nextRunAt: nextRun(wf), lastRun: runs(p, { ...wf, skipped: [] }, threads, 1)[0] ?? null }))
+})
+route('GET', '/projects/:pid/workflows/:id/runs', (params) => runs(project(params), store.getWorkflow(project(params), params.id)))
 route('POST', '/projects/:pid/workflows', (params, b, ctx) => saveWorkflowRoute(params, b, ctx))
 route('PUT', '/projects/:pid/workflows/:id', (params, b, ctx) => saveWorkflowRoute(params, b, ctx, params.id))
 route('DELETE', '/projects/:pid/workflows/:id', (params) => {

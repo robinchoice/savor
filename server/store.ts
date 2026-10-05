@@ -60,6 +60,9 @@ export interface Thread {
   worktree?: { branch: string; path: string } | null
   // Set by the import from Enjoy: what the conversation looked like there when it was last brought over.
   imported?: { messages: number; completed: boolean; open: number }
+  // Set for a run of a workflow: which one started the conversation and what set it off. A run that was
+  // caught up carries the scheduled time it was due.
+  workflow?: { id: string; name: string; trigger: 'scheduled' | 'manual' | 'caught'; due?: string }
 }
 export interface ActivityEvent { id: number; type: 'thinking' | 'command' | 'edit' | 'note'; label: string; time: string; finishedAt?: string }
 export interface Decision {
@@ -84,9 +87,15 @@ export interface Workflow {
   timezone: string
   scheduleLabel: string | null
   enabled: boolean
+  // Whether a scheduled time that passed while Savor was not running is run once at the next start.
+  catchUp: boolean
   next: string[]
   lastRunAt: string | null
   updatedAt: string
+  // Every scheduled time up to here is dealt with: it ran, was skipped or does not count.
+  settledAt: string
+  // Scheduled times that did not run because the run in conversation `blockedBy` was still open.
+  skipped: { at: string; blockedBy: string }[]
   origin: Origin
 }
 export interface Proc {
@@ -288,7 +297,7 @@ export function getThread(p: Project, tid: string): Thread {
 
 export const cwdOf = (p: Project, t: Thread) => t.worktree?.path ?? p.path
 
-export function createThread(p: Project, init: { title: string; label?: string | null; agent?: AgentConfig; parentId?: string; worktree?: { branch: string; path: string } | null }): Thread {
+export function createThread(p: Project, init: { title: string; label?: string | null; agent?: AgentConfig; parentId?: string; worktree?: { branch: string; path: string } | null; workflow?: Thread['workflow'] }): Thread {
   const t: Thread = {
     id: newId(),
     title: init.title.slice(0, 300),
@@ -305,6 +314,7 @@ export function createThread(p: Project, init: { title: string; label?: string |
   }
   if (init.parentId) t.parentId = init.parentId
   if (init.worktree) t.worktree = init.worktree
+  if (init.workflow) t.workflow = init.workflow
   saveThread(p, t)
   return t
 }
@@ -433,7 +443,7 @@ export function deleteDoc(p: Project, id: string) {
 
 const wfDir = (p: Project) => path.join(dataDir(p), 'workflows')
 // What workflows saved by earlier versions don't have yet.
-const wfDefaults = { next: [], collection: '', scheduleLabel: null, updatedAt: '' }
+const wfDefaults = { next: [], collection: '', scheduleLabel: null, updatedAt: '', catchUp: true, settledAt: '', skipped: [] }
 
 export function listWorkflows(p: Project): Workflow[] {
   if (!fs.existsSync(wfDir(p))) return []
@@ -460,9 +470,12 @@ export function saveWorkflow(p: Project, wf: Partial<Workflow> & { name: string;
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     scheduleLabel: null,
     enabled: true,
+    catchUp: true,
     next: [],
     lastRunAt: null,
     updatedAt: now(),
+    settledAt: now(),
+    skipped: [],
     origin: 'local',
     ...prev,
     ...wf,
@@ -471,8 +484,10 @@ export function saveWorkflow(p: Project, wf: Partial<Workflow> & { name: string;
   // A label describes one schedule, so it goes when the schedule changes without it.
   if (prev && next.cron !== prev.cron && next.scheduleLabel === prev.scheduleLabel) next.scheduleLabel = null
   // A run only records its time; anything else is an edit.
-  const edited = (['name', 'prompt', 'collection', 'cron', 'timezone', 'scheduleLabel', 'enabled'] as const).some((k) => next[k] !== prev?.[k])
+  const edited = (['name', 'prompt', 'collection', 'cron', 'timezone', 'scheduleLabel', 'enabled', 'catchUp'] as const).some((k) => next[k] !== prev?.[k])
   if (prev && (edited || String(next.next) !== String(prev.next))) next.updatedAt = now()
+  // A changed or re-enabled schedule counts from now: what it would have run before is not caught up.
+  if (prev && (next.cron !== prev.cron || next.timezone !== prev.timezone || next.enabled !== prev.enabled)) next.settledAt = now()
   writeJson(path.join(wfDir(p), `${next.id}.json`), next)
   return next
 }

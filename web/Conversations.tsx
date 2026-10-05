@@ -3,10 +3,10 @@ import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import {
   Asterisk, Hexagon, Code2, Sparkles, Orbit, Plus, Search, MessageSquare, Check, MoreHorizontal, PanelLeft, PanelRight, FileText, Globe,
-  CircleAlert, ArrowUp, ArrowLeft, Pencil, Brain, Terminal, Wrench, ArrowRight, Smartphone, Monitor, ShieldQuestion, X, ChevronUp, ChevronDown, ChevronRight, Paperclip, GitBranch, GitMerge, Trash2, Copy,
+  CircleAlert, ArrowUp, ArrowLeft, Pencil, Brain, Terminal, Wrench, ArrowRight, Smartphone, Monitor, ShieldQuestion, X, ChevronUp, ChevronDown, ChevronRight, Paperclip, GitBranch, GitMerge, Trash2, Copy, Workflow as WorkflowIcon,
 } from 'lucide-preact'
 import {
-  api, cap, duration, formatDay, formatTime, go, PROVIDER_NAMES, useApi, type ActivityEvent, type AgentConfig, type Attachment, type Decision, type Message, type Proc, type Project, type Thread, type Worktree,
+  api, cap, duration, formatDay, formatTime, go, PROVIDER_NAMES, runTrigger, useApi, type ActivityEvent, type AgentConfig, type Attachment, type Decision, type Message, type Proc, type Project, type Thread, type Worktree,
 } from './api'
 import { Composer, type Picked } from './Composer'
 import { transport } from './transport'
@@ -559,6 +559,7 @@ function ThreadView({ project, threadId }: { project: Project; threadId: string 
                     key={m.id}
                     m={m}
                     thread={thread}
+                    workflow={i === 0 && thread.workflow ? { ...thread.workflow, href: `#/p/${project.id}/workflows/${thread.workflow.id}` } : undefined}
                     decisions={decisions.filter((d) => m.decisionIds?.includes(d.id))}
                     active={i > lastUser || m.kind === 'question'}
                     base={base}
@@ -654,7 +655,7 @@ function Highlighted({ text, q }: { text: string; q: string }) {
 
 const attachmentLabel = (name: string) => name.replace(/^[0-9a-f]{16}-/, '')
 
-function MessageItem({ m, thread, decisions, active, base, highlight, match, onCommit, preview, onPreview }: { m: Message; thread: Thread; decisions: Decision[]; active: boolean; base: string; highlight: string; match: string; onCommit: (hash: string) => void; preview?: string | false | null; onPreview?: () => void }) {
+function MessageItem({ m, thread, workflow, decisions, active, base, highlight, match, onCommit, preview, onPreview }: { m: Message; thread: Thread; workflow?: NonNullable<Thread['workflow']> & { href: string }; decisions: Decision[]; active: boolean; base: string; highlight: string; match: string; onCommit: (hash: string) => void; preview?: string | false | null; onPreview?: () => void }) {
   const [copyState, setCopyState] = useState('')
   useEffect(() => {
     if (!copyState) return
@@ -672,6 +673,30 @@ function MessageItem({ m, thread, decisions, active, base, highlight, match, onC
   const who = m.kind === 'user' ? (m.origin === 'remote' ? `You · ${m.device ?? 'remote device'}` : 'You') : PROVIDER_NAMES[m.modelInfo?.provider ?? thread.agent.provider]
   const worked = m.workTiming && Date.parse(m.workTiming.finishedAt) - Date.parse(m.workTiming.startedAt)
   const queued = m.kind === 'user' && m.delivered === false
+  const [open, setOpen] = useState(false)
+
+  // The message that starts a workflow run is the workflow, not something the user typed: its instructions fold away.
+  if (workflow && m.kind === 'user') {
+    return (
+      <div class={`msg wf-start ${match}`} id={`msg-${m.id}`}>
+        <button class="wf-chip" aria-expanded={open || !!match} onClick={() => setOpen(!open)}>
+          <WorkflowIcon size={15} /> <b>{workflow.name}</b>
+          <span>
+            {runTrigger(workflow)} · {formatTime(m.ts)}
+          </span>
+          <ChevronRight size={14} />
+        </button>
+        {(open || match) && (
+          <div class="wf-chip-body">
+            <div class="plain"><Highlighted text={m.text ?? ''} q={highlight} /></div>
+            <a href={workflow.href}>
+              <WorkflowIcon size={14} /> Open workflow
+            </a>
+          </div>
+        )}
+      </div>
+    )
+  }
 
   if (m.kind === 'approval') {
     const a = m.approval!
