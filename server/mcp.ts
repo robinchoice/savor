@@ -141,11 +141,15 @@ function buildServer(p: Project, tid: string) {
   // ---- workflows ----
 
   const wfUrl = (id: string) => appUrl(`/p/${p.id}/workflows/${id}`)
+  // A workflow as an agent read it: update_workflow applies only while it is still that.
+  const revisionOf = (wf: store.Workflow) => store.hash(JSON.stringify([wf.name, wf.prompt, wf.collection, wf.cron, wf.timezone, wf.scheduleLabel, wf.enabled, wf.next]))
   const workflowShape = {
     name: z.string().min(1),
     prompt: z.string().min(1).describe('Instructions the agent receives on each run'),
+    collection: z.string().optional().describe('Name of the group the workflow is listed under'),
     cron: z.string().nullable().optional().describe('5-field cron expression, null for manual runs only'),
     timezone: z.string().optional().describe('IANA timezone, defaults to the host timezone'),
+    scheduleLabel: z.string().nullable().optional().describe('The schedule in plain words, in the user’s language, e.g. “Mondays at 9:00”'),
     enabled: z.boolean().optional(),
     next: z.array(z.string()).optional().describe('IDs of workflows to continue with after this one (a chain)'),
   }
@@ -154,9 +158,10 @@ function buildServer(p: Project, tid: string) {
     ok(store.listWorkflows(p).map((wf) => ({ ...wf, url: wfUrl(wf.id) }))),
   )
 
-  server.registerTool('read_workflow', { description: 'Read a workflow, including the workflows it links to.', inputSchema: { id: z.string() } }, async ({ id }) =>
-    ok(store.getWorkflow(p, id)),
-  )
+  server.registerTool('read_workflow', { description: 'Read a workflow, including the workflows it links to and the revision update_workflow asks for.', inputSchema: { id: z.string() } }, async ({ id }) => {
+    const wf = store.getWorkflow(p, id)
+    return ok({ ...wf, revision: revisionOf(wf) })
+  })
 
   server.registerTool(
     'create_workflow',
@@ -172,10 +177,14 @@ function buildServer(p: Project, tid: string) {
 
   server.registerTool(
     'update_workflow',
-    { description: 'Update fields of a workflow.', inputSchema: { id: z.string(), ...workflowShape, name: z.string().optional(), prompt: z.string().optional() } },
-    async ({ id, ...patch }) => {
+    {
+      description: 'Update fields of a workflow, with the revision read_workflow returned for it.',
+      inputSchema: { id: z.string(), revision: z.string(), ...workflowShape, name: z.string().optional(), prompt: z.string().optional() },
+    },
+    async ({ id, revision, ...patch }) => {
       if (patch.cron) validateCron(patch.cron, patch.timezone)
       const prev = store.getWorkflow(p, id)
+      if (revision !== revisionOf(prev)) throw new Error('The workflow changed since you read it. Read it again and apply your change to that.')
       const clean = Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined))
       store.saveWorkflow(p, { ...prev, ...clean }, agents.originOf(tid))
       syncSchedules()

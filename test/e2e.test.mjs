@@ -423,9 +423,35 @@ test('workflows run in a new conversation', async () => {
   const wf = (await api('POST', `/projects/${project.id}/workflows`, { name: 'Nightly', prompt: 'nightly check', cron: '0 3 * * *' })).body
   assert.match(wf.id, /^[0-9a-f]{16}$/)
   assert.equal((await api('POST', `/projects/${project.id}/workflows`, { name: 'Bad', prompt: 'x', cron: 'not a cron' })).status, 400)
-  const thread = (await api('POST', `/projects/${project.id}/workflows/${wf.id}/run`)).body
+  const w = `/projects/${project.id}/workflows/${wf.id}`
+  const labelled = (await api('PUT', w, { collection: 'Night', scheduleLabel: 'Every night at three' })).body
+  assert.deepEqual([labelled.collection, labelled.scheduleLabel], ['Night', 'Every night at three'])
+  const thread = (await api('POST', `${w}/run`)).body
   await page.goto(`${base}/#/p/${project.id}/t/${thread.id}`)
   await page.waitForSelector('text=Echo: Run workflow')
+  // A run is not an edit.
+  const ran = (await api('GET', `/projects/${project.id}/workflows`)).body.find((x) => x.id === wf.id)
+  assert.ok(ran.lastRunAt)
+  assert.equal(ran.updatedAt, labelled.updatedAt)
+
+  // The list groups workflows by collection and shows the schedule in the words it was given.
+  await page.goto(`${base}/#/p/${project.id}/workflows`)
+  await page.waitForSelector('.side-list .menu-label:has-text("Night")')
+  await page.waitForSelector('.side-list .card:has-text("Nightly") >> text=Every night at three')
+
+  // An agent updates the workflow it read: an edit made in between is not overwritten.
+  const { mcpToken } = JSON.parse(fs.readFileSync(path.join(HOME, 'state.json'), 'utf8'))
+  const client = new Client({ name: 'e2e', version: '1' })
+  await client.connect(new StreamableHTTPClientTransport(new URL(`${base}/mcp?project=${project.id}&thread=${thread.id}`), { requestInit: { headers: { authorization: `Bearer ${mcpToken}` } } }))
+  const read = async () => JSON.parse((await client.callTool({ name: 'read_workflow', arguments: { id: wf.id } })).content[0].text)
+  const { revision } = await read()
+  // The label described the old schedule and goes with it.
+  assert.equal((await api('PUT', w, { cron: '0 4 * * *' })).body.scheduleLabel, null)
+  assert.equal((await client.callTool({ name: 'update_workflow', arguments: { id: wf.id, revision, prompt: 'stale' } })).isError, true)
+  assert.ok(!(await client.callTool({ name: 'update_workflow', arguments: { id: wf.id, revision: (await read()).revision, prompt: 'nightly check, thoroughly' } })).isError)
+  const saved = await read()
+  await client.close()
+  assert.deepEqual([saved.prompt, saved.cron], ['nightly check, thoroughly', '0 4 * * *'])
 })
 
 test('auth: tokens, pairing and remote limits', async () => {
@@ -760,6 +786,7 @@ test('Enjoy projects come over with their records and continue with the same age
   // An Enjoy store as Enjoy writes it: an index of project folders, YAML records, markdown with front matter.
   const folder = path.join(TMP, 'from-enjoy')
   const enjoy = path.join(TMP, 'enjoy', 'projects', 'demo-1a2b3c4d')
+  const recipe = (collection, instructions, updatedAt) => `---\nid: wf1\nname: Weekly check\ncollection: ${collection}\ncron: 0 9 * * 1\ntimezone: Europe/Berlin\nscheduleLabel: Mondays at nine\nsourceRequest: check weekly\nupdatedAt: ${updatedAt}\n---\n${instructions}\n`
   // The conversation this test opens in the UI has no preview, so the daemon does not start a preview browser for it.
   const thread = (id, extra = '', preview = id === 'aaaa1111' ? '' : 'productPreview:\n  title: Demo\n  url: http://localhost:5173/\n') => `version: 2
 id: ${id}
@@ -817,7 +844,7 @@ ${extra}`
   fs.writeFileSync(path.join(enjoy, 'threads/aaaa1111/activity.md'), 'version: 2\nevents:\n  - id: 1\n    type: files\n    name: Edit\n    label: Edit · auth.ts\n    time: 2026-10-01T10:01:00.000Z\n    finishedAt: 2026-10-01T10:01:30.000Z\n')
   fs.writeFileSync(path.join(enjoy, 'decisions/req0-conclusion-question-0.md'), '---\nid: req0-conclusion-question-0\ntitle: Which provider?\noptions:\n  - GitHub\n  - Google\nselected: 1\nresolved: true\nthreadId: aaaa1111\nkind: product\ngroupId: req0-conclusion\ncreatedAt: 2026-10-01T09:00:00.000Z\n---\n')
   fs.writeFileSync(path.join(enjoy, 'docs/Plan.md'), '---\ntitle: Login plan\nid: doc1\ncreatedAt: 2026-10-01T09:00:00.000Z\nupdatedAt: 2026-10-01T09:30:00.000Z\n---\n# Login plan\n\nFirst the session cookie.\n')
-  fs.writeFileSync(path.join(enjoy, 'recipes/wf1.md'), '---\nid: wf1\nname: Weekly check\ncron: 0 9 * * 1\ntimezone: Europe/Berlin\nsourceRequest: check weekly\n---\nCheck the login every week.\n')
+  fs.writeFileSync(path.join(enjoy, 'recipes/wf1.md'), recipe('Checks', 'Check the login every week.', '2026-10-01T09:00:00.000Z'))
   fs.writeFileSync(path.join(enjoy, 'attachments/shot.png'), 'png')
   // Claude Code's transcript of the first conversation's session; the others have none.
   const transcripts = path.join(TMP, 'claude', 'projects', folder.replace(/[^a-zA-Z0-9]/g, '-'))
@@ -859,7 +886,7 @@ ${extra}`
   const docs = (await api('GET', `/projects/${p.id}/docs`)).body
   assert.deepEqual(docs.map((d) => [d.id, d.title, d.content, d.updatedAt]), [['doc1', 'Login plan', 'First the session cookie.', '2026-10-01T09:30:00.000Z']])
   const workflows = (await api('GET', `/projects/${p.id}/workflows`)).body
-  assert.deepEqual(workflows.map((w) => [w.id, w.name, w.prompt, w.cron, w.timezone, w.enabled]), [['wf1', 'Weekly check', 'Check the login every week.', '0 9 * * 1', 'Europe/Berlin', true]])
+  assert.deepEqual(workflows.map((w) => [w.id, w.name, w.prompt, w.collection, w.cron, w.timezone, w.scheduleLabel, w.enabled]), [['wf1', 'Weekly check', 'Check the login every week.', 'Checks', '0 9 * * 1', 'Europe/Berlin', 'Mondays at nine', true]])
 
   // A follow-up resumes the session the conversation had in Enjoy, with the same settings.
   await send('and now?')
@@ -878,6 +905,9 @@ ${extra}`
   fs.mkdirSync(path.join(enjoy, 'threads/cccc3333'))
   fs.writeFileSync(path.join(enjoy, 'threads/cccc3333/messages.md'), thread('cccc3333'))
   fs.writeFileSync(path.join(enjoy, 'threads/aaaa1111/messages.md'), thread('aaaa1111', '  - id: later\n    role: user\n    text: written in Enjoy later\n    createdAt: 2026-10-02T10:00:00.000Z\n'))
+  // The workflow was paused in Savor after Enjoy's last change to it.
+  await api('PUT', `/projects/${p.id}/workflows/wf1`, { enabled: false })
+  fs.writeFileSync(path.join(enjoy, 'recipes/wf1.md'), recipe('Checks', 'Check the login every week, briefly.', '2026-10-02T10:00:00.000Z'))
   const second = (await api('POST', '/enjoy', { paths: [folder] })).body[0]
   assert.deepEqual([second.added, second.updated, second.kept, second.documents, second.workflows], [2, 0, 1, 0, 0])
   assert.ok((await api('GET', t)).body.messages.some((m) => m.text === 'Echo: and now?'))
@@ -890,8 +920,12 @@ ${extra}`
   // What changes in Savor alone (here: reopening a completed conversation) survives the next import.
   await api('PATCH', `/projects/${p.id}/threads/bbbb2222`, { completed: false })
   fs.writeFileSync(path.join(enjoy, 'threads/cccc3333/messages.md'), thread('cccc3333', '  - id: later\n    role: user\n    text: written in Enjoy later\n    createdAt: 2026-10-02T10:00:00.000Z\n'))
+  // A workflow changed in Enjoy after its last edit in Savor comes in again and stays paused.
+  fs.writeFileSync(path.join(enjoy, 'recipes/wf1.md'), recipe('Login', 'Check the login every Monday.', '2099-01-01T00:00:00.000Z'))
   const third = (await api('POST', '/enjoy', { paths: [folder] })).body[0]
-  assert.deepEqual([third.added, third.updated, third.kept], [0, 1, 2])
+  assert.deepEqual([third.added, third.updated, third.kept, third.workflows], [0, 1, 2, 1])
+  const [wf1] = (await api('GET', `/projects/${p.id}/workflows`)).body
+  assert.deepEqual([wf1.prompt, wf1.collection, wf1.enabled], ['Check the login every Monday.', 'Login', false])
   assert.equal((await api('GET', `/projects/${p.id}/threads/cccc3333`)).body.messages.at(-1).text, 'written in Enjoy later')
   assert.equal((await api('GET', `/projects/${p.id}/threads/bbbb2222`)).body.thread.completed, false)
 })

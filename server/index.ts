@@ -440,8 +440,8 @@ const saveWorkflowRoute = (params: Params, b: any, ctx: Ctx, id?: string) => {
   } catch (e) {
     throw new BadRequest(`Invalid schedule: ${(e as Error).message}`)
   }
-  const { name, prompt, cron, timezone, enabled, next } = b
-  const fields = Object.fromEntries(Object.entries({ name, prompt, cron, timezone, enabled, next }).filter(([, v]) => v !== undefined))
+  const { name, prompt, collection, cron, timezone, scheduleLabel, enabled, next } = b
+  const fields = Object.fromEntries(Object.entries({ name, prompt, collection, cron, timezone, scheduleLabel, enabled, next }).filter(([, v]) => v !== undefined))
   const wf = store.saveWorkflow(project(params), { ...(fields as { name: string; prompt: string }), ...(id && { id }) }, ctx.auth.origin)
   syncSchedules()
   emit({ type: 'workflows', projectId: params.pid })

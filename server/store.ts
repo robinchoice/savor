@@ -79,11 +79,14 @@ export interface Workflow {
   id: string
   name: string
   prompt: string
+  collection: string
   cron: string | null
   timezone: string
+  scheduleLabel: string | null
   enabled: boolean
   next: string[]
   lastRunAt: string | null
+  updatedAt: string
   origin: Origin
 }
 export interface Proc {
@@ -429,19 +432,21 @@ export function deleteDoc(p: Project, id: string) {
 // ---- workflows ----
 
 const wfDir = (p: Project) => path.join(dataDir(p), 'workflows')
+// What workflows saved by earlier versions don't have yet.
+const wfDefaults = { next: [], collection: '', scheduleLabel: null, updatedAt: '' }
 
 export function listWorkflows(p: Project): Workflow[] {
   if (!fs.existsSync(wfDir(p))) return []
   return fs
     .readdirSync(wfDir(p))
     .filter((f) => f.endsWith('.json'))
-    .map((f) => ({ next: [], ...readJson<Partial<Workflow>>(path.join(wfDir(p), f), null as never) }) as Workflow)
+    .map((f) => ({ ...wfDefaults, ...readJson<Partial<Workflow>>(path.join(wfDir(p), f), null as never) }) as Workflow)
 }
 
 export function getWorkflow(p: Project, id: string): Workflow {
   const wf = readJson<Partial<Workflow> | null>(path.join(wfDir(p), `${path.basename(id)}.json`), null)
   if (!wf) throw new NotFound(`workflow ${id}`)
-  return { next: [], ...wf } as Workflow
+  return { ...wfDefaults, ...wf } as Workflow
 }
 
 // `by` is where the request came from. Whoever writes the instructions (prompt or chain) decides
@@ -450,16 +455,24 @@ export function saveWorkflow(p: Project, wf: Partial<Workflow> & { name: string;
   const prev = wf.id ? getWorkflow(p, wf.id) : null
   const next: Workflow = {
     id: newId(),
+    collection: '',
     cron: null,
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    scheduleLabel: null,
     enabled: true,
     next: [],
     lastRunAt: null,
+    updatedAt: now(),
     origin: 'local',
     ...prev,
     ...wf,
   }
   if (by && (!prev || next.prompt !== prev.prompt || String(next.next) !== String(prev.next))) next.origin = by
+  // A label describes one schedule, so it goes when the schedule changes without it.
+  if (prev && next.cron !== prev.cron && next.scheduleLabel === prev.scheduleLabel) next.scheduleLabel = null
+  // A run only records its time; anything else is an edit.
+  const edited = (['name', 'prompt', 'collection', 'cron', 'timezone', 'scheduleLabel', 'enabled'] as const).some((k) => next[k] !== prev?.[k])
+  if (prev && (edited || String(next.next) !== String(prev.next))) next.updatedAt = now()
   writeJson(path.join(wfDir(p), `${next.id}.json`), next)
   return next
 }

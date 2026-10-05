@@ -24,6 +24,8 @@ export function Workflows({ project, rest }: { project: Project; rest: string[] 
     go(`/p/${project.id}/t/${t.id}`)
   }
   const toggle = (w: Workflow) => api('PUT', `${base}/${w.id}`, { ...w, enabled: !w.enabled })
+  // Workflows without a collection come first, then each collection under its name.
+  const collections = [...new Set(workflows?.map((w) => w.collection))].sort((a, b) => a.localeCompare(b))
 
   return (
     <div class="split-page">
@@ -38,32 +40,41 @@ export function Workflows({ project, rest }: { project: Project; rest: string[] 
           <LayoutGrid size={15} /> Gallery <small class="muted">{RECIPES.length} ready-made workflows</small>
         </a>
         {project.paused && <div class="banner">Project paused — scheduled runs are skipped.</div>}
-        {workflows?.map((w) => (
-          <a key={w.id} href={`#/p/${project.id}/workflows/${w.id}`} class={`card ${w.id === workflowId ? 'active' : ''}`}>
-            <div class="card-title">{w.name}</div>
-            <div class="card-meta">
-              <span>
-                <Clock size={12} /> {w.cron ? describeCron(w.cron) : 'Manual'}
-                {w.next.length ? (
-                  <>
-                    {' '}
-                    · <Link2 size={12} /> {w.next.length}
-                  </>
-                ) : null}
-              </span>
-              <span class={w.enabled ? 'on-badge' : 'off-badge'}>{w.enabled ? 'On' : 'Off'}</span>
+        {collections.flatMap((c) => [
+          c && (
+            <div key={`collection ${c}`} class="menu-label">
+              {c}
             </div>
-            {w.nextRunAt && <small class="muted">Next run {new Date(w.nextRunAt).toLocaleString()}</small>}
-            <div class="row" onClick={(e) => e.preventDefault()}>
-              <button class="ghost small" onClick={() => run(w)}>
-                <Play size={13} /> Run now
-              </button>
-              <button class="ghost small" onClick={() => toggle(w)}>
-                {w.enabled ? 'Pause' : 'Enable'}
-              </button>
-            </div>
-          </a>
-        ))}
+          ),
+          ...workflows!
+            .filter((w) => w.collection === c)
+            .map((w) => (
+              <a key={w.id} href={`#/p/${project.id}/workflows/${w.id}`} class={`card ${w.id === workflowId ? 'active' : ''}`}>
+                <div class="card-title">{w.name}</div>
+                <div class="card-meta">
+                  <span>
+                    <Clock size={12} /> {w.cron ? w.scheduleLabel || describeCron(w.cron) : 'Manual'}
+                    {w.next.length ? (
+                      <>
+                        {' '}
+                        · <Link2 size={12} /> {w.next.length}
+                      </>
+                    ) : null}
+                  </span>
+                  <span class={w.enabled ? 'on-badge' : 'off-badge'}>{w.enabled ? 'On' : 'Off'}</span>
+                </div>
+                {w.nextRunAt && <small class="muted">Next run {new Date(w.nextRunAt).toLocaleString()}</small>}
+                <div class="row" onClick={(e) => e.preventDefault()}>
+                  <button class="ghost small" onClick={() => run(w)}>
+                    <Play size={13} /> Run now
+                  </button>
+                  <button class="ghost small" onClick={() => toggle(w)}>
+                    {w.enabled ? 'Pause' : 'Enable'}
+                  </button>
+                </div>
+              </a>
+            )),
+        ])}
         {workflows && !workflows.length && <p class="muted pad">Save repeatable work as a workflow. Give it a schedule and Savor runs it for you, or start from the gallery.</p>}
       </aside>
       <section class="detail">
@@ -117,6 +128,7 @@ function WorkflowForm({ base, projectId, workflow, recipe, all }: { base: string
   const [draft, setDraft] = useState({
     name: recipe?.title ?? '',
     prompt: recipe?.prompt ?? '',
+    collection: '',
     timezone: tz,
     enabled: true,
     next: [] as string[],
@@ -125,13 +137,14 @@ function WorkflowForm({ base, projectId, workflow, recipe, all }: { base: string
   })
   const [custom, setCustom] = useState(() => !!draft.cron && !SCHEDULES.some(([c]) => c === draft.cron))
   const [error, setError] = useState('')
-  const field = (k: 'name' | 'prompt' | 'cron' | 'timezone') => (e: Event) => setDraft({ ...draft, [k]: (e.currentTarget as HTMLInputElement).value })
+  const field = (k: 'name' | 'prompt' | 'collection' | 'cron' | 'timezone') => (e: Event) => setDraft({ ...draft, [k]: (e.currentTarget as HTMLInputElement).value })
   const others = all.filter((w) => w.id !== workflow?.id)
+  const collections = [...new Set(all.map((w) => w.collection).filter(Boolean))].sort((a, b) => a.localeCompare(b))
 
   const save = async (e: Event) => {
     e.preventDefault()
     try {
-      const w = await api<Workflow>(workflow ? 'PUT' : 'POST', workflow ? `${base}/${workflow.id}` : base, { ...draft, cron: draft.cron.trim() || null })
+      const w = await api<Workflow>(workflow ? 'PUT' : 'POST', workflow ? `${base}/${workflow.id}` : base, { ...draft, collection: draft.collection.trim(), cron: draft.cron.trim() || null })
       setError('')
       go(`/p/${projectId}/workflows/${w.id}`)
     } catch (err) {
@@ -149,6 +162,15 @@ function WorkflowForm({ base, projectId, workflow, recipe, all }: { base: string
       <label>
         Name
         <input required value={draft.name} onInput={field('name')} />
+      </label>
+      <label>
+        Collection <small class="muted">optional, groups the list</small>
+        <input list="workflow-collections" value={draft.collection} onInput={field('collection')} />
+        <datalist id="workflow-collections">
+          {collections.map((c) => (
+            <option key={c} value={c} />
+          ))}
+        </datalist>
       </label>
       <label>
         Instructions

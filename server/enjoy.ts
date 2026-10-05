@@ -231,12 +231,32 @@ function importProject(s: Source): EnjoyResult {
     result.documents++
   }
 
+  // A workflow changed in Enjoy after its last edit in Savor comes in again. Whether it is paused, its chain
+  // and its last run are Savor's and stay.
   for (const f of names(path.join(s.dir, 'recipes'), '.md')) {
     const [meta, body] = frontMatter(path.join(s.dir, 'recipes', f))
     if (!meta.id || !meta.name || !body) continue
-    const file = path.join(data, 'workflows', `${path.basename(String(meta.id))}.json`)
-    if (fs.existsSync(file)) continue
-    const wf: Workflow = { id: path.basename(String(meta.id)), name: String(meta.name), prompt: body, cron: meta.cron ? String(meta.cron) : null, timezone: String(meta.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone), enabled: true, next: [], lastRunAt: null, origin: 'local' }
+    const id = path.basename(String(meta.id))
+    const file = path.join(data, 'workflows', `${id}.json`)
+    const updatedAt = new Date(meta.updatedAt ?? meta.createdAt ?? Date.now()).toISOString()
+    const mine = fs.existsSync(file) ? store.getWorkflow(p, id) : null
+    // A workflow imported before Savor kept the time of the last edit has its file's time instead.
+    if (mine && (mine.updatedAt || fs.statSync(file).mtime.toISOString()) >= updatedAt) continue
+    const wf: Workflow = {
+      enabled: true,
+      next: [],
+      lastRunAt: null,
+      origin: 'local',
+      ...mine,
+      id,
+      name: String(meta.name),
+      prompt: body,
+      collection: String(meta.collection ?? ''),
+      cron: meta.cron ? String(meta.cron) : null,
+      timezone: String(meta.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone),
+      scheduleLabel: meta.scheduleLabel ? String(meta.scheduleLabel) : null,
+      updatedAt,
+    }
     fs.mkdirSync(path.dirname(file), { recursive: true })
     fs.writeFileSync(file, JSON.stringify(wf, null, 2))
     result.workflows++
