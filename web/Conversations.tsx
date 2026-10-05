@@ -306,6 +306,7 @@ function ThreadView({ project, threadId }: { project: Project; threadId: string 
   const [menu, setMenu] = useState(false)
   const [find, setFind] = useState<{ open: boolean; q: string; at: number }>({ open: false, q: '', at: 0 })
   const [commit, setCommit] = useState<string | null>(null)
+  const [titleOpen, setTitleOpen] = useState<string | null>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const findRef = useRef<HTMLInputElement>(null)
   const [clock, setClock] = useState(Date.now())
@@ -474,8 +475,11 @@ function ThreadView({ project, threadId }: { project: Project; threadId: string 
               </button>
             )}
             <div class="thread-head-text">
-              <h1 title={thread.title}>{thread.title}</h1>
+              <h1 class={titleOpen === threadId ? 'open' : ''} title={titleOpen === threadId ? 'Collapse' : 'Show the whole prompt'} onClick={() => setTitleOpen(titleOpen === threadId ? null : threadId)}>
+                {thread.title}
+              </h1>
               <div class="thread-sub">
+                <Label label={thread.label} />
                 <span class={`status ${status.cls}`}>
                   {status.icon} {status.text}{busy && elapsed ? ` · ${elapsed}` : ''}
                 </span>
