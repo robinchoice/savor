@@ -117,6 +117,9 @@ rl.on('line', (line) => {
     case 'thread/resume':
       threadId = msg.params.threadId
       return reply({ thread: { id: threadId }, model: 'fake-model' })
+    case 'thread/fork':
+      threadId = `fork-of-${msg.params.threadId}`
+      return reply({ thread: { id: threadId }, model: 'fake-model' })
     case 'turn/start':
       runTurn(msg.params).then(() => {}, (e) => notify('error', { error: { message: e.message }, willRetry: false, threadId, turnId }))
       return reply({ turn: { id: `turn-${nextId}`, items: [], status: 'inProgress', error: null } })

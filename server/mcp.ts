@@ -66,7 +66,7 @@ function buildServer(p: Project, tid: string) {
       const r = agents.request(p, tid)
       const prev = r.updates.get(idempotencyKey)
       if (prev && prev.text !== text) throw new Error(`idempotencyKey ${idempotencyKey} was already used with different text.`)
-      if (!prev) r.updates.set(idempotencyKey, { text, id: agents.post(p, tid, { kind: 'update', text, modelInfo: modelInfo() }).id })
+      if (!prev) r.updates.set(idempotencyKey, { text, id: agents.post(p, tid, { kind: 'update', text, key: idempotencyKey, modelInfo: modelInfo() }).id })
       return ok({ id: r.updates.get(idempotencyKey)!.id })
     },
   )

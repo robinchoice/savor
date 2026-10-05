@@ -9,7 +9,7 @@ import path from 'node:path'
 import * as store from './store.js'
 import type { ApprovalOption, Thread } from './store.js'
 import { BIN, command, mcpUrl } from './config.js'
-import { configKey, rememberSession, sessionIdOf, summarize, systemPrompt, type Host, type Session, type TurnInput } from './session.js'
+import { configKey, forkOf, rememberSession, sessionIdOf, summarize, systemPrompt, type Host, type Session, type TurnInput } from './session.js'
 import type { ModelInfo, SkillInfo } from './providers.js'
 
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
@@ -66,7 +66,9 @@ export class ClaudeSession implements Session {
     const effort = a.reasoning === 'ultracode' ? 'xhigh' : a.reasoning
     if (EFFORTS.includes(effort)) args.push('--effort', effort)
     const sid = sessionIdOf(thread, 'claude')
+    const fork = forkOf(p, thread, 'claude')
     if (sid) args.push('--resume', sid)
+    else if (fork) args.push('--resume', fork, '--fork-session', '--session-id', crypto.randomUUID())
     else args.push('--session-id', crypto.randomUUID())
 
     this.child = spawn(...command(BIN.claude, args), {

@@ -9,6 +9,7 @@
 //   test's release file names the input, the task is done and it concludes in a turn it starts by itself
 // - "own-server: <text>" → reports a background task of its own that keeps running after the conclusion
 // - "native-ask: <question>" → an AskUserQuestion control request with the options Blue/Green
+// - "recall" → concludes with the history Savor handed over in front of the input, or "nothing"
 // - "slow: <text>" → acknowledges, waits for the test's release file or an interrupt, then echoes
 //   (and says so when Savor told it that a restart cut the turn off)
 // - a last text block of its own that starts with "/" → "Skill <name and arguments>", the way Claude Code runs slash commands
@@ -61,7 +62,8 @@ if (fs.existsSync(process.env.FAKE_AGENT_LOG + '.outdated')) {
 const config = args[args.indexOf('--mcp-config') + 1]
 const mcp = JSON.parse(fs.readFileSync(config, 'utf8')).mcpServers.savor
 if (process.env.FAKE_AGENT_LOG) fs.appendFileSync(process.env.FAKE_AGENT_LOG, JSON.stringify({ agent: 'claude', argv: process.argv, cwd: process.cwd(), configMode: fs.statSync(config).mode & 0o777 }) + '\n')
-const sessionId = args.includes('--resume') ? args[args.indexOf('--resume') + 1] : args[args.indexOf('--session-id') + 1] ?? crypto.randomUUID()
+// A fork resumes one session and continues under the ID given for the new one.
+const sessionId = args.includes('--resume') && !args.includes('--fork-session') ? args[args.indexOf('--resume') + 1] : args[args.indexOf('--session-id') + 1] ?? crypto.randomUUID()
 const out = (e) => process.stdout.write(JSON.stringify(e) + '\n')
 
 const client = new Client({ name: 'fake-claude', version: '1' })
@@ -133,6 +135,9 @@ async function turn(text, command) {
       tool_use_id: 'toolu_ask',
     })
     await call('send_conclusion_message', { text: `Answered: ${verdict.updatedInput?.answers?.[question] ?? verdict.behavior}` })
+  } else if (input.startsWith('recall')) {
+    const handed = text.includes('Earlier in this conversation')
+    await call('send_conclusion_message', { text: `Handed over: ${handed ? text.slice(0, text.indexOf('Savor context:')).trim() : 'nothing'}` })
   } else if (command) {
     await call('send_conclusion_message', { text: `Skill ${command.slice(1)}` })
   } else if (input.startsWith('slow:')) {

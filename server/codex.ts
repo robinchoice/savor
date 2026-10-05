@@ -5,7 +5,7 @@ import * as store from './store.js'
 import type { ApprovalOption, Thread } from './store.js'
 import { BIN, command, mcpUrl } from './config.js'
 import { Rpc } from './jsonrpc.js'
-import { configKey, rememberSession, sessionIdOf, summarize, systemPrompt, type Host, type Session, type TurnInput } from './session.js'
+import { configKey, forkOf, rememberSession, sessionIdOf, summarize, systemPrompt, type Host, type Session, type TurnInput } from './session.js'
 import type { ModelInfo, SkillInfo } from './providers.js'
 
 const MODES: Record<string, { sandbox: string; approvalPolicy: string; approvalsReviewer: string }> = {
@@ -61,7 +61,10 @@ export class CodexSession implements Session {
     const mode = MODES[a.permissionMode] ?? MODES.default
     const settings = { cwd: this.host.cwd, ...mode, model: a.model || null, developerInstructions: systemPrompt(p, this.thread) }
     const sid = sessionIdOf(this.thread, 'codex')
-    const r = sid ? await this.rpc.request('thread/resume', { threadId: sid, ...settings }).catch(() => this.rpc.request('thread/start', settings)) : await this.rpc.request('thread/start', settings)
+    const fork = forkOf(p, this.thread, 'codex')
+    const r = sid
+      ? await this.rpc.request('thread/resume', { threadId: sid, ...settings }).catch(() => this.rpc.request('thread/start', settings))
+      : await this.rpc.request(fork ? 'thread/fork' : 'thread/start', { ...(fork && { threadId: fork }), ...settings })
     this.threadId = r.thread.id
     rememberSession(p, tid, 'codex', this.threadId)
   }

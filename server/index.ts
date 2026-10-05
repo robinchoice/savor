@@ -351,6 +351,18 @@ route('PATCH', '/projects/:pid/threads/:tid', (params, b, ctx) => {
   emit({ type: 'thread', projectId: p.id, threadId: t.id })
   return t
 })
+// A fork continues from where the conversation stands, in a conversation of its own.
+route('POST', '/projects/:pid/threads/:tid/fork', (params) => {
+  const p = project(params)
+  const parent = store.getThread(p, params.tid)
+  if (agents.isBusy(parent.id)) throw new BadRequest('The agent is still working. Fork the conversation when it has finished.')
+  const provider = parent.agent.provider
+  const sessionId = (['claude', 'codex'].includes(provider) && parent.agentSessions.find((s) => s.provider === provider)?.sessionId) || null
+  const fork = { provider, sessionId, messages: store.readMessages(p, parent.id).length }
+  const t = store.createThread(p, { title: `Fork of ${parent.title}`, agent: parent.agent, parentId: parent.id, fork, worktree: parent.worktree })
+  emit({ type: 'thread', projectId: p.id, threadId: t.id })
+  return t
+})
 route('DELETE', '/projects/:pid/threads/:tid', (params) => {
   const p = project(params)
   agents.forget(params.tid)
@@ -481,7 +493,8 @@ route('DELETE', '/projects/:pid/worktrees', (params, _, ctx) => {
   if (!wt) throw new store.NotFound('worktree')
   for (const t of store.listThreads(p).filter((t) => t.worktree?.path === wt.path)) {
     agents.stop(t.id)
-    store.updateThread(p, t.id, { worktree: null, agentSessions: [], completed: true })
+    // A fork that has not started yet loses the session it would have branched off, like the others lose theirs.
+    store.updateThread(p, t.id, { worktree: null, agentSessions: [], completed: true, ...(t.fork && { fork: { ...t.fork, sessionId: null } }) })
   }
   terminal.stop(wt.path)
   git.removeWorktree(p, wt.path)

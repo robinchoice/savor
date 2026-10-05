@@ -41,6 +41,8 @@ export interface Message {
   device?: string
   // User messages typed while the agent works wait here until the turn ends (or "Send now").
   delivered?: boolean
+  // The idempotency key of an update, so that a retry is still recognized after a restart.
+  key?: string
 }
 export interface Thread {
   id: string
@@ -62,6 +64,10 @@ export interface Thread {
   // is, as far as the agent says.
   context?: { tokens: number; window: number | null } | null
   parentId?: string
+  // Set for a fork of the conversation `parentId`: how many messages that one had, and the agent
+  // session to branch off, when its agent had one and can copy it. Without one the agent gets the
+  // visible history.
+  fork?: { provider: Provider; sessionId: string | null; messages: number }
   // Set when the conversation works in its own git worktree instead of the project folder.
   worktree?: { branch: string; path: string } | null
   // Set for one of several conversations that got the same prompt to compare their results: the
@@ -322,7 +328,7 @@ export function getThread(p: Project, tid: string): Thread {
 
 export const cwdOf = (p: Project, t: Thread) => t.worktree?.path ?? p.path
 
-export function createThread(p: Project, init: { title: string; label?: string | null; agent?: AgentConfig; parentId?: string; worktree?: { branch: string; path: string } | null; workflow?: Thread['workflow']; fanout?: Thread['fanout'] }): Thread {
+export function createThread(p: Project, init: { title: string; label?: string | null; agent?: AgentConfig; parentId?: string; fork?: Thread['fork']; worktree?: { branch: string; path: string } | null; workflow?: Thread['workflow']; fanout?: Thread['fanout'] }): Thread {
   const t: Thread = {
     id: newId(),
     title: init.title.slice(0, 300),
@@ -338,6 +344,7 @@ export function createThread(p: Project, init: { title: string; label?: string |
     error: null,
   }
   if (init.parentId) t.parentId = init.parentId
+  if (init.fork) t.fork = init.fork
   if (init.worktree) t.worktree = init.worktree
   if (init.workflow) t.workflow = init.workflow
   if (init.fanout) t.fanout = init.fanout

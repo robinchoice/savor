@@ -1473,10 +1473,21 @@ test('a turn cut off by a restart continues in the same agent session', async ()
   const read = async () => (await api('GET', `${t}/${thread.id}`)).body
   await until(async () => (await read()).messages.some((m) => m.text === 'On it.'))
   assert.equal((await api('POST', `${t}/${thread.id}/messages`, { text: 'after the restart' })).body.delivered, false)
+  // An update the agent sends again after the restart, because it cannot know whether it arrived.
+  const { mcpToken } = JSON.parse(fs.readFileSync(path.join(HOME, 'state.json'), 'utf8'))
+  const update = async () => {
+    const client = new Client({ name: 'e2e', version: '1' })
+    await client.connect(new StreamableHTTPClientTransport(new URL(`${base}/mcp?project=${project.id}&thread=${thread.id}`), { requestInit: { headers: { authorization: `Bearer ${mcpToken}` } } }))
+    const r = await client.callTool({ name: 'send_user_requested_message', arguments: { idempotencyKey: 'halfway', text: 'Halfway there.' } })
+    await client.close()
+    return JSON.parse(r.content[0].text).id
+  }
+  const sent = await update()
 
   server.kill()
   await new Promise((resolve) => server.on('exit', resolve))
   await startDaemon()
+  assert.equal(await update(), sent)
 
   // The conversation is working again without anyone sending something, in the session the agent had.
   await until(async () => (await read()).busy)
@@ -1488,6 +1499,7 @@ test('a turn cut off by a restart continues in the same agent session', async ()
   await until(async () => (await read()).messages.some((m) => m.text === 'Echo: after the restart'))
   const { messages, thread: saved } = await read()
   assert.equal(messages.filter((m) => m.kind === 'ack' && m.ts < messages.find((m) => m.text === 'after the restart').ts).length, 1)
+  assert.equal(messages.filter((m) => m.text === 'Halfway there.').length, 1)
   assert.equal(saved.workingSince, null)
 })
 
@@ -1507,4 +1519,86 @@ test("the header shows how full the agent's context window is", async () => {
   await until(async () => (await api('GET', `${threads}/${thread.id}`)).body.messages.some((m) => m.kind === 'conclusion'))
   assert.deepEqual((await api('GET', `${threads}/${thread.id}`)).body.thread.context, { tokens: 51200, window: 256000 })
   assert.equal((await api('PATCH', `${threads}/${thread.id}`, { agent: project.agent })).body.context, null)
+})
+
+test('a fork continues in a conversation of its own, as a copy of the agent session where there is one', async () => {
+  const [project] = (await api('GET', '/projects')).body
+  const threads = `/projects/${project.id}/threads`
+  const read = async (id) => (await api('GET', `${threads}/${id}`)).body
+  const idle = (id) => until(async () => !(await read(id)).busy && (await read(id)).messages.some((m) => m.kind === 'conclusion'))
+  const flag = (run, name) => run.argv[run.argv.indexOf(name) + 1]
+  const sessionOf = (thread, provider) => thread.agentSessions.find((s) => s.provider === provider)?.sessionId
+
+  // The page learns from a reload that Claude Code is the project's agent again.
+  await page.goto(`${base}/#/p/${project.id}`)
+  await page.reload()
+  await newConversation()
+  await send('first approach')
+  await page.waitForSelector('text="Echo: first approach"')
+  const parentId = page.url().match(/\/t\/(\w+)/)[1]
+  assert.equal((await read(parentId)).thread.agent.provider, 'claude')
+  await idle(parentId)
+  await page.click('.head-actions [title="More"]')
+  await page.click('.menu >> text=Fork conversation')
+  await page.waitForSelector('h1:has-text("Fork of first approach")')
+  const forkId = page.url().match(/\/t\/(\w+)/)[1]
+  assert.notEqual(forkId, parentId)
+  await send('another approach')
+  await page.waitForSelector('text="Echo: another approach"')
+  // Claude Code resumed the session of the first conversation as a fork under an ID of its own.
+  const parentSession = sessionOf((await read(parentId)).thread, 'claude')
+  const run = agentRuns().find((r) => r.agent === 'claude' && r.argv.includes('--fork-session') && flag(r, '--resume') === parentSession)
+  assert.ok(run, 'a Claude Code process forked the session of the first conversation')
+  assert.equal(sessionOf((await read(forkId)).thread, 'claude'), flag(run, '--session-id'))
+  assert.notEqual(flag(run, '--session-id'), parentSession)
+  assert.equal((await read(parentId)).messages.length, 3, 'the first conversation stays as it was')
+  // The fork leads back to where it came from.
+  await page.click('.thread-sub .fork')
+  await page.waitForSelector('text="Echo: first approach"')
+  assert.ok(page.url().endsWith(`/t/${parentId}`))
+
+  // Codex forks its thread.
+  for (const provider of ['codex']) {
+    const parent = (await api('POST', threads, { text: `${provider} original`, agent: { provider } })).body
+    await idle(parent.id)
+    const session = sessionOf((await read(parent.id)).thread, provider)
+    const fork = (await api('POST', `${threads}/${parent.id}/fork`)).body
+    assert.deepEqual(fork.fork, { provider, sessionId: session, messages: (await read(parent.id)).messages.length })
+    assert.equal(fork.parentId, parent.id)
+    await api('POST', `${threads}/${fork.id}/messages`, { text: 'branch' })
+    await idle(fork.id)
+    const own = sessionOf((await read(fork.id)).thread, provider)
+    assert.equal(own, `fork-of-${session}`)
+  }
+
+  // A conversation that moved on after the fork is not copied any more: the fork gets its history up to the fork.
+  const late = (await api('POST', `${threads}/${parentId}/fork`)).body
+  await api('POST', `${threads}/${parentId}/messages`, { text: 'later in the original' })
+  await until(async () => (await read(parentId)).messages.some((m) => m.text === 'Echo: later in the original'))
+  await api('POST', `${threads}/${late.id}/messages`, { text: 'recall' })
+  await idle(late.id)
+  const upTo = (await read(late.id)).messages.find((m) => m.kind === 'conclusion').text
+  assert.match(upTo, /\[agent\] Echo: first approach/)
+  assert.ok(!upTo.includes('later in the original'))
+  const lateSession = sessionOf((await read(late.id)).thread, 'claude')
+  assert.ok(!agentRuns().find((r) => r.agent === 'claude' && flag(r, '--session-id') === lateSession).argv.includes('--fork-session'))
+
+  // An agent without a session to branch off gets the history of the first conversation, and where to read all of it.
+  const codexParent = (await api('GET', threads)).body.find((t) => t.title === 'codex original')
+  const other = (await api('POST', `${threads}/${codexParent.id}/fork`)).body
+  await api('PATCH', `${threads}/${other.id}`, { agent: project.agent })
+  await api('POST', `${threads}/${other.id}/messages`, { text: 'recall' })
+  await idle(other.id)
+  const handed = (await read(other.id)).messages.find((m) => m.kind === 'conclusion').text
+  assert.match(handed, /\[user\] codex original/)
+  assert.match(handed, /\[agent\] Codex echo: codex original/)
+  assert.ok(handed.includes(`read_conversation with the id ${codexParent.id} returns all of it`))
+
+  // While the agent works there is nothing settled to fork.
+  const working = (await api('POST', threads, { text: 'slow: fork me' })).body
+  await until(async () => (await read(working.id)).messages.some((m) => m.text === 'On it.'))
+  assert.equal((await api('POST', `${threads}/${working.id}/fork`)).status, 400)
+  fs.writeFileSync(AGENT_LOG + '.release', 'slow: fork me')
+  await idle(working.id)
+  await api('PATCH', `/projects/${project.id}`, { agent: project.agent })
 })

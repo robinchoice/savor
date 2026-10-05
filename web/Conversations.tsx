@@ -4,7 +4,7 @@ import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import {
   Asterisk, Hexagon, Code2, Sparkles, Orbit, Plus, Search, MessageSquare, Check, MoreHorizontal, PanelLeft, PanelRight, FileText, Globe,
-  CircleAlert, ArrowUp, ArrowLeft, Pencil, Brain, Terminal, Wrench, ArrowRight, Smartphone, Monitor, ShieldQuestion, X, ChevronUp, ChevronDown, ChevronRight, Paperclip, GitBranch, GitMerge, Trash2, Copy, FileDiff, Split, Workflow as WorkflowIcon,
+  CircleAlert, ArrowUp, ArrowLeft, Pencil, Brain, Terminal, Wrench, ArrowRight, Smartphone, Monitor, ShieldQuestion, X, ChevronUp, ChevronDown, ChevronRight, Paperclip, GitBranch, GitFork, GitMerge, Trash2, Copy, FileDiff, Split, Workflow as WorkflowIcon,
 } from 'lucide-preact'
 import {
   api, cap, duration, formatDay, formatTime, go, PROVIDER_NAMES, runTrigger, useApi, type ActivityEvent, type AgentConfig, type Attachment, type Decision, type Message, type Proc, type Project, type Thread, type Worktree,
@@ -436,6 +436,10 @@ function ThreadView({ project, threadId }: { project: Project; threadId: string 
     const name = prompt('Label', thread.label?.name ?? '')
     if (name !== null) patch({ label: name })
   }
+  const fork = async () => {
+    const t = await api<Thread>('POST', `${base}/fork`)
+    go(`/p/${project.id}/t/${t.id}`)
+  }
   const remove = async () => {
     if (!confirm('Delete this conversation and its history?')) return
     await api('DELETE', base)
@@ -540,6 +544,11 @@ function ThreadView({ project, threadId }: { project: Project; threadId: string 
                     <Split size={12} /> Comparison
                   </a>
                 )}
+                {thread.fork && (
+                  <a class="status fork" href={`#/p/${project.id}/t/${thread.parentId}`} title="Open the conversation this one branches off">
+                    <GitFork size={12} /> Fork
+                  </a>
+                )}
                 {thread.context && <ContextUse context={thread.context} />}
               </div>
             </div>
@@ -565,6 +574,7 @@ function ThreadView({ project, threadId }: { project: Project; threadId: string 
                       {compactHead && <button onClick={openFind}>Find in conversation</button>}
                       {compactHead && <button onClick={showActivity}>Show activity</button>}
                       <button onClick={rename}>Rename label</button>
+                      {!busy && <button onClick={fork}>Fork conversation</button>}
                       <button onClick={() => navigator.clipboard.writeText(`${project.path}/.savor/threads/${thread.id}/messages.jsonl`)}>Copy file path</button>
                       {stoppable && <button onClick={stop}>Stop agent</button>}
                       <button class="danger" onClick={remove}>

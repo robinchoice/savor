@@ -6,7 +6,7 @@ import * as store from './store.js'
 import type { AgentConfig, Message, Origin, Project, Provider, Question, Thread } from './store.js'
 import { emit } from './events.js'
 import { BIN, command, mcpUrl } from './config.js'
-import { Activity, configKey, systemPrompt, type Answer, type ApprovalRequest, type Host, type Session, type TurnInput } from './session.js'
+import { Activity, configKey, forkOf, sessionIdOf, systemPrompt, type Answer, type ApprovalRequest, type Host, type Session, type TurnInput } from './session.js'
 import { ClaudeSession } from './claude.js'
 import { CodexSession } from './codex.js'
 import { AcpSession } from './acp.js'
@@ -55,7 +55,7 @@ const inputOf = (p: Project, tid: string) => store.readMessages(p, tid).find((m)
 export const conclusionKey = (m: Pick<Message, 'text' | 'questions' | 'suggestions' | 'commits'>) => JSON.stringify([m.text, m.questions, m.suggestions, m.commits])
 
 // A request that is not in memory is read back from the thread's messages, so after a restart an
-// input still gets only one acknowledgement and one conclusion.
+// input still gets only one acknowledgement and one conclusion, and a repeated update is recognized.
 export function request(p: Project, tid: string) {
   let r = requests.get(tid)
   if (r) return r
@@ -69,7 +69,7 @@ export function request(p: Project, tid: string) {
     inputId: msgs[i]?.id ?? '',
     ack: ack && { text: ack.text ?? '', id: ack.id },
     conclusion: conclusion && { key: conclusionKey(conclusion), id: conclusion.id },
-    updates: new Map(),
+    updates: new Map(sent.filter((m) => m.kind === 'update' && m.key).map((m) => [m.key!, { text: m.text ?? '', id: m.id }])),
   }
   requests.set(tid, r)
   return r
@@ -228,16 +228,19 @@ function endTurn(p: Project, tid: string, result: { text?: string; error?: strin
 
 // ---- prompts ----
 
-// When the thread switches to an agent that has not seen it yet, hand over the visible history.
+// An agent that has not seen the thread yet gets the visible history handed over: after a switch
+// of agents, and in a fork whose agent has no session to branch off. The excerpt names where the
+// whole of it can be read.
 function handover(p: Project, thread: Thread) {
-  if (thread.agentSessions.some((s) => s.provider === thread.agent.provider)) return ''
-  const history = store
-    .readMessages(p, thread.id)
-    .slice(0, -1)
+  const provider = thread.agent.provider
+  if (sessionIdOf(thread, provider) || forkOf(p, thread, provider)) return ''
+  const earlier = thread.fork && thread.parentId ? store.readMessages(p, thread.parentId).slice(0, thread.fork.messages) : []
+  const history = [...earlier, ...store.readMessages(p, thread.id).slice(0, -1)]
     .filter((m) => m.text && m.kind !== 'error')
     .slice(-30)
     .map((m) => `[${m.kind === 'user' ? 'user' : 'agent'}] ${m.text!.slice(0, 2000)}`)
-  return history.length ? `Earlier in this conversation (handled by another agent):\n${history.join('\n\n')}\n\n` : ''
+  if (!history.length) return ''
+  return `Earlier in this conversation (handled by another agent):\n${history.join('\n\n')}\n\nThis is an excerpt: read_conversation with the id ${earlier.length ? thread.parentId : thread.id} returns all of it.\n\n`
 }
 
 function turnInput(p: Project, thread: Thread, msg: Message, note = ''): TurnInput {

@@ -78,6 +78,17 @@ export const configKey = (a: AgentConfig) => JSON.stringify([a.provider, a.model
 
 export const sessionIdOf = (thread: Thread, provider: Provider) => thread.agentSessions.find((s) => s.provider === provider)?.sessionId
 
+// The session a fork starts as a copy of, as long as its agent has none of its own. The copy is made
+// when the fork starts working: if the conversation it comes from has moved on since, the copy would
+// hold what came after the fork, and the fork gets the history up to its point instead. A deleted
+// conversation cannot have moved on.
+export function forkOf(p: Project, thread: Thread, provider: Provider) {
+  const fork = thread.fork
+  if (!fork?.sessionId || fork.provider !== provider || sessionIdOf(thread, provider)) return undefined
+  const now = store.readMessages(p, thread.parentId!).length
+  return now === 0 || now === fork.messages ? fork.sessionId : undefined
+}
+
 export function rememberSession(p: Project, tid: string, provider: Provider, sessionId: string) {
   const t = store.getThread(p, tid)
   if (t.agentSessions.some((s) => s.provider === provider && s.sessionId === sessionId)) return
