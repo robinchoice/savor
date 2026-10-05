@@ -115,4 +115,4 @@ jobs:
         run: |
           curl -fsS -X PATCH -H "Authorization: Bearer $COOLIFY_TOKEN" -H 'content-type: application/json' \
             -d "{\"docker_registry_image_tag\": \"${GITHUB_REF_NAME#v}\"}" "$COOLIFY_URL/api/v1/applications/$COOLIFY_UUID"
-          curl -fsS -H "Authorization: Bearer $COOLIFY_TOKEN" "$COOLIFY_URL/api/v1/deploy?uuid=$COOLIFY_UUID"
+          curl -fsS -X POST -H "Authorization: Bearer $COOLIFY_TOKEN" "$COOLIFY_URL/api/v1/deploy?uuid=$COOLIFY_UUID"
