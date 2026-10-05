@@ -90,8 +90,9 @@ before(async () => {
 
 after(async () => {
   await browser?.close()
-  server?.kill()
-  fs.rmSync(TMP, { recursive: true, force: true })
+  // The daemon may still write state while it shuts down.
+  if (server && server.exitCode === null) await new Promise((resolve) => (server.once('exit', resolve), server.kill()))
+  fs.rmSync(TMP, { recursive: true, force: true, maxRetries: 5 })
 })
 
 test('add a project and get a conclusion with next actions', async () => {
