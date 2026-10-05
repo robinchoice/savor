@@ -1,8 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
-import { ArrowUp, AtSign, Bookmark, ChevronDown, FileText, FolderGit2, GitBranch, ListPlus, Mic, Plus, Square, Trash2, Workflow as WorkflowIcon, X, Zap, Crosshair } from 'lucide-preact'
+import { ArrowUp, AtSign, Bookmark, ChevronDown, FileText, FolderGit2, GitBranch, ListPlus, MessageSquare, Mic, Plus, Square, Trash2, Workflow as WorkflowIcon, X, Zap, Crosshair } from 'lucide-preact'
 import { api, agentSummary, cap, PROVIDER_NAMES, readFileAsDataUrl, useAgents, useApi, type AgentConfig, type Attachment, type Doc, type Project, type ProviderInfo, type Preset, type Skill, type Workflow } from './api'
 import { ProviderIcon } from './Conversations'
 import { record, type Recording } from './voice'
+import { reviewMessage, type ReviewComment } from './Changes'
 
 export interface Picked { selector: string; text: string; html: string; styles: Record<string, string>; url: string }
 
@@ -18,6 +19,9 @@ interface Props {
   draft?: string
   picked?: Picked[]
   clearPicked?: (i: number) => void // -1 clears all
+  // Line comments from the changes view go along with the next message.
+  review?: ReviewComment[]
+  setReview?: (comments: ReviewComment[]) => void
   autoFocus?: boolean
   // Git runs in this conversation's worktree when it has one.
   threadId?: string
@@ -99,15 +103,18 @@ export function Composer(props: Props) {
     el.style.height = Math.min(el.scrollHeight, 320) + 'px'
   }, [text])
 
-  const canSend = !!(text.trim() || files.length)
+  const review = props.review ?? []
+  const canSend = !!(text.trim() || files.length || review.length)
   const submit = async () => {
     if (!canSend) return
-    const full = text + pickedContext(props.picked ?? [])
+    const full = (text + pickedContext(props.picked ?? []) + reviewMessage(review)).trimStart()
     setText('')
     setFiles([])
     props.clearPicked?.(-1)
     try {
       await props.onSend(full, files.map(({ name, dataUrl }) => ({ name, dataUrl })))
+      // Kept until the message is accepted, so a refused one doesn't lose them.
+      if (review.length) props.setReview?.([])
       setError('')
     } catch (e) {
       // Give the input back when the server refuses it, e.g. a setting a paired device may not choose.
@@ -146,7 +153,7 @@ export function Composer(props: Props) {
 
   return (
     <div class={`composer ${props.compact ? 'compact' : ''}`} ref={composerRef} onDragOver={(e) => e.preventDefault()} onDrop={(e) => (e.preventDefault(), addFiles(e.dataTransfer?.files ?? [], true))}>
-      {(files.length > 0 || (props.picked?.length ?? 0) > 0) && (
+      {(files.length > 0 || (props.picked?.length ?? 0) > 0 || review.length > 0) && (
         <div class="attachments">
           {files.map((f, i) =>
             f.image ? (
@@ -169,6 +176,14 @@ export function Composer(props: Props) {
             <span key={i} class="chip-ctx" title={p.html}>
               <Crosshair size={13} /> {p.selector.split(' > ').slice(-1)[0]}
               <button onClick={() => props.clearPicked?.(i)} aria-label="Remove">
+                <X size={12} />
+              </button>
+            </span>
+          ))}
+          {review.map((c) => (
+            <span key={c.id} class="chip-ctx" title={c.text}>
+              <MessageSquare size={13} /> {c.path.split('/').pop()}:{c.lines.replace(' (removed)', '')}
+              <button onClick={() => props.setReview?.(review.filter((x) => x.id !== c.id))} aria-label="Remove">
                 <X size={12} />
               </button>
             </span>

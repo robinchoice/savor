@@ -331,6 +331,10 @@ export function updateThread(p: Project, tid: string, patch: Partial<Thread>): T
   return t
 }
 
+// Line comments on a conversation's changes, kept until they are sent to the agent. The web app owns their shape.
+export const readReview = (p: Project, tid: string): unknown[] => readJson(path.join(threadDir(p, tid), 'review.json'), [])
+export const saveReview = (p: Project, tid: string, comments: unknown[]) => writeJson(path.join(threadDir(p, tid), 'review.json'), comments)
+
 export const readMessages = (p: Project, tid: string) => readJsonl<Message>(path.join(threadDir(p, tid), 'messages.jsonl'))
 
 export function appendMessage(p: Project, tid: string, m: Omit<Message, 'id' | 'ts'>): Message {

@@ -759,11 +759,33 @@ test('a conversation can work in its own git worktree, which merges back and can
   assert.ok(commit.files[0].patch.includes('+hello'))
   assert.equal((await api('GET', `/projects/${project.id}/git/commits/nothash`)).status, 400)
 
+  // Changes: uncommitted edits with new files, and everything since the worktree branched off.
+  fs.appendFileSync(path.join(wt.path, 'feature.txt'), 'more\n')
+  fs.writeFileSync(path.join(wt.path, 'new file.txt'), 'fresh\n')
+  const uncommitted = (await api('GET', `/projects/${project.id}/git/changes?thread=${thread.id}`)).body
+  assert.deepEqual(uncommitted.map((f) => [f.path, f.additions, f.deletions]), [['feature.txt', 1, 0], ['new file.txt', 1, 0]])
+  const sinceBase = (await api('GET', `/projects/${project.id}/git/changes?thread=${thread.id}&against=base`)).body
+  assert.deepEqual(sinceBase.map((f) => [f.path, f.additions]), [['feature.txt', 2], ['new file.txt', 1]])
+  assert.ok(sinceBase[0].patch.includes('+hello\n+more'))
+
   await page.goto(`${base}/#/p/${project.id}`)
   await page.waitForSelector('.wt-head >> text=feature/wt')
   await page.waitForSelector('.wt-head >> text=1 commit ahead')
   await page.goto(`${base}/#${t.replace('/projects/', '/p/').replace('/threads/', '/t/')}`)
   await page.waitForSelector('.status.worktree >> text=feature/wt')
+
+  // Line comments on the changes are kept with the conversation and go to the agent with the next message.
+  await page.click('.modes button[title="Changes"]')
+  const newFile = page.locator('.diff-file', { hasText: 'new file.txt' })
+  await newFile.locator('.gutter').first().click()
+  await page.fill('.review-box textarea', 'Say hi instead')
+  await page.click('.review-box >> text=Add comment')
+  await page.waitForSelector('.chip-ctx >> text=new file.txt:1')
+  await newFile.locator('.review-text >> text=Say hi instead').waitFor()
+  assert.equal((await api('GET', `${t}/review`)).body.length, 1)
+  await page.click('.thread .composer button.send[title="Send"]')
+  await until(async () => (await api('GET', t)).body.messages.some((m) => m.kind === 'user' && m.text.includes('new file.txt:1\n```diff\n+fresh\n```\nSay hi instead')))
+  await until(async () => (await api('GET', `${t}/review`)).body.length === 0)
 
   assert.equal((await api('POST', `/projects/${project.id}/worktrees/merge`, { path: wt.path })).status, 200)
   assert.equal(fs.readFileSync(path.join(PROJECT, 'feature.txt'), 'utf8'), 'hello\n')

@@ -290,6 +290,17 @@ route('POST', '/projects/:pid/threads/:tid/messages', (params, b, ctx) => {
   const p = project(params)
   return agents.send(p, store.getThread(p, params.tid).id, inputFrom(b, ctx, p, params.tid))
 })
+route('GET', '/projects/:pid/threads/:tid/review', (params) => {
+  const p = project(params)
+  return store.readReview(p, store.getThread(p, params.tid).id)
+})
+route('PUT', '/projects/:pid/threads/:tid/review', (params, b) => {
+  const p = project(params)
+  if (!Array.isArray(b.comments)) throw new BadRequest('Send the comments as a list.')
+  store.saveReview(p, store.getThread(p, params.tid).id, b.comments)
+  emit({ type: 'review', projectId: p.id, threadId: params.tid })
+  return b.comments
+})
 route('POST', '/projects/:pid/threads/:tid/send-now', (params) => {
   agents.sendNow(project(params), params.tid)
   return {}
@@ -366,6 +377,12 @@ route('POST', '/projects/:pid/git/switch', (params, b) => {
   return {}
 })
 route('GET', '/projects/:pid/git/commits/:hash', (params, _, ctx) => git.showCommit(cwdFor(project(params), ctx.query.get('thread')), params.hash))
+// Uncommitted changes, or with `against=base` everything a conversation's worktree changed since it branched off.
+route('GET', '/projects/:pid/git/changes', (params, _, ctx) => {
+  const p = project(params)
+  const cwd = cwdFor(p, ctx.query.get('thread'))
+  return git.changes(cwd, ctx.query.get('against') === 'base' ? git.baseOf(p, cwd) : 'HEAD')
+})
 route('GET', '/projects/:pid/worktrees', (params) => git.listWorktrees(project(params)))
 route('POST', '/projects/:pid/worktrees/merge', (params, b) => {
   const p = project(params)
