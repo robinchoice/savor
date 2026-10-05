@@ -95,7 +95,7 @@ async function turn(text, command) {
     out({ type: 'result', subtype: 'error_during_execution', is_error: true, result: input.slice(5).trim() })
     return
   } else if (input.startsWith('ask:')) {
-    await call('send_conclusion_message', { text: 'One question first.', questions: [{ title: input.slice(4).trim(), body: '', options: ['Yes', 'No'] }] })
+    await call('send_conclusion_message', { text: 'One question first.', questions: [{ title: input.slice(4).trim(), body: '', options: ['Yes', 'No'], recommended: 1 }] })
   } else if (input.startsWith('approve:')) {
     const verdict = await control({
       subtype: 'can_use_tool',

@@ -851,12 +851,16 @@ function Questions({ decisions, active, base }: { decisions: Decision[]; active:
           {d.body && <Markdown text={d.body} />}
           {open ? (
             <>
-              {d.options.map((o, oi) => (
-                <label key={oi} class={`option ${answers[i].selected === oi ? 'selected' : ''}`}>
-                  <input type="radio" name={d.id} checked={answers[i].selected === oi} onChange={() => set(i, { selected: oi })} />
-                  {o}
-                </label>
-              ))}
+              {d.options
+                .map((o, oi) => ({ o, oi }))
+                .sort((a, b) => Number(b.oi === d.recommended) - Number(a.oi === d.recommended))
+                .map(({ o, oi }) => (
+                  <label key={oi} class={`option ${answers[i].selected === oi ? 'selected' : ''}`}>
+                    <input type="radio" name={d.id} checked={answers[i].selected === oi} onChange={() => set(i, { selected: oi })} />
+                    {o}
+                    {oi === d.recommended && <span class="recommended">Recommended</span>}
+                  </label>
+                ))}
               <div class="own-label">{d.options.length ? 'Or write your own answer' : 'Your answer'}</div>
               <textarea placeholder="Type your answer..." value={answers[i].answer ?? ''} onInput={(e) => set(i, { answer: e.currentTarget.value })} />
             </>

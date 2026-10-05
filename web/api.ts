@@ -62,7 +62,7 @@ export const readFileAsDataUrl = (f: Blob) =>
   })
 
 export interface AgentConfig { provider: string; model: string; reasoning: string; fast: boolean; permissionMode: string }
-export interface Question { title: string; body: string; options: string[] }
+export interface Question { title: string; body: string; options: string[]; recommended?: number }
 export interface ApprovalOption { id: string; label: string; kind: 'allow' | 'deny' }
 export interface Approval { title: string; detail: string; options: ApprovalOption[]; status: 'pending' | 'resolved'; choice?: string }
 export interface Message {
@@ -127,7 +127,7 @@ export interface Commit { hash: string; subject: string; body: string; author: s
 export interface EnjoyProject { path: string; name: string; missing: boolean; projectId: string | null; conversations: number; added: number; documents: number; workflows: number }
 export interface EnjoyResult { path: string; projectId: string; added: number; updated: number; kept: number; documents: number; workflows: number }
 export interface ImportableSession { provider: 'claude' | 'codex'; id: string; title: string; startedAt: string; messages: number; imported: boolean }
-export interface Decision { id: string; groupId: string; title: string; body: string; options: string[]; selected: number | null; answer: string | null; resolved: boolean }
+export interface Decision { id: string; groupId: string; title: string; body: string; options: string[]; recommended?: number; selected: number | null; answer: string | null; resolved: boolean }
 export interface ActivityEvent { id: number; type: 'thinking' | 'command' | 'edit' | 'note'; label: string; time: string; finishedAt?: string }
 export interface Project {
   id: string

@@ -18,7 +18,7 @@ export interface Project {
   // Pinned projects are tabs; the others are reached through the Projects menu.
   pinned: boolean
 }
-export interface Question { title: string; body: string; options: string[] }
+export interface Question { title: string; body: string; options: string[]; recommended?: number }
 export type Origin = 'local' | 'remote'
 export interface ApprovalOption { id: string; label: string; kind: 'allow' | 'deny' }
 export interface Approval { title: string; detail: string; options: ApprovalOption[]; status: 'pending' | 'resolved'; choice?: string }
@@ -72,6 +72,8 @@ export interface Decision {
   title: string
   body: string
   options: string[]
+  // Index of the option the agent recommends.
+  recommended?: number
   selected: number | null
   answer: string | null
   resolved: boolean

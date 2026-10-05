@@ -205,6 +205,7 @@ test('questions are answered in one reply', async () => {
   await send('ask: Ship it?')
   await page.waitForSelector('text=Your decision')
   assert.equal(await page.locator('.filter.attention').count(), 1, 'Your turn filter lights up')
+  assert.deepEqual(await page.locator('.option').allTextContents(), ['NoRecommended', 'Yes'], 'the recommended option comes first')
   await page.click('.option:has-text("Yes")')
   await page.click('text=Send answer')
   await page.waitForSelector('text=Selected: Yes')

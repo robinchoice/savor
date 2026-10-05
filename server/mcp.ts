@@ -70,13 +70,18 @@ function buildServer(p: Project, tid: string) {
         'Deliver the one final result for the current request. Questions block: end your turn afterwards. Suggestions are follow-up prompts in the user’s voice. Commits are full git hashes created this turn. Retry with identical content only.',
       inputSchema: {
         text: z.string().optional(),
-        questions: z.array(z.object({ title: z.string(), body: z.string().default(''), options: z.array(z.string()).max(8) })).max(10).optional(),
+        questions: z
+          .array(z.object({ title: z.string(), body: z.string().default(''), options: z.array(z.string()).max(8), recommended: z.number().int().min(0).optional() }))
+          .max(10)
+          .optional(),
         suggestions: z.array(z.string()).max(3).optional(),
         commits: z.array(z.string().regex(/^[0-9a-f]{40}([0-9a-f]{24})?$/)).optional(),
       },
     },
     async ({ text, questions, suggestions, commits }) => {
       if (!text && !questions?.length) throw new Error('Provide text, questions, or both.')
+      const unrecommended = questions?.find((q) => q.options.length && (q.recommended ?? Infinity) >= q.options.length)
+      if (unrecommended) throw new Error(`Set recommended to the index of the option you recommend for "${unrecommended.title}" and explain why in its body.`)
       const r = agents.request(tid)
       const key = JSON.stringify([text, questions, suggestions, commits])
       if (r.conclusion) {

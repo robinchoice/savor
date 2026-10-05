@@ -248,6 +248,7 @@ main { min-height: 0; overflow: hidden; }
 .option { display: flex; align-items: center; gap: 10px; padding: 8px 10px; margin: 0 -10px; border-radius: 9px; cursor: pointer; transition: background 0.18s ease; }
 .option:hover { background: var(--raised); }
 .option.selected { background: var(--raised); }
+.option .recommended { margin-left: auto; padding: 1px 7px; border-radius: 999px; font-size: 11px; color: var(--attn); border: 1px solid var(--attn); white-space: nowrap; }
 .option input:checked { border-color: var(--attn); background: radial-gradient(circle, var(--attn) 0 38%, transparent 44%); }
 .own-label { margin-top: 6px; font-size: 13px; }
 .question textarea { min-height: 54px; resize: vertical; background: var(--raised); }
