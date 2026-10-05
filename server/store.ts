@@ -126,6 +126,8 @@ interface State {
   publicUrl?: string | null
   // The folder the last new project was created in.
   projectsDir?: string
+  // Whether paired devices may open the terminal, a shell on this computer.
+  terminalRemote?: boolean
   // The daemon's long-term X25519 key for the relay tunnel (base64url secret key).
   identity: string
   relayToken: string
