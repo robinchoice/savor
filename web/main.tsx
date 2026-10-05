@@ -56,7 +56,7 @@ function App() {
       })
   }, [])
   useEffect(() => {
-    if (!mode || (mode === 'relay' && !loadProfile())) return
+    if (me || !link.connected || !mode || (mode === 'relay' && !loadProfile())) return
     api<Me>('GET', '/me').then(
       (m) => {
         setMe(m)
@@ -64,7 +64,7 @@ function App() {
       },
       (e) => setMe(e instanceof Unauthorized ? false : null),
     )
-  }, [mode])
+  }, [mode, link.connected])
   useNotifications(route[2] === 't' ? route[3] : undefined, projects)
   useEffect(() => {
     if (projects?.length && route[0] !== 'p' && route[0] !== 'devices') go(`/p/${(projects.find((p) => p.pinned) ?? projects[0]).id}`)
