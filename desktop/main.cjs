@@ -103,7 +103,10 @@ const updater = () => (app.isPackaged && fs.existsSync(path.join(process.resourc
 // What preload.cjs offers the UI. Only the Savor page itself may ask.
 const fromUi = (e) => new URL(e.senderFrame.url).origin === `http://localhost:${PORT}`
 ipcMain.handle('pick-folder', async (e) => (fromUi(e) ? ((await dialog.showOpenDialog(win, { properties: ['openDirectory', 'createDirectory'] })).filePaths[0] ?? null) : null))
-// Resolves to the newer version, which then downloads and installs on quit, or to null when this one is current.
+// The version of a release that finished downloading and waits to be installed.
+let ready = null
+ipcMain.handle('ready-update', (e) => (fromUi(e) ? ready : null))
+// Resolves to the newer version, which then downloads in the background, or to null when this one is current.
 let download = null
 ipcMain.handle('check-for-updates', async (e) => {
   const result = fromUi(e) ? await updater()?.checkForUpdates() : null
@@ -111,12 +114,27 @@ ipcMain.handle('check-for-updates', async (e) => {
   download = result.downloadPromise
   return result.updateInfo.version
 })
-// Waits for the download, then replaces the app and starts it again.
+// Waits for the download, then replaces the app and starts it again without asking.
 ipcMain.handle('install-update', async (e) => {
-  if (!fromUi(e) || !download) return
+  if (!fromUi(e) || !(ready || download)) return
   await download
-  updater().quitAndInstall()
+  updater().quitAndInstall(true, true)
 })
+
+// Checks for a new release on start and every ten minutes. It downloads in the background, then the UI
+// offers to install it; otherwise it installs on the next quit.
+function watchUpdates() {
+  const autoUpdater = updater()
+  if (!autoUpdater) return
+  autoUpdater.on('error', (e) => console.error('Update check failed:', e.message))
+  autoUpdater.on('update-downloaded', (info) => {
+    ready = info.version
+    win?.webContents.send('update-ready', ready)
+  })
+  const check = () => autoUpdater.checkForUpdates().catch(() => {})
+  check()
+  setInterval(check, 10 * 60_000)
+}
 
 // `--daemon`: only the daemon, without a window, e.g. as a system service. The AppImage then is the
 // installation: the daemon exits once the AppImage was replaced by an update and no agent is working,
@@ -135,11 +153,7 @@ else {
   })
   app.whenReady().then(() => {
     createWindow()
-    const autoUpdater = updater()
-    if (autoUpdater) {
-      autoUpdater.on('error', (e) => console.error('Update check failed:', e.message))
-      autoUpdater.checkForUpdatesAndNotify().catch(() => {})
-    }
+    watchUpdates()
   })
   app.on('window-all-closed', () => app.quit())
   app.on('quit', () => daemon?.kill())

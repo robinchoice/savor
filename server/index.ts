@@ -720,13 +720,13 @@ function exitOnUpdate(file: string) {
   let last = installed
   setInterval(() => {
     const now = id(fs.statSync(file, { throwIfNoEntry: false }))
-    // Wait until the new file stays the same for a minute, in case it is still being written.
+    // Wait until the new file stays the same between two checks, in case it is still being written.
     const settled = now && now !== installed && now === last
     last = now
     if (!settled || agents.anyBusy()) return
     console.log('Savor was updated, exiting so the new version starts')
     process.exit(0)
-  }, 60_000)
+  }, 10_000)
 }
 
 http

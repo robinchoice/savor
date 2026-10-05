@@ -109,11 +109,40 @@ function App() {
   return (
     <div class={`app ${project && terminalOpen && terminalMax ? 'terminal-max' : ''}`}>
       {mode === 'relay' && !link.connected && <div class="link-banner">Reconnecting to your computer…</div>}
+      <UpdateBanner />
       <TopBar projects={projects ?? []} active={project} all={route[0] === 'all'} me={me} setMe={setMe} />
       {project && <SubBar project={project} section={section} />}
       {route[0] === 'all' && <AllBar section={route[1]} />}
       <main>{main}</main>
       {project && terminalOpen && <TerminalPanel key={project.id} project={project} threadId={section === 't' ? rest[0] : undefined} />}
+    </div>
+  )
+}
+
+// A new release has downloaded in the desktop app: one click installs it and restarts Savor.
+function UpdateBanner() {
+  const [version, setVersion] = useState<string | null>(null)
+  const [state, setState] = useState<'ready' | 'installing' | 'failed' | 'dismissed'>('ready')
+  useEffect(() => desktop?.onUpdateReady(setVersion), [])
+  if (!version || state === 'dismissed') return null
+  const install = () => {
+    setState('installing')
+    desktop!.installUpdate().catch(() => setState('failed'))
+  }
+  return (
+    <div class="update-banner">
+      <Download size={15} />
+      <span>{state === 'installing' ? `Installing Savor ${version}…` : state === 'failed' ? 'Could not install the update' : `Savor ${version} is ready`}</span>
+      {state !== 'installing' && (
+        <>
+          <button class="ghost small" onClick={install}>
+            Install and restart
+          </button>
+          <button class="icon-btn" title="Later: installs when you quit Savor" onClick={() => setState('dismissed')}>
+            <X size={14} />
+          </button>
+        </>
+      )}
     </div>
   )
 }
