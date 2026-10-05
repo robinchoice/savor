@@ -1,7 +1,7 @@
 import './monitoring'
 import { render } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
-import { Coffee, Download, Folder, FolderOpen, Monitor, Pin, Search, Files as FilesIcon, MessageSquare, Moon, Plus, Server, SlidersHorizontal, Sun, Workflow as WorkflowIcon, ChevronDown, Smartphone, X } from 'lucide-preact'
+import { Coffee, Download, Folder, FolderOpen, Monitor, Pin, PinOff, Search, Files as FilesIcon, MessageSquare, Moon, Plus, Server, SlidersHorizontal, Sun, Workflow as WorkflowIcon, ChevronDown, Smartphone, X } from 'lucide-preact'
 import { api, connectEvents, desktop, go, Unauthorized, useApi, useEvent, type Me, type Project } from './api'
 import { Conversations } from './Conversations'
 import { FilesView } from './Files'
@@ -126,6 +126,11 @@ function TopBar({ projects, active, me, setMe }: { projects: Project[]; active?:
   const { theme, feedbackButton } = usePrefs()
   const ThemeIcon = theme === 'system' ? Monitor : theme === 'dark' ? Moon : Sun
   const toggleAwake = async () => setMe({ ...me, ...(await api('POST', '/awake', { on: !me.awake })) })
+  const togglePin = (e: Event, p: Project) => {
+    e.preventDefault()
+    e.stopPropagation()
+    api('PATCH', `/projects/${p.id}`, { pinned: !p.pinned })
+  }
   // A click outside a menu closes it, unless that click just opened the other menu.
   const closeMenu = (which: typeof menu) => setMenu((m) => (m === which ? null : m))
   // Where the account dialog leads.
@@ -146,6 +151,9 @@ function TopBar({ projects, active, me, setMe }: { projects: Project[]; active?:
             <span class="name">{p.name}</span>
             {p.paused && <span class="muted small">paused</span>}
             <Counts project={p} />
+            <button class={`tab-pin ${p.pinned ? '' : 'unpinned'}`} title={p.pinned ? 'Unpin: remove the tab' : 'Pin as a tab'} onClick={(e) => togglePin(e, p)}>
+              {p.pinned ? <PinOff size={13} /> : <Pin size={13} />}
+            </button>
           </a>
         ))}
       </nav>
