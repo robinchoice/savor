@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Savor: coding agents that report back</title>
+    <meta
+      name="description"
+      content="Savor is a free, open-source workspace for Claude Code, Codex and OpenCode. Every task ends with one clear result, the questions that need you, and next steps. It runs on your machine, without an account."
+    />
+    <link rel="canonical" href="https://savor.pleasance.org/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://savor.pleasance.org/" />
+    <meta property="og:title" content="Savor: coding agents that report back" />
+    <meta
+      property="og:description"
+      content="A free, open-source workspace for Claude Code, Codex and OpenCode. One clear result per task, questions you answer in one reply, and next steps."
+    />
+    <meta property="og:image" content="https://savor.pleasance.org/img/og.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="theme-color" content="#f4f4f1" />
+    <link rel="icon" href="img/savor-tile.svg" type="image/svg+xml" />
+    <link rel="preload" href="fonts/bricolage-grotesque-latin.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="stylesheet" href="style.css" />
+    <script src="main.js" defer></script>
+  </head>
+  <body id="top">
+    <header class="wrap nav">
+      <a class="brand" href="#top"><img src="img/savor-tile.svg" width="34" height="34" alt="" /><b>Savor</b></a>
+      <ul>
+        <li><a href="#how">How it works</a></li>
+        <li><a href="#who">Who it's for</a></li>
+        <li><a href="https://github.com/robinchoice/savor">GitHub</a></li>
+      </ul>
+      <a class="btn btn-quiet" href="#install">Download</a>
+    </header>
+
+    <main>
+      <section class="hero wrap">
+        <p class="eyebrow">Open source · runs on your machine · v0.6.0</p>
+        <h1>Coding agents that report back.</h1>
+        <div class="row">
+          <p class="lede">
+            Savor is a workspace for Claude Code, Codex and OpenCode.
+            <b>Every task ends with one clear result, the questions that need you, and next steps.</b>
+            Not with a wall of terminal output.
+          </p>
+          <div class="cta">
+            <a class="btn btn-go" href="#install" data-os-cta>Download Savor</a>
+            <p class="meta">
+              Free · no account · <a href="#install" data-os-others>for Linux, macOS and Windows</a>
+            </p>
+          </div>
+        </div>
+        <figure>
+          <div class="shot">
+            <img
+              src="img/conversation-800.webp"
+              srcset="img/conversation-800.webp 800w, img/conversation.webp 1600w"
+              sizes="(max-width: 76rem) calc(100vw - 2.5rem), 68rem"
+              width="1600"
+              height="1000"
+              fetchpriority="high"
+              alt="A Savor conversation: the agent's result with three suggested next steps, next to a live preview of the page it built"
+            />
+          </div>
+          <figcaption class="meta">A conversation with Claude Code, next to the live preview of the page it built.</figcaption>
+        </figure>
+      </section>
+
+      <section class="pain wrap">
+        <div class="grid">
+          <div>
+            <h2>Agents got fast. Keeping up with them didn't.</h2>
+            <ol class="pains">
+              <li><b>One of your terminals is waiting for you.</b>You find out which one when you happen to look.</li>
+              <li>
+                <b>The answer is in there somewhere.</b>Between tool calls, diffs and retries, the one sentence you
+                needed scrolls past.
+              </li>
+              <li>
+                <b>Close the laptop and you're out.</b>The agent keeps working, or keeps waiting. From your phone you
+                can't tell.
+              </li>
+            </ol>
+          </div>
+          <figure>
+            <div class="term" aria-hidden="true">
+              <div class="tabs"><span>~/portfolio</span><span>~/api</span><span class="on">~/brotzeit</span><span>~/docs</span></div>
+              <div class="out">
+                <div>● Read(index.html)</div>
+                <div>&nbsp;&nbsp;⎿ Read 214 lines</div>
+                <div>● Update(style.css)</div>
+                <div>&nbsp;&nbsp;⎿ Updated style.css with 12 additions and 3 removals</div>
+                <div>● Bash(npm run build)</div>
+                <div>&nbsp;&nbsp;⎿ ✓ built in 1.84s</div>
+                <div>● Read(assets/hero.jpg)</div>
+                <div>&nbsp;&nbsp;⎿ Read image (412 KB)</div>
+                <div>● Update(index.html)</div>
+                <div>&nbsp;&nbsp;⎿ Updated index.html with 31 additions and 9 removals</div>
+                <div class="ask">● Before I continue: which accent color should the buttons use?</div>
+              </div>
+            </div>
+            <figcaption>Tab three has a question. The other three look exactly the same.</figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <section class="sol wrap" id="how">
+        <h2>What Savor does for you</h2>
+        <p class="lede">It sits between you and your agents and turns their output into something you can act on.</p>
+
+        <article>
+          <div>
+            <span class="num">1</span>
+            <h3>Reports back</h3>
+            <p>
+              Each task gets a short acknowledgement and one result. Questions arrive as decisions with options, and you
+              answer all of them in one reply. The raw output stays one click away in the activity log.
+            </p>
+          </div>
+          <figure class="shot">
+            <img
+              src="img/questions-800.webp"
+              srcset="img/questions-800.webp 800w, img/questions.webp 1600w"
+              sizes="(max-width: 860px) calc(100vw - 2.5rem), 39rem"
+              width="1600"
+              height="1000"
+              loading="lazy"
+              alt="An agent asking two questions, answered in one reply"
+            />
+          </figure>
+        </article>
+
+        <article>
+          <div>
+            <span class="num">2</span>
+            <h3>Shows the work</h3>
+            <p>
+              Whatever the agent builds runs in a live preview next to the conversation. You both use the same page.
+              Point at an element, say what should change, and its selector travels with your message.
+            </p>
+          </div>
+          <figure class="shot">
+            <div class="crop" role="img" aria-label="The live preview of a bakery landing page inside Savor"></div>
+          </figure>
+        </article>
+
+        <article>
+          <div>
+            <span class="num">3</span>
+            <h3>Works while you're away</h3>
+            <p>
+              Saved prompts run on a schedule and can be chained, from a daily digest to a release checklist. Pair your
+              phone with a QR code and answer from anywhere, end-to-end encrypted.
+            </p>
+          </div>
+          <figure class="shot phones">
+            <img
+              src="img/mobile-810.webp"
+              srcset="img/mobile-810.webp 810w, img/mobile.webp 1620w"
+              sizes="(max-width: 860px) calc(100vw - 2.5rem), 29rem"
+              width="1620"
+              height="1688"
+              loading="lazy"
+              alt="Savor on a phone: the conversation list, and a conversation with its preview"
+            />
+          </figure>
+        </article>
+      </section>
+
+      <section class="who wrap" id="who">
+        <h2>Who it's for</h2>
+        <div class="cards">
+          <article>
+            <h3>You build with agents, not in terminals</h3>
+            <ul>
+              <li>Describe what you want in plain language</li>
+              <li>Get a result you can read, not a log</li>
+              <li>Watch the page while it is being built</li>
+              <li>Start from 15 ready-made workflows</li>
+            </ul>
+          </article>
+          <article>
+            <h3>You run many agents at once</h3>
+            <ul>
+              <li>One agent session per conversation, filtered by "Your turn"</li>
+              <li>A git worktree per conversation, merged back when done</li>
+              <li>Commit diffs and approvals inside the conversation</li>
+              <li>Switch agent or model mid-conversation</li>
+            </ul>
+          </article>
+        </div>
+        <p class="price">
+          <b>Savor costs nothing.</b> It uses the Claude Code, Codex or OpenCode subscription you already have.
+        </p>
+      </section>
+
+      <section class="trust wrap">
+        <ul>
+          <li><b>AGPL-3.0</b><span>All of the source is on GitHub.</span></li>
+          <li><b>No account</b><span>No cloud between you and your agents.</span></li>
+          <li><b>Plain files</b><span>Conversations live in <code>.savor/</code> inside your project.</span></li>
+          <li><b>Encrypted end to end</b><span>Phone access goes through a relay that only sees ciphertext.</span></li>
+        </ul>
+        <p class="status">
+          Savor is early software (v0.6.0). Known gaps are listed in the
+          <a href="https://github.com/robinchoice/savor#status">README</a>.
+        </p>
+      </section>
+
+      <section class="final wrap" id="install">
+        <div class="panel">
+          <h2>Give your agents somewhere to report.</h2>
+          <p class="lede">
+            No account and nothing to migrate. Open a project folder, and the Claude Code and Codex sessions you already
+            ran there show up as conversations.
+          </p>
+
+          <div class="os">
+            <div role="tablist" aria-label="Operating system">
+              <button role="tab" id="tab-linux" aria-controls="os-linux" data-os="linux">Linux</button>
+              <button role="tab" id="tab-mac" aria-controls="os-mac" data-os="mac">macOS</button>
+              <button role="tab" id="tab-win" aria-controls="os-win" data-os="win">Windows</button>
+              <button role="tab" id="tab-src" aria-controls="os-src" data-os="src">From source</button>
+            </div>
+            <div role="tabpanel" id="os-linux" aria-labelledby="tab-linux" data-os="linux">
+              <h3>Linux</h3>
+              <div class="get">
+                <a class="btn btn-go" href="https://github.com/robinchoice/savor/releases/download/v0.6.0/Savor-0.6.0.AppImage">Get Savor for Linux</a>
+                <span class="meta">Savor-0.6.0.AppImage · about 130 MB</span>
+              </div>
+              <pre>chmod +x Savor-*.AppImage &amp;&amp; ./Savor-*.AppImage</pre>
+            </div>
+            <div role="tabpanel" id="os-mac" aria-labelledby="tab-mac" data-os="mac">
+              <h3>macOS</h3>
+              <div class="get">
+                <a class="btn btn-go" href="https://github.com/robinchoice/savor/releases/download/v0.6.0/Savor-0.6.0-arm64.dmg">Get Savor for Apple Silicon</a>
+                <span class="meta">
+                  .dmg · about 130 MB ·
+                  <a href="https://github.com/robinchoice/savor/releases/download/v0.6.0/Savor-0.6.0-x64.dmg">Intel Mac instead</a>
+                </span>
+              </div>
+              <p class="hint">
+                The builds are not notarized yet. On first launch, open System Settings → Privacy &amp; Security and
+                click <b>Open Anyway</b>.
+              </p>
+            </div>
+            <div role="tabpanel" id="os-win" aria-labelledby="tab-win" data-os="win">
+              <h3>Windows</h3>
+              <div class="get">
+                <a class="btn btn-go" href="https://github.com/robinchoice/savor/releases/download/v0.6.0/Savor-Setup-0.6.0.exe">Get Savor for Windows</a>
+                <span class="meta">Savor-Setup-0.6.0.exe · about 115 MB</span>
+              </div>
+              <p class="hint">The installer is not code-signed yet. SmartScreen asks once.</p>
+            </div>
+            <div role="tabpanel" id="os-src" aria-labelledby="tab-src" data-os="src">
+              <h3>From source</h3>
+              <pre>
+git clone https://github.com/robinchoice/savor.git &amp;&amp; cd savor
+npm install
+npx playwright-core install chromium
+npm start</pre
+              >
+              <p class="hint">Needs Node 22.12 or newer.</p>
+            </div>
+          </div>
+          <p class="needs">
+            You need one signed-in agent CLI: <code>claude</code>, <code>codex</code> or <code>opencode</code>.
+          </p>
+        </div>
+      </section>
+    </main>
+
+    <footer class="wrap foot">
+      <div class="cols">
+        <div class="about">
+          <a class="brand" href="#top"><img src="img/savor-tile.svg" width="34" height="34" alt="" /><b>Savor</b></a>
+          <p>The open workspace where coding agents report back.</p>
+        </div>
+        <nav aria-label="Product">
+          <p>Product</p>
+          <a href="#install">Download</a>
+          <a href="#how">How it works</a>
+          <a href="#who">Who it's for</a>
+        </nav>
+        <nav aria-label="Project">
+          <p>Project</p>
+          <a href="https://github.com/robinchoice/savor">Source on GitHub</a>
+          <a href="https://github.com/robinchoice/savor/releases">Releases</a>
+          <a href="https://github.com/robinchoice/savor/issues">Report an issue</a>
+          <a href="https://github.com/robinchoice/savor/blob/main/LICENSE">License (AGPL-3.0)</a>
+        </nav>
+        <nav aria-label="Legal">
+          <p>Legal</p>
+          <a href="https://pleasance.org/impressum.html">Imprint</a>
+          <a href="https://pleasance.org/datenschutz.html">Privacy</a>
+          <a href="https://pleasance.org/kontakt.html">Contact</a>
+        </nav>
+      </div>
+      <div class="absender">
+        <a href="https://pleasance.org">a tool by <span class="wordmark" role="img" aria-label="Pleasance"></span></a>
+        <span class="band" aria-hidden="true"><i></i></span>
+      </div>
+      <p class="copy">© 2026 Savor contributors · This page loads no trackers and nothing from third parties.</p>
+    </footer>
+  </body>
+</html>
