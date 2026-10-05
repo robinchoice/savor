@@ -108,6 +108,12 @@ export async function watch(tid: string, res: ServerResponse) {
 
 export const has = (tid: string) => sessions.has(tid)
 
+// The last frame of the page as base64 JPEG.
+export async function frame(tid: string) {
+  const s = session(tid)
+  return s.frame ?? (s.frame = (await s.page.screenshot({ type: 'jpeg', quality: 70 })).toString('base64'))
+}
+
 // Agent and user share the page, so the size the user's space gives it is the size the agent sees too.
 export async function resize(tid: string, width: number, height: number) {
   const within = (n: number, min: number, max: number) => Math.round(Math.min(max, Math.max(min, Number(n) || min)))

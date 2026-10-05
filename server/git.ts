@@ -65,8 +65,7 @@ export function addWorktree(p: Project, branch: string): { branch: string; path:
   const dir = path.join(worktreesDir(p), branch.replace(/[^\w.-]+/g, '-'))
   if (fs.existsSync(dir)) throw new GitError(`${dir} already exists.`)
   fs.mkdirSync(worktreesDir(p), { recursive: true })
-  const known = git(p.path, 'branch', '--list', branch) !== ''
-  git(p.path, 'worktree', 'add', ...(known ? [dir, branch] : ['-b', branch, dir]))
+  git(p.path, 'worktree', 'add', ...(branchExists(p, branch) ? [dir, branch] : ['-b', branch, dir]))
   return { branch, path: dir }
 }
 
@@ -79,6 +78,37 @@ export function mergeWorktree(p: Project, branch: string) {
     } catch {}
     throw e
   }
+}
+
+export const branchExists = (p: Project, branch: string) => git(p.path, 'branch', '--list', branch) !== ''
+
+// Whether `branch` has commits beyond `base` that are in the project's HEAD.
+export function isMerged(p: Project, branch: string, base: string) {
+  try {
+    git(p.path, 'merge-base', '--is-ancestor', branch, 'HEAD')
+    return git(p.path, 'rev-parse', branch) !== base
+  } catch {
+    return false
+  }
+}
+
+export interface Change { path: string; additions: number | null; deletions: number | null }
+
+// What a worktree changed since `base`: commits, uncommitted edits and new files.
+export function changes(dir: string, base: string): Change[] {
+  const list: Change[] = git(dir, 'diff', '--numstat', '--no-renames', base)
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => {
+      const [a, d, file] = line.split('\t')
+      return { path: file, additions: a === '-' ? null : Number(a), deletions: d === '-' ? null : Number(d) }
+    })
+  for (const file of git(dir, 'ls-files', '--others', '--exclude-standard').split('\n').filter(Boolean)) {
+    const full = path.join(dir, file)
+    const text = fs.statSync(full).size <= 1024 * 1024 ? fs.readFileSync(full, 'utf8') : '\0'
+    list.push({ path: file, additions: text.includes('\0') ? null : text.split('\n').length - (text.endsWith('\n') ? 1 : 0), deletions: 0 })
+  }
+  return list
 }
 
 export function removeWorktree(p: Project, dir: string) {

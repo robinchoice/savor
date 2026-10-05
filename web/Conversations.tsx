@@ -1,9 +1,10 @@
+import { Fragment } from 'preact'
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import {
   Asterisk, Hexagon, Code2, Sparkles, Orbit, Plus, Search, MessageSquare, Check, MoreHorizontal, PanelLeft, PanelRight, FileText, Globe,
-  CircleAlert, ArrowUp, ArrowLeft, Pencil, Brain, Terminal, Wrench, ArrowRight, Smartphone, Monitor, ShieldQuestion, X, ChevronUp, ChevronDown, ChevronRight, Paperclip, GitBranch, GitMerge, Trash2, Copy, Workflow as WorkflowIcon,
+  CircleAlert, ArrowUp, ArrowLeft, Pencil, Brain, Terminal, Wrench, ArrowRight, Smartphone, Monitor, ShieldQuestion, X, ChevronUp, ChevronDown, ChevronRight, Paperclip, GitBranch, GitMerge, Trash2, Copy, Split, Workflow as WorkflowIcon,
 } from 'lucide-preact'
 import {
   api, cap, duration, formatDay, formatTime, go, PROVIDER_NAMES, runTrigger, useApi, type ActivityEvent, type AgentConfig, type Attachment, type Decision, type Message, type Proc, type Project, type Thread, type Worktree,
@@ -12,6 +13,7 @@ import { Composer, type Picked } from './Composer'
 import { transport } from './transport'
 import { Preview } from './Preview'
 import { CommitDialog } from './Commit'
+import { Fanout } from './Fanout'
 import { setPrefs, usePrefs } from './prefs'
 
 export function Markdown({ text }: { text: string }) {
@@ -41,7 +43,7 @@ export const Label = ({ label }: { label: Thread['label'] }) =>
 
 type Filter = 'all' | 'needs' | 'working' | 'unread'
 
-export function Conversations({ project, threadId, isNew }: { project: Project; threadId?: string; isNew?: boolean }) {
+export function Conversations({ project, threadId, fanoutId, isNew }: { project: Project; threadId?: string; fanoutId?: string; isNew?: boolean }) {
   const [threads] = useApi<Thread[]>(`/projects/${project.id}/threads`, (e) => e.projectId === project.id && ['thread', 'status', 'message', 'processes'].includes(e.type))
   const [worktrees] = useApi<Worktree[]>(`/projects/${project.id}/worktrees`, (e) => e.projectId === project.id && e.type === 'thread')
   const [filter, setFilter] = useState<Filter>('all')
@@ -61,11 +63,15 @@ export function Conversations({ project, threadId, isNew }: { project: Project; 
     .filter((t) => filter === 'all' || (filter === 'needs' ? t.needsYou : filter === 'working' ? t.busy || t.waiting : t.unread))
     .filter((t) => !q || t.title.toLowerCase().includes(q) || t.label?.name.toLowerCase().includes(q))
 
+  // The conversations of a fan-out are listed together, each under its worktree.
+  const fanouts = new Map<string, Thread[]>()
+  for (const t of visible) if (t.fanout) (fanouts.get(t.fanout.id) ?? fanouts.set(t.fanout.id, []).get(t.fanout.id)!).push(t)
+  const fanoutPaths = new Set((threads ?? []).flatMap((t) => (t.fanout && t.worktree ? [t.worktree.path] : [])))
   // Conversations in a worktree are listed under it, worktrees without conversations too.
   const groups = new Map<string, { branch: string; path: string; threads: Thread[] }>()
-  for (const w of worktrees ?? []) groups.set(w.path, { branch: w.branch, path: w.path, threads: [] })
-  for (const t of visible) if (t.worktree) (groups.get(t.worktree.path) ?? groups.set(t.worktree.path, { ...t.worktree, threads: [] }).get(t.worktree.path)!).threads.push(t)
-  const plain = visible.filter((t) => !t.worktree)
+  for (const w of worktrees ?? []) if (!fanoutPaths.has(w.path)) groups.set(w.path, { branch: w.branch, path: w.path, threads: [] })
+  for (const t of visible) if (t.worktree && !t.fanout) (groups.get(t.worktree.path) ?? groups.set(t.worktree.path, { ...t.worktree, threads: [] }).get(t.worktree.path)!).threads.push(t)
+  const plain = visible.filter((t) => !t.worktree && !t.fanout)
 
   const filterTab = (id: Filter, label: string, ring?: string) => (
     <button class={`filter ${filter === id ? 'active' : ''} ${id === 'needs' && counts.needs ? 'attention' : ''}`} onClick={() => setFilter(id)}>
@@ -74,7 +80,7 @@ export function Conversations({ project, threadId, isNew }: { project: Project; 
   )
 
   return (
-    <div class={`conversations ${threadId || isNew ? 'has-detail' : ''}`}>
+    <div class={`conversations ${threadId || fanoutId || isNew ? 'has-detail' : ''}`}>
       <aside class="conv-list">
         <div class="conv-head">
           <h2>Conversations</h2>
@@ -96,6 +102,21 @@ export function Conversations({ project, threadId, isNew }: { project: Project; 
           {plain.map((t) => (
             <ThreadCard key={t.id} project={project} thread={t} active={t.id === threadId} />
           ))}
+          {[...fanouts].map(([id, list]) => (
+            <div class="wt-group" key={id}>
+              <a class={`fan-head ${id === fanoutId ? 'active' : ''}`} href={`#/p/${project.id}/fan/${id}`} title="Compare the results">
+                <Split size={14} />
+                <span class="fan-title">{list[0].title}</span>
+                <span class="muted small">{list.some((t) => t.busy || t.waiting) ? `${list.filter((t) => !t.busy && !t.waiting).length} of ${list.length} finished` : 'Compare'}</span>
+              </a>
+              {[...list].sort((a, b) => a.createdAt.localeCompare(b.createdAt)).map((t) => (
+                <Fragment key={t.id}>
+                  {t.worktree && <WorktreeHead project={project} branch={t.worktree.branch} path={t.worktree.path} info={worktrees?.find((w) => w.path === t.worktree!.path)} />}
+                  <ThreadCard project={project} thread={t} active={t.id === threadId} />
+                </Fragment>
+              ))}
+            </div>
+          ))}
           {[...groups.values()].map((g) => (
             <div class="wt-group" key={g.path}>
               <WorktreeHead project={project} branch={g.branch} path={g.path} info={worktrees?.find((w) => w.path === g.path)} />
@@ -115,7 +136,7 @@ export function Conversations({ project, threadId, isNew }: { project: Project; 
           </label>
         </footer>
       </aside>
-      {threadId ? <ThreadView key={threadId} project={project} threadId={threadId} /> : <NewConversation project={project} />}
+      {threadId ? <ThreadView key={threadId} project={project} threadId={threadId} /> : fanoutId ? <Fanout key={fanoutId} project={project} id={fanoutId} /> : <NewConversation project={project} />}
     </div>
   )
 }
@@ -239,7 +260,13 @@ function ThreadCard({ project, thread: t, active }: { project: Project; thread: 
 function NewConversation({ project }: { project: Project }) {
   const [agent, setAgent] = useState<AgentConfig>(project.agent)
   const [worktree, setWorktree] = useState<string | null>(null)
+  const [fanout, setFanout] = useState<AgentConfig[] | null>(null)
   const send = async (text: string, attachments: Attachment[]) => {
+    if (fanout) {
+      const [first] = await api<Thread[]>('POST', `/projects/${project.id}/fanout`, { text, attachments, agents: fanout })
+      go(`/p/${project.id}/fan/${first.fanout!.id}`)
+      return
+    }
     const t = await api<Thread>('POST', `/projects/${project.id}/threads`, { text, attachments, agent, worktree })
     go(`/p/${project.id}/t/${t.id}`)
   }
@@ -251,7 +278,7 @@ function NewConversation({ project }: { project: Project }) {
           Start a conversation in <b>{project.name}</b>. Each conversation gets its own agent session.
         </p>
       </div>
-      <Composer project={project} agent={agent} setAgent={setAgent} onSend={send} placeholder="Describe what you want…" worktree={worktree} setWorktree={setWorktree} autoFocus />
+      <Composer project={project} agent={agent} setAgent={setAgent} onSend={send} placeholder="Describe what you want…" worktree={worktree} setWorktree={setWorktree} fanout={fanout} setFanout={setFanout} autoFocus />
     </section>
   )
 }
@@ -490,6 +517,11 @@ function ThreadView({ project, threadId }: { project: Project; threadId: string 
                   <span class="status worktree" title={thread.worktree.path}>
                     <GitBranch size={12} /> {thread.worktree.branch}
                   </span>
+                )}
+                {thread.fanout && (
+                  <a class="status" href={`#/p/${project.id}/fan/${thread.fanout.id}`} title="Compare with the other agents">
+                    <Split size={12} /> Comparison
+                  </a>
                 )}
               </div>
             </div>

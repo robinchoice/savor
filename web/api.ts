@@ -116,12 +116,16 @@ export interface Thread {
   needsYou: boolean
   error: string | null
   worktree?: { branch: string; path: string } | null
+  fanout?: { id: string; base: string }
   workflow?: { id: string; name: string; trigger: Run['trigger']; due?: string }
   busy?: boolean
   waiting?: boolean
   messageCount?: number
 }
 export interface Worktree { branch: string; path: string; ahead: number; dirty: boolean }
+export interface Change { path: string; additions: number | null; deletions: number | null }
+// One conversation of a fan-out, as the comparison shows it.
+export interface FanoutRun { thread: Thread; worktree: Worktree | null; changes: Change[]; merged: boolean; answer: string | null; workTiming: { startedAt: string; finishedAt: string } | null }
 export interface CommitFile { path: string; additions: number | null; deletions: number | null; patch: string }
 export interface Commit { hash: string; subject: string; body: string; author: string; date: string; files: CommitFile[] }
 export interface EnjoyProject { path: string; name: string; missing: boolean; projectId: string | null; conversations: number; added: number; documents: number; workflows: number }

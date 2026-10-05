@@ -15,6 +15,7 @@ import * as files from './files.js'
 import * as awake from './awake.js'
 import { closeDevice, pairingLink, relayStatus, startRelay } from './relay-client.js'
 import { newNonce, securityHeaders, withNonce } from '../shared/headers.js'
+import { fanoutBranches } from '../shared/fanout.js'
 import { handleMcp } from './mcp.js'
 import { isUnsafe, listAgents, listSkills, mergeAgent } from './providers.js'
 import { nextRun, runs, runWorkflow, syncSchedules, validateCron } from './scheduler.js'
@@ -244,6 +245,42 @@ route('POST', '/projects/:pid/threads', (params, b, ctx) => {
   agents.send(p, t.id, inputFrom(b, ctx, p, t.id))
   return t
 })
+// The same prompt to several agents, each in a new worktree of its own, to compare what they make of it.
+route('POST', '/projects/:pid/fanout', (params, b, ctx) => {
+  const p = project(params)
+  if (!Array.isArray(b.agents) || b.agents.length < 2) throw new BadRequest('Pick at least two agents to compare.')
+  const configs = b.agents.map((a: Partial<store.AgentConfig>) => agentFrom(ctx, p.agent, a))
+  const fanout = { id: store.newId(), base: git.git(p.path, 'rev-parse', 'HEAD') }
+  return fanoutBranches(String(b.text ?? ''), configs).map((name, i) => {
+    let branch = name
+    for (let n = 2; git.branchExists(p, branch); n++) branch = `${name}-${n}`
+    const t = store.createThread(p, { title: b.text || 'New conversation', agent: configs[i], worktree: git.addWorktree(p, branch), fanout })
+    emit({ type: 'thread', projectId: p.id, threadId: t.id })
+    agents.send(p, t.id, inputFrom(b, ctx, p, t.id))
+    return t
+  })
+})
+// Each conversation of a fan-out with its answer and what its worktree changed.
+route('GET', '/projects/:pid/fanout/:id', (params) => {
+  const p = project(params)
+  const threads = store.listThreads(p).filter((t) => t.fanout?.id === params.id)
+  if (!threads.length) throw new store.NotFound('comparison')
+  const worktrees = git.listWorktrees(p)
+  return threads
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+    .map((t) => {
+      const worktree = worktrees.find((w) => w.path === t.worktree?.path) ?? null
+      const conclusion = store.readMessages(p, t.id).filter((m) => m.kind === 'conclusion').at(-1)
+      return {
+        thread: { ...t, busy: agents.isBusy(t.id), waiting: agents.waiting(p, t) },
+        worktree,
+        changes: worktree ? git.changes(worktree.path, t.fanout!.base) : [],
+        merged: !!worktree && git.isMerged(p, worktree.branch, t.fanout!.base),
+        answer: conclusion?.text ?? null,
+        workTiming: conclusion?.workTiming ?? null,
+      }
+    })
+})
 route('GET', '/projects/:pid/threads/:tid', (params) => {
   const p = project(params)
   let thread = store.getThread(p, params.tid)
@@ -335,6 +372,14 @@ route('GET', '/projects/:pid/threads/:tid/browser/stream', async (params, _, ctx
   const { preview } = store.getThread(project(params), params.tid)
   if (!browser.has(params.tid) && preview) await browser.open(params.pid, params.tid, preview).catch(() => {})
   return browser.watch(params.tid, ctx.res)
+})
+// The page as it is now, for a small picture of it.
+route('GET', '/projects/:pid/threads/:tid/browser/frame', async (params, _, ctx) => {
+  const { preview } = store.getThread(project(params), params.tid)
+  if (!browser.has(params.tid) && preview) await browser.open(params.pid, params.tid, preview).catch(() => {})
+  if (!browser.has(params.tid)) throw new store.NotFound('preview')
+  ctx.res.writeHead(200, { 'content-type': 'image/jpeg', 'cache-control': 'no-store' })
+  ctx.res.end(Buffer.from(await browser.frame(params.tid), 'base64'))
 })
 route('POST', '/projects/:pid/threads/:tid/browser/open', async (params, b) => {
   if (!/^https?:\/\//.test(String(b.url ?? ''))) throw new BadRequest('Enter a full URL starting with http:// or https://.')

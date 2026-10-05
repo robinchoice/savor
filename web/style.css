@@ -751,3 +751,51 @@ details.box[open] > summary .chev { transform: rotate(180deg); }
   .overview .wide-only { display: none; }
   .dup-actions { margin-left: 0; }
 }
+
+/* Fan-out: one prompt to several agents, compared side by side */
+.fan-head { display: flex; align-items: center; gap: 7px; padding: 7px 10px; border-radius: 9px; font-size: 13px; color: var(--muted); transition: background 0.18s ease; }
+.fan-head:hover, .fan-head.active { background: var(--card); }
+.fan-title { flex: 1; min-width: 0; color: var(--text); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.branch-btn.on { background: var(--accent); color: var(--accent-ink); }
+.send.wide { width: auto; border-radius: 15px; padding: 0 12px 0 9px; gap: 5px; font-size: 13px; font-weight: 500; }
+.fan-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px 10px 0; border-top: 1px solid var(--line); }
+.fan-label { width: 100%; display: flex; align-items: flex-start; gap: 6px; font-size: 12px; color: var(--muted); margin-bottom: 2px; }
+.fan-label svg { flex: none; margin-top: 2px; }
+.fan-label .mono { overflow-wrap: anywhere; }
+.fan-chip { display: inline-flex; align-items: center; gap: 2px; background: var(--raised); border-radius: 8px; padding: 2px 2px 2px 4px; font-size: 13px; }
+.fan-chip > button:first-child { display: inline-flex; align-items: center; gap: 6px; padding: 3px 6px; }
+.fan-chip small { display: inline; color: var(--muted); }
+.fan-chip .icon-btn { width: 22px; height: 22px; }
+.fanout { overflow-y: auto; }
+.fan-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; padding: 12px max(20px, calc((100% - 1200px) / 2)) 24px; align-items: start; }
+.fan-col { background: var(--card); border: 1px solid var(--line); border-radius: 12px; display: flex; flex-direction: column; min-width: 0; }
+.fan-col.won { border-color: var(--attn-bg); }
+.fan-col.gone { opacity: 0.5; }
+.fan-col > header, .fan-col > section, .fan-col > footer { padding: 10px 13px; }
+.fan-col > section, .fan-col > header { border-bottom: 1px solid var(--line); }
+.fan-col-head { display: flex; flex-direction: column; gap: 2px; }
+.fan-col-head .mono { display: inline-flex; align-items: center; gap: 5px; overflow-wrap: anywhere; }
+.fan-who { display: flex; align-items: center; gap: 7px; }
+.fan-who .status { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; font-size: 12px; }
+.fan-k { font-size: 11px; font-weight: 500; color: var(--faint); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 6px; }
+.fan-col .md { font-size: 13px; max-height: 9.5em; overflow: hidden; mask-image: linear-gradient(to bottom, #000 75%, transparent); }
+.fan-file { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; padding: 1px 0; }
+.fan-file .mono { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fan-file > span:last-child { white-space: nowrap; font-family: 'Geist Mono Variable', ui-monospace, monospace; }
+.fan-frame { display: flex; flex-direction: column; width: 100%; border: 1px solid var(--line-strong); border-radius: 8px; overflow: hidden; background: var(--panel); min-height: 60px; justify-content: center; align-items: center; }
+.fan-frame img { width: 100%; aspect-ratio: 16 / 10; object-fit: cover; object-position: top; display: block; }
+.fan-url { align-self: stretch; font-size: 11px; color: var(--muted); padding: 3px 8px; border-top: 1px solid var(--line); text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fan-col > footer { display: flex; justify-content: space-between; gap: 8px; margin-top: auto; }
+.pick-dialog { width: min(100%, 480px); }
+.pick-dialog .dialog-body { padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 12px; }
+.pick-dialog p { margin: 0; font-size: 13px; }
+.attn-text { color: var(--attn); }
+.pick-others { display: flex; gap: 10px; align-items: flex-start; background: var(--card); border-radius: 10px; padding: 10px 12px; font-size: 13px; }
+.pick-others input { margin-top: 3px; }
+.pick-others .mono { overflow-wrap: anywhere; }
+.pick-actions { display: flex; justify-content: flex-end; gap: 8px; }
+@media (max-width: 860px) {
+  .fan-cols { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; padding: 10px 12px 16px; }
+  .fan-col { flex: 0 0 86%; scroll-snap-align: center; }
+}
+.fanout .thread-head { padding-left: max(20px, calc((100% - 1200px) / 2)); padding-right: max(20px, calc((100% - 1200px) / 2)); }

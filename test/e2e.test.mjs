@@ -798,6 +798,45 @@ test('agents can start conversations in a worktree', async () => {
   await api('DELETE', `/projects/${project.id}/worktrees?path=${encodeURIComponent(child.worktree.path)}`)
 })
 
+test('a prompt fans out to several agents in worktrees of their own, and the picked one merges', async () => {
+  const [project] = (await api('GET', '/projects')).body
+  assert.equal((await api('POST', `/projects/${project.id}/fanout`, { text: 'x', agents: [{ provider: 'claude' }] })).status, 400)
+  const runs = (await api('POST', `/projects/${project.id}/fanout`, { text: 'Add a dark mode toggle', agents: [{ provider: 'claude' }, { provider: 'codex' }, { provider: 'claude' }] })).body
+  const branches = runs.map((t) => t.worktree.branch)
+  assert.ok(branches.every((b) => b.startsWith('add-a-dark-mode/')) && new Set(branches).size === 3, branches.join(', '))
+  assert.equal(new Set(runs.map((t) => t.fanout.id)).size, 1)
+  const id = runs[0].fanout.id
+  for (const t of runs) await until(async () => (await api('GET', `/projects/${project.id}/threads/${t.id}`)).body.messages.some((m) => m.kind === 'conclusion'))
+  const third = fs.realpathSync(runs[2].worktree.path)
+  assert.ok(agentRuns().some((r) => r.agent === 'claude' && r.cwd && fs.existsSync(r.cwd) && fs.realpathSync(r.cwd) === third))
+
+  // What each worktree changed shows up, committed or not; only Codex committed.
+  const [a, b] = runs
+  fs.writeFileSync(path.join(a.worktree.path, 'notes.txt'), 'one\ntwo\n')
+  fs.writeFileSync(path.join(b.worktree.path, 'dark.css'), 'body {}\n')
+  gitIn(b.worktree.path, 'add', '.')
+  gitIn(b.worktree.path, 'commit', '-q', '-m', 'dark mode')
+  let cmp = (await api('GET', `/projects/${project.id}/fanout/${id}`)).body
+  assert.deepEqual(cmp.map((r) => r.changes.map((c) => [c.path, c.additions, c.deletions])), [[['notes.txt', 2, 0]], [['dark.css', 1, 0]], []])
+  assert.deepEqual(cmp.map((r) => [r.worktree.ahead, r.worktree.dirty, r.merged]), [[0, true, false], [1, false, false], [0, false, false]])
+  assert.equal(cmp[1].answer, 'Codex echo: Add a dark mode toggle')
+  assert.equal((await api('GET', `/projects/${project.id}/fanout/nope`)).status, 404)
+
+  // The list groups them; the comparison picks Codex's, merges it and deletes the other two worktrees.
+  await page.goto(`${base}/#/p/${project.id}`)
+  await page.click('.fan-head')
+  await page.waitForSelector('.fan-col >> nth=2')
+  await page.locator('.fan-col').nth(1).locator('button:has-text("Pick")').click()
+  await page.click('.pick-dialog button:has-text("Merge and delete")')
+  await page.waitForSelector('.fan-col.won')
+  assert.equal(fs.readFileSync(path.join(PROJECT, 'dark.css'), 'utf8'), 'body {}\n')
+  cmp = (await api('GET', `/projects/${project.id}/fanout/${id}`)).body
+  assert.deepEqual(cmp.map((r) => [!!r.worktree, r.merged, r.thread.completed]), [[false, false, true], [true, true, false], [false, false, true]])
+  assert.deepEqual(cmp[1].changes.map((c) => c.path), ['dark.css'])
+  assert.ok(!fs.existsSync(a.worktree.path))
+  await api('DELETE', `/projects/${project.id}/worktrees?path=${encodeURIComponent(b.worktree.path)}`)
+})
+
 test('Claude Code and Codex sessions of the project can be imported and continue', async () => {
   const [project] = (await api('GET', '/projects')).body
   const rec = (o) => JSON.stringify(o) + '\n'

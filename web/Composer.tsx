@@ -1,8 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
-import { ArrowUp, AtSign, Bookmark, ChevronDown, FileText, FolderGit2, GitBranch, ListPlus, Mic, Plus, Square, Trash2, Workflow as WorkflowIcon, X, Zap, Crosshair } from 'lucide-preact'
+import { ArrowUp, AtSign, Bookmark, ChevronDown, FileText, FolderGit2, GitBranch, ListPlus, Mic, Plus, Split, Square, Trash2, Workflow as WorkflowIcon, X, Zap, Crosshair } from 'lucide-preact'
 import { api, agentSummary, cap, PROVIDER_NAMES, readFileAsDataUrl, useAgents, useApi, type AgentConfig, type Attachment, type Doc, type Project, type ProviderInfo, type Preset, type Skill, type Workflow } from './api'
 import { ProviderIcon } from './Conversations'
 import { record, type Recording } from './voice'
+import { fanoutBranches } from '../shared/fanout'
 
 export interface Picked { selector: string; text: string; html: string; styles: Record<string, string>; url: string }
 
@@ -24,6 +25,9 @@ interface Props {
   // New conversations can ask for a worktree of a new branch.
   worktree?: string | null
   setWorktree?: (branch: string | null) => void
+  // New conversations can send the prompt to several agents at once, each in a new worktree.
+  fanout?: AgentConfig[] | null
+  setFanout?: (agents: AgentConfig[] | null) => void
   // Beside the preview with the chat out of sight: just the text, what was picked, and send.
   compact?: boolean
 }
@@ -46,7 +50,8 @@ export function Composer(props: Props) {
   useLayoutEffect(() => (text ? localStorage.setItem(draftKey, text) : localStorage.removeItem(draftKey)), [text])
   const [files, setFiles] = useState<(Attachment & { image: boolean })[]>([])
   const [error, setError] = useState('')
-  const [popover, setPopover] = useState<'mention' | 'agent' | 'branch' | null>(null)
+  // 'fan-add' adds an agent to a fan-out, `fan-<i>` changes its i-th agent.
+  const [popover, setPopover] = useState<string | null>(null)
   const ref = useRef<HTMLTextAreaElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const composerRef = useRef<HTMLDivElement>(null)
@@ -99,7 +104,9 @@ export function Composer(props: Props) {
     el.style.height = Math.min(el.scrollHeight, 320) + 'px'
   }, [text])
 
-  const canSend = !!(text.trim() || files.length)
+  const fanout = props.fanout
+  const setFanout = props.setFanout!
+  const canSend = !!(text.trim() || files.length) && (!fanout || fanout.length > 1)
   const submit = async () => {
     if (!canSend) return
     const full = text + pickedContext(props.picked ?? [])
@@ -138,8 +145,9 @@ export function Composer(props: Props) {
           <Square size={13} />
         </button>
       )}
-      <button class="send" title={props.busy ? 'Queue (Enter): sent after the current turn' : 'Send'} disabled={!canSend} onClick={submit}>
+      <button class={`send ${fanout ? 'wide' : ''}`} title={props.busy ? 'Queue (Enter): sent after the current turn' : fanout ? 'Start one conversation per agent' : 'Send'} disabled={!canSend} onClick={submit}>
         {props.busy ? <ListPlus size={16} /> : <ArrowUp size={16} />}
+        {fanout && `Start ${fanout.length}`}
       </button>
     </>
   )
@@ -246,13 +254,56 @@ export function Composer(props: Props) {
           </div>
         )}
       </div>
+      {fanout && (
+        <div class="fan-row">
+          <div class="fan-label">
+            <Split size={13} />
+            {fanout.length > 1 ? (
+              <span>
+                Same prompt, one new worktree each: <span class="mono">{fanoutBranches(text, fanout).join(', ')}</span>
+              </span>
+            ) : (
+              'Add a second agent to compare.'
+            )}
+          </div>
+          {fanout.map((a, i) => (
+            <div class="menu-anchor" key={i}>
+              <span class="fan-chip">
+                <button title="Change agent, model and effort" onClick={() => setPopover(popover === `fan-${i}` ? null : `fan-${i}`)}>
+                  <ProviderIcon provider={a.provider} size={15} /> {PROVIDER_NAMES[a.provider] ?? a.provider} <small>{agentSummary(a, agents?.find((x) => x.id === a.provider))}</small>
+                </button>
+                {fanout.length > 1 && (
+                  <button class="icon-btn" title="Remove" onClick={() => setFanout(fanout.filter((_, j) => j !== i))}>
+                    <X size={13} />
+                  </button>
+                )}
+              </span>
+              {popover === `fan-${i}` && <AgentMenu agent={a} agents={agents ?? []} setAgent={(next) => setFanout(fanout.map((x, j) => (j === i ? next : x)))} close={() => setPopover(null)} />}
+            </div>
+          ))}
+          <div class="menu-anchor">
+            <button class="branch-btn" onClick={() => setPopover(popover === 'fan-add' ? null : 'fan-add')}>
+              <Plus size={14} /> Add agent
+            </button>
+            {popover === 'fan-add' && (
+              <AddAgentMenu
+                agents={agents ?? []}
+                onPick={(a) => {
+                  setFanout([...fanout, a])
+                  setPopover(null)
+                }}
+              />
+            )}
+          </div>
+        </div>
+      )}
       {!props.compact && (
         <div class="composer-bottom">
           <button class="icon-btn" title="Attach files" onClick={() => fileRef.current?.click()}>
             <Plus size={18} />
           </button>
           <input ref={fileRef} type="file" multiple hidden onChange={(e) => (addFiles(e.currentTarget.files ?? []), (e.currentTarget.value = ''))} />
-          <div class="menu-anchor">
+          {!fanout && (<div class="menu-anchor">
             <button class="agent-btn" onClick={() => setPopover(popover === 'agent' ? null : 'agent')}>
               <ProviderIcon provider={props.agent.provider} />
               <span>
@@ -262,8 +313,8 @@ export function Composer(props: Props) {
               <ChevronDown size={14} />
             </button>
             {popover === 'agent' && <AgentMenu agent={props.agent} agents={agents ?? []} setAgent={setAgent} close={() => setPopover(null)} />}
-          </div>
-          {efforts.length > 0 && (
+          </div>)}
+          {!fanout && efforts.length > 0 && (
             <div class="segmented quick-effort" aria-label="Reasoning effort">
               {efforts.map((effort) => (
                 <button key={effort} type="button" class={props.agent.reasoning === effort ? 'selected' : ''} aria-pressed={props.agent.reasoning === effort} onClick={() => setAgent({ ...props.agent, reasoning: effort })}>
@@ -272,7 +323,12 @@ export function Composer(props: Props) {
               ))}
             </div>
           )}
-          <BranchPicker project={props.project} threadId={props.threadId} worktree={props.worktree} setWorktree={props.setWorktree} open={popover === 'branch'} toggle={() => setPopover(popover === 'branch' ? null : 'branch')} />
+          {props.setFanout && (
+            <button class={`branch-btn ${fanout ? 'on' : ''}`} title="Send the prompt to several agents, each in a new worktree, and compare the results" onClick={() => setFanout(fanout ? null : [props.agent])}>
+              <Split size={14} /> Compare agents
+            </button>
+          )}
+          {!fanout && <BranchPicker project={props.project} threadId={props.threadId} worktree={props.worktree} setWorktree={props.setWorktree} open={popover === 'branch'} toggle={() => setPopover(popover === 'branch' ? null : 'branch')} />}
           <div class="spacer" />
           <VoiceButton onText={insert} onError={setError} />
           {sendButtons}
@@ -517,6 +573,35 @@ function AgentMenu({ agent, agents, setAgent, close }: { agent: AgentConfig; age
       <button class="primary done" onClick={close}>
         Done
       </button>
+    </div>
+  )
+}
+
+// What a fan-out can add: a saved preset or an installed agent with its defaults.
+function AddAgentMenu({ agents, onPick }: { agents: ProviderInfo[]; onPick: (a: AgentConfig) => void }) {
+  const [presets] = useApi<Preset[]>('/presets', (e) => e.type === 'presets')
+  return (
+    <div class="menu up">
+      {!!presets?.length && <div class="menu-label">Presets</div>}
+      {presets?.map((p) => (
+        <button key={p.id} onClick={() => onPick(p.agent)}>
+          <Bookmark size={14} />
+          <span>
+            {p.name}
+            <small>
+              {PROVIDER_NAMES[p.agent.provider] ?? p.agent.provider} · {agentSummary(p.agent, agents.find((a) => a.id === p.agent.provider))}
+            </small>
+          </span>
+        </button>
+      ))}
+      <div class="menu-label">Agents</div>
+      {agents
+        .filter((a) => a.installed)
+        .map((p) => (
+          <button key={p.id} onClick={() => onPick({ provider: p.id, model: '', reasoning: p.defaultEffort, fast: false, permissionMode: p.defaultMode })}>
+            <ProviderIcon provider={p.id} /> {p.name}
+          </button>
+        ))}
     </div>
   )
 }
