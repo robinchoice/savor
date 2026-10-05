@@ -10,6 +10,7 @@ import { Activity, configKey, systemPrompt, type Answer, type ApprovalRequest, t
 import { ClaudeSession } from './claude.js'
 import { CodexSession } from './codex.js'
 import { AcpSession } from './acp.js'
+import * as push from './push.js'
 
 const IDLE_CLOSE_MS = 5 * 60_000
 
@@ -55,9 +56,11 @@ export function post(p: Project, tid: string, m: Omit<Message, 'id' | 'ts'>) {
   return msg
 }
 
-export function notify(p: Project, tid: string, body: string) {
+// `status` is all a push carries: it passes through the browser's push service.
+export function notify(p: Project, tid: string, body: string, status: string) {
   const t = store.getThread(p, tid)
   emit({ type: 'notify', projectId: p.id, threadId: tid, title: `${p.name} · ${t.label?.name ?? t.title}`.slice(0, 120), body: body.slice(0, 200) })
+  push.send(p, tid, status)
 }
 
 // ---- input and the queue ----
@@ -171,7 +174,7 @@ function endTurn(p: Project, tid: string, result: { text?: string; error?: strin
   if (result.error) {
     store.updateThread(p, tid, { error: result.error })
     post(p, tid, { kind: 'error', text: result.error, modelInfo: agent })
-    if (result.error !== 'Turn stopped.') notify(p, tid, result.error)
+    if (result.error !== 'Turn stopped.') notify(p, tid, result.error, 'Stopped with an error')
   } else {
     store.updateThread(p, tid, { error: null })
     // Fallback for agents that ignore the message protocol: surface their final text. An agent that
@@ -182,7 +185,7 @@ function endTurn(p: Project, tid: string, result: { text?: string; error?: strin
       r.conclusion = { key: '', id: msg.id }
       markConcluded(tid, msg.id)
       store.updateThread(p, tid, { unread: true })
-      notify(p, tid, result.text)
+      notify(p, tid, result.text, 'Finished')
     }
   }
   const mid = turnConclusion.get(tid)
@@ -287,7 +290,7 @@ function askApproval(p: Project, tid: string, req: ApprovalRequest) {
   const msg = post(p, tid, { kind: 'approval', approval: { ...req, status: 'pending' } })
   store.updateThread(p, tid, { unread: true, needsYou: true })
   emit({ type: 'thread', projectId: p.id, threadId: tid })
-  notify(p, tid, req.title)
+  notify(p, tid, req.title, 'Needs your approval')
   return new Promise<string>((resolve) => approvals.set(msg.id, resolve))
 }
 
@@ -309,7 +312,7 @@ function askQuestions(p: Project, tid: string, qs: Question[]) {
   store.updateMessage(p, tid, msg.id, { decisionIds: decisions.map((d) => d.id) })
   store.updateThread(p, tid, { unread: true, needsYou: true })
   emit({ type: 'thread', projectId: p.id, threadId: tid })
-  notify(p, tid, `Your turn: ${qs[0]?.title ?? ''}`)
+  notify(p, tid, `Your turn: ${qs[0]?.title ?? ''}`, 'Has a question')
   return new Promise<Answer[]>((resolve) => questions.set(msg.id, resolve))
 }
 

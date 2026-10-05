@@ -24,6 +24,7 @@ import * as git from './git.js'
 import { importSessions, listSessions } from './import.js'
 import { importEnjoy, keepOutOfGit, listEnjoy } from './enjoy.js'
 import * as voice from './voice.js'
+import * as push from './push.js'
 
 // dist/web next to the sources in development, ../web next to the bundled dist/server/index.mjs.
 const HERE = path.dirname(fileURLToPath(import.meta.url))
@@ -147,6 +148,30 @@ route('DELETE', '/devices/:id', (params, _, ctx) => {
   closeDevice(params.id)
   disconnectDevice(params.id)
   emit({ type: 'devices' })
+  return {}
+})
+
+// ---- web push ----
+
+// Only paired devices get pushes; this computer's browser notifies from the open page.
+const deviceOnly = (ctx: Ctx) => {
+  if (!ctx.auth.device) throw new Forbidden('Push notifications are for paired devices.')
+  return ctx.auth.device
+}
+route('GET', '/push', (_, __, ctx) => ({ publicKey: ctx.auth.device ? push.publicKey() : null }))
+route('PUT', '/push', (_, b, ctx) => {
+  const device = deviceOnly(ctx)
+  const ok = (v: unknown) => typeof v === 'string' && v.length > 0 && v.length < 2000
+  if (!ok(b.endpoint) || !/^https:\/\//.test(b.endpoint) || !ok(b.keys?.p256dh) || !ok(b.keys?.auth)) throw new BadRequest('Not a push subscription.')
+  push.subscribe(device.id, { endpoint: b.endpoint, keys: { p256dh: b.keys.p256dh, auth: b.keys.auth } })
+  return {}
+})
+route('DELETE', '/push', (_, __, ctx) => {
+  push.subscribe(deviceOnly(ctx).id, null)
+  return {}
+})
+route('POST', '/push/visible', (_, b, ctx) => {
+  push.setVisible(deviceOnly(ctx).id, !!b.visible)
   return {}
 })
 

@@ -728,6 +728,22 @@ async function pairDevice(name) {
   return redeem.headers.get('set-cookie').split(';')[0]
 }
 
+test('a paired device keeps its push subscription until it is revoked', async () => {
+  assert.equal((await api('GET', '/push')).body.publicKey, null)
+  assert.equal((await api('PUT', '/push', { endpoint: 'https://push.example/x', keys: { p256dh: 'a', auth: 'b' } })).status, 403)
+  const device = await pairDevice('CI push phone')
+  assert.match((await api('GET', '/push', undefined, device)).body.publicKey, /^B[A-Za-z0-9_-]{86}$/)
+  assert.equal((await api('PUT', '/push', { endpoint: 'http://127.0.0.1:1/x', keys: { p256dh: 'a', auth: 'b' } }, device)).status, 400)
+  assert.equal((await api('PUT', '/push', { endpoint: 'https://push.example/x', keys: { p256dh: 'a', auth: 'b' } }, device)).status, 200)
+  assert.equal((await api('POST', '/push/visible', { visible: true }, device)).status, 200)
+  const stateFile = path.join(HOME, 'state.json')
+  assert.ok(fs.readFileSync(stateFile, 'utf8').includes('https://push.example/x'))
+  assert.ok(!JSON.stringify((await api('GET', '/devices')).body).includes('push.example'))
+  const paired = (await api('GET', '/devices')).body.find((d) => d.name === 'CI push phone')
+  await api('DELETE', `/devices/${paired.id}`)
+  assert.ok(!fs.readFileSync(stateFile, 'utf8').includes('https://push.example/x'))
+})
+
 test('a conversation can work in its own git worktree, which merges back and can be deleted', async () => {
   const [project] = (await api('GET', '/projects')).body
   gitIn(PROJECT, 'init', '-q', '-b', 'main')

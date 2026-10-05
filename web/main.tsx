@@ -60,7 +60,7 @@ function App() {
       (e) => setMe(e instanceof Unauthorized ? false : null),
     )
   }, [mode, link.connected])
-  useNotifications(route[2] === 't' ? route[3] : undefined, projects)
+  useNotifications(route[2] === 't' ? route[3] : undefined, projects, me)
   useEffect(() => {
     if (projects?.length && route[0] !== 'p' && route[0] !== 'all' && route[0] !== 'devices') go(`/p/${(projects.find((p) => p.pinned) ?? projects[0]).id}`)
   }, [projects, route[0]])

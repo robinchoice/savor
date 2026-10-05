@@ -107,7 +107,7 @@ function buildServer(p: Project, tid: string) {
       agents.markConcluded(tid, msg.id)
       store.updateThread(p, tid, { unread: true, needsYou: !!questions?.length })
       touchThread()
-      agents.notify(p, tid, questions?.length ? `Your turn: ${questions[0].title}` : text!)
+      agents.notify(p, tid, questions?.length ? `Your turn: ${questions[0].title}` : text!, questions?.length ? 'Has a question' : 'Finished')
       return ok({ id: msg.id, note: 'Delivered. Finish your turn now.' })
     },
   )

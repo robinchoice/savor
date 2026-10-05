@@ -92,7 +92,7 @@ export function pairingFailed() {
 export const deviceByKey = (publicKey: string) => store.state().devices.find((d) => d.publicKey === publicKey)
 export const deviceById = (id: string) => store.state().devices.find((d) => d.id === id)
 
-export const listDevices = () => store.state().devices.map(({ tokenHash, publicKey, ...d }) => ({ ...d, via: publicKey ? 'relay' : 'lan' }))
+export const listDevices = () => store.state().devices.map(({ tokenHash, publicKey, push, ...d }) => ({ ...d, via: publicKey ? 'relay' : 'lan' }))
 
 export function revokeDevice(id: string) {
   const s = store.state()

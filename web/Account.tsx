@@ -229,7 +229,7 @@ export function AccountDialog({ me, projects, toggleAwake, open, onClose }: { me
   const local = me.origin === 'local'
   const prefs = usePrefs()
   const enjoy = useEnjoyProjects()
-  const [canNotify, notifyOn, toggleNotify] = useNotificationToggle()
+  const [canNotify, notifyOn, toggleNotify] = useNotificationToggle(!local)
   const [update, setUpdate] = useState('')
   const [available, setAvailable] = useState(false)
   const checkUpdate = async () => {

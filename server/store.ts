@@ -114,7 +114,9 @@ export interface Proc {
   startedAt: string
 }
 // Devices paired over the LAN get a cookie token (tokenHash), devices paired through the relay a public key.
-export interface Device { id: string; name: string; tokenHash: string; publicKey?: string; createdAt: string; lastSeenAt: string | null }
+export interface Device { id: string; name: string; tokenHash: string; publicKey?: string; push?: PushSubscription; createdAt: string; lastSeenAt: string | null }
+// Where the device's browser receives Web Push (see push.ts).
+export interface PushSubscription { endpoint: string; keys: { p256dh: string; auth: string } }
 export interface Preset { id: string; name: string; agent: AgentConfig }
 
 interface State {
@@ -134,6 +136,8 @@ interface State {
   // The daemon's long-term X25519 key for the relay tunnel (base64url secret key).
   identity: string
   relayToken: string
+  // The daemon's VAPID key for Web Push (P-256, private JWK), created on first use.
+  vapid?: crypto.webcrypto.JsonWebKey
 }
 
 export const newId = () => crypto.randomUUID().replaceAll('-', '').slice(0, 16)
