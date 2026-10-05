@@ -41,9 +41,13 @@ function keyStore<T>(mode: IDBTransactionMode, op: (store: IDBObjectStore) => ID
     open.onupgradeneeded = () => open.result.createObjectStore('keys')
     open.onerror = () => reject(open.error)
     open.onsuccess = () => {
-      const req = op(open.result.transaction('keys', mode).objectStore('keys'))
-      req.onsuccess = () => resolve(req.result)
-      req.onerror = () => reject(req.error)
+      // Resolve once the transaction has committed: pairing navigates away right after storing the
+      // key, and Safari drops a write that hasn't committed yet.
+      const tx = open.result.transaction('keys', mode)
+      const req = op(tx.objectStore('keys'))
+      tx.oncomplete = () => resolve(req.result)
+      tx.onerror = () => reject(tx.error ?? req.error)
+      tx.onabort = () => reject(tx.error ?? new Error('Storing the device key failed.'))
     }
   })
 }
