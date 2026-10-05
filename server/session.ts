@@ -54,6 +54,8 @@ export interface Host {
   backgroundChanged(): void
   // The agent started work on its own (e.g. a background task finished): count the thread as working.
   working(): void
+  // The agent's last request held this many tokens; `window` is the size of the model's context window when the agent names it.
+  context(tokens: number, window?: number | null): void
   approve(req: ApprovalRequest): Promise<string>
   ask(questions: Question[]): Promise<Answer[]>
   ended(result: { text?: string; error?: string }): void

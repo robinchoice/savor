@@ -199,6 +199,7 @@ main { flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
 .status.needs { color: var(--attn); }
 .status.error { color: var(--red); }
 .status.done { color: var(--muted); }
+.status.context.full { color: var(--attn); }
 .path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .head-actions { display: flex; gap: 2px; }
 .head-actions .group { display: flex; gap: 2px; }

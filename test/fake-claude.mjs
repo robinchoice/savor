@@ -89,7 +89,9 @@ async function turn(text, command) {
   if (!started) out({ type: 'system', subtype: 'init', session_id: sessionId })
   started = true
   interrupted = false
-  out({ type: 'assistant', message: { content: [{ type: 'text', text: 'working' }] } })
+  // The context holds 38,000 of the 200,000 tokens the result names; what a subagent used is not part of it.
+  out({ type: 'assistant', parent_tool_use_id: null, message: { model: 'fake-fable', usage: { input_tokens: 1200, cache_read_input_tokens: 30000, cache_creation_input_tokens: 6800 }, content: [{ type: 'text', text: 'working' }] } })
+  out({ type: 'assistant', parent_tool_use_id: 'toolu_subagent', message: { model: 'fake-haiku', usage: { input_tokens: 150000 }, content: [] } })
 
   if (text.includes('"threadLabel":null')) await call('set_thread_label', { label: 'Fake agent test' })
   if (input.startsWith('fail:')) {
@@ -142,7 +144,7 @@ async function turn(text, command) {
     await call('send_acknowledgement_message', { text: 'On it.' })
     await call('send_conclusion_message', { text: `Echo: ${input}`, suggestions: ['Do it again'] })
   }
-  out({ type: 'result', subtype: interrupted ? 'success' : 'success', is_error: false, result: 'done' })
+  out({ type: 'result', subtype: interrupted ? 'success' : 'success', is_error: false, result: 'done', modelUsage: { 'fake-fable': { contextWindow: 200000 } } })
 }
 
 const rl = readline.createInterface({ input: process.stdin })

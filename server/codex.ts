@@ -101,6 +101,7 @@ export class CodexSession implements Session {
     const { activity } = this.host
     if (params?.threadId && params.threadId !== this.threadId) return
     if (method === 'turn/started') this.host.working()
+    else if (method === 'thread/tokenUsage/updated') this.host.context(params.tokenUsage.last.totalTokens, params.tokenUsage.modelContextWindow)
     else if (method === 'item/started') {
       const item = params.item
       if (item.type === 'commandExecution') activity.start(item.id, 'command', item.command)

@@ -343,6 +343,8 @@ route('PATCH', '/projects/:pid/threads/:tid', (params, b, ctx) => {
     const current = store.getThread(p, params.tid).agent
     const agent = agentFrom(ctx, current, b.agent)
     patch.agent = agent
+    // Another model has another context window, and another agent starts with an empty one.
+    if (agent.provider !== current.provider || agent.model !== current.model) patch.context = null
     if (ctx.auth.origin === 'local') store.updateProject(p.id, { agent })
   }
   const t = store.updateThread(p, params.tid, patch)

@@ -295,6 +295,12 @@ function hostFor(p: Project, thread: Thread, holder: { session?: Session }): Hos
     cwd: store.cwdOf(p, thread),
     activity: new Activity(p, tid, mine),
     working: () => mine() && beginTurn(p, tid),
+    context: (tokens, window) => {
+      if (!mine()) return
+      const t = store.getThread(p, tid)
+      // Saved as it is: this is no change to the conversation, so its place in the list stays.
+      store.saveThread(p, { ...t, context: { tokens, window: window ?? t.context?.window ?? null } })
+    },
     approve: (req) => askApproval(p, tid, req),
     ask: (qs) => askQuestions(p, tid, qs),
     backgroundChanged: () => {

@@ -290,6 +290,16 @@ const STOPPED = 'Turn stopped.'
 
 interface ThreadData { thread: Thread; busy: boolean; waiting: boolean; background: boolean; startedAt?: string; messages: Message[]; decisions: Decision[]; processes: Proc[] }
 
+// How full the agent's context window is: a share of it once the agent has named its size, the tokens until then.
+function ContextUse({ context: c }: { context: NonNullable<Thread['context']> }) {
+  const share = c.window ? c.tokens / c.window : 0
+  return (
+    <span class={`status context${share >= 0.8 ? ' full' : ''}`} title={`${c.tokens.toLocaleString()}${c.window ? ` of ${c.window.toLocaleString()}` : ''} tokens in the agent's context window`}>
+      Context {c.window ? `${Math.round(share * 100)}%` : `${Math.round(c.tokens / 1000)}k`}
+    </span>
+  )
+}
+
 // Phones and narrow windows, where chat and page do not fit side by side.
 function useNarrow() {
   const query = useMemo(() => matchMedia('(max-width: 860px)'), [])
@@ -530,6 +540,7 @@ function ThreadView({ project, threadId }: { project: Project; threadId: string 
                     <Split size={12} /> Comparison
                   </a>
                 )}
+                {thread.context && <ContextUse context={thread.context} />}
               </div>
             </div>
             <div class="head-actions">

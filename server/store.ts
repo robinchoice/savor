@@ -58,6 +58,9 @@ export interface Thread {
   // When the agent got the input it still owes work on. It is on disk so that a turn cut off by a
   // restart is found again.
   workingSince?: string | null
+  // How much the agent's last request put into its model's context window, and how large that window
+  // is, as far as the agent says.
+  context?: { tokens: number; window: number | null } | null
   parentId?: string
   // Set when the conversation works in its own git worktree instead of the project folder.
   worktree?: { branch: string; path: string } | null

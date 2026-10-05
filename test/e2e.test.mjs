@@ -1490,3 +1490,21 @@ test('a turn cut off by a restart continues in the same agent session', async ()
   assert.equal(messages.filter((m) => m.kind === 'ack' && m.ts < messages.find((m) => m.text === 'after the restart').ts).length, 1)
   assert.equal(saved.workingSince, null)
 })
+
+test("the header shows how full the agent's context window is", async () => {
+  const [project] = (await api('GET', '/projects')).body
+  await page.goto(`${base}/#/p/${project.id}`)
+  await page.reload()
+  await newConversation()
+  await send('how full')
+  await page.waitForSelector('text=Echo: how full')
+  await page.waitForSelector('.thread-sub .context:has-text("Context 19%")')
+  assert.match(await page.locator('.thread-sub .context').getAttribute('title'), /^38,000 of 200,000 tokens/)
+
+  // Codex names the window with every update. Another agent starts with an empty context.
+  const threads = `/projects/${project.id}/threads`
+  const thread = (await api('POST', threads, { text: 'codex context', agent: { provider: 'codex' } })).body
+  await until(async () => (await api('GET', `${threads}/${thread.id}`)).body.messages.some((m) => m.kind === 'conclusion'))
+  assert.deepEqual((await api('GET', `${threads}/${thread.id}`)).body.thread.context, { tokens: 51200, window: 256000 })
+  assert.equal((await api('PATCH', `${threads}/${thread.id}`, { agent: project.agent })).body.context, null)
+})

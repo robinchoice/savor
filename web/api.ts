@@ -120,6 +120,7 @@ export interface Thread {
   completed: boolean
   needsYou: boolean
   error: string | null
+  context?: { tokens: number; window: number | null } | null
   worktree?: { branch: string; path: string } | null
   fanout?: { id: string; base: string }
   workflow?: { id: string; name: string; trigger: Run['trigger']; due?: string }

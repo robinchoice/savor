@@ -33,6 +33,8 @@ export class ClaudeSession implements Session {
   private tasks = 0
   private stderr = ''
   private stopping = false
+  private tokens = 0
+  private model = ''
 
   constructor(private host: Host, thread: Thread) {
     const { p } = host
@@ -131,6 +133,7 @@ export class ClaudeSession implements Session {
     if (ev.type === 'system' && ev.subtype === 'init' && ev.session_id) {
       rememberSession(p, tid, 'claude', ev.session_id)
     } else if (ev.type === 'assistant') {
+      if (ev.message?.usage && !ev.parent_tool_use_id) this.usage(ev.message)
       for (const c of ev.message?.content ?? []) {
         if (c.type === 'thinking') activity.instant('thinking', 'Thinking')
         if (c.type === 'text' && c.text.trim()) activity.instant('note', c.text)
@@ -141,8 +144,20 @@ export class ClaudeSession implements Session {
     } else if (ev.type === 'control_request') {
       this.control(ev.request_id, ev.request).catch((e: Error) => this.respond(ev.request_id, undefined, e.message))
     } else if (ev.type === 'result') {
+      const window = ev.modelUsage?.[this.model]?.contextWindow
+      if (window) this.host.context(this.tokens, window)
       this.host.ended(ev.is_error && !/interrupt/i.test(ev.subtype ?? '') ? { error: ev.result || ev.subtype } : { text: ev.is_error ? '' : ev.result ?? '' })
     }
+  }
+
+  // What the request behind an answer carried is what the context holds now. Subagents have their own.
+  private usage(message: any) {
+    const u = message.usage
+    const tokens = (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0)
+    if (tokens === this.tokens) return
+    this.tokens = tokens
+    this.model = message.model
+    this.host.context(tokens)
   }
 
   private respond(requestId: string, result?: unknown, error?: string) {

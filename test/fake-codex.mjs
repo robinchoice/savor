@@ -52,6 +52,8 @@ async function runTurn(params) {
   const turn = { id: `turn-${nextId++}`, items: [], status: 'inProgress', error: null }
   turnId = turn.id
   notify('turn/started', { threadId, turn })
+  const last = { totalTokens: 51200, inputTokens: 50000, cachedInputTokens: 40000, cacheWriteInputTokens: 0, outputTokens: 1200, reasoningOutputTokens: 0 }
+  notify('thread/tokenUsage/updated', { threadId, turnId, tokenUsage: { total: last, last, modelContextWindow: 256000 } })
   notify('item/started', { threadId, turnId, item: { type: 'commandExecution', id: 'cmd1', command: 'echo hi', cwd: '.', status: 'inProgress' } })
   notify('item/completed', { threadId, turnId, item: { type: 'commandExecution', id: 'cmd1', command: 'echo hi', cwd: '.', status: 'completed' } })
   const skill = params.input.find((i) => i.type === 'skill')
