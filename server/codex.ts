@@ -15,7 +15,7 @@ const MODES: Record<string, { sandbox: string; approvalPolicy: string; approvals
   'full-access': { sandbox: 'danger-full-access', approvalPolicy: 'never', approvalsReviewer: 'user' },
 }
 
-const CLIENT = { name: 'savor', title: 'Savor', version: '0.6.3' }
+const CLIENT = { name: 'savor', title: 'Savor', version: '0.6.4' }
 const CAPABILITIES = { experimentalApi: true, requestAttestation: false }
 
 function spawnAppServer(projectId?: string, threadId?: string) {
