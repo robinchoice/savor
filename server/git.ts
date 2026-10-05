@@ -65,8 +65,7 @@ export function addWorktree(p: Project, branch: string): { branch: string; path:
   const dir = path.join(worktreesDir(p), branch.replace(/[^\w.-]+/g, '-'))
   if (fs.existsSync(dir)) throw new GitError(`${dir} already exists.`)
   fs.mkdirSync(worktreesDir(p), { recursive: true })
-  const known = git(p.path, 'branch', '--list', branch) !== ''
-  git(p.path, 'worktree', 'add', ...(known ? [dir, branch] : ['-b', branch, dir]))
+  git(p.path, 'worktree', 'add', ...(branchExists(p, branch) ? [dir, branch] : ['-b', branch, dir]))
   return { branch, path: dir }
 }
 
@@ -78,6 +77,18 @@ export function mergeWorktree(p: Project, branch: string) {
       git(p.path, 'merge', '--abort')
     } catch {}
     throw e
+  }
+}
+
+export const branchExists = (p: Project, branch: string) => git(p.path, 'branch', '--list', branch) !== ''
+
+// Whether `branch` has commits beyond `base` that are in the project's HEAD.
+export function isMerged(p: Project, branch: string, base: string) {
+  try {
+    git(p.path, 'merge-base', '--is-ancestor', branch, 'HEAD')
+    return git(p.path, 'rev-parse', branch) !== base
+  } catch {
+    return false
   }
 }
 

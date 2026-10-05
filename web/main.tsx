@@ -92,7 +92,7 @@ function App() {
       </div>
     )
 
-  // Routes: p/:pid[/t/:tid | /files/... | /workflows[/:id] | /settings] | all[/:section] | devices
+  // Routes: p/:pid[/t/:tid | /fan/:id | /files/... | /workflows[/:id] | /settings] | all[/:section] | devices
   const [, pid, section, ...rest] = route
   const project = projects?.find((p) => p.id === pid)
 
@@ -103,7 +103,7 @@ function App() {
     if (section === 'files') main = <FilesView key={project.id} project={project} rest={rest} />
     else if (section === 'workflows') main = <Workflows key={project.id} project={project} rest={rest} />
     else if (section === 'settings') main = <Settings key={project.id} project={project} />
-    else main = <Conversations key={project.id} project={project} threadId={section === 't' ? rest[0] : undefined} isNew={section === 'new'} />
+    else main = <Conversations key={project.id} project={project} threadId={section === 't' ? rest[0] : undefined} fanoutId={section === 'fan' ? rest[0] : undefined} isNew={section === 'new'} />
   }
 
   return (

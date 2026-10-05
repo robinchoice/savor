@@ -31,6 +31,7 @@ export function systemPrompt(p: Project, thread: Thread) {
     PROTOCOL,
     `- ${VERBOSITY[p.verbosity]}`,
     wt && `- This conversation works in its own git worktree of the project at ${wt.path} (branch ${wt.branch}). Do all work there; the project folder ${p.path} is the main checkout, leave it alone.`,
+    thread.fanout && `- Other agents got the same prompt in worktrees of their own, and the user compares the results and merges the best one. Commit your work on your branch before you conclude, so it can be merged.`,
     role && `\nProject role and instructions (from ROLE.md):\n${role}`,
   ]
     .filter(Boolean)

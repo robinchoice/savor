@@ -58,6 +58,9 @@ export interface Thread {
   parentId?: string
   // Set when the conversation works in its own git worktree instead of the project folder.
   worktree?: { branch: string; path: string } | null
+  // Set for one of several conversations that got the same prompt to compare their results: the
+  // fan-out they belong to and the commit their worktrees started from.
+  fanout?: { id: string; base: string }
   // Set by the import from Enjoy: what the conversation looked like there when it was last brought over.
   imported?: { messages: number; completed: boolean; open: number }
   // Set for a run of a workflow: which one started the conversation and what set it off. A run that was
@@ -301,7 +304,7 @@ export function getThread(p: Project, tid: string): Thread {
 
 export const cwdOf = (p: Project, t: Thread) => t.worktree?.path ?? p.path
 
-export function createThread(p: Project, init: { title: string; label?: string | null; agent?: AgentConfig; parentId?: string; worktree?: { branch: string; path: string } | null; workflow?: Thread['workflow'] }): Thread {
+export function createThread(p: Project, init: { title: string; label?: string | null; agent?: AgentConfig; parentId?: string; worktree?: { branch: string; path: string } | null; workflow?: Thread['workflow']; fanout?: Thread['fanout'] }): Thread {
   const t: Thread = {
     id: newId(),
     title: init.title.slice(0, 300),
@@ -319,6 +322,7 @@ export function createThread(p: Project, init: { title: string; label?: string |
   if (init.parentId) t.parentId = init.parentId
   if (init.worktree) t.worktree = init.worktree
   if (init.workflow) t.workflow = init.workflow
+  if (init.fanout) t.fanout = init.fanout
   saveThread(p, t)
   return t
 }
