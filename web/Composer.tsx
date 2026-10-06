@@ -1,9 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
-import { ArrowUp, AtSign, Bookmark, ChevronDown, FileText, FolderGit2, GitBranch, ListPlus, MessageSquare, Mic, Plus, Split, Square, Trash2, Workflow as WorkflowIcon, X, Zap, Crosshair } from 'lucide-preact'
-import { api, agentSummary, cap, PROVIDER_NAMES, readFileAsDataUrl, useAgents, useApi, type AgentConfig, type Attachment, type Doc, type Project, type ProviderInfo, type Preset, type Skill, type Workflow } from './api'
+import { ArrowUp, AtSign, Bookmark, Check, ChevronDown, FileText, FolderGit2, GitBranch, ListPlus, MessageSquare, Mic, Paperclip, Plus, ShieldAlert, Split, Square, Workflow as WorkflowIcon, X, Zap, Crosshair } from 'lucide-preact'
+import { api, agentSummary, describeModel, effortLabel, modelName, PROVIDER_NAMES, readFileAsDataUrl, useAgents, useApi, type AgentConfig, type Attachment, type Doc, type Project, type ProviderInfo, type Preset, type Skill, type Workflow } from './api'
 import { ProviderIcon } from './Conversations'
 import { record, type Recording } from './voice'
-import { UsageBars, useUsage } from './Usage'
+import { useUsage } from './Usage'
 import { reviewMessage, type ReviewComment } from './Changes'
 import { fanoutBranches } from '../shared/fanout'
 
@@ -74,7 +74,6 @@ export function Composer(props: Props) {
   const composerRef = useRef<HTMLDivElement>(null)
   const agents = useAgents()
   const info = agents?.find((a) => a.id === props.agent.provider)
-  const efforts = info?.models.find((m) => m.id === props.agent.model)?.efforts ?? info?.efforts ?? []
 
   // The skills of the chosen agent are fetched up front, so "/" opens the list right away.
   const [skills, setSkills] = useState<Skill[]>()
@@ -309,16 +308,7 @@ export function Composer(props: Props) {
             }
           }}
         />
-        {props.compact ? (
-          sendButtons
-        ) : (
-          <div class="menu-anchor">
-            <button class="mention-btn" onClick={() => setPopover(popover === 'mention' ? null : 'mention')}>
-              <AtSign size={13} /> Docs, workflows and files
-            </button>
-            {popover === 'mention' && <MentionMenu project={props.project} onPick={insert} />}
-          </div>
-        )}
+        {props.compact && sendButtons}
       </div>
       {fanout && (
         <div class="fan-row">
@@ -365,34 +355,42 @@ export function Composer(props: Props) {
       )}
       {!props.compact && (
         <div class="composer-bottom">
-          <button class="icon-btn" title="Attach files" onClick={() => fileRef.current?.click()}>
-            <Plus size={18} />
-          </button>
-          <input ref={fileRef} type="file" multiple hidden onChange={(e) => (addFiles(e.currentTarget.files ?? []), (e.currentTarget.value = ''))} />
-          {!fanout && (<div class="menu-anchor">
-            <button class="agent-btn" onClick={() => setPopover(popover === 'agent' ? null : 'agent')}>
-              <ProviderIcon provider={props.agent.provider} />
-              <span>
-                <b>{PROVIDER_NAMES[props.agent.provider] ?? props.agent.provider}</b>
-                <small>{agentSummary(props.agent, info)}</small>
-              </span>
-              <ChevronDown size={14} />
+          <div class="menu-anchor">
+            <button class={`icon-btn ${popover === 'plus' ? 'on' : ''}`} title="Attach, mention or compare agents" onClick={() => setPopover(popover === 'plus' ? null : 'plus')}>
+              <Plus size={18} />
             </button>
-            {popover === 'agent' && <AgentMenu agent={props.agent} agents={agents ?? []} setAgent={setAgent} close={() => setPopover(null)} />}
-          </div>)}
-          {!fanout && efforts.length > 0 && (
-            <div class="segmented quick-effort" aria-label="Reasoning effort">
-              {efforts.map((effort) => (
-                <button key={effort} type="button" class={props.agent.reasoning === effort ? 'selected' : ''} aria-pressed={props.agent.reasoning === effort} onClick={() => setAgent({ ...props.agent, reasoning: effort })}>
-                  {cap(effort)}
+            {popover === 'plus' && (
+              <div class="menu up plus-menu">
+                <button onClick={() => (setPopover(null), fileRef.current?.click())}>
+                  <Paperclip size={15} /> <span>Attach files</span>
                 </button>
-              ))}
+                <button onClick={() => setPopover('mention')}>
+                  <AtSign size={15} />
+                  <span>
+                    Mention
+                    <small>Documents, workflows and files</small>
+                  </span>
+                </button>
+                {props.setFanout && (
+                  <button class={fanout ? 'selected' : ''} onClick={() => (setFanout(fanout ? null : [props.agent]), setPopover(null))}>
+                    <Split size={15} />
+                    <span>
+                      Compare agents
+                      <small>The same prompt, one new worktree each</small>
+                    </span>
+                    {fanout && <Check size={15} />}
+                  </button>
+                )}
+              </div>
+            )}
+            {popover === 'mention' && <MentionMenu project={props.project} onPick={insert} />}
+          </div>
+          <input ref={fileRef} type="file" multiple hidden onChange={(e) => (addFiles(e.currentTarget.files ?? []), (e.currentTarget.value = ''))} />
+          {!fanout && (
+            <div class="menu-anchor">
+              <AgentButton agent={props.agent} info={info} open={popover === 'agent'} toggle={() => setPopover(popover === 'agent' ? null : 'agent')} />
+              {popover === 'agent' && <AgentMenu agent={props.agent} agents={agents ?? []} setAgent={setAgent} close={() => setPopover(null)} />}
             </div>
-          )}
-          {props.setFanout && (
-            <button class={`branch-btn ${fanout ? 'on' : ''}`} title="Send the prompt to several agents, each in a new worktree, and compare the results" onClick={() => setFanout(fanout ? null : [props.agent])}>
-              <Split size={14} /> Compare agents
-            </button>
           )}
           {!fanout && <BranchPicker project={props.project} threadId={props.threadId} worktree={props.worktree} setWorktree={props.setWorktree} open={popover === 'branch'} toggle={() => setPopover(popover === 'branch' ? null : 'branch')} />}
           <div class="spacer" />
@@ -512,16 +510,63 @@ function MentionMenu({ project, onPick }: { project: Project; onPick: (s: string
   )
 }
 
+const EFFORT_DETAIL: Record<string, string> = {
+  low: 'Quick answers with little thinking',
+  medium: 'Balanced speed and depth',
+  high: 'Thorough, for most changes',
+  xhigh: 'Extra thinking for tricky changes',
+  max: 'Longest thinking, uses the limits fastest',
+  ultracode: 'X-High with Claude Code’s ultracode mode',
+  ultra: 'The deepest reasoning Codex offers',
+}
+
+const effortsOf = (agent: AgentConfig, info?: ProviderInfo) => info?.models.find((m) => m.id === agent.model)?.efforts ?? info?.efforts ?? []
+
+// Rising bars, filled up to the chosen effort.
+function EffortMeter({ effort, efforts }: { effort: string; efforts: string[] }) {
+  const n = efforts.indexOf(effort) + 1
+  return (
+    <span class="effort-meter" aria-hidden="true">
+      {efforts.map((_, i) => (
+        <i key={i} class={i < n ? 'on' : ''} style={{ height: `${4 + (i * 8) / Math.max(1, efforts.length - 1)}px` }} />
+      ))}
+    </span>
+  )
+}
+
+function AgentButton({ agent, info, open, toggle }: { agent: AgentConfig; info?: ProviderInfo; open: boolean; toggle: () => void }) {
+  const efforts = effortsOf(agent, info)
+  const mode = info?.modes.find((m) => m.id === agent.permissionMode)
+  return (
+    <button class={`agent-btn ${open ? 'on' : ''}`} title={`${PROVIDER_NAMES[agent.provider] ?? agent.provider}: change the model, effort and permissions`} onClick={toggle}>
+      <ProviderIcon provider={agent.provider} size={16} />
+      <b>{modelName(agent, info)}</b>
+      {efforts.includes(agent.reasoning) && (
+        <span class="agent-effort">
+          <EffortMeter effort={agent.reasoning} efforts={efforts} /> {effortLabel(agent.reasoning)}
+        </span>
+      )}
+      {agent.fast && <Zap size={13} class="agent-fast" />}
+      {mode?.unsafe && <ShieldAlert size={14} class="agent-unsafe" />}
+      <ChevronDown size={14} class="chevron" />
+    </button>
+  )
+}
+
+// Agents on the left, the chosen agent's model, effort and permissions on the right. Changes apply right away.
 function AgentMenu({ agent, agents, setAgent, close }: { agent: AgentConfig; agents: ProviderInfo[]; setAgent: (a: AgentConfig) => void; close: () => void }) {
   const ref = useRef<HTMLDivElement>(null)
   useLayoutEffect(() => {
+    // As wide as the composer above or below it. Narrow screens get a bottom sheet from the stylesheet.
     const place = () => {
       const menu = ref.current!
-      const anchor = menu.parentElement!.getBoundingClientRect()
-      menu.style.maxHeight = `${innerHeight - 24}px`
-      menu.style.left = `${Math.max(12, Math.min(anchor.left, innerWidth - menu.offsetWidth - 12))}px`
-      const below = innerHeight - anchor.bottom - 8
-      const top = below >= menu.offsetHeight ? anchor.bottom + 8 : anchor.top - menu.offsetHeight - 8
+      if (matchMedia('(max-width: 600px)').matches) return menu.removeAttribute('style')
+      const anchor = (menu.closest('.composer') ?? menu.parentElement!).getBoundingClientRect()
+      const width = Math.min(680, anchor.width, innerWidth - 24)
+      menu.style.width = `${width}px`
+      menu.style.maxHeight = `${Math.min(560, innerHeight - 24)}px`
+      menu.style.left = `${Math.max(12, Math.min(anchor.left, innerWidth - width - 12))}px`
+      const top = anchor.top - menu.offsetHeight - 8 >= 12 ? anchor.top - menu.offsetHeight - 8 : anchor.bottom + 8
       menu.style.top = `${Math.max(12, Math.min(top, innerHeight - menu.offsetHeight - 12))}px`
     }
     place()
@@ -531,117 +576,154 @@ function AgentMenu({ agent, agents, setAgent, close }: { agent: AgentConfig; age
     return () => { observer.disconnect(); removeEventListener('resize', place) }
   }, [])
   const info = agents.find((a) => a.id === agent.provider)
-  const usage = useUsage().find((u) => u.provider === agent.provider)
+  const usage = useUsage()
   const [presets] = useApi<Preset[]>('/presets', (e) => e.type === 'presets')
-  const [presetName, setPresetName] = useState('')
+  const [presetName, setPresetName] = useState<string | null>(null)
   const [error, setError] = useState('')
   const set = (patch: Partial<AgentConfig>) => setAgent({ ...agent, ...patch })
   const choose = (p: ProviderInfo) => set({ provider: p.id, model: '', reasoning: p.defaultEffort, fast: false, permissionMode: p.defaultMode })
-  const efforts = info?.models.find((m) => m.id === agent.model)?.efforts ?? info?.efforts ?? []
+  const efforts = effortsOf(agent, info)
+  const models = info?.models ?? []
+  const listed = [...(models.some((m) => m.id === '') ? [] : [{ id: '', label: 'Default', detail: `${info?.name ?? 'The agent'}’s own default` }]), ...(agent.model && !models.some((m) => m.id === agent.model) ? [{ id: agent.model, label: agent.model }] : []), ...models]
   const savePreset = async () => {
     try {
       await api('POST', '/presets', { name: presetName, agent })
-      setPresetName('')
+      setPresetName(null)
       setError('')
     } catch (e) {
       setError((e as Error).message)
     }
   }
-  const status = (p: ProviderInfo) => (!p.installed ? 'not installed' : p.signedIn === false ? `sign in: ${p.signIn}` : p.account ?? p.version ?? '')
+  const status = (p: ProviderInfo) => (!p.installed ? 'Not installed' : p.signedIn === false ? `Sign in: ${p.signIn}` : p.account ?? p.version ?? '')
+  // The weekly limit says the most about what is left, the others show in the tooltip.
+  const limit = (id: string) => {
+    const u = usage.find((u) => u.provider === id)
+    const w = u?.windows.find((w) => w.label === 'Weekly') ?? u?.windows[0]
+    return w && { left: Math.max(0, 100 - w.percent), label: w.label, all: u!.windows.map((w) => `${w.label}: ${Math.max(0, 100 - w.percent)}% left${w.resets ? `, resets ${w.resets}` : ''}`).join('\n') }
+  }
 
   return (
-    <div class="menu agent-menu" ref={ref}>
-      <div class="menu-label">Agent</div>
-      {(agents.length ? agents : Object.entries(PROVIDER_NAMES).map(([id, name]) => ({ id, name }) as ProviderInfo)).map((p) => (
-        <button key={p.id} class={agent.provider === p.id ? 'selected' : ''} onClick={() => (p.modes ? choose(p) : set({ provider: p.id, model: '' }))}>
-          <ProviderIcon provider={p.id} />
-          <span title={status(p)}>
-            {p.name}
-            {p.modes && <small class="status">{status(p)}</small>}
-          </span>
-        </button>
-      ))}
-      {usage && <UsageBars usage={usage} />}
-      <div class="menu-label">Model</div>
-      {info?.models.length ? (
-        <select value={agent.model} onChange={(e) => set({ model: e.currentTarget.value })}>
-          {!info.models.some((m) => m.id === '') && <option value="">Default</option>}
-          {!info.models.some((m) => m.id === agent.model) && agent.model && <option value={agent.model}>{agent.model}</option>}
-          {info.models.map((m) => (
-            <option key={m.id} value={m.id} title={m.detail}>
-              {m.label}
-            </option>
-          ))}
-        </select>
-      ) : (
-        <input placeholder="Default" value={agent.model} onInput={(e) => set({ model: e.currentTarget.value })} />
-      )}
-      {efforts.length ? (
-        <>
-          <div class="menu-label">Effort</div>
-          <div class="segmented">
-            {efforts.map((r) => (
-              <button key={r} class={agent.reasoning === r ? 'selected' : ''} onClick={() => set({ reasoning: r })}>
-                {cap(r)}
+    <>
+      <div class="sheet-scrim" onClick={close} />
+      <div class="menu agent-menu" ref={ref}>
+        <div class="ap-rail">
+          {(agents.length ? agents : Object.entries(PROVIDER_NAMES).map(([id, name]) => ({ id, name }) as ProviderInfo)).map((p) => {
+            const l = limit(p.id)
+            return (
+              <button key={p.id} class={`ap-agent ${agent.provider === p.id ? 'selected' : ''} ${p.modes && (!p.installed || p.signedIn === false) ? 'off' : ''}`} title={l?.all ?? status(p)} onClick={() => (p.modes ? choose(p) : set({ provider: p.id, model: '' }))}>
+                <ProviderIcon provider={p.id} size={16} />
+                <span>
+                  {p.name}
+                  {l ? <small>{l.left}% left · {l.label}</small> : p.modes && <small>{status(p)}</small>}
+                  {l && (
+                    <span class={`ap-limit ${l.left <= 10 ? 'low' : ''}`}>
+                      <i style={{ width: `${l.left}%` }} />
+                    </span>
+                  )}
+                </span>
               </button>
-            ))}
-          </div>
-        </>
-      ) : null}
-      {info?.fast && (
-        <label class="toggle-row">
-          <Zap size={14} /> Fast mode
-          <input type="checkbox" checked={agent.fast} onChange={(e) => set({ fast: e.currentTarget.checked })} />
-        </label>
-      )}
-      {info?.modes.length ? (
-        <>
-          <div class="menu-label">Permissions</div>
-          <select value={agent.permissionMode} onChange={(e) => set({ permissionMode: e.currentTarget.value })} title={info.modes.find((m) => m.id === agent.permissionMode)?.detail}>
-            {info.modes.map((m) => (
-              <option key={m.id} value={m.id} title={m.detail}>
-                {m.label}
-                {m.unsafe ? ' ⚠' : ''}
-              </option>
-            ))}
-          </select>
-          <small class="status pad">{info.modes.find((m) => m.id === agent.permissionMode)?.detail}</small>
-        </>
-      ) : null}
-      <div class="menu-label">Presets</div>
-      {presets?.map((p) => (
-        <div class="preset-row" key={p.id}>
-          <button class={JSON.stringify(p.agent) === JSON.stringify(agent) ? 'selected' : ''} onClick={() => setAgent(p.agent)}>
-            <Bookmark size={14} />
-            <span>
-              {p.name}
-              <small>
-                {PROVIDER_NAMES[p.agent.provider] ?? p.agent.provider} · {agentSummary(p.agent, agents.find((a) => a.id === p.agent.provider))}
-              </small>
-            </span>
-          </button>
-          <button class="icon-btn" title="Remove preset" onClick={() => api('DELETE', `/presets/${p.id}`).catch((e: Error) => setError(e.message))}>
-            <Trash2 size={14} />
-          </button>
+            )
+          })}
         </div>
-      ))}
-      <form
-        class="menu-form"
-        onSubmit={(e) => {
-          e.preventDefault()
-          savePreset()
-        }}
-      >
-        <input placeholder="Save as preset…" value={presetName} onInput={(e) => setPresetName(e.currentTarget.value)} />
-        <button class="primary" disabled={!presetName.trim()}>
-          Save
-        </button>
-      </form>
-      {error && <div class="error-text pad">{error}</div>}
-      <button class="primary done" onClick={close}>
-        Done
-      </button>
-    </div>
+        <div class="ap-pane">
+          <div class="menu-label">Model</div>
+          {models.length ? (
+            <div class="ap-models">
+              {listed.map((m) => {
+                const { name, detail } = describeModel(m)
+                return (
+                  <button key={m.id} class={`ap-model ${agent.model === m.id ? 'selected' : ''}`} onClick={() => set({ model: m.id })}>
+                    <b>
+                      {m.id === '' ? 'Default' : name}
+                      {m.id === '' && name !== m.label && <span class="ap-tag">{name}</span>}
+                      {m.id.includes('[1m]') && <span class="ap-tag">1M context</span>}
+                    </b>
+                    {detail && <small>{detail}</small>}
+                  </button>
+                )
+              })}
+            </div>
+          ) : (
+            <input placeholder="Default" value={agent.model} onInput={(e) => set({ model: e.currentTarget.value })} />
+          )}
+          {efforts.length > 0 && (
+            <>
+              <div class="menu-label">
+                Effort <span>{EFFORT_DETAIL[agent.reasoning]}</span>
+              </div>
+              <div class="ap-effort" role="radiogroup" aria-label="Reasoning effort">
+                {efforts.map((e) => (
+                  <button key={e} role="radio" aria-checked={agent.reasoning === e} class={agent.reasoning === e ? 'selected' : ''} title={EFFORT_DETAIL[e]} onClick={() => set({ reasoning: e })}>
+                    {effortLabel(e)}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+          {info?.fast && (
+            <button class="ap-row" role="switch" aria-checked={agent.fast} onClick={() => set({ fast: !agent.fast })}>
+              <Zap size={15} class="agent-fast" />
+              <span>
+                Fast mode
+                <small>Faster output from the same model, uses the limits faster</small>
+              </span>
+              <span class={`switch ${agent.fast ? 'on' : ''}`}>
+                <i />
+              </span>
+            </button>
+          )}
+          {info?.modes.length ? (
+            <>
+              <div class="menu-label">Permissions</div>
+              <div role="radiogroup" aria-label="Permissions">
+                {info.modes.map((m) => (
+                  <button key={m.id} role="radio" aria-checked={agent.permissionMode === m.id} class={`ap-row ${agent.permissionMode === m.id ? 'selected' : ''} ${m.unsafe ? 'unsafe' : ''}`} onClick={() => set({ permissionMode: m.id })}>
+                    <span class="ap-radio" />
+                    <span>
+                      {m.label}
+                      <small>{m.detail}</small>
+                    </span>
+                    {m.unsafe && <ShieldAlert size={15} />}
+                  </button>
+                ))}
+              </div>
+            </>
+          ) : null}
+        </div>
+        <div class="ap-foot">
+          {presets?.map((p) => (
+            <span key={p.id} class={`ap-preset ${JSON.stringify(p.agent) === JSON.stringify(agent) ? 'selected' : ''}`}>
+              <button title={`${PROVIDER_NAMES[p.agent.provider] ?? p.agent.provider} · ${agentSummary(p.agent, agents.find((a) => a.id === p.agent.provider))}`} onClick={() => setAgent(p.agent)}>
+                <Bookmark size={13} /> {p.name}
+              </button>
+              <button class="ap-remove" title="Remove preset" onClick={() => api('DELETE', `/presets/${p.id}`).catch((e: Error) => setError(e.message))}>
+                <X size={12} />
+              </button>
+            </span>
+          ))}
+          <span class="spacer" />
+          {presetName === null ? (
+            <button class="ap-preset ghost" onClick={() => setPresetName('')}>
+              <Plus size={13} /> Save as preset
+            </button>
+          ) : (
+            <form
+              class="ap-save"
+              onSubmit={(e) => {
+                e.preventDefault()
+                savePreset()
+              }}
+            >
+              <input autoFocus placeholder="Preset name" value={presetName} onInput={(e) => setPresetName(e.currentTarget.value)} />
+              <button class="primary small" disabled={!presetName.trim()}>
+                Save
+              </button>
+            </form>
+          )}
+          {error && <div class="error-text">{error}</div>}
+        </div>
+      </div>
+    </>
   )
 }
 

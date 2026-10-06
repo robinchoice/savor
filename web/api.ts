@@ -187,8 +187,22 @@ export function useAgents() {
   return agents
 }
 
+// Claude Code describes its models as "Opus 5.5 · Best for …": the name with its version, then what it is for.
+export const describeModel = (m: ModelInfo) => {
+  const [, name, detail] = m.detail?.match(/^([^·]+?) · (.+)$/) ?? []
+  return { name: name ?? m.label, detail: detail ?? m.detail ?? '' }
+}
+
+// The model by name, also for the default: "Opus 5.5" rather than "Default".
+export const modelName = (a: AgentConfig, info?: ProviderInfo) => {
+  const m = info?.models.find((m) => m.id === a.model)
+  return m ? describeModel(m).name : a.model || 'Default'
+}
+
+export const effortLabel = (e: string) => (e === 'xhigh' ? 'X-High' : cap(e))
+
 export const agentSummary = (a: AgentConfig, info?: ProviderInfo) =>
-  [info?.models.find((m) => m.id === a.model)?.label ?? (a.model || 'Default'), a.reasoning && cap(a.reasoning), a.fast && 'Fast'].filter(Boolean).join(' · ')
+  [modelName(a, info), a.reasoning && effortLabel(a.reasoning), a.fast && 'Fast'].filter(Boolean).join(' · ')
 
 export const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 

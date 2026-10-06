@@ -135,7 +135,7 @@ test('only new input moves a conversation up, finishing hides it right away', as
   await page.waitForSelector(`a.card[href="${older}"]`, { state: 'detached' })
 })
 
-test('agent settings fit the viewport and effort is directly selectable', async () => {
+test('agent settings fit the viewport and apply right away', async () => {
   await newConversation()
   for (const viewport of [{ width: 1400, height: 900 }, { width: 900, height: 600 }, { width: 390, height: 844 }]) {
     await page.setViewportSize(viewport)
@@ -152,12 +152,11 @@ test('agent settings fit the viewport and effort is directly selectable', async 
   }
   await page.setViewportSize({ width: 1400, height: 900 })
   await page.click('.agent-btn')
-  await page.locator('.agent-menu').getByRole('button', { name: /Codex/ }).click()
-  assert.equal(await page.locator('.agent-menu select').first().evaluate((el) => el.selectedOptions[0]?.textContent), 'Default')
-  await page.keyboard.press('Escape')
-  await page.locator('.quick-effort button', { hasText: 'Medium' }).click()
-  assert.equal(await page.locator('.quick-effort button.selected').innerText(), 'Medium')
-  await page.click('.agent-btn')
+  await page.locator('.ap-agent', { hasText: 'Codex' }).click()
+  assert.equal(await page.locator('.ap-model.selected b').innerText(), 'Default')
+  await page.locator('.ap-effort button', { hasText: 'Low' }).click()
+  assert.equal(await page.locator('.ap-effort button.selected').innerText(), 'Low')
+  assert.match(await page.locator('.agent-btn').innerText(), /Low/)
   await page.click('.conv-head h2')
   await page.waitForSelector('.agent-menu', { state: 'detached' })
 })
