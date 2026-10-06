@@ -53,11 +53,30 @@ jobs:
         shell: bash
         working-directory: desktop
         run: npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version --allow-same-version
+      # macOS builds are signed with the Developer ID certificate (CSC_LINK) and notarized with the
+      # App Store Connect key (secret ASC_KEY_P8, variables ASC_KEY_ID and ASC_ISSUER_ID).
+      - name: Prepare macOS signing
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          MAC_CERTIFICATE: ${{ secrets.MAC_CERTIFICATE }}
+          MAC_CERTIFICATE_PASSWORD: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+        run: |
+          test -n "$MAC_CERTIFICATE" && test -n "$ASC_KEY_P8"
+          printf '%s' "$ASC_KEY_P8" | base64 --decode > "$RUNNER_TEMP/asc.p8"
+          {
+            echo "CSC_LINK=$MAC_CERTIFICATE"
+            echo "CSC_KEY_PASSWORD=$MAC_CERTIFICATE_PASSWORD"
+            echo "APPLE_API_KEY=$RUNNER_TEMP/asc.p8"
+            echo "APPLE_API_KEY_ID=${{ vars.ASC_KEY_ID }}"
+            echo "APPLE_API_ISSUER=${{ vars.ASC_ISSUER_ID }}"
+          } >> "$GITHUB_ENV"
       - run: npx electron-builder --publish always
         working-directory: desktop
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CSC_IDENTITY_AUTO_DISCOVERY: false
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ runner.os == 'macOS' }}
 
   publish:
     needs: desktop
