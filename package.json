@@ -24,7 +24,8 @@
     "relay": "node dist/relay/server.mjs",
     "dev:web": "vite",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test \"test/*.test.mjs\""
+    "test": "node --import tsx --test \"test/*.test.mjs\"",
+    "screenshots": "node scripts/screenshots.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.31.0",

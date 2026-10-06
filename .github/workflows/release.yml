@@ -4,6 +4,7 @@ name: Release
 # GitHub release. Installed apps pick up new releases through electron-updater. The relay image goes
 # to GHCR; where the repo variable COOLIFY_URL is set, the relay running in Coolify is updated too,
 # reached through the tailnet (secrets TS_AUTHKEY, COOLIFY_TOKEN, COOLIFY_UUID, variable TS_LOGIN_SERVER).
+# After the release, fresh screenshots go to main.
 on:
   push:
     tags: ['v*']
@@ -95,6 +96,34 @@ jobs:
       - run: gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false --latest
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Retakes the README and landing page screenshots from the released code and commits them to main;
+  # the push deploys the landing page.
+  screenshots:
+    needs: publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright-core install --with-deps chromium
+      - run: npm run screenshots
+      - name: Commit the screenshots to main
+        run: |
+          cp -r docs/screenshots site/img "$RUNNER_TEMP"
+          git fetch origin main
+          git checkout -f -B main FETCH_HEAD
+          cp "$RUNNER_TEMP"/screenshots/* docs/screenshots
+          cp "$RUNNER_TEMP"/img/* site/img
+          git add docs/screenshots site/img
+          git diff --cached --quiet && exit 0
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m "docs: retake the screenshots for $GITHUB_REF_NAME"
+          git push origin main
 
   relay:
     runs-on: ubuntu-latest
