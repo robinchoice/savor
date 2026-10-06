@@ -3,7 +3,7 @@ import { ArrowUp, AtSign, Bookmark, ChevronDown, FileText, FolderGit2, GitBranch
 import { api, agentSummary, cap, PROVIDER_NAMES, readFileAsDataUrl, useAgents, useApi, type AgentConfig, type Attachment, type Doc, type Project, type ProviderInfo, type Preset, type Skill, type Workflow } from './api'
 import { ProviderIcon } from './Conversations'
 import { record, type Recording } from './voice'
-import { UsageLeft, useUsage } from './Usage'
+import { UsageBars, useUsage } from './Usage'
 import { reviewMessage, type ReviewComment } from './Changes'
 import { fanoutBranches } from '../shared/fanout'
 
@@ -561,7 +561,7 @@ function AgentMenu({ agent, agents, setAgent, close }: { agent: AgentConfig; age
           </span>
         </button>
       ))}
-      {usage && <UsageLeft usage={usage} />}
+      {usage && <UsageBars usage={usage} />}
       <div class="menu-label">Model</div>
       {info?.models.length ? (
         <select value={agent.model} onChange={(e) => set({ model: e.currentTarget.value })}>

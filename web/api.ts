@@ -168,7 +168,7 @@ export interface Workflow { id: string; name: string; prompt: string; collection
 // A run of a workflow. A skipped one has no conversation of its own: threadId is the conversation that was in its way.
 export interface Run { at: string; trigger: 'scheduled' | 'manual' | 'caught'; due?: string; status: 'working' | 'needs' | 'stopped' | 'failed' | 'finished' | 'skipped'; threadId: string; summary: string; workedMs: number }
 export interface Proc { pid: number; name: string; cwd: string; command: string; url: string | null; log: string | null; threadId: string; startedAt: string }
-export interface Usage { provider: string; name: string; windows: { label: string; percent: number; resets: string | null }[] }
+export interface Usage { provider: string; name: string; windows: { label: string; percent: number; resets: string | null }[]; stale: boolean }
 export interface Me { origin: 'local' | 'remote'; device: string | null; awake: boolean; host: string; version: string; system: string; projectsDir: string }
 
 // The desktop shell's bridge (desktop/preload.cjs). A browser has none.

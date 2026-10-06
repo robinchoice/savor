@@ -216,9 +216,11 @@ export interface UsageWindow { label: string; percent: number; resets: string | 
 export interface Usage { provider: Provider; name: string; windows: UsageWindow[] }
 
 const USAGE_MS = 60_000
-// The last known usage is served right away; asking the agents takes several seconds.
+// The last known usage is served right away; asking the agents takes several seconds. Values older
+// than two refresh intervals are marked stale while the new ones are being asked for.
 let usage: Usage[] = []
 let usageAt = 0
+let usageDone = 0
 let usageRefresh: Promise<Usage[]> | null = null
 
 const windowLabel = (mins: number) => (mins === 10080 ? 'Weekly' : mins % 1440 === 0 ? `${mins / 1440} days` : mins % 60 === 0 ? `${mins / 60} hours` : `${mins} minutes`)
@@ -242,7 +244,7 @@ const usageProbes: Partial<Record<Provider, () => Promise<UsageWindow[]>>> = {
   },
 }
 
-export function listUsage(): Promise<Usage[]> {
+export function listUsage(): Promise<(Usage & { stale: boolean })[]> {
   if (!usageRefresh && Date.now() - usageAt >= USAGE_MS) {
     usageAt = Date.now()
     usageRefresh = listAgents()
@@ -260,7 +262,9 @@ export function listUsage(): Promise<Usage[]> {
         ).filter((u) => u.windows.length),
       )
       .then((list) => (usage = list), () => usage)
-      .finally(() => (usageRefresh = null))
+      .finally(() => ((usageRefresh = null), (usageDone = Date.now())))
   }
-  return usage.length || !usageRefresh ? Promise.resolve(usage) : usageRefresh
+  if (!usage.length && usageRefresh) return usageRefresh.then((list) => list.map((u) => ({ ...u, stale: false })))
+  const stale = !!usageRefresh && Date.now() - usageDone > 2 * USAGE_MS
+  return Promise.resolve(usage.map((u) => ({ ...u, stale })))
 }
