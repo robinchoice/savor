@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'preact/hooks'
-import { api, go, useEvent, type Me, type Project } from './api'
+import { api, desktop, go, useEvent, type Me, type Project } from './api'
 import { b64 } from '../shared/tunnel'
 
 const KEY = 'savor-notify'
@@ -52,6 +52,7 @@ export function useNotificationToggle(remote: boolean) {
 }
 
 async function show(title: string, body: string, hash: string, tag: string) {
+  if (desktop?.notify) return desktop.notify({ title, body, hash, tag })
   const options = { body, tag, icon: '/icon.svg', data: { hash } }
   try {
     const n = new Notification(title, options)
@@ -87,6 +88,7 @@ export function useNotifications(currentThread: string | undefined, projects: Pr
       clearInterval(timer)
     }
   }, [remote])
+  useEffect(() => desktop?.onOpen?.(go), [])
   useEffect(() => {
     const onMessage = (e: MessageEvent) => e.data?.type === 'open' && go(e.data.hash)
     navigator.serviceWorker?.addEventListener('message', onMessage)

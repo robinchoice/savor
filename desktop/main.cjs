@@ -1,6 +1,6 @@
 // Savor desktop shell: starts the daemon and shows the UI in its own window.
 // The window keeps a persistent browser session, so logins inside previews and links survive restarts.
-const { app, BrowserWindow, Menu, clipboard, dialog, ipcMain, shell } = require('electron')
+const { app, BrowserWindow, Menu, Notification, clipboard, dialog, ipcMain, shell } = require('electron')
 const { execFileSync, spawn, spawnSync } = require('node:child_process')
 const fs = require('node:fs')
 const net = require('node:net')
@@ -134,6 +134,23 @@ const fromUi = (e) => new URL(e.senderFrame.url).origin === `http://localhost:${
 // The folder of the project the UI shows, which the context menu offers actions for.
 let projectRoot = null
 ipcMain.on('context-actions', (e, root) => fromUi(e) && (projectRoot = typeof root === 'string' ? root : null))
+// Notifications are shown from here because only the shell can bring its window to the front on a click.
+// They stay referenced until closed, otherwise the click is lost; the same tag replaces the older one.
+const notifications = new Map()
+ipcMain.on('notify', (e, { title, body, hash, tag }) => {
+  if (!fromUi(e)) return
+  notifications.get(tag)?.close()
+  const n = new Notification({ title, body })
+  n.on('click', () => {
+    if (win.isMinimized()) win.restore()
+    win.show()
+    win.focus()
+    win.webContents.send('open', hash)
+  })
+  n.on('close', () => notifications.get(tag) === n && notifications.delete(tag))
+  notifications.set(tag, n)
+  n.show()
+})
 ipcMain.handle('pick-folder', async (e) => (fromUi(e) ? ((await dialog.showOpenDialog(win, { properties: ['openDirectory', 'createDirectory'] })).filePaths[0] ?? null) : null))
 // The version of a release that finished downloading and waits to be installed.
 let ready = null
