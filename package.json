@@ -1,6 +1,6 @@
 {
   "name": "savor",
-  "version": "0.6.4",
+  "version": "0.6.5",
   "description": "Local-first workspace for CLI coding agents (Claude Code, Codex, OpenCode)",
   "license": "AGPL-3.0-or-later",
   "repository": {
