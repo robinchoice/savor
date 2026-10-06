@@ -161,7 +161,7 @@ export interface Usage { provider: string; name: string; windows: { label: strin
 export interface Me { origin: 'local' | 'remote'; device: string | null; awake: boolean; host: string; version: string; system: string; projectsDir: string }
 
 // The desktop shell's bridge (desktop/preload.cjs). A browser has none.
-export const desktop = (window as { savorDesktop?: { pickFolder(): Promise<string | null>; checkForUpdates(): Promise<string | null>; installUpdate(): Promise<void>; onUpdateReady(cb: (version: string) => void): void; setRunInTerminal?(cb: ((command: string) => void) | null): void } }).savorDesktop
+export const desktop = (window as { savorDesktop?: { pickFolder(): Promise<string | null>; checkForUpdates(): Promise<string | null>; installUpdate(): Promise<void>; onUpdateReady(cb: (version: string) => void): void; setContextActions?(root: string | null, cb: ((action: string, value: any) => void) | null): void } }).savorDesktop
 
 export const PROVIDER_NAMES: Record<string, string> = { claude: 'Claude Code', codex: 'Codex', opencode: 'OpenCode', grok: 'Grok Build', antigravity: 'Antigravity' }
 

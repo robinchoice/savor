@@ -74,15 +74,36 @@ function contextMenu(contents, params) {
       { role: 'selectAll', enabled: flags.canSelectAll },
     ])
   else if (params.selectionText.trim()) groups.push([{ role: 'copy' }])
-  // The selection, or else the clipboard, runs as a command in the open project's terminal. Several lines are only pasted.
-  const command = runInTerminal && (params.selectionText.trim() || clipboard.readText().trim())
-  if (command) {
-    const preview = command.split('\n')[0]
-    const shown = preview.length > 40 || command.includes('\n') ? `${preview.slice(0, 40)}…` : preview
-    const label = command.includes('\n') ? `Paste “${shown}” into Terminal` : `Run “${shown}” in Terminal`
-    groups.push([{ label, click: () => contents.send('run-in-terminal', command) }])
+  // The selection, or else the clipboard, goes to the open project: run in its terminal (several lines
+  // are only pasted), quoted in its conversation, or opened in Files when it names one of its files.
+  const text = projectRoot && (params.selectionText.trim() || clipboard.readText().trim())
+  if (text) {
+    const first = text.split('\n')[0]
+    const shown = first.length > 40 || text.includes('\n') ? `${first.slice(0, 40)}…` : first
+    const send = (action, value) => () => contents.send('context-action', action, value)
+    const file = projectFile(projectRoot, text)
+    groups.push([
+      ...(file ? [{ label: `Open “${shown}” in Files`, click: send('open', file) }] : []),
+      { label: `Quote “${shown}” in Conversation`, click: send('quote', text) },
+      { label: text.includes('\n') ? `Paste “${shown}” into Terminal` : `Run “${shown}” in Terminal`, click: send('terminal', text) },
+    ])
   }
   return Menu.buildFromTemplate(groups.flatMap((group, i) => (i ? [{ type: 'separator' }, ...group] : group)))
+}
+
+// A file of the project named like `src/app.ts:42:7`, absolute or relative to the project folder.
+function projectFile(root, text) {
+  const m = text.match(/^(\S+?)(?::(\d+))?(?::\d+)?$/)
+  if (!m) return null
+  const file = path.resolve(root, m[1])
+  const rel = path.relative(root, file)
+  if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) return null
+  try {
+    if (!fs.statSync(file).isFile()) return null
+  } catch {
+    return null
+  }
+  return { path: rel.split(path.sep).join('/'), line: m[2] ? Number(m[2]) : null }
 }
 
 async function createWindow() {
@@ -110,9 +131,9 @@ const updater = () => (app.isPackaged && fs.existsSync(path.join(process.resourc
 
 // What preload.cjs offers the UI. Only the Savor page itself may ask.
 const fromUi = (e) => new URL(e.senderFrame.url).origin === `http://localhost:${PORT}`
-// Whether the UI shows a project, whose terminal can run a command from the context menu.
-let runInTerminal = false
-ipcMain.on('run-in-terminal-available', (e, on) => fromUi(e) && (runInTerminal = !!on))
+// The folder of the project the UI shows, which the context menu offers actions for.
+let projectRoot = null
+ipcMain.on('context-actions', (e, root) => fromUi(e) && (projectRoot = typeof root === 'string' ? root : null))
 ipcMain.handle('pick-folder', async (e) => (fromUi(e) ? ((await dialog.showOpenDialog(win, { properties: ['openDirectory', 'createDirectory'] })).filePaths[0] ?? null) : null))
 // The version of a release that finished downloading and waits to be installed.
 let ready = null

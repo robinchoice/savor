@@ -3,7 +3,7 @@ import { Folder, GitBranch, Lock, Maximize2, Minimize2, RotateCcw, SquareTermina
 import { Terminal as XTerm } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
-import { api, desktop, useApi, type Project } from './api'
+import { api, useApi, type Project } from './api'
 import { transport } from './transport'
 import { setPrefs, usePrefs } from './prefs'
 
@@ -92,7 +92,7 @@ export function TerminalPanel({ project, threadId }: { project: Project; threadI
 // A command from the context menu goes to the shell on screen, or waits until the opened panel shows one.
 let runner: ((command: string) => void) | null = null
 let queued: string | null = null
-function runInTerminal(command: string) {
+export function runInTerminal(command: string) {
   if (runner) return runner(command)
   queued = command
   setPrefs({ terminalOpen: true })
@@ -244,10 +244,6 @@ export function TerminalButton({ project }: { project: Project }) {
     addEventListener('keydown', on, true)
     return () => removeEventListener('keydown', on, true)
   }, [terminalOpen])
-  useEffect(() => {
-    desktop?.setRunInTerminal?.(runInTerminal)
-    return () => desktop?.setRunInTerminal?.(null)
-  }, [])
   return (
     <button class={`icon-btn ${terminalOpen ? 'on' : ''}`} title="Terminal (Ctrl+`)" onClick={() => setPrefs({ terminalOpen: !terminalOpen })}>
       <SquareTerminal size={16} />

@@ -13,8 +13,9 @@ const themeFor = () => (document.documentElement.dataset.theme === 'light' ? [] 
 
 // CodeMirror for project files. The language comes from the file name and loads on demand; the
 // theme follows the app theme. Loaded as its own chunk (see Files.tsx).
-export default function CodeEditor({ value, path, onChange, onSave }: { value: string; path: string; onChange: (v: string) => void; onSave?: () => void }) {
+export default function CodeEditor({ value, path, line, onChange, onSave }: { value: string; path: string; line?: number; onChange: (v: string) => void; onSave?: () => void }) {
   const host = useRef<HTMLDivElement>(null)
+  const editor = useRef<EditorView>()
   const change = useRef(onChange)
   const save = useRef(onSave)
   change.current = onChange
@@ -38,6 +39,7 @@ export default function CodeEditor({ value, path, onChange, onSave }: { value: s
         ],
       }),
     })
+    editor.current = view
     LanguageDescription.matchFilename(languages, path)
       ?.load()
       .then((support) => view.dispatch({ effects: lang.reconfigure(support) }))
@@ -48,6 +50,15 @@ export default function CodeEditor({ value, path, onChange, onSave }: { value: s
       view.destroy()
     }
   }, [path])
+
+  // A line asked for in the route gets the caret and is scrolled into the middle.
+  useEffect(() => {
+    const view = editor.current
+    if (!view || !line) return
+    const at = view.state.doc.line(Math.min(line, view.state.doc.lines)).from
+    view.dispatch({ selection: { anchor: at }, effects: EditorView.scrollIntoView(at, { y: 'center' }) })
+    view.focus()
+  }, [path, line])
 
   return <div class="code-editor" ref={host} />
 }

@@ -10,7 +10,8 @@ import { AllProjects } from './Overview'
 import { Settings, Devices, Pair, RemotePair } from './Settings'
 import { loadProfile, remote, setTransport } from './transport'
 import { ProcessesPopover } from './Processes'
-import { TerminalButton, TerminalPanel } from './Terminal'
+import { runInTerminal, TerminalButton, TerminalPanel } from './Terminal'
+import { quoteInComposer } from './Composer'
 import { useNotifications } from './notify'
 import { EnjoyImport, EnjoyOffer, useEnjoyProjects } from './EnjoyImport'
 import { AccountDialog, AppearanceMenu, FeedbackDialog } from './Account'
@@ -423,6 +424,15 @@ function SubBar({ project, section }: { project: Project; section?: string }) {
   const [procsOpen, setProcsOpen] = useState(false)
   const [procCount, setProcCount] = useState(0)
   const load = () => api<unknown[]>('GET', `/projects/${project.id}/processes`).then((l) => setProcCount(l.length))
+  // What the desktop context menu offers for the selected or copied text in this project.
+  useEffect(() => {
+    desktop?.setContextActions?.(project.path, (action, value) => {
+      if (action === 'terminal') runInTerminal(value)
+      if (action === 'quote') quoteInComposer(value, () => go(projectHref(project.id)))
+      if (action === 'open') go(`/p/${project.id}/files/f/${encodeURIComponent(value.path)}${value.line ? `/${value.line}` : ''}`)
+    })
+    return () => desktop?.setContextActions?.(null, null)
+  }, [project.id, project.path])
   useEffect(() => void load(), [project.id])
   useEvent((e) => e.type === 'processes' && e.projectId === project.id && load(), [project.id])
   const tab = (id: string, label: string, Icon: any, href: string, badge?: number) => (

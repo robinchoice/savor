@@ -47,6 +47,15 @@ const pickedContext = (picked: Picked[]) =>
     )
     .join('')
 
+// Text quoted from the context menu goes to the composer on screen, or waits until one shows.
+let quoteInto: ((text: string) => void) | null = null
+let queuedQuote: string | null = null
+export function quoteInComposer(text: string, show: () => void) {
+  if (quoteInto) return quoteInto(text)
+  queuedQuote = text
+  show()
+}
+
 export function Composer(props: Props) {
   // What was typed but not sent stays with its conversation.
   const draftKey = `savor-draft:${props.threadId ?? `new:${props.project.id}`}`
@@ -101,6 +110,22 @@ export function Composer(props: Props) {
   // Ready to type on arrival, except on touch screens where the keyboard would cover the conversation.
   useEffect(() => {
     if (props.autoFocus && matchMedia('(pointer: fine)').matches) ref.current?.focus()
+  }, [])
+  useEffect(() => {
+    const into = (quote: string) => {
+      setText((t) => (t.trim() ? `${t.trimEnd()}\n\n` : '') + quote.split('\n').map((l) => `> ${l}`).join('\n') + '\n\n')
+      // The caret goes below the quote once it is rendered.
+      requestAnimationFrame(() => {
+        const el = ref.current!
+        el.focus()
+        el.setSelectionRange(el.value.length, el.value.length)
+        el.scrollTop = el.scrollHeight
+      })
+    }
+    quoteInto = into
+    if (queuedQuote) into(queuedQuote)
+    queuedQuote = null
+    return () => void (quoteInto === into && (quoteInto = null))
   }, [])
   useEffect(() => {
     if (props.draft !== undefined) {

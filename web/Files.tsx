@@ -9,9 +9,9 @@ const RichEditor = lazy(() => import('./RichEditor'))
 
 interface Entry { name: string; path: string; dir: boolean }
 
-// Routes: files | files/doc/:id | files/f/:encodedPath
+// Routes: files | files/doc/:id | files/f/:encodedPath[/:line]
 export function FilesView({ project, rest }: { project: Project; rest: string[] }) {
-  const [kind, id] = rest
+  const [kind, id, line] = rest
   const base = `/projects/${project.id}`
   const [docs] = useApi<Doc[]>(`${base}/docs`, (e) => e.type === 'documents' && e.projectId === project.id)
   const newDoc = async () => {
@@ -42,7 +42,7 @@ export function FilesView({ project, rest }: { project: Project; rest: string[] 
         {kind === 'doc' && id ? (
           <DocEditor key={id} base={base} id={id} projectId={project.id} />
         ) : kind === 'f' && id ? (
-          <FileEditor key={id} base={base} path={id} />
+          <FileEditor key={id} base={base} path={id} line={Number(line) || undefined} />
         ) : (
           <div class="empty-state">
             <h2>Files</h2>
@@ -107,7 +107,7 @@ const ModeToggle = ({ rich, setRich }: { rich: boolean; setRich: (b: boolean) =>
 
 const Loading = () => <p class="muted pad">Loading editor…</p>
 
-function FileEditor({ base, path }: { base: string; path: string }) {
+function FileEditor({ base, path, line }: { base: string; path: string; line?: number }) {
   const [file, setFile] = useState<{ content: string; binary: boolean; truncated: boolean; size: number } | null>(null)
   const [draft, setDraft] = useState<string | null>(null)
   const [error, setError] = useState('')
@@ -154,7 +154,7 @@ function FileEditor({ base, path }: { base: string; path: string }) {
           {md && rich ? (
             <RichEditor key="rich" value={draft ?? file.content} onChange={setDraft} onSave={save} />
           ) : (
-            <CodeEditor key="code" value={draft ?? file.content} path={path} onChange={setDraft} onSave={save} />
+            <CodeEditor key="code" value={draft ?? file.content} path={path} line={line} onChange={setDraft} onSave={save} />
           )}
         </Suspense>
       )}

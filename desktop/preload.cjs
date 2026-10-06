@@ -10,10 +10,10 @@ contextBridge.exposeInMainWorld('savorDesktop', {
     ipcRenderer.on('update-ready', (_e, version) => cb(version))
     ipcRenderer.invoke('ready-update').then((version) => version && cb(version))
   },
-  // While set, the context menu offers to run the selected or copied text; cb gets the command. null withdraws it.
-  setRunInTerminal: (cb) => {
-    ipcRenderer.removeAllListeners('run-in-terminal')
-    if (cb) ipcRenderer.on('run-in-terminal', (_e, command) => cb(command))
-    ipcRenderer.send('run-in-terminal-available', !!cb)
+  // While a project is shown, the context menu offers actions for its folder; cb gets the chosen one. null withdraws them.
+  setContextActions: (root, cb) => {
+    ipcRenderer.removeAllListeners('context-action')
+    if (cb) ipcRenderer.on('context-action', (_e, action, value) => cb(action, value))
+    ipcRenderer.send('context-actions', root)
   },
 })
