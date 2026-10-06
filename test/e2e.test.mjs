@@ -220,6 +220,18 @@ test('questions are answered in one reply', async () => {
   await page.waitForSelector('text=Comment: Tag the release too.')
 })
 
+test('a comment can be sent before every question is answered', async () => {
+  await newConversation()
+  await send('ask: Ship it?')
+  await page.waitForSelector('.option')
+  await page.fill('.composer textarea', 'Drop this, try another way.')
+  await page.click('.composer button:has-text("Send comment")')
+  await page.waitForSelector('text=Not answered')
+  await page.waitForSelector('text=Comment: Drop this, try another way.')
+  await page.waitForSelector('.answered:has-text("Skipped")')
+  assert.equal(await page.locator('.filter.attention').count(), 0, 'nothing waits for the user anymore')
+})
+
 test('approvals are routed to the user, "Always allow" remembers the rule', async () => {
   await newConversation()
   await send('approve: now')

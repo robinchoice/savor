@@ -35,7 +35,8 @@ interface Props {
   setFanout?: (agents: AgentConfig[] | null) => void
   // Beside the preview with the chat out of sight: just the text, what was picked, and send.
   compact?: boolean
-  // Open questions in the conversation: once all are picked, the text goes along with the answers as a comment.
+  // Open questions in the conversation: the text goes along with the answers as a comment. A comment
+  // can also be sent before every question is picked; the rest then count as not answered.
   answering?: { picked: number; total: number; send: (comment: string, attachments: Attachment[]) => Promise<unknown> }
 }
 
@@ -145,7 +146,9 @@ export function Composer(props: Props) {
   const fanout = props.fanout
   const setFanout = props.setFanout!
   const answers = props.answering
-  const canSend = answers ? answers.picked === answers.total : !!(text.trim() || files.length || review.length) && (!fanout || fanout.length > 1)
+  const hasInput = !!(text.trim() || files.length || review.length)
+  const allPicked = !!answers && answers.picked === answers.total
+  const canSend = answers ? allPicked || hasInput : hasInput && (!fanout || fanout.length > 1)
   const submit = async () => {
     if (!canSend) return
     const full = (text + pickedContext(props.picked ?? []) + reviewMessage(review)).trimStart()
@@ -188,8 +191,8 @@ export function Composer(props: Props) {
         </button>
       )}
       {answers ? (
-        <button class="send wide" title={canSend ? 'Send your answers and the comment' : 'Pick an answer for each question first'} disabled={!canSend} onClick={submit}>
-          Send answers <ArrowUp size={16} />
+        <button class="send wide" title={allPicked ? 'Send your answers and the comment' : canSend ? 'Send the comment; open questions stay unanswered' : 'Pick an answer for each question or write a comment'} disabled={!canSend} onClick={submit}>
+          {allPicked || !hasInput ? 'Send answers' : 'Send comment'} <ArrowUp size={16} />
         </button>
       ) : (
         <button class={`send ${fanout ? 'wide' : ''}`} title={props.busy ? 'Queue (Enter): sent after the current turn' : fanout ? 'Start one conversation per agent' : 'Send'} disabled={!canSend} onClick={submit}>

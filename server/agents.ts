@@ -356,7 +356,7 @@ function askQuestions(p: Project, tid: string, qs: Question[]) {
 // Answers to a group of decisions: an agent waiting for them gets them directly, otherwise they
 // go to the agent as the next input.
 // A comment on the answers goes along with them: in the same input, or as the next one when the
-// agent took the answers directly.
+// agent took the answers directly. A question sent without an answer counts as not answered.
 export function answerDecisions(p: Project, tid: string, answers: { id: string; selected?: number; answer?: string }[], comment: Input) {
   const all = store.listDecisions(p, tid)
   const lines: string[] = []
@@ -366,9 +366,9 @@ export function answerDecisions(p: Project, tid: string, answers: { id: string; 
     if (!d || d.resolved) continue
     d.resolved = true
     d.selected = a.selected ?? null
-    d.answer = a.selected == null ? a.answer ?? '' : null
+    d.answer = a.selected == null ? a.answer?.trim() || null : null
     store.saveDecision(p, d)
-    lines.push(`Decision: ${d.title}\n${d.selected != null ? `Selected: ${d.options[d.selected]}` : `Answer: ${d.answer}`}`)
+    lines.push(`Decision: ${d.title}\n${d.selected != null ? `Selected: ${d.options[d.selected]}` : d.answer != null ? `Answer: ${d.answer}` : 'Not answered'}`)
     groups.add(d.groupId)
   }
   refreshNeedsYou(p, tid)

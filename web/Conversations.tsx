@@ -962,10 +962,12 @@ function Questions({ decisions, active, answers, setAnswer }: { decisions: Decis
               </div>
             ) : (
               <div class="answered">
-                {d.resolved ? (
+                {d.resolved && (d.selected != null || d.answer != null) ? (
                   <>
                     <Check size={14} /> {d.selected != null ? d.options[d.selected] : d.answer}
                   </>
+                ) : d.resolved ? (
+                  <span class="muted">Skipped</span>
                 ) : (
                   <span class="muted">Not answered</span>
                 )}
