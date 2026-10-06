@@ -355,7 +355,9 @@ function askQuestions(p: Project, tid: string, qs: Question[]) {
 
 // Answers to a group of decisions: an agent waiting for them gets them directly, otherwise they
 // go to the agent as the next input.
-export function answerDecisions(p: Project, tid: string, answers: { id: string; selected?: number; answer?: string }[], origin: Origin, device?: string) {
+// A comment on the answers goes along with them: in the same input, or as the next one when the
+// agent took the answers directly.
+export function answerDecisions(p: Project, tid: string, answers: { id: string; selected?: number; answer?: string }[], comment: Input) {
   const all = store.listDecisions(p, tid)
   const lines: string[] = []
   const groups = new Set<string>()
@@ -378,7 +380,9 @@ export function answerDecisions(p: Project, tid: string, answers: { id: string; 
     waiting(all.filter((d) => d.groupId === groupId).map((d) => ({ selected: d.selected, answer: d.answer })))
     delivered = true
   }
-  if (lines.length && !delivered) send(p, tid, { text: lines.join('\n\n'), origin, device })
+  const commented = !!(comment.text.trim() || comment.images?.length || comment.files?.length)
+  if (lines.length && !delivered) send(p, tid, { ...comment, text: [...lines, ...(comment.text.trim() ? [`Comment: ${comment.text.trim()}`] : [])].join('\n\n') })
+  else if (commented) send(p, tid, comment)
 }
 
 // "Your turn" = open questions or pending approvals in the thread.

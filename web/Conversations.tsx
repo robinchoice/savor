@@ -347,6 +347,7 @@ function ThreadView({ project, threadId }: { project: Project; threadId: string 
   const [review] = useApi<ReviewComment[]>(`${base}/review`, (e) => e.threadId === threadId && e.type === 'review')
   const saveReview = (comments: ReviewComment[]) => api('PUT', `${base}/review`, { comments })
   const [titleOpen, setTitleOpen] = useState<string | null>(null)
+  const [answers, setAnswers] = useState<Record<string, Pick>>({})
   const listRef = useRef<HTMLDivElement>(null)
   const findRef = useRef<HTMLInputElement>(null)
   const [clock, setClock] = useState(Date.now())
@@ -414,6 +415,15 @@ function ThreadView({ project, threadId }: { project: Project; threadId: string 
   const lastUser = messages.map((m) => m.kind).lastIndexOf('user')
   const last = messages[messages.length - 1]
   const openDecisions = decisions.some((d) => !d.resolved)
+  const askedIds = new Set(messages.flatMap((m, i) => (i > lastUser || m.kind === 'question' ? m.decisionIds ?? [] : [])))
+  const asked = decisions.filter((d) => !d.resolved && askedIds.has(d.id))
+  const answering = asked.length
+    ? {
+        picked: asked.filter((d) => hasAnswer(answers[d.id])).length,
+        total: asked.length,
+        send: (comment: string, attachments: Attachment[]) => api('POST', `${base}/decisions`, { answers: asked.map((d) => ({ id: d.id, ...answers[d.id] })), comment, attachments }),
+      }
+    : undefined
   const lastConclusion = [...messages].reverse().find((m) => m.kind === 'conclusion')
   const showNext = !busy && last?.kind === 'conclusion' && !openDecisions && last.suggestions?.length
   const canComplete = !busy && !thread.completed && last?.kind === 'conclusion' && !openDecisions
@@ -506,6 +516,7 @@ function ThreadView({ project, threadId }: { project: Project; threadId: string 
       review={review}
       setReview={saveReview}
       compact={floating}
+      answering={answering}
       autoFocus
     />
   )
@@ -642,6 +653,8 @@ function ThreadView({ project, threadId }: { project: Project; threadId: string 
                     workflow={i === 0 && thread.workflow ? { ...thread.workflow, href: `#/p/${project.id}/workflows/${thread.workflow.id}` } : undefined}
                     decisions={decisions.filter((d) => m.decisionIds?.includes(d.id))}
                     active={i > lastUser || m.kind === 'question'}
+                    answers={answers}
+                    setAnswer={(id, a) => setAnswers({ ...answers, [id]: a })}
                     base={base}
                     highlight={find.open ? find.q.trim() : ''}
                     match={matches.includes(m.id) ? (m.id === currentMatch ? 'current' : 'match') : ''}
@@ -752,7 +765,7 @@ function Highlighted({ text, q }: { text: string; q: string }) {
 
 const attachmentLabel = (name: string) => name.replace(/^[0-9a-f]{16}-/, '')
 
-function MessageItem({ m, thread, workflow, decisions, active, base, highlight, match, onCommit, preview, onPreview }: { m: Message; thread: Thread; workflow?: NonNullable<Thread['workflow']> & { href: string }; decisions: Decision[]; active: boolean; base: string; highlight: string; match: string; onCommit: (hash: string) => void; preview?: string | false | null; onPreview?: () => void }) {
+function MessageItem({ m, thread, workflow, decisions, active, answers, setAnswer, base, highlight, match, onCommit, preview, onPreview }: { m: Message; thread: Thread; workflow?: NonNullable<Thread['workflow']> & { href: string }; decisions: Decision[]; active: boolean; answers: Record<string, Pick>; setAnswer: (id: string, a: Pick) => void; base: string; highlight: string; match: string; onCommit: (hash: string) => void; preview?: string | false | null; onPreview?: () => void }) {
   const [copyState, setCopyState] = useState('')
   useEffect(() => {
     if (!copyState) return
@@ -886,7 +899,7 @@ function MessageItem({ m, thread, workflow, decisions, active, base, highlight, 
           </button>
         </div>
       )}
-      {decisions.length > 0 && <Questions decisions={decisions} active={active} base={base} />}
+      {decisions.length > 0 && <Questions decisions={decisions} active={active} answers={answers} setAnswer={setAnswer} />}
     </div>
   )
 }
@@ -905,76 +918,63 @@ function AttachmentImage({ path }: { path: string }) {
   ) : null
 }
 
-function Questions({ decisions, active, base }: { decisions: Decision[]; active: boolean; base: string }) {
-  const [answers, setAnswers] = useState<{ selected?: number; answer?: string }[]>(() => decisions.map(() => ({})))
-  const [sending, setSending] = useState(false)
+type Pick = { selected?: number; answer?: string }
+const hasAnswer = (a?: Pick) => a?.selected !== undefined || !!a?.answer?.trim()
+
+// The answers are picked here and sent from the composer, together with an optional comment.
+function Questions({ decisions, active, answers, setAnswer }: { decisions: Decision[]; active: boolean; answers: Record<string, Pick>; setAnswer: (id: string, a: Pick) => void }) {
   const open = active && decisions.some((d) => !d.resolved)
-  const set = (i: number, v: { selected?: number; answer?: string }) => setAnswers(answers.map((a, j) => (j === i ? v : a)))
-  const complete = answers.every((a) => a.selected !== undefined || a.answer?.trim())
-  const submit = async () => {
-    setSending(true)
-    await api('POST', `${base}/decisions`, { answers: decisions.map((d, i) => ({ id: d.id, ...answers[i] })) }).finally(() => setSending(false))
-  }
   const n = decisions.length
 
   return (
-    <div class="msg-card questions">
-      <div class="q-head">
-        <div>
-          <b>{n === 1 ? 'Your decision' : 'Your decisions'}</b>
-          <small>{n === 1 ? 'One question' : `${n} questions, answered in one reply`}</small>
-        </div>
-      </div>
-      {decisions.map((d, i) => (
-        <div class="question" key={d.id}>
-          <div class="q-title">
-            <span class="q-num">{i + 1}</span> {d.title}
-          </div>
-          {d.body && <Markdown text={d.body} />}
-          {open ? (
-            <>
-              {d.options
-                .map((o, oi) => ({ o, oi }))
-                .sort((a, b) => Number(b.oi === d.recommended) - Number(a.oi === d.recommended))
-                .map(({ o, oi }) => (
-                  <label key={oi} class={`option ${answers[i].selected === oi ? 'selected' : ''}`}>
-                    <input type="radio" name={d.id} checked={answers[i].selected === oi} onChange={() => set(i, { selected: oi })} />
-                    {o}
-                    {oi === d.recommended && <span class="recommended">Recommended</span>}
-                  </label>
-                ))}
-              <div class="own-label">{d.options.length ? 'Or write your own answer' : 'Your answer'}</div>
-              <textarea
-                placeholder="Type your answer..."
-                value={answers[i].answer ?? ''}
-                onInput={(e) => set(i, { answer: e.currentTarget.value })}
-                onKeyDown={(e) => {
-                  if (e.key !== 'Enter' || e.shiftKey || e.isComposing) return
-                  e.preventDefault()
-                  if (complete && !sending) submit()
-                }}
-              />
-            </>
-          ) : (
-            <div class="answered">
-              {d.resolved ? (
-                <>
-                  <Check size={14} /> {d.selected != null ? d.options[d.selected] : d.answer}
-                </>
-              ) : (
-                <span class="muted">Not answered</span>
-              )}
+    <div class="questions">
+      {decisions.map((d, i) => {
+        const a = answers[d.id] ?? {}
+        const other = a.selected === undefined && !!a.answer?.trim()
+        return (
+          <div class="question" key={d.id}>
+            <div class="q-title">
+              {n > 1 && <span class="q-num">{i + 1}</span>} {d.title}
             </div>
-          )}
-        </div>
-      ))}
-      {open && (
-        <div class="q-actions">
-          <button class="primary" disabled={!complete || sending} onClick={submit}>
-            {n === 1 ? 'Send answer' : 'Send answers'}
-          </button>
-        </div>
-      )}
+            {d.body && <Markdown text={d.body} />}
+            {open ? (
+              <div class="options">
+                {d.options
+                  .map((o, oi) => ({ o, oi }))
+                  .sort((x, y) => Number(y.oi === d.recommended) - Number(x.oi === d.recommended))
+                  .map(({ o, oi }) => (
+                    <label key={oi} class={`option ${oi === d.recommended ? 'recommended' : ''} ${a.selected === oi ? 'selected' : ''}`}>
+                      <input type="radio" name={d.id} checked={a.selected === oi} onChange={() => setAnswer(d.id, { ...a, selected: oi })} />
+                      <span>{o}</span>
+                      {oi === d.recommended && <span class="recommended-pill">Recommended</span>}
+                    </label>
+                  ))}
+                <label class={`option other ${other ? 'selected' : ''}`}>
+                  <input type="radio" name={d.id} checked={other} onChange={(e) => (e.currentTarget.nextElementSibling as HTMLInputElement).focus()} />
+                  <input
+                    class="other-answer"
+                    placeholder={d.options.length ? 'Something else…' : 'Your answer…'}
+                    value={a.answer ?? ''}
+                    onFocus={() => a.answer?.trim() && setAnswer(d.id, { answer: a.answer })}
+                    onInput={(e) => setAnswer(d.id, { answer: e.currentTarget.value })}
+                  />
+                </label>
+              </div>
+            ) : (
+              <div class="answered">
+                {d.resolved ? (
+                  <>
+                    <Check size={14} /> {d.selected != null ? d.options[d.selected] : d.answer}
+                  </>
+                ) : (
+                  <span class="muted">Not answered</span>
+                )}
+              </div>
+            )}
+          </div>
+        )
+      })}
+      {open && <div class="q-hint">Pick an answer {n === 1 ? '' : 'for each question '}and send from the box below. You can add a comment there.</div>}
     </div>
   )
 }

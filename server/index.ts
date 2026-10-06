@@ -406,7 +406,8 @@ route('POST', '/projects/:pid/threads/:tid/approvals/:mid', (params, b) => {
   return {}
 })
 route('POST', '/projects/:pid/threads/:tid/decisions', (params, b, ctx) => {
-  agents.answerDecisions(project(params), params.tid, b.answers ?? [], ctx.auth.origin, ctx.auth.device?.name)
+  const p = project(params)
+  agents.answerDecisions(p, params.tid, b.answers ?? [], inputFrom({ text: b.comment, attachments: b.attachments }, ctx, p, params.tid))
   return {}
 })
 route('GET', '/projects/:pid/threads/:tid/attachments/:name', (params, _, ctx) => {

@@ -209,12 +209,15 @@ test('historical approvals render and failed conversation loads can be retried',
 test('questions are answered in one reply', async () => {
   await newConversation()
   await send('ask: Ship it?')
-  await page.waitForSelector('text=Your decision')
+  await page.waitForSelector('.option')
   assert.equal(await page.locator('.filter.attention').count(), 1, 'Your turn filter lights up')
-  assert.deepEqual(await page.locator('.option').allTextContents(), ['NoRecommended', 'Yes'], 'the recommended option comes first')
+  assert.deepEqual(await page.locator('.option:not(.other)').allTextContents(), ['NoRecommended', 'Yes'], 'the recommended option comes first')
+  assert.ok(await page.locator('.composer button:has-text("Send answers")').isDisabled(), 'nothing is sent before every question has an answer')
   await page.click('.option:has-text("Yes")')
-  await page.click('text=Send answer')
+  await page.fill('.composer textarea', 'Tag the release too.')
+  await page.click('.composer button:has-text("Send answers")')
   await page.waitForSelector('text=Selected: Yes')
+  await page.waitForSelector('text=Comment: Tag the release too.')
 })
 
 test('approvals are routed to the user, "Always allow" remembers the rule', async () => {
@@ -232,10 +235,9 @@ test('approvals are routed to the user, "Always allow" remembers the rule', asyn
 test("an agent's own clarifying questions become decisions", async () => {
   await newConversation()
   await send('native-ask: Which color?')
-  await page.waitForSelector('text=Your decision')
-  await page.click('.option:has-text("Green")')
-  await page.click('text=Send answer')
-  await page.waitForSelector('text=Answered: Green')
+  await page.fill('.option.other input.other-answer', 'Purple')
+  await page.click('.composer button:has-text("Send answers")')
+  await page.waitForSelector('text=Answered: Purple')
 })
 
 test('input during a turn waits in the queue; "send now" interrupts', async () => {

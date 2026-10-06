@@ -35,6 +35,8 @@ interface Props {
   setFanout?: (agents: AgentConfig[] | null) => void
   // Beside the preview with the chat out of sight: just the text, what was picked, and send.
   compact?: boolean
+  // Open questions in the conversation: once all are picked, the text goes along with the answers as a comment.
+  answering?: { picked: number; total: number; send: (comment: string, attachments: Attachment[]) => Promise<unknown> }
 }
 
 const MAX_FILES = 8
@@ -142,7 +144,8 @@ export function Composer(props: Props) {
   const review = props.review ?? []
   const fanout = props.fanout
   const setFanout = props.setFanout!
-  const canSend = !!(text.trim() || files.length || review.length) && (!fanout || fanout.length > 1)
+  const answers = props.answering
+  const canSend = answers ? answers.picked === answers.total : !!(text.trim() || files.length || review.length) && (!fanout || fanout.length > 1)
   const submit = async () => {
     if (!canSend) return
     const full = (text + pickedContext(props.picked ?? []) + reviewMessage(review)).trimStart()
@@ -150,7 +153,8 @@ export function Composer(props: Props) {
     setFiles([])
     props.clearPicked?.(-1)
     try {
-      await props.onSend(full, files.map(({ name, dataUrl }) => ({ name, dataUrl })))
+      const attachments = files.map(({ name, dataUrl }) => ({ name, dataUrl }))
+      await (answers ? answers.send(full, attachments) : props.onSend(full, attachments))
       // Kept until the message is accepted, so a refused one doesn't lose them.
       if (review.length) props.setReview?.([])
       setError('')
@@ -183,15 +187,21 @@ export function Composer(props: Props) {
           <Square size={13} />
         </button>
       )}
-      <button class={`send ${fanout ? 'wide' : ''}`} title={props.busy ? 'Queue (Enter): sent after the current turn' : fanout ? 'Start one conversation per agent' : 'Send'} disabled={!canSend} onClick={submit}>
-        {props.busy ? <ListPlus size={16} /> : <ArrowUp size={16} />}
-        {fanout && `Start ${fanout.length}`}
-      </button>
+      {answers ? (
+        <button class="send wide" title={canSend ? 'Send your answers and the comment' : 'Pick an answer for each question first'} disabled={!canSend} onClick={submit}>
+          Send answers <ArrowUp size={16} />
+        </button>
+      ) : (
+        <button class={`send ${fanout ? 'wide' : ''}`} title={props.busy ? 'Queue (Enter): sent after the current turn' : fanout ? 'Start one conversation per agent' : 'Send'} disabled={!canSend} onClick={submit}>
+          {props.busy ? <ListPlus size={16} /> : <ArrowUp size={16} />}
+          {fanout && `Start ${fanout.length}`}
+        </button>
+      )}
     </>
   )
 
   return (
-    <div class={`composer ${props.compact ? 'compact' : ''}`} ref={composerRef} onDragOver={(e) => e.preventDefault()} onDrop={(e) => (e.preventDefault(), addFiles(e.dataTransfer?.files ?? [], true))}>
+    <div class={`composer ${props.compact ? 'compact' : ''} ${props.answering ? 'answering' : ''}`} ref={composerRef} onDragOver={(e) => e.preventDefault()} onDrop={(e) => (e.preventDefault(), addFiles(e.dataTransfer?.files ?? [], true))}>
       {(files.length > 0 || (props.picked?.length ?? 0) > 0 || review.length > 0) && (
         <div class="attachments">
           {files.map((f, i) =>
@@ -251,12 +261,20 @@ export function Composer(props: Props) {
           ))}
         </div>
       )}
+      {props.answering && (
+        <div class="answering-row">
+          Answering {props.answering.total === 1 ? 'the question' : `${props.answering.total} questions`}{' '}
+          <span>
+            · {props.answering.picked}/{props.answering.total} picked
+          </span>
+        </div>
+      )}
       <div class="composer-top">
         <textarea
           ref={ref}
           rows={1}
           value={text}
-          placeholder={props.placeholder}
+          placeholder={props.answering ? 'Add a comment (optional)…' : props.placeholder}
           onInput={(e) => {
             setText(e.currentTarget.value)
             setSlashOpen(true)
