@@ -10,6 +10,7 @@
 // - "own-server: <text>" → reports a background task of its own that keeps running after the conclusion
 // - "native-ask: <question>" → an AskUserQuestion control request with the options Blue/Green
 // - "recall" → concludes with the history Savor handed over in front of the input, or "nothing"
+// - "context: <text>" → concludes with the Savor context it got in front of the input
 // - "slow: <text>" → acknowledges, waits for the test's release file or an interrupt, then echoes
 //   (and says so when Savor told it that a restart cut the turn off)
 // - a last text block of its own that starts with "/" → "Skill <name and arguments>", the way Claude Code runs slash commands
@@ -138,6 +139,8 @@ async function turn(text, command) {
   } else if (input.startsWith('recall')) {
     const handed = text.includes('Earlier in this conversation')
     await call('send_conclusion_message', { text: `Handed over: ${handed ? text.slice(0, text.indexOf('Savor context:')).trim() : 'nothing'}` })
+  } else if (input.startsWith('context:')) {
+    await call('send_conclusion_message', { text: `Context: ${text.match(/Savor context:\n(.*)\n/)[1]}` })
   } else if (command) {
     await call('send_conclusion_message', { text: `Skill ${command.slice(1)}` })
   } else if (input.startsWith('slow:')) {

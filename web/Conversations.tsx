@@ -4,7 +4,7 @@ import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import {
   Asterisk, Hexagon, Code2, Sparkles, Orbit, Plus, Search, MessageSquare, Check, MoreHorizontal, PanelLeft, PanelRight, FileText, Globe,
-  CircleAlert, ArrowUp, ArrowLeft, Pencil, Brain, Terminal, Wrench, ArrowRight, Smartphone, Monitor, ShieldQuestion, X, ChevronUp, ChevronDown, ChevronRight, Paperclip, GitBranch, GitFork, GitMerge, Trash2, Copy, FileDiff, Split, Workflow as WorkflowIcon,
+  CircleAlert, ArrowUp, ArrowLeft, Pencil, Brain, Terminal, Wrench, ArrowRight, Smartphone, Monitor, Bot, ShieldQuestion, X, ChevronUp, ChevronDown, ChevronRight, Paperclip, GitBranch, GitFork, GitMerge, Trash2, Copy, FileDiff, Split, Workflow as WorkflowIcon,
 } from 'lucide-preact'
 import {
   api, cap, duration, formatStamp, formatTime, go, PROVIDER_NAMES, runTrigger, useApi, kindOf, RINGS, type ActivityEvent, type AgentConfig, type Attachment, type Decision, type Message, type Proc, type Project, type Reason, type Thread, type Worktree,
@@ -784,7 +784,7 @@ function ThreadView({ project, threadId }: { project: Project; threadId: string 
 }
 
 function Avatar({ m, thread }: { m: Message; thread: Thread }) {
-  if (m.kind === 'user') return <span class="msg-avatar user">{m.origin === 'remote' ? <Smartphone size={14} /> : <Monitor size={14} />}</span>
+  if (m.kind === 'user') return <span class="msg-avatar user">{m.from ? <Bot size={14} /> : m.origin === 'remote' ? <Smartphone size={14} /> : <Monitor size={14} />}</span>
   return (
     <span class="msg-avatar">
       <ProviderIcon provider={m.modelInfo?.provider ?? thread.agent.provider} />
@@ -873,9 +873,17 @@ function MessageItem({ m, thread, workflow, decisions, active, answers, setAnswe
   }
 
   return (
-    <div class={`msg ${m.kind} ${queued ? 'queued' : ''} ${match}`} id={`msg-${m.id}`}>
+    <div class={`msg ${m.kind} ${m.from ? 'from-agent' : ''} ${queued ? 'queued' : ''} ${match}`} id={`msg-${m.id}`}>
       <div class="msg-head">
-        <Avatar m={m} thread={thread} /> <b>{who}</b> <span class="muted">{formatTime(m.ts)}</span>
+        <Avatar m={m} thread={thread} />{' '}
+        {m.from ? (
+          <a class="from-agent-link" href={`#/p/${m.from.projectId}/t/${m.from.threadId}`} title="Open the conversation that sent this">
+            <b>Agent · {m.from.label}</b> ({m.from.project})
+          </a>
+        ) : (
+          <b>{who}</b>
+        )}{' '}
+        <span class="muted">{formatTime(m.ts)}</span>
         {worked ? <span class="muted">Worked for {duration(worked)}</span> : null}
         {m.kind === 'question' && <span class="muted">Your turn</span>}
         {m.modelInfo?.model && <span class="muted">{m.modelInfo.model}{m.modelInfo.reasoning && ` · ${cap(m.modelInfo.reasoning)} effort`}</span>}

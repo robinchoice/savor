@@ -81,7 +81,7 @@ function reachable(p: Project, wf: Workflow) {
 
 type Start = Pick<NonNullable<Thread['workflow']>, 'trigger' | 'due'>
 
-export function runWorkflow(projectId: string, workflowId: string, by: Origin, start: Start = { trigger: 'manual' }) {
+export function runWorkflow(projectId: string, workflowId: string, by: Origin, start: Start = { trigger: 'manual' }, chained = false) {
   const p = store.getProject(projectId)
   const wf = store.getWorkflow(p, workflowId)
   // Instructions a paired device wrote run as remote, even when the schedule or a local workflow starts them.
@@ -99,7 +99,7 @@ export function runWorkflow(projectId: string, workflowId: string, by: Origin, s
   store.saveWorkflow(p, { ...wf, lastRunAt: store.now() })
   emit({ type: 'thread', projectId: p.id, threadId: thread.id })
   emit({ type: 'workflows', projectId: p.id })
-  agents.send(p, thread.id, { text: prompt, origin })
+  agents.send(p, thread.id, { text: prompt, origin, chained })
   return thread
 }
 
