@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'preact/hooks'
 import { ArrowUpRight, Bot, Check, ChevronDown, ChevronRight, Laptop, MessageSquare, Plus, SlidersHorizontal, Smartphone, X } from 'lucide-preact'
 import { api, cap, desktop, useAgents, useApi, type Me } from './api'
 import { useNotificationToggle } from './notify'
+import { PleasanceFooter } from './PleasanceFooter'
 import { setPrefs, usePrefs, type Density, type Prefs, type Theme } from './prefs'
 import { qr, RELAY_LABEL, type DeviceRow, type RelayState } from './Settings'
 import { forgetProfile, loadProfile } from './transport'
@@ -344,16 +345,17 @@ export function AccountDialog({ me, projects, toggleAwake, open, onClose }: { me
           </details>
         </div>
         <footer class="dialog-foot">
-          {loadProfile() ? (
-            <button class="ghost danger" onClick={forget}>
-              Forget this computer
+          <PleasanceFooter />
+          <div class="row">
+            {loadProfile() && (
+              <button class="ghost danger" onClick={forget}>
+                Forget this computer
+              </button>
+            )}
+            <button class="primary" onClick={onClose}>
+              Done
             </button>
-          ) : (
-            <span />
-          )}
-          <button class="primary" onClick={onClose}>
-            Done
-          </button>
+          </div>
         </footer>
       </div>
     </div>

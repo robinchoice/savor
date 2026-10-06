@@ -12,6 +12,7 @@ import {
 import { Composer, type Picked } from './Composer'
 import { transport } from './transport'
 import { Preview } from './Preview'
+import { PleasanceFooter } from './PleasanceFooter'
 import { Changes, type ReviewComment, type Source } from './Changes'
 import { Fanout } from './Fanout'
 import { setPrefs, usePrefs } from './prefs'
@@ -150,6 +151,9 @@ export function Conversations({ project, threadId, fanoutId, isNew }: { project:
           {section('finished', 'Finished', finished)}
           {threads && !visible.length && <p class="muted center">{q ? 'No matching conversations.' : 'No conversations yet.'}</p>}
         </div>
+        <footer class="list-foot">
+          <PleasanceFooter />
+        </footer>
       </aside>
       {threadId ? <ThreadView key={threadId} project={project} threadId={threadId} /> : fanoutId ? <Fanout key={fanoutId} project={project} id={fanoutId} /> : <NewConversation project={project} />}
     </div>
