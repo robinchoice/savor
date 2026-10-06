@@ -922,7 +922,16 @@ function Questions({ decisions, active, base }: { decisions: Decision[]; active:
                   </label>
                 ))}
               <div class="own-label">{d.options.length ? 'Or write your own answer' : 'Your answer'}</div>
-              <textarea placeholder="Type your answer..." value={answers[i].answer ?? ''} onInput={(e) => set(i, { answer: e.currentTarget.value })} />
+              <textarea
+                placeholder="Type your answer..."
+                value={answers[i].answer ?? ''}
+                onInput={(e) => set(i, { answer: e.currentTarget.value })}
+                onKeyDown={(e) => {
+                  if (e.key !== 'Enter' || e.shiftKey || e.isComposing) return
+                  e.preventDefault()
+                  if (complete && !sending) submit()
+                }}
+              />
             </>
           ) : (
             <div class="answered">
