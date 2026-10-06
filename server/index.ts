@@ -277,7 +277,7 @@ function listed(p: store.Project, t: store.Thread) {
   return { ...t, busy, waiting, messageCount: messages.length, waitsFor: waitsFor(p, t, messages, busy || waiting), ...(startedAt && { startedAt, step: step(p, t, startedAt) }) }
 }
 
-// A read result keeps waiting until a follow-up or Finish; `since` is when it started to wait.
+// A read result keeps waiting until a follow-up or Finish, except a workflow run's; `since` is when it started to wait.
 function waitsFor(p: store.Project, t: store.Thread, messages: store.Message[], working: boolean) {
   if (t.completed) return null
   const since = messages.at(-1)?.ts ?? t.updatedAt
@@ -290,7 +290,7 @@ function waitsFor(p: store.Project, t: store.Thread, messages: store.Message[], 
   if (working) return null
   if (failed(t)) return { reason: 'failed', text: t.error, since }
   const last = messages.at(-1)
-  if (last?.kind === 'conclusion') return { reason: t.unread ? 'new' : 'result', text: (last.text ?? '').slice(0, 300), since }
+  if (last?.kind === 'conclusion' && (t.unread || !t.workflow)) return { reason: t.unread ? 'new' : 'result', text: (last.text ?? '').slice(0, 300), since }
   return null
 }
 
