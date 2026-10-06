@@ -97,10 +97,10 @@ main { flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
 .project-tab { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px 0 7px; border-radius: 8px; color: var(--muted); white-space: nowrap; font-weight: 500; transition: background 0.18s ease, color 0.18s ease; }
 .project-tab:hover { color: var(--text); }
 .project-tab.active { background: var(--card); color: var(--text); }
-.tab-pin { display: none; align-items: center; justify-content: center; width: 20px; height: 20px; margin-right: -4px; border-radius: 5px; color: var(--muted); }
+.tab-pin { display: flex; visibility: hidden; opacity: 0; transition: opacity 0.12s ease; align-items: center; justify-content: center; width: 20px; height: 20px; margin-right: -4px; border-radius: 5px; color: var(--muted); }
 .tab-pin:hover { background: var(--raised); color: var(--text); }
-.project-tab:hover .tab-pin, .tab-pin.unpinned { display: flex; }
-@media (hover: none) { .project-tab.active .tab-pin { display: flex; } }
+.project-tab:hover .tab-pin, .tab-pin.unpinned { visibility: visible; opacity: 1; }
+@media (hover: none) { .project-tab.active .tab-pin { visibility: visible; opacity: 1; } }
 .project-tab.dragging { opacity: 0.4; }
 .project-tab.drop-before { box-shadow: inset 2px 0 0 var(--text); }
 .project-tab.drop-after { box-shadow: inset -2px 0 0 var(--text); }
