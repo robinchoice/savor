@@ -111,12 +111,12 @@ async function turn(text, command) {
     })
     await call('send_conclusion_message', { text: `Permission: ${verdict.behavior}${verdict.updatedPermissions?.length ? ' always' : ''}` })
   } else if (input.startsWith('background:')) {
-    await call('send_acknowledgement_message', { text: 'On it.' })
+    await call('send_acknowledgement_message', { text: 'On it.', summary: 'Work on the request.' })
     const job = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60_000)'], { detached: true, stdio: 'ignore' })
     job.unref()
     await call('register_process', { pid: job.pid, name: input.slice('background:'.length).trim(), command: 'node -e …' })
   } else if (input.startsWith('own-background:') || input.startsWith('own-server:')) {
-    await call('send_acknowledgement_message', { text: 'On it.' })
+    await call('send_acknowledgement_message', { text: 'On it.', summary: 'Work on the request.' })
     out({ type: 'system', subtype: 'background_tasks_changed', tasks: [{ task_id: 'b1', task_type: 'local_bash', description: input }] })
     if (input.startsWith('own-server:')) await call('send_conclusion_message', { text: `Echo: ${input}` })
     else
@@ -141,12 +141,12 @@ async function turn(text, command) {
   } else if (command) {
     await call('send_conclusion_message', { text: `Skill ${command.slice(1)}` })
   } else if (input.startsWith('slow:')) {
-    await call('send_acknowledgement_message', { text: 'On it.' })
+    await call('send_acknowledgement_message', { text: 'On it.', summary: 'Work on the request.' })
     const release = process.env.FAKE_AGENT_LOG + '.release'
     while (!interrupted && (!fs.existsSync(release) || fs.readFileSync(release, 'utf8') !== input)) await sleep(20)
     if (!interrupted) await call('send_conclusion_message', { text: `Echo: ${input.slice(5).trim()}${text.includes('Savor was restarted') ? ' (after a restart)' : ''}` })
   } else {
-    await call('send_acknowledgement_message', { text: 'On it.' })
+    await call('send_acknowledgement_message', { text: 'On it.', summary: 'Work on the request.' })
     await call('send_conclusion_message', { text: `Echo: ${input}`, suggestions: ['Do it again'] })
   }
   out({ type: 'result', subtype: interrupted ? 'success' : 'success', is_error: false, result: 'done', modelUsage: { 'fake-fable': { contextWindow: 200000 } } })

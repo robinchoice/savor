@@ -14,6 +14,8 @@ import { runWorkflow, syncSchedules, validateCron } from './scheduler.js'
 import { listAgents, mergeAgent, STATIC } from './providers.js'
 import { addWorktree } from './git.js'
 
+const SUMMARY = z.string().min(1).max(120).describe('One short sentence on what the user\'s latest input asks for, in their language. The conversation list shows it.')
+
 const ok = (data: unknown) => ({ content: [{ type: 'text' as const, text: typeof data === 'string' ? data : JSON.stringify(data) }] })
 
 function findProject(ref: string) {
@@ -45,11 +47,12 @@ function buildServer(p: Project, tid: string) {
     'send_acknowledgement_message',
     {
       description: 'Tell the user you received their input and are starting work. One per input; retrying with the same text is safe.',
-      inputSchema: { text: z.string().min(1) },
+      inputSchema: { text: z.string().min(1), summary: SUMMARY },
     },
-    async ({ text }) => {
+    async ({ text, summary }) => {
       const r = agents.request(p, tid)
       if (r.ack && r.ack.text !== text) throw new Error('This request already has a different acknowledgement message.')
+      if (summary) store.updateThread(p, tid, { summary })
       r.ack ??= { text, id: agents.post(p, tid, { kind: 'ack', text, modelInfo: modelInfo() }).id }
       return ok({ id: r.ack.id })
     },
@@ -84,9 +87,10 @@ function buildServer(p: Project, tid: string) {
           .optional(),
         suggestions: z.array(z.string()).max(3).optional(),
         commits: z.array(z.string().regex(/^[0-9a-f]{40}([0-9a-f]{24})?$/)).optional(),
+        summary: SUMMARY.optional(),
       },
     },
-    async ({ text, questions, suggestions, commits }) => {
+    async ({ text, questions, suggestions, commits, summary }) => {
       if (!text && !questions?.length) throw new Error('Provide text, questions, or both.')
       const unrecommended = questions?.find((q) => q.options.length && (q.recommended ?? Infinity) >= q.options.length)
       if (unrecommended) throw new Error(`Set recommended to the index of the option you recommend for "${unrecommended.title}" and explain why in its body.`)
@@ -113,7 +117,7 @@ function buildServer(p: Project, tid: string) {
         store.updateMessage(p, tid, msg.id, { decisionIds: decisions.map((d) => d.id) })
       }
       agents.markConcluded(tid, msg.id)
-      store.updateThread(p, tid, { unread: true, needsYou: !!questions?.length })
+      store.updateThread(p, tid, { unread: true, needsYou: !!questions?.length, ...(summary && { summary }) })
       touchThread()
       agents.notify(p, tid, questions?.length ? `Your turn: ${questions[0].title}` : text!, questions?.length ? 'Has a question' : 'Finished')
       return ok({ id: msg.id, note: 'Delivered. Finish your turn now.' })

@@ -1,6 +1,6 @@
 import { useState } from 'preact/hooks'
 import { Clock, Pause, Play, SquareArrowOutUpRight, Trash2, TriangleAlert, X } from 'lucide-preact'
-import { api, avatarStyle, formatDay, go, initial, useApi, type Project, type Thread, type Workflow } from './api'
+import { api, avatarStyle, formatStamp, go, initial, useApi, type Project, type Thread, type Workflow } from './api'
 import { STATUS, schedule, when } from './Workflows'
 import { setPrefs, usePrefs } from './prefs'
 
@@ -86,11 +86,11 @@ function AllConversations({ threads, byId }: { threads?: Of<Thread>[]; byId: Map
           return (
             <a key={t.id} class="ov-row" href={`#/p/${t.projectId}/t/${t.id}`}>
               <Avatar project={byId.get(t.projectId)} />
-              <span class="ov-title">{t.title}</span>
+              <span class="ov-title">{t.summary ?? t.title}</span>
               {t.workflow && <span class="ov-tag">workflow</span>}
               <span class="ov-meta wide-only">{byId.get(t.projectId)?.name}</span>
               <span class={`ring ${state}`} />
-              <span class="ov-meta">{formatDay(t.updatedAt)}</span>
+              <span class="ov-meta">{formatStamp(t.updatedAt)}</span>
             </a>
           )
         })}

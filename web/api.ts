@@ -112,6 +112,7 @@ export interface Thread {
   id: string
   title: string
   label: { name: string; hue: number } | null
+  summary?: string | null
   createdAt: string
   updatedAt: string
   agent: AgentConfig
@@ -191,6 +192,8 @@ export const avatarStyle = (tint: string) => ({ background: tint, color: inkOn(t
 
 export const formatDay = (iso: string) => new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
 export const formatTime = (iso: string) => new Date(iso).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+// Only the time for today, the day before it otherwise.
+export const formatStamp = (iso: string) => (new Date(iso).toDateString() === new Date().toDateString() ? formatTime(iso) : `${formatDay(iso)}, ${formatTime(iso)}`)
 // What set a workflow run off. A run that was caught up says when it had been due.
 export const runTrigger = (r: { trigger: Run['trigger']; due?: string }) =>
   r.trigger === 'caught' ? `Caught up, was due ${new Date(r.due!).toLocaleString(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit' })}` : r.trigger === 'manual' ? 'Manual' : 'Scheduled'

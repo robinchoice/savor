@@ -7,7 +7,7 @@ import {
   CircleAlert, ArrowUp, ArrowLeft, Pencil, Brain, Terminal, Wrench, ArrowRight, Smartphone, Monitor, ShieldQuestion, X, ChevronUp, ChevronDown, ChevronRight, Paperclip, GitBranch, GitFork, GitMerge, Trash2, Copy, FileDiff, Split, Workflow as WorkflowIcon,
 } from 'lucide-preact'
 import {
-  api, cap, duration, formatDay, formatTime, go, PROVIDER_NAMES, runTrigger, useApi, type ActivityEvent, type AgentConfig, type Attachment, type Decision, type Message, type Proc, type Project, type Thread, type Worktree,
+  api, cap, duration, formatStamp, formatTime, go, PROVIDER_NAMES, runTrigger, useApi, type ActivityEvent, type AgentConfig, type Attachment, type Decision, type Message, type Proc, type Project, type Thread, type Worktree,
 } from './api'
 import { Composer, type Picked } from './Composer'
 import { transport } from './transport'
@@ -61,7 +61,7 @@ export function Conversations({ project, threadId, fanoutId, isNew }: { project:
   const q = query.toLowerCase()
   const visible = all
     .filter((t) => filter === 'all' || (filter === 'needs' ? t.needsYou : filter === 'working' ? t.busy || t.waiting : t.unread))
-    .filter((t) => !q || t.title.toLowerCase().includes(q) || t.label?.name.toLowerCase().includes(q))
+    .filter((t) => !q || t.title.toLowerCase().includes(q) || t.summary?.toLowerCase().includes(q) || t.label?.name.toLowerCase().includes(q))
 
   // The conversations of a fan-out are listed together, each under its worktree.
   const fanouts = new Map<string, Thread[]>()
@@ -207,7 +207,7 @@ function ThreadCard({ project, thread: t, active }: { project: Project; thread: 
   if (conversations === 'compact')
     return (
       <a href={href} class={`card compact ${active ? 'active' : ''} ${t.unread ? 'unread' : ''}`}>
-        <div class="card-title">{t.title}</div>
+        <div class="card-title" title={t.title}>{t.summary ?? t.title}</div>
         <span class="card-meta">
           {ring}
           {show.count && (
@@ -215,7 +215,7 @@ function ThreadCard({ project, thread: t, active }: { project: Project; thread: 
               <MessageSquare size={13} /> {t.messageCount}
             </span>
           )}
-          {show.date && formatDay(t.updatedAt)}
+          {show.date && formatStamp(t.updatedAt)}
         </span>
       </a>
     )
@@ -233,9 +233,9 @@ function ThreadCard({ project, thread: t, active }: { project: Project; thread: 
           </span>
         )}
       </div>
-      <div class="card-title">{t.title}</div>
+      <div class="card-title" title={t.title}>{t.summary ?? t.title}</div>
       <div class="card-meta">
-        <span>{[show.agent && (PROVIDER_NAMES[t.agent.provider] ?? t.agent.provider), show.date && formatDay(t.updatedAt)].filter(Boolean).join(' · ')}</span>
+        <span>{[show.agent && (PROVIDER_NAMES[t.agent.provider] ?? t.agent.provider), show.date && formatStamp(t.updatedAt)].filter(Boolean).join(' · ')}</span>
         {t.completed && (
           <span class="completed-badge">
             <Check size={12} /> Finished

@@ -48,6 +48,8 @@ export interface Thread {
   id: string
   title: string
   label: { name: string; hue: number } | null
+  // What the user's latest input asks for, in one sentence by the agent. The list shows it instead of the title.
+  summary?: string | null
   createdAt: string
   updatedAt: string
   agent: AgentConfig

@@ -485,6 +485,8 @@ test('deleting a conversation whose agent session is still open leaves the daemo
   await until(async () => (await api('GET', `${t}/${idle.id}`)).body.messages.some((m) => m.text === 'Echo: delete me'))
   const working = (await api('POST', t, { text: 'slow: delete me too' })).body
   await until(async () => (await api('GET', `${t}/${working.id}`)).body.messages.some((m) => m.text === 'On it.'))
+  // The acknowledgement brings the summary the list shows.
+  assert.equal((await api('GET', `${t}/${working.id}`)).body.thread.summary, 'Work on the request.')
   assert.equal((await api('DELETE', `${t}/${idle.id}`)).status, 200)
   assert.equal((await api('DELETE', `${t}/${working.id}`)).status, 200)
   // The sessions end a moment later; the daemon has to survive that.
