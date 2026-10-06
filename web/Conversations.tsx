@@ -51,7 +51,7 @@ export function Conversations({ project, threadId, fanoutId, isNew }: { project:
   const [showCompleted, setShowCompleted] = useState(() => localStorage.getItem('savor-show-completed') === 'true')
   useEffect(() => localStorage.setItem('savor-show-completed', String(showCompleted)), [showCompleted])
 
-  const all = (threads ?? []).filter((t) => showCompleted || !t.completed || t.id === threadId)
+  const all = (threads ?? []).filter((t) => showCompleted || !t.completed)
   const counts = {
     all: all.length,
     needs: all.filter((t) => t.needsYou).length,

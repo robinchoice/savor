@@ -52,6 +52,8 @@ export interface Thread {
   summary?: string | null
   createdAt: string
   updatedAt: string
+  // When the latest input arrived. The list is ordered by it, so opening or finishing a conversation doesn't move it.
+  inputAt?: string
   agent: AgentConfig
   agentSessions: { provider: Provider; sessionId: string }[]
   preview: string | null
@@ -319,7 +321,7 @@ export function listThreads(p: Project): Thread[] {
     .readdirSync(dir)
     .map((tid) => readJson<Thread | null>(path.join(dir, tid, 'thread.json'), null))
     .filter((t): t is Thread => !!t)
-    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+    .sort((a, b) => (b.inputAt ?? b.createdAt).localeCompare(a.inputAt ?? a.createdAt))
 }
 
 export function getThread(p: Project, tid: string): Thread {
