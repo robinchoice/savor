@@ -1073,6 +1073,13 @@ test('Claude Code and Codex sessions of the project can be imported and continue
   await until(async () => (await api('GET', t)).body.messages.some((m) => m.text === 'Echo: continue'))
   const run = agentRuns().filter((r) => r.agent === 'claude').at(-1)
   assert.equal(run.argv[run.argv.indexOf('--resume') + 1], sid)
+  // Deleting a conversation deletes the agent's transcript with it.
+  await api('DELETE', t)
+  await api('DELETE', `/projects/${project.id}/threads/${threads.find((x) => x.agent.provider === 'codex').id}`)
+  assert.ok(!fs.existsSync(path.join(claudeDir, `${sid}.jsonl`)))
+  assert.ok(!fs.existsSync(path.join(codexDir, `rollout-2026-10-01T10-00-00-${cid}.jsonl`)))
+  assert.ok(fs.existsSync(path.join(TMP, 'claude', 'projects', '-elsewhere', 'ffffffff-0000-4000-8000-000000000000.jsonl')))
+  assert.equal(fs.statSync(path.join(PROJECT, '.savor')).mode & 0o777, 0o700)
 })
 
 test('the workflow gallery fills the editor with a recipe', async () => {

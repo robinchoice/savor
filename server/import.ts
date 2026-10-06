@@ -4,7 +4,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import * as store from './store.js'
-import type { Message, Project } from './store.js'
+import type { Message, Project, Provider } from './store.js'
 import { mergeAgent } from './providers.js'
 
 export interface ImportableSession { provider: 'claude' | 'codex'; id: string; title: string; startedAt: string; messages: number; imported: boolean }
@@ -109,6 +109,21 @@ function codexFiles() {
   }
   walk(root)
   return files
+}
+
+// What the agent keeps of a session on this computer. Claude Code files a transcript under the folder
+// the session started in, which may have moved since, so it is looked up by its id in all of them.
+function sessionFiles(provider: Provider, id: string): string[] {
+  if (!/^[0-9a-f-]{36}$/i.test(id)) return []
+  if (provider === 'codex') return codexFiles().filter((f) => f.endsWith(`-${id}.jsonl`))
+  if (provider !== 'claude') return []
+  const projects = path.join(claudeDir(), 'projects')
+  const dirs = fs.existsSync(projects) ? fs.readdirSync(projects).map((d) => path.join(projects, d)) : []
+  return [...dirs.flatMap((d) => [path.join(d, `${id}.jsonl`), path.join(d, id)]), path.join(claudeDir(), 'file-history', id), path.join(claudeDir(), 'session-env', id)]
+}
+
+export function deleteSessions(sessions: { provider: Provider; sessionId: string }[]) {
+  for (const s of sessions) for (const f of sessionFiles(s.provider, s.sessionId)) fs.rmSync(f, { recursive: true, force: true })
 }
 
 const sessionsOf = (p: Project) => new Set(store.listThreads(p).flatMap((t) => t.agentSessions.map((s) => s.sessionId)))

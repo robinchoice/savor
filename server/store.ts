@@ -170,10 +170,10 @@ function readJson<T>(file: string, fallback: T): T {
   }
 }
 
-function writeJson(file: string, data: unknown, mode = 0o644) {
-  fs.mkdirSync(path.dirname(file), { recursive: true })
+function writeJson(file: string, data: unknown) {
+  fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 })
   const tmp = `${file}.${process.pid}.tmp`
-  fs.writeFileSync(tmp, JSON.stringify(data, null, 2), { mode })
+  fs.writeFileSync(tmp, JSON.stringify(data, null, 2), { mode: 0o600 })
   fs.renameSync(tmp, file)
 }
 
@@ -209,7 +209,7 @@ export function state(): State {
 }
 
 // state.json holds tokens and the daemon key: readable by the owner only.
-export const saveState = (s: State) => writeJson(stateFile, s, 0o600)
+export const saveState = (s: State) => writeJson(stateFile, s)
 
 // ---- presets ----
 
@@ -372,12 +372,12 @@ export const readMessages = (p: Project, tid: string) => readJsonl<Message>(path
 
 export function appendMessage(p: Project, tid: string, m: Omit<Message, 'id' | 'ts'>): Message {
   const msg = { id: newId(), ts: now(), ...m }
-  fs.appendFileSync(path.join(threadDir(p, tid), 'messages.jsonl'), JSON.stringify(msg) + '\n')
+  fs.appendFileSync(path.join(threadDir(p, tid), 'messages.jsonl'), JSON.stringify(msg) + '\n', { mode: 0o600 })
   return msg
 }
 
 export const writeMessages = (p: Project, tid: string, msgs: Message[]) =>
-  fs.writeFileSync(path.join(threadDir(p, tid), 'messages.jsonl'), msgs.map((m) => JSON.stringify(m) + '\n').join(''))
+  fs.writeFileSync(path.join(threadDir(p, tid), 'messages.jsonl'), msgs.map((m) => JSON.stringify(m) + '\n').join(''), { mode: 0o600 })
 
 export function updateMessage(p: Project, tid: string, id: string, patch: Partial<Message>): Message {
   const msgs = readMessages(p, tid).map((m) => (m.id === id ? { ...m, ...patch } : m))
@@ -401,7 +401,7 @@ export function readActivity(p: Project, tid: string): ActivityEvent[] {
 }
 
 export const appendActivity = (p: Project, tid: string, e: Partial<ActivityEvent> & { id: number }) =>
-  fs.appendFileSync(path.join(threadDir(p, tid), 'activity.jsonl'), JSON.stringify(e) + '\n')
+  fs.appendFileSync(path.join(threadDir(p, tid), 'activity.jsonl'), JSON.stringify(e) + '\n', { mode: 0o600 })
 
 export const attachmentDir = (p: Project, tid: string) => path.join(threadDir(p, tid), 'attachments')
 
@@ -418,7 +418,7 @@ export function saveAttachment(p: Project, tid: string, file: { name: string; da
   const base = path.basename(String(file.name || 'file')).replace(/[^\w.+-]+/g, '_').slice(0, 80) || 'file'
   const name = `${newId()}-${ext && !isImage(base) ? `${base}.${ext}` : base}`
   fs.mkdirSync(attachmentDir(p, tid), { recursive: true })
-  fs.writeFileSync(path.join(attachmentDir(p, tid), name), data)
+  fs.writeFileSync(path.join(attachmentDir(p, tid), name), data, { mode: 0o600 })
   return { name, image: !!ext || isImage(base) }
 }
 

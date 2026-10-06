@@ -21,7 +21,7 @@ import { handleMcp } from './mcp.js'
 import { isUnsafe, listAgents, listSkills, listUsage, mergeAgent } from './providers.js'
 import { nextRun, runs, runWorkflow, syncSchedules, validateCron } from './scheduler.js'
 import * as git from './git.js'
-import { importSessions, listSessions } from './import.js'
+import { deleteSessions, importSessions, listSessions } from './import.js'
 import { importEnjoy, keepOutOfGit, listEnjoy } from './enjoy.js'
 import * as voice from './voice.js'
 import * as push from './push.js'
@@ -217,11 +217,11 @@ route('POST', '/projects', (_, b, ctx) => {
     } catch {
       // Without git the project works, only worktrees don't.
     }
-    keepOutOfGit(p.path)
     const s = store.state()
     s.projectsDir = path.dirname(p.path)
     store.saveState(s)
   }
+  keepOutOfGit(p.path)
   emit({ type: 'projects' })
   return p
 })
@@ -365,8 +365,13 @@ route('POST', '/projects/:pid/threads/:tid/fork', (params) => {
 })
 route('DELETE', '/projects/:pid/threads/:tid', (params) => {
   const p = project(params)
+  const threads = store.listThreads(p)
+  const thread = threads.find((t) => t.id === params.tid)
+  // The agent's own transcripts go too, unless another conversation still resumes or forks from them.
+  const shared = new Set(threads.filter((t) => t !== thread).flatMap((t) => [...t.agentSessions.map((s) => s.sessionId), t.fork?.sessionId]))
   agents.forget(params.tid)
   fs.rmSync(path.join(p.path, '.savor', 'threads', path.basename(params.tid)), { recursive: true, force: true })
+  deleteSessions(thread?.agentSessions.filter((s) => !shared.has(s.sessionId)) ?? [])
   emit({ type: 'thread', projectId: p.id, threadId: params.tid })
   return {}
 })
@@ -805,6 +810,11 @@ http
     }),
   )
   .listen(PORT, HOST, () => {
+    // Conversations are private: kept out of git and readable only by this user, also in projects added before.
+    for (const p of store.listProjects()) {
+      keepOutOfGit(p.path)
+      fs.chmodSync(store.dataDir(p), 0o700)
+    }
     syncSchedules()
     processes.watchProcesses()
     startRelay()
