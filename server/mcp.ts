@@ -26,7 +26,7 @@ function findProject(ref: string) {
 }
 
 function buildServer(p: Project, tid: string) {
-  const server = new McpServer({ name: 'savor', version: '0.6.9' })
+  const server = new McpServer({ name: 'savor', version: '0.6.10' })
   const threadUrl = (id: string, project = p) => appUrl(`/p/${project.id}/t/${id}`)
   const touchThread = () => emit({ type: 'thread', projectId: p.id, threadId: tid })
   const modelInfo = () => store.getThread(p, tid).agent
