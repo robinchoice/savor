@@ -6,7 +6,7 @@ import { z } from 'zod'
 import * as store from './store.js'
 import type { Project } from './store.js'
 import { emit } from './events.js'
-import { appUrl } from './config.js'
+import { appUrl, VERSION } from './config.js'
 import * as agents from './agents.js'
 import * as browser from './browser.js'
 import * as processes from './processes.js'
@@ -26,7 +26,7 @@ function findProject(ref: string) {
 }
 
 function buildServer(p: Project, tid: string) {
-  const server = new McpServer({ name: 'savor', version: '0.6.10' })
+  const server = new McpServer({ name: 'savor', version: VERSION })
   const threadUrl = (id: string, project = p) => appUrl(`/p/${project.id}/t/${id}`)
   const touchThread = () => emit({ type: 'thread', projectId: p.id, threadId: tid })
   const modelInfo = () => store.getThread(p, tid).agent

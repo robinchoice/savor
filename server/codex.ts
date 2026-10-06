@@ -3,7 +3,7 @@
 import { spawn } from 'node:child_process'
 import * as store from './store.js'
 import type { ApprovalOption, Thread } from './store.js'
-import { BIN, command, mcpUrl } from './config.js'
+import { BIN, command, mcpUrl, VERSION } from './config.js'
 import { Rpc } from './jsonrpc.js'
 import { configKey, forkOf, rememberSession, sessionIdOf, summarize, systemPrompt, type Host, type Session, type TurnInput } from './session.js'
 import type { ModelInfo, SkillInfo } from './providers.js'
@@ -15,7 +15,7 @@ const MODES: Record<string, { sandbox: string; approvalPolicy: string; approvals
   'full-access': { sandbox: 'danger-full-access', approvalPolicy: 'never', approvalsReviewer: 'user' },
 }
 
-const CLIENT = { name: 'savor', title: 'Savor', version: '0.6.10' }
+const CLIENT = { name: 'savor', title: 'Savor', version: VERSION }
 const CAPABILITIES = { experimentalApi: true, requestAttestation: false }
 
 function spawnAppServer(projectId?: string, threadId?: string) {

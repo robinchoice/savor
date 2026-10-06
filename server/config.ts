@@ -1,10 +1,11 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import pkg from '../package.json' with { type: 'json' }
 
 export const PORT = Number(process.env.SAVOR_PORT ?? 4317)
 export const HOST = process.env.SAVOR_HOST ?? '127.0.0.1'
 export const PUBLIC_URL = process.env.SAVOR_PUBLIC_URL ?? `http://localhost:${PORT}`
-export const VERSION = '0.6.10'
+export const VERSION: string = pkg.version
 
 export const BIN = {
   claude: process.env.SAVOR_CLAUDE_BIN ?? 'claude',
