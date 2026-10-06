@@ -1027,6 +1027,8 @@ test('a prompt fans out to several agents in worktrees of their own, and the pic
   await page.locator('.fan-col').nth(1).locator('button:has-text("Pick")').click()
   await page.click('.pick-dialog button:has-text("Merge and delete")')
   await page.waitForSelector('.fan-col.won')
+  // The dialog closes once the other worktrees are deleted, which follows the merge.
+  await page.waitForSelector('.pick-dialog', { state: 'detached' })
   assert.equal(fs.readFileSync(path.join(PROJECT, 'dark.css'), 'utf8'), 'body {}\n')
   cmp = (await api('GET', `/projects/${project.id}/fanout/${id}`)).body
   assert.deepEqual(cmp.map((r) => [!!r.worktree, r.merged, r.thread.completed]), [[false, false, true], [true, true, false], [false, false, true]])
