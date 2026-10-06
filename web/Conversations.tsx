@@ -4,7 +4,7 @@ import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import {
   Asterisk, Hexagon, Code2, Sparkles, Orbit, Plus, Search, MessageSquare, Check, MoreHorizontal, PanelLeft, PanelRight, FileText, Globe,
-  CircleAlert, ArrowUp, ArrowLeft, Pencil, Brain, Terminal, Wrench, ArrowRight, Smartphone, Monitor, Bot, ShieldQuestion, X, ChevronUp, ChevronDown, ChevronRight, Paperclip, GitBranch, GitFork, GitMerge, Trash2, Copy, FileDiff, Split, Workflow as WorkflowIcon,
+  CircleAlert, ArrowUp, ArrowLeft, Pencil, MessageSquarePlus, Brain, Terminal, Wrench, ArrowRight, Smartphone, Monitor, Bot, ShieldQuestion, X, ChevronUp, ChevronDown, ChevronRight, Paperclip, GitBranch, GitFork, GitMerge, Trash2, Copy, FileDiff, Split, Workflow as WorkflowIcon,
 } from 'lucide-preact'
 import {
   api, cap, duration, formatStamp, formatTime, go, PROVIDER_NAMES, runTrigger, useApi, kindOf, RINGS, type ActivityEvent, type AgentConfig, type Attachment, type Decision, type Message, type Proc, type Project, type Reason, type Thread, type Worktree,
@@ -447,6 +447,11 @@ function ThreadView({ project, threadId }: { project: Project; threadId: string 
   const setAgent = (agent: AgentConfig) => api('PATCH', base, { agent })
   const patch = (b: object) => api('PATCH', base, b)
   const stop = () => api('POST', `${base}/stop`)
+  // A suggestion can also start its own conversation, with the same agent and in the same worktree.
+  const sendNew = async (text: string) => {
+    const t = await api<Thread>('POST', `/projects/${project.id}/threads`, { text, agent: thread.agent, worktree: thread.worktree?.branch ?? null })
+    go(`/p/${project.id}/t/${t.id}`)
+  }
 
   const lastUser = messages.map((m) => m.kind).lastIndexOf('user')
   const last = messages[messages.length - 1]
@@ -720,6 +725,9 @@ function ThreadView({ project, threadId }: { project: Project; threadId: string 
                         </button>
                         <button class="next-edit" title="Edit before sending" onClick={() => setDraft(s)}>
                           <Pencil size={15} />
+                        </button>
+                        <button class="next-new" title="Start in a new conversation" onClick={() => sendNew(s)}>
+                          <MessageSquarePlus size={15} />
                         </button>
                       </div>
                     ))}

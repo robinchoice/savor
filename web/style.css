@@ -307,8 +307,8 @@ main { flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
 .next-text { flex: 1; display: flex; align-items: center; justify-content: space-between; gap: 10px; text-align: left; padding: 9px 12px; margin-left: -12px; border-radius: 9px; transition: background 0.18s ease; }
 .next-text:hover { background: var(--card); }
 .next-send { display: flex; color: var(--faint); flex: none; }
-.next-text:hover .next-send, .next-edit:hover { color: var(--text); }
-.next-edit { color: var(--faint); padding: 6px; border-radius: 8px; display: flex; }
+.next-text:hover .next-send, .next-edit:hover, .next-new:hover { color: var(--text); }
+.next-edit, .next-new { color: var(--faint); padding: 6px; border-radius: 8px; display: flex; }
 
 .mark-complete { align-self: flex-end; margin: 0 28px 6px 0; display: flex; align-items: center; gap: 7px; color: var(--muted); font-weight: 500; padding: 6px 10px; border-radius: 8px; transition: background 0.18s ease, color 0.18s ease; }
 .mark-complete span { display: flex; }
