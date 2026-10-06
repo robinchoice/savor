@@ -935,6 +935,83 @@ test('agents can start conversations in other projects, and input from a paired 
   await api('DELETE', `/projects/${other.id}`)
 })
 
+test('agents send messages to conversations in other projects, marked as theirs, and a message they set off sends none on', async () => {
+  const [project] = (await api('GET', '/projects')).body
+  const other = (await api('POST', '/projects', { path: path.join(TMP, 'message-target'), name: 'Message Target', create: true })).body
+  const { mcpToken } = JSON.parse(fs.readFileSync(path.join(HOME, 'state.json'), 'utf8'))
+  const connect = async (pid, tid) => {
+    const client = new Client({ name: 'e2e', version: '1' })
+    await client.connect(new StreamableHTTPClientTransport(new URL(`${base}/mcp?project=${pid}&thread=${tid}`), { requestInit: { headers: { authorization: `Bearer ${mcpToken}` } } }))
+    return client
+  }
+  const call = async (client, name, args) => {
+    const r = await client.callTool({ name, arguments: args })
+    return { isError: !!r.isError, text: r.content[0].text }
+  }
+  const messages = async (pid, tid) => (await api('GET', `/projects/${pid}/threads/${tid}`)).body.messages
+  const echoed = (pid, tid, text) => until(async () => (await messages(pid, tid)).some((m) => m.text === `Echo: ${text}`))
+
+  const sender = (await api('POST', `/projects/${project.id}/threads`, { text: 'plan the starter' })).body
+  await echoed(project.id, sender.id, 'plan the starter')
+  const target = (await api('POST', `/projects/${other.id}/threads`, { text: 'design work' })).body
+  await echoed(other.id, target.id, 'design work')
+
+  // The sender finds the conversation in the other project and writes to it; the receiving agent learns who wrote.
+  const client = await connect(project.id, sender.id)
+  assert.ok(JSON.parse((await call(client, 'list_conversations', { project: other.id })).text).some((t) => t.id === target.id))
+  assert.ok((await call(client, 'send_to_conversation', { id: sender.id, text: 'me' })).isError)
+  const sent = JSON.parse((await call(client, 'send_to_conversation', { id: target.id, project: other.id, text: 'context: the starter has a new sender' })).text)
+  assert.ok(sent.url.endsWith(`/p/${other.id}/t/${target.id}`), sent.url)
+  let reply
+  await until(async () => (reply = (await messages(other.id, target.id)).find((m) => m.text?.startsWith('Context: '))))
+  const context = JSON.parse(reply.text.slice('Context: '.length))
+  assert.equal(context.requestOrigin, 'agent')
+  assert.deepEqual([context.fromThread.project, context.fromThread.id, context.fromThread.label, context.fromThread.origin], [project.id, sender.id, 'Fake agent test', 'local'])
+  const read = JSON.parse((await call(client, 'read_conversation', { id: target.id, project: other.id })).text)
+  assert.deepEqual(read.messages.find((m) => m.text === 'context: the starter has a new sender').from, { projectId: project.id, project: project.name, threadId: sender.id, label: 'Fake agent test' })
+  await client.close()
+
+  // The conversation shows the message as the other agent's, with a link to it.
+  await page.goto(`${base}/#/p/${other.id}/t/${target.id}`)
+  const bubble = page.locator('.msg.user.from-agent')
+  await bubble.waitFor()
+  assert.equal(await bubble.locator('.from-agent-link').getAttribute('href'), `#/p/${project.id}/t/${sender.id}`)
+  assert.ok((await bubble.locator('.msg-head').textContent()).includes(`Agent · Fake agent test (${project.name})`))
+
+  // The turn it set off cannot write back, and neither can a conversation that turn starts.
+  const receiver = await connect(other.id, target.id)
+  const back = await call(receiver, 'send_to_conversation', { id: sender.id, project: project.id, text: 'thanks' })
+  assert.ok(back.isError && back.text.includes('set off by a message from another agent'), back.text)
+  const started = JSON.parse((await call(receiver, 'start_conversation', { prompt: 'relay further' })).text)
+  await receiver.close()
+  await echoed(other.id, started.id, 'relay further')
+  assert.equal((await messages(other.id, started.id))[0].chained, true)
+  const relay = await connect(other.id, started.id)
+  assert.ok((await call(relay, 'send_to_conversation', { id: sender.id, project: project.id, text: 'thanks' })).isError)
+  await relay.close()
+  // The user's next input lifts that.
+  await api('POST', `/projects/${other.id}/threads/${target.id}/messages`, { text: 'carry on' })
+  await echoed(other.id, target.id, 'carry on')
+  const again = await connect(other.id, target.id)
+  assert.ok(!(await call(again, 'send_to_conversation', { id: sender.id, project: project.id, text: 'done' })).isError)
+  await again.close()
+  await echoed(project.id, sender.id, 'done')
+
+  // A message a paired device's input set off carries that origin along.
+  const device = await pairDevice('CI message phone')
+  const remote = (await api('POST', `/projects/${project.id}/threads`, { text: 'tell the designers' }, device)).body
+  await echoed(project.id, remote.id, 'tell the designers')
+  const remoteClient = await connect(project.id, remote.id)
+  await call(remoteClient, 'send_to_conversation', { id: target.id, project: other.id, text: 'from the phone' })
+  await remoteClient.close()
+  await echoed(other.id, target.id, 'from the phone')
+  const fromPhone = (await messages(other.id, target.id)).find((m) => m.text === 'from the phone')
+  assert.deepEqual([fromPhone.origin, fromPhone.device, fromPhone.from.threadId], ['remote', 'CI message phone', remote.id])
+
+  await api('DELETE', `/devices/${(await api('GET', '/devices')).body.find((d) => d.name === 'CI message phone').id}`)
+  await api('DELETE', `/projects/${other.id}`)
+})
+
 test('the terminal starts with a shell per folder and worktree, opens and closes more, on paired devices only once allowed here', async () => {
   const [project] = (await api('GET', '/projects')).body
   const t = `/projects/${project.id}/terminal`

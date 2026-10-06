@@ -39,6 +39,10 @@ export interface Message {
   workTiming?: { startedAt: string; finishedAt: string }
   origin?: Origin
   device?: string
+  // A message another conversation's agent sent with send_to_conversation; the label is kept as it was then.
+  from?: { projectId: string; project: string; threadId: string; label: string }
+  // Input that an agent message set off, directly or through conversations started from it: its turn sends no agent messages.
+  chained?: boolean
   // User messages typed while the agent works wait here until the turn ends (or "Send now").
   delivered?: boolean
   // The idempotency key of an update, so that a retry is still recognized after a restart.

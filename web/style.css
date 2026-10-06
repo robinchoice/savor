@@ -249,6 +249,9 @@ main { flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
 .msg-card { min-width: 0; }
 .msg.ack .msg-card, .msg.update .msg-card { color: var(--muted); }
 .msg.user .msg-card { background: var(--card); border-radius: 14px; padding: 10px 14px; width: fit-content; max-width: 100%; }
+.msg.user.from-agent .msg-card { background: transparent; border: 1px solid var(--line-strong); }
+.from-agent-link { color: var(--faint); }
+.from-agent-link:hover b { color: var(--text); }
 .msg-card.error { color: var(--red); white-space: pre-wrap; }
 .msg-card.error.stopped { color: var(--muted); }
 .plain { white-space: pre-wrap; overflow-wrap: anywhere; }

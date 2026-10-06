@@ -86,6 +86,7 @@ export interface Message {
   workTiming?: { startedAt: string; finishedAt: string }
   origin?: 'local' | 'remote'
   device?: string
+  from?: { projectId: string; project: string; threadId: string; label: string }
   delivered?: boolean
 }
 export interface Attachment { name: string; dataUrl: string }

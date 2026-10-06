@@ -212,13 +212,13 @@ function buildServer(p: Project, tid: string) {
   )
 
   server.registerTool('run_workflow', { description: 'Run a workflow now in a new conversation.', inputSchema: { id: z.string() } }, async ({ id }) => {
-    const t = runWorkflow(p.id, id, agents.originOf(p, tid))
+    const t = runWorkflow(p.id, id, agents.originOf(p, tid), undefined, agents.chainedOf(p, tid))
     return ok({ threadId: t.id, url: threadUrl(t.id) })
   })
 
   // ---- conversations ----
 
-  server.registerTool('list_projects', { description: 'The Savor projects on this computer, for start_conversation.' }, async () =>
+  server.registerTool('list_projects', { description: 'The Savor projects on this computer, for start_conversation, send_to_conversation and the `project` of the other conversation tools.' }, async () =>
     ok(store.listProjects().map(({ id, name, path }) => ({ id, name, path }))),
   )
 
@@ -257,7 +257,7 @@ function buildServer(p: Project, tid: string) {
       emit({ type: 'thread', projectId: target.id, threadId: t.id })
       const origin = agents.originOf(p, tid)
       const device = agents.deviceOf(p, tid)
-      agents.send(target, t.id, { text: prompt, origin, device })
+      agents.send(target, t.id, { text: prompt, origin, device, chained: agents.chainedOf(p, tid) })
       // Input from a paired device that lands in another project shows up there, not only in this conversation.
       if (!here && origin === 'remote') {
         store.updateThread(target, t.id, { unread: true })
@@ -271,17 +271,51 @@ function buildServer(p: Project, tid: string) {
     ok({ current: modelInfo(), agents: await listAgents() }),
   )
 
-  server.registerTool('list_conversations', { description: 'List conversations in this project.' }, async () =>
-    ok(
-      store.listThreads(p).map((t) => ({ id: t.id, title: t.title, label: t.label?.name ?? null, completed: t.completed, busy: agents.isBusy(t.id), worktree: t.worktree?.branch ?? null, url: threadUrl(t.id) })),
-    ),
+  const PROJECT = z.string().min(1).optional().describe('Project id or absolute path, see list_projects; defaults to this project')
+
+  server.registerTool('list_conversations', { description: 'List the conversations in this project, or in another one named by `project`.', inputSchema: { project: PROJECT } }, async ({ project }) => {
+    const target = project ? findProject(project) : p
+    return ok(
+      store.listThreads(target).map((t) => ({ id: t.id, title: t.title, label: t.label?.name ?? null, completed: t.completed, busy: agents.isBusy(t.id), worktree: t.worktree?.branch ?? null, url: threadUrl(t.id, target) })),
+    )
+  })
+
+  server.registerTool(
+    'read_conversation',
+    { description: 'Read the visible messages of a conversation in this project, or in another one named by `project`. `from` marks messages another conversation’s agent sent.', inputSchema: { id: z.string(), project: PROJECT } },
+    async ({ id, project }) => {
+      const target = project ? findProject(project) : p
+      return ok({
+        busy: agents.isBusy(id),
+        messages: store.readMessages(target, id).map(({ kind, text, questions, ts, from }) => ({ kind, text, questions, ts, from })),
+      })
+    },
   )
 
-  server.registerTool('read_conversation', { description: 'Read the visible messages of a conversation.', inputSchema: { id: z.string() } }, async ({ id }) =>
-    ok({
-      busy: agents.isBusy(id),
-      messages: store.readMessages(p, id).map(({ kind, text, questions, ts }) => ({ kind, text, questions, ts })),
-    }),
+  server.registerTool(
+    'send_to_conversation',
+    {
+      description:
+        'Send a message to an existing conversation, in this project or in another one named by `project` (ids from list_conversations), e.g. to pass on a change other sessions need to know about. It waits in that conversation’s queue like user input and reaches its agent after the current turn, shown and marked as a message from this conversation. It informs and never approves anything. A turn set off by an agent message cannot send one: answer in your conclusion instead.',
+      inputSchema: { id: z.string(), text: z.string().min(1), project: PROJECT },
+    },
+    async ({ id, text, project }) => {
+      const target = project ? findProject(project) : p
+      if (target.id === p.id && id === tid) throw new Error('This is your own conversation.')
+      if (agents.chainedOf(p, tid)) throw new Error('This turn was set off by a message from another agent, so it cannot send agent messages. Answer in your conclusion; the sender can read it with read_conversation.')
+      store.getThread(target, id)
+      const me = store.getThread(p, tid)
+      const origin = agents.originOf(p, tid)
+      const device = agents.deviceOf(p, tid)
+      const msg = agents.send(target, id, { text, origin, device, chained: true, from: { projectId: p.id, project: p.name, threadId: tid, label: me.label?.name ?? me.title } })
+      // A message set off by a paired device's input is announced in the receiving conversation, wherever it is.
+      if (origin === 'remote') {
+        store.updateThread(target, id, { unread: true })
+        agents.notify(target, id, `Message from ${p.name} by ${device ?? 'a paired device'}`, 'Message from another agent')
+      }
+      emit({ type: 'thread', projectId: target.id, threadId: id })
+      return ok({ id: msg.id, queued: msg.delivered === false, url: threadUrl(id, target) })
+    },
   )
 
   // ---- background processes ----

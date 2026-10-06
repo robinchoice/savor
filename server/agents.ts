@@ -5,7 +5,7 @@ import path from 'node:path'
 import * as store from './store.js'
 import type { AgentConfig, Message, Origin, Project, Provider, Question, Thread } from './store.js'
 import { emit } from './events.js'
-import { BIN, command, mcpUrl } from './config.js'
+import { appUrl, BIN, command, mcpUrl } from './config.js'
 import { Activity, configKey, forkOf, sessionIdOf, systemPrompt, type Answer, type ApprovalRequest, type Host, type Session, type TurnInput } from './session.js'
 import { ClaudeSession } from './claude.js'
 import { CodexSession } from './codex.js'
@@ -50,6 +50,7 @@ export function originOf(p: Project, tid: string): Origin {
   return input ? input.origin ?? 'local' : 'remote'
 }
 export const deviceOf = (p: Project, tid: string) => inputOf(p, tid)?.device
+export const chainedOf = (p: Project, tid: string) => !!inputOf(p, tid)?.chained
 const inputOf = (p: Project, tid: string) => store.readMessages(p, tid).find((m) => m.id === request(p, tid).inputId)
 
 export const conclusionKey = (m: Pick<Message, 'text' | 'questions' | 'suggestions' | 'commits'>) => JSON.stringify([m.text, m.questions, m.suggestions, m.commits])
@@ -90,12 +91,12 @@ export function notify(p: Project, tid: string, body: string, status: string) {
 
 // ---- input and the queue ----
 
-export interface Input { text: string; images?: string[]; files?: string[]; origin: Origin; device?: string }
+export interface Input { text: string; images?: string[]; files?: string[]; origin: Origin; device?: string; from?: Message['from']; chained?: boolean }
 
 export function send(p: Project, tid: string, input: Input) {
   const thread = store.updateThread(p, tid, { completed: false, inputAt: store.now() })
   const queued = busy.has(tid)
-  const msg = post(p, tid, { kind: 'user', text: input.text, images: input.images, files: input.files, modelInfo: thread.agent, origin: input.origin, device: input.device, delivered: !queued })
+  const msg = post(p, tid, { kind: 'user', text: input.text, images: input.images, files: input.files, modelInfo: thread.agent, origin: input.origin, device: input.device, from: input.from, chained: input.chained || undefined, delivered: !queued })
   stopped.delete(tid)
   if (!queued) deliver(p, tid, msg)
   else emit({ type: 'thread', projectId: p.id, threadId: tid })
@@ -238,7 +239,7 @@ function handover(p: Project, thread: Thread) {
   const history = [...earlier, ...store.readMessages(p, thread.id).slice(0, -1)]
     .filter((m) => m.text && m.kind !== 'error')
     .slice(-30)
-    .map((m) => `[${m.kind === 'user' ? 'user' : 'agent'}] ${m.text!.slice(0, 2000)}`)
+    .map((m) => `[${m.from ? `agent message from “${m.from.label}” (${m.from.project})` : m.kind === 'user' ? 'user' : 'agent'}] ${m.text!.slice(0, 2000)}`)
   if (!history.length) return ''
   return `Earlier in this conversation (handled by another agent):\n${history.join('\n\n')}\n\nThis is an excerpt: read_conversation with the id ${earlier.length ? thread.parentId : thread.id} returns all of it.\n\n`
 }
@@ -246,7 +247,10 @@ function handover(p: Project, thread: Thread) {
 function turnInput(p: Project, thread: Thread, msg: Message, note = ''): TurnInput {
   const dir = store.attachmentDir(p, thread.id)
   const context = {
-    requestOrigin: msg.origin ?? 'local',
+    requestOrigin: msg.from ? 'agent' : msg.origin ?? 'local',
+    ...(msg.from && {
+      fromThread: { project: msg.from.projectId, projectName: msg.from.project, id: msg.from.threadId, label: msg.from.label, url: appUrl(`/p/${msg.from.projectId}/t/${msg.from.threadId}`), origin: msg.origin ?? 'local' },
+    }),
     threadLabel: thread.label?.name ?? null,
     productPreview: thread.preview,
     backgroundProcesses: store.listProcs(p).filter((pr) => pr.threadId === thread.id),
