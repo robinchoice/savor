@@ -274,6 +274,14 @@ export function updateProject(id: string, patch: Partial<Omit<Project, 'id' | 'p
   return p
 }
 
+// The order of the tabs and the projects menu: ids not in the list keep their place at the end.
+export function reorderProjects(ids: string[]) {
+  const s = state()
+  const rank = (id: string) => (ids.includes(id) ? ids.indexOf(id) : ids.length)
+  s.projects = [...s.projects].sort((a, b) => rank(a.id) - rank(b.id))
+  saveState(s)
+}
+
 export function removeProject(id: string) {
   const s = state()
   s.projects = s.projects.filter((r) => r.id !== id)

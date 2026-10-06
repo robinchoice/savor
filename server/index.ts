@@ -235,6 +235,11 @@ route('POST', '/enjoy', (_, b, ctx) => {
   for (const r of results) for (const type of ['thread', 'documents', 'workflows'] as const) emit({ type, projectId: r.projectId })
   return results
 })
+route('PUT', '/projects/order', (_, b) => {
+  store.reorderProjects((b.ids ?? []).map(String))
+  emit({ type: 'projects' })
+  return {}
+})
 route('GET', '/projects/:pid/role', (params) => ({ role: store.readRole(project(params)) }))
 route('PATCH', '/projects/:pid', (params, b, ctx) => {
   const p = project(params)

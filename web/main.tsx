@@ -159,6 +159,26 @@ function TopBar({ projects, active, all, me, setMe }: { projects: Project[]; act
     e.stopPropagation()
     api('PATCH', `/projects/${p.id}`, { pinned: !p.pinned })
   }
+  // Tabs can be dragged into a new order; it shows right away and the server keeps it.
+  const [drag, setDrag] = useState<{ id: string; over?: string; after?: boolean } | null>(null)
+  const [order, setOrder] = useState<string[] | null>(null)
+  useEffect(() => setOrder(null), [projects])
+  const sorted = order ? [...projects].sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id)) : projects
+  const dragOver = (e: DragEvent, p: Project) => {
+    if (!drag || drag.id === p.id) return
+    e.preventDefault()
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    setDrag({ ...drag, over: p.id, after: e.clientX > r.left + r.width / 2 })
+  }
+  const drop = (e: DragEvent) => {
+    e.preventDefault()
+    if (!drag?.over) return setDrag(null)
+    const ids = sorted.map((p) => p.id).filter((id) => id !== drag.id)
+    ids.splice(ids.indexOf(drag.over) + (drag.after ? 1 : 0), 0, drag.id)
+    setOrder(ids)
+    setDrag(null)
+    api('PUT', '/projects/order', { ids })
+  }
   // A click outside a menu closes it, unless that click just opened the other menu.
   const closeMenu = (which: typeof menu) => setMenu((m) => (m === which ? null : m))
   // Where the account dialog leads.
@@ -177,8 +197,17 @@ function TopBar({ projects, active, all, me, setMe }: { projects: Project[]; act
           <Counts project={{ counts: { working: total('working'), unread: total('unread'), needsYou: total('needsYou') } }} />
         </a>
         <span class="tab-sep" />
-        {projects.filter((p) => p.pinned || p.id === active?.id).map((p) => (
-          <a key={p.id} href={`#/p/${p.id}`} class={`project-tab ${p.id === active?.id ? 'active' : ''}`}>
+        {sorted.filter((p) => p.pinned || p.id === active?.id).map((p) => (
+          <a
+            key={p.id}
+            href={`#/p/${p.id}`}
+            class={`project-tab ${p.id === active?.id ? 'active' : ''} ${drag?.id === p.id ? 'dragging' : ''} ${drag?.over === p.id ? (drag.after ? 'drop-after' : 'drop-before') : ''}`}
+            draggable
+            onDragStart={(e) => (e.dataTransfer!.effectAllowed = 'move', setDrag({ id: p.id }))}
+            onDragOver={(e) => dragOver(e, p)}
+            onDrop={drop}
+            onDragEnd={() => setDrag(null)}
+          >
             <span class="avatar" style={avatarStyle(p.tint)}>
               {initial(p.name)}
             </span>
