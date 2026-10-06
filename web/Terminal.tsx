@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
-import { Folder, GitBranch, Lock, Maximize2, Minimize2, RotateCcw, SquareTerminal, X } from 'lucide-preact'
+import { Folder, GitBranch, Lock, Maximize2, Minimize2, Plus, RotateCcw, SquareTerminal, X } from 'lucide-preact'
 import { Terminal as XTerm } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
@@ -17,24 +17,54 @@ document.createElement = function (this: Document, tag: string, options?: Elemen
   return el
 } as typeof document.createElement
 
-export interface TerminalPlace { path: string; branch: string | null; running: boolean; threads: string[] }
+export interface TerminalPlace { path: string; branch: string | null; threads: string[] }
+export interface TerminalTab { id: string; path: string; running: boolean }
+interface Terminals { places: TerminalPlace[]; terminals: TerminalTab[] }
 
 const THEME = { background: '#0a0a0c', foreground: '#d7d7dc', cursor: '#d7d7dc', selectionBackground: '#3a3a42' }
 const FONT = "'Geist Mono Variable', ui-monospace, 'SF Mono', Menlo, monospace"
 
-// Shells per project folder and worktree, in a panel below every view of the project.
+// Terminals in the project folder and its worktrees, in a panel below every view of the project.
 export function TerminalPanel({ project, threadId }: { project: Project; threadId?: string }) {
   const { terminalHeight, terminalMax } = usePrefs()
-  const [places, , error] = useApi<TerminalPlace[]>(`/projects/${project.id}/terminal`, (e) => (e.type === 'terminal' || e.type === 'thread') && (!e.projectId || e.projectId === project.id))
-  const [cwd, setCwd] = useState<string | null>(null)
+  const base = `/projects/${project.id}/terminal`
+  const [data, reload, error] = useApi<Terminals>(base, (e) => (e.type === 'terminal' || e.type === 'thread') && (!e.projectId || e.projectId === project.id))
+  const [pick, setPick] = useState<{ threadId?: string; id: string | null }>({ id: null })
+  const [adding, setAdding] = useState(false)
   const [height, setHeight] = useState(terminalHeight)
   const restart = useRef<() => void>(() => {})
-  // The panel follows the open conversation into its worktree.
+  const addRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
-    if (places) setCwd((places.find((p) => threadId && p.threads.includes(threadId)) ?? places[0]).path)
-  }, [threadId, !!places])
-  // A worktree deleted meanwhile falls back to the project folder.
-  const current = cwd === null ? undefined : (places?.find((p) => p.path === cwd) ?? places?.[0])
+    if (!adding) return
+    const on = (e: MouseEvent) => !e.composedPath().includes(addRef.current!) && setAdding(false)
+    setTimeout(() => addEventListener('click', on))
+    return () => removeEventListener('click', on)
+  }, [adding])
+  const places = data?.places ?? []
+  const terminals = data?.terminals ?? []
+  // The panel follows the open conversation into its worktree, until a terminal is picked there. One
+  // closed meanwhile, here or elsewhere, falls back to the first.
+  const setSelected = (id: string | null) => setPick({ threadId, id })
+  const place = places.find((p) => threadId && p.threads.includes(threadId)) ?? places[0]
+  const current = terminals.find((t) => pick.threadId === threadId && t.id === pick.id) ?? terminals.find((t) => t.path === place?.path) ?? terminals[0]
+  const label = (t: TerminalTab) => {
+    const n = terminals.filter((o) => o.path === t.path).indexOf(t)
+    return (places.find((p) => p.path === t.path)?.branch ?? project.name) + (n ? ` ${n + 1}` : '')
+  }
+
+  const add = async (path: string) => {
+    setAdding(false)
+    const t = await api<TerminalTab>('POST', base, { path })
+    await reload()
+    setSelected(t.id)
+  }
+  const close = (t: TerminalTab) => {
+    if (t.id === current?.id) {
+      const rest = terminals.filter((o) => o !== t)
+      setSelected((rest[terminals.indexOf(t)] ?? rest[rest.length - 1])?.id ?? null)
+    }
+    api('DELETE', `${base}/${t.id}`).catch(() => {})
+  }
 
   const drag = (e: PointerEvent) => {
     const move = (m: PointerEvent) => setHeight(Math.round(Math.min(innerHeight - 160, Math.max(120, innerHeight - m.clientY))))
@@ -57,15 +87,38 @@ export function TerminalPanel({ project, threadId }: { project: Project; threadI
         </span>
         <div class="terminal-places">
           {!error &&
-            places?.map((p) => (
-              <button key={p.path} class={`terminal-place ${p.path === current?.path ? 'on' : ''}`} title={p.path} onClick={() => setCwd(p.path)}>
-                {p.branch ? <GitBranch size={13} /> : <Folder size={13} />}
-                {p.branch ?? project.name}
-                <i class={p.running ? 'running' : ''} />
-              </button>
+            terminals.map((t) => (
+              <div key={t.id} class={`terminal-place ${t.id === current?.id ? 'on' : ''}`} title={t.path}>
+                <button onClick={() => setSelected(t.id)}>
+                  {places.find((p) => p.path === t.path)?.branch ? <GitBranch size={13} /> : <Folder size={13} />}
+                  {label(t)}
+                  <i class={t.running ? 'running' : ''} />
+                </button>
+                <button class="terminal-close" title="Close terminal" onClick={() => close(t)}>
+                  <X size={12} />
+                </button>
+              </div>
             ))}
         </div>
-        {!error && (
+        {data && !error && (
+          <div class="menu-anchor" ref={addRef}>
+            <button class="icon-btn" title="New terminal" onClick={() => (places.length > 1 ? setAdding(!adding) : add(places[0].path))}>
+              <Plus size={15} />
+            </button>
+            {adding && (
+              <div class="menu right">
+                <div class="menu-label">New terminal in</div>
+                {places.map((p) => (
+                  <button key={p.path} title={p.path} onClick={() => add(p.path)}>
+                    {p.branch ? <GitBranch size={13} /> : <Folder size={13} />}
+                    <span>{p.branch ?? project.name}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+        {current && !error && (
           <button class="icon-btn" title="Restart shell" onClick={() => restart.current()}>
             <RotateCcw size={14} />
           </button>
@@ -82,8 +135,17 @@ export function TerminalPanel({ project, threadId }: { project: Project; threadI
           <Lock size={20} />
           <p>{error.message}</p>
         </div>
+      ) : current ? (
+        <Shell key={current.id} project={project} id={current.id} restart={restart} />
       ) : (
-        current && <Shell key={current.path} project={project} path={current.path} restart={restart} />
+        data && (
+          <div class="terminal-locked">
+            <p>No terminal open.</p>
+            <button class="pill" onClick={() => add(places[0].path)}>
+              <Plus size={14} /> New terminal
+            </button>
+          </div>
+        )
       )}
     </div>
   )
@@ -111,7 +173,7 @@ const KEYS: [string, string][] = [
   ['-', '-'],
 ]
 
-function Shell({ project, path, restart }: { project: Project; path: string; restart: { current: () => void } }) {
+function Shell({ project, id, restart }: { project: Project; id: string; restart: { current: () => void } }) {
   const ref = useRef<HTMLDivElement>(null)
   // Phone keyboards lack these keys, so touch screens get a row of them.
   const touch = useMemo(() => matchMedia('(pointer: coarse)').matches, [])
@@ -125,7 +187,7 @@ function Shell({ project, path, restart }: { project: Project; path: string; res
     const term = new XTerm({ fontFamily: FONT, fontSize: 13, cursorBlink: true, scrollback: 5000, theme: THEME })
     const fit = new FitAddon()
     term.loadAddon(fit)
-    const size = () => ({ path, cols: term.cols, rows: term.rows })
+    const size = () => ({ id, cols: term.cols, rows: term.rows })
     const open = () => api('POST', `${base}/open`, size()).catch((e: Error) => term.write(`\r\n${e.message}\r\n`))
     restart.current = () => api('POST', `${base}/restart`, size()).catch((e: Error) => term.write(`\r\n${e.message}\r\n`))
 
@@ -138,7 +200,7 @@ function Shell({ project, path, restart }: { project: Project; path: string; res
       sending = true
       const data = pending
       pending = ''
-      await api('POST', `${base}/input`, { path, data }).catch(() => {})
+      await api('POST', `${base}/input`, { id, data }).catch(() => {})
       sending = false
       flush()
     }
@@ -146,7 +208,7 @@ function Shell({ project, path, restart }: { project: Project; path: string; res
       if (!running) await open()
       // Several lines are pasted for review, not run: the shell would run each line on its own.
       const data = command.includes('\n') ? `\x1b[200~${command}\x1b[201~` : `${command}\r`
-      await api('POST', `${base}/input`, { path, data }).catch((e: Error) => term.write(`\r\n${e.message}\r\n`))
+      await api('POST', `${base}/input`, { id, data }).catch((e: Error) => term.write(`\r\n${e.message}\r\n`))
       term.focus()
     }
     send.current = (data) => {
@@ -194,7 +256,7 @@ function Shell({ project, path, restart }: { project: Project; path: string; res
       fit.fit()
       observer.observe(ref.current!)
       term.focus()
-      stop = transport.stream(`/api${base}/stream?path=${encodeURIComponent(path)}`, onData)
+      stop = transport.stream(`/api${base}/stream?id=${id}`, onData)
       runner = run
       const command = queued
       queued = null
@@ -209,7 +271,7 @@ function Shell({ project, path, restart }: { project: Project; path: string; res
       clearTimeout(resizing)
       term.dispose()
     }
-  }, [project.id, path])
+  }, [project.id, id])
 
   return (
     <>
@@ -233,7 +295,7 @@ function Shell({ project, path, restart }: { project: Project; path: string; res
 // The button that opens the panel, with a dot while a shell of the project runs. Ctrl+` works too.
 export function TerminalButton({ project }: { project: Project }) {
   const { terminalOpen } = usePrefs()
-  const [places] = useApi<TerminalPlace[]>(`/projects/${project.id}/terminal`, (e) => e.type === 'terminal' && (!e.projectId || e.projectId === project.id))
+  const [data] = useApi<Terminals>(`/projects/${project.id}/terminal`, (e) => e.type === 'terminal' && (!e.projectId || e.projectId === project.id))
   useEffect(() => {
     const on = (e: KeyboardEvent) => {
       if (!e.ctrlKey || e.key !== '`') return
@@ -247,7 +309,7 @@ export function TerminalButton({ project }: { project: Project }) {
   return (
     <button class={`icon-btn ${terminalOpen ? 'on' : ''}`} title="Terminal (Ctrl+`)" onClick={() => setPrefs({ terminalOpen: !terminalOpen })}>
       <SquareTerminal size={16} />
-      {places?.some((p) => p.running) && <i class="terminal-running" />}
+      {data?.terminals.some((t) => t.running) && <i class="terminal-running" />}
     </button>
   )
 }

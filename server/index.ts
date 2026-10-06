@@ -257,7 +257,7 @@ route('PATCH', '/projects/:pid', (params, b, ctx) => {
 route('DELETE', '/projects/:pid', (params, _, ctx) => {
   localOnly(ctx)
   store.removeProject(params.pid)
-  terminal.stopProject(params.pid)
+  terminal.closeProject(params.pid)
   emit({ type: 'projects' })
   return {}
 })
@@ -497,7 +497,7 @@ route('DELETE', '/projects/:pid/worktrees', (params, _, ctx) => {
     // A fork that has not started yet loses the session it would have branched off, like the others lose theirs.
     store.updateThread(p, t.id, { worktree: null, agentSessions: [], completed: true, ...(t.fork && { fork: { ...t.fork, sessionId: null } }) })
   }
-  terminal.stop(wt.path)
+  terminal.closeFolder(wt.path)
   git.removeWorktree(p, wt.path)
   git.deleteBranch(p, wt.branch)
   emit({ type: 'thread', projectId: p.id })
@@ -526,39 +526,56 @@ function terminalPlaces(p: store.Project) {
   const threads = store.listThreads(p)
   return [{ path: p.path, branch: null as string | null }, ...git.listWorktrees(p).map((w) => ({ path: w.path, branch: w.branch }))].map((place) => ({
     ...place,
-    running: terminal.running(place.path),
     threads: place.branch ? threads.filter((t) => t.worktree?.path === place.path).map((t) => t.id) : [],
   }))
 }
-function terminalPlace(p: store.Project, cwd: unknown) {
-  if (!terminalPlaces(p).some((place) => place.path === cwd)) throw new store.NotFound('terminal folder')
-  return cwd as string
+function terminalOf(params: Params, id: unknown) {
+  const p = project(params)
+  const t = terminal.get(p.id, id)
+  if (!t || !terminalPlaces(p).some((place) => place.path === t.cwd)) throw new store.NotFound('terminal')
+  return t
 }
-route('GET', '/projects/:pid/terminal', (params, _, ctx) => (terminalAllowed(ctx), terminalPlaces(project(params))))
+route('GET', '/projects/:pid/terminal', (params, _, ctx) => {
+  terminalAllowed(ctx)
+  const p = project(params)
+  const places = terminalPlaces(p)
+  return { places, terminals: terminal.list(p.id, places.map((place) => place.path)) }
+})
+route('POST', '/projects/:pid/terminal', (params, b, ctx) => {
+  terminalAllowed(ctx)
+  const p = project(params)
+  if (!terminalPlaces(p).some((place) => place.path === b.path)) throw new store.NotFound('terminal folder')
+  return terminal.add(p.id, b.path)
+})
+route('DELETE', '/projects/:pid/terminal/:tid', (params, _, ctx) => {
+  terminalAllowed(ctx)
+  terminal.close(terminalOf(params, params.tid))
+  return {}
+})
 route('GET', '/projects/:pid/terminal/stream', (params, _, ctx) => {
   terminalAllowed(ctx)
-  terminal.watch(terminalPlace(project(params), ctx.query.get('path')), ctx.res, ctx.auth.origin !== 'local')
+  terminal.watch(terminalOf(params, ctx.query.get('id')), ctx.res, ctx.auth.origin !== 'local')
 })
 route('POST', '/projects/:pid/terminal/open', async (params, b, ctx) => {
   terminalAllowed(ctx)
-  await terminal.start(params.pid, terminalPlace(project(params), b.path), b.cols, b.rows)
+  await terminal.start(terminalOf(params, b.id), b.cols, b.rows)
   return {}
 })
 route('POST', '/projects/:pid/terminal/restart', async (params, b, ctx) => {
   terminalAllowed(ctx)
-  const cwd = terminalPlace(project(params), b.path)
-  terminal.stop(cwd)
-  await terminal.start(params.pid, cwd, b.cols, b.rows)
+  const t = terminalOf(params, b.id)
+  terminal.stop(t)
+  await terminal.start(t, b.cols, b.rows)
   return {}
 })
 route('POST', '/projects/:pid/terminal/input', (params, b, ctx) => {
   terminalAllowed(ctx)
-  terminal.input(params.pid, String(b.path), String(b.data ?? ''))
+  terminal.input(terminalOf(params, b.id), String(b.data ?? ''))
   return {}
 })
 route('POST', '/projects/:pid/terminal/resize', (params, b, ctx) => {
   terminalAllowed(ctx)
-  terminal.resize(params.pid, String(b.path), b.cols, b.rows)
+  terminal.resize(terminalOf(params, b.id), b.cols, b.rows)
   return {}
 })
 

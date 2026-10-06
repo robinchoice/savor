@@ -40,11 +40,11 @@ export function useEvent(fn: Listener, deps: unknown[]) {
 }
 
 // Fetch `path` and refetch whenever a matching server event arrives.
-export function useApi<T>(path: string | null, refetchOn: (e: SavorEvent) => boolean): [T | undefined, () => void, Error | undefined] {
+export function useApi<T>(path: string | null, refetchOn: (e: SavorEvent) => boolean): [T | undefined, () => Promise<void>, Error | undefined] {
   const [data, setData] = useState<T>()
   const [error, setError] = useState<Error>()
-  const load = useCallback(() => {
-    if (path) api<T>('GET', path).then((next) => {
+  const load = useCallback(async () => {
+    if (path) await api<T>('GET', path).then((next) => {
       setData(next)
       setError(undefined)
     }, setError)

@@ -900,7 +900,7 @@ test('agents can start conversations in other projects, and input from a paired 
   await api('DELETE', `/projects/${other.id}`)
 })
 
-test('the terminal runs a shell per folder and worktree, on paired devices only once allowed here', async () => {
+test('the terminal starts with a shell per folder and worktree, opens and closes more, on paired devices only once allowed here', async () => {
   const [project] = (await api('GET', '/projects')).body
   const t = `/projects/${project.id}/terminal`
   const thread = (await api('POST', `/projects/${project.id}/threads`, { text: 'terminal work', worktree: 'term/wt' })).body
@@ -914,24 +914,36 @@ test('the terminal runs a shell per folder and worktree, on paired devices only 
   await page.keyboard.type('pwd; echo $((6*7))-terminal\n')
   await page.waitForSelector('.terminal-screen >> text=42-terminal')
   assert.ok((await page.textContent('.terminal-screen')).includes(path.basename(thread.worktree.path)))
-  const places = (await api('GET', t)).body
-  assert.deepEqual(places.map((p) => [p.branch, p.running]), [[null, false], ['term/wt', true]])
+  const { places, terminals } = (await api('GET', t)).body
+  assert.deepEqual(places.map((p) => p.branch), [null, 'term/wt'])
   assert.deepEqual(places[1].threads, [thread.id])
-  assert.equal((await api('POST', `${t}/open`, { path: TMP, cols: 80, rows: 24 })).status, 404)
+  assert.deepEqual(terminals.map((x) => [x.path, x.running]), [[project.path, false], [thread.worktree.path, true]])
+  assert.equal((await api('POST', `${t}/open`, { id: 'nope', cols: 80, rows: 24 })).status, 404)
+  assert.equal((await api('POST', t, { path: TMP })).status, 404)
+
+  // More terminals open in any folder, and close again.
+  await page.click('.terminal-bar button[title="New terminal"]')
+  await page.click('.terminal-bar .menu button:has-text("term/wt")')
+  await page.waitForSelector('.terminal-place.on >> text=term/wt 2')
+  await until(async () => (await api('GET', t)).body.terminals.filter((x) => x.running).length === 2)
+  await page.click('.terminal-place.on button[title="Close terminal"]')
+  await page.waitForSelector('.terminal-place.on >> text=term/wt')
+  assert.deepEqual((await api('GET', t)).body.terminals.map((x) => [x.path, x.running]), [[project.path, false], [thread.worktree.path, true]])
+  const id = terminals[1].id
 
   // Paired devices get it only once it is switched on at this computer, and lose it when it is switched off.
   const device = await pairDevice('CI terminal')
   const wt = thread.worktree.path
   assert.equal((await api('GET', t, undefined, device)).status, 403)
-  assert.equal((await api('POST', `${t}/input`, { path: wt, data: 'touch from-device\r' }, device)).status, 403)
+  assert.equal((await api('POST', `${t}/input`, { id, data: 'touch from-device\r' }, device)).status, 403)
   assert.equal((await api('PUT', '/terminal', { remote: true }, device)).status, 403)
   assert.equal((await api('PUT', '/terminal', { remote: true })).body.remote, true)
   assert.equal((await api('GET', t, undefined, device)).status, 200)
-  const stream = await fetch(`${base}/api${t}/stream?path=${encodeURIComponent(wt)}`, { headers: { cookie: device } })
+  const stream = await fetch(`${base}/api${t}/stream?id=${id}`, { headers: { cookie: device } })
   const reader = stream.body.getReader()
   let seen = ''
   while (!seen.includes('42-terminal')) seen += new TextDecoder().decode((await reader.read()).value)
-  await api('POST', `${t}/input`, { path: wt, data: 'touch from-device\r' }, device)
+  await api('POST', `${t}/input`, { id, data: 'touch from-device\r' }, device)
   await until(() => fs.existsSync(path.join(wt, 'from-device')))
   await api('PUT', '/terminal', { remote: false })
   const outcome = await Promise.race([
@@ -944,9 +956,9 @@ test('the terminal runs a shell per folder and worktree, on paired devices only 
   assert.equal((await api('GET', t, undefined, device)).status, 403)
 
   // Deleting the worktree ends its shell.
-  await page.click('.terminal-bar button[title^="Close"]')
+  await page.click('.terminal-bar button[title^="Close ("]')
   await api('DELETE', `/projects/${project.id}/worktrees?path=${encodeURIComponent(wt)}`)
-  assert.deepEqual((await api('GET', t)).body.map((p) => [p.path, p.running]), [[project.path, false]])
+  assert.deepEqual((await api('GET', t)).body.terminals.map((x) => [x.path, x.running]), [[project.path, false]])
 })
 
 test('a prompt fans out to several agents in worktrees of their own, and the picked one merges', async () => {

@@ -821,9 +821,14 @@ details.box[open] > summary .chev { transform: rotate(180deg); }
 .terminal-bar .icon-btn { width: 26px; height: 26px; }
 .terminal-title { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-weight: 500; margin-right: 4px; }
 .terminal-places { display: flex; gap: 4px; flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: none; }
-.terminal-place { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 7px; color: var(--muted); font-weight: 500; white-space: nowrap; }
+.terminal-place { display: inline-flex; align-items: center; border-radius: 7px; color: var(--muted); font-weight: 500; white-space: nowrap; }
+.terminal-place > button:first-child { display: inline-flex; align-items: center; gap: 6px; padding: 3px 4px 3px 9px; }
 .terminal-place:hover { color: var(--text); }
 .terminal-place.on { background: var(--card); color: var(--text); }
+.terminal-close { display: inline-flex; padding: 3px; margin-right: 3px; border-radius: 5px; color: var(--faint); visibility: hidden; }
+.terminal-place:hover .terminal-close, .terminal-place.on .terminal-close { visibility: visible; }
+.terminal-close:hover { color: var(--text); background: var(--raised); }
+@media (pointer: coarse) { .terminal-close { visibility: visible; } }
 .terminal-place i { width: 6px; height: 6px; border-radius: 50%; background: var(--faint); }
 .terminal-place i.running, .terminal-running { background: var(--green); }
 .terminal-running { position: absolute; top: 5px; right: 5px; width: 7px; height: 7px; border-radius: 50%; }
