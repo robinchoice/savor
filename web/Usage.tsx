@@ -32,7 +32,10 @@ export function useUsage() {
 
 const UPDATING = 'Updating, the values shown are from earlier'
 
-// How much of each limit is used, as segmented bars.
+// What is left of a limit, in percent.
+const left = (w: Usage['windows'][number]) => Math.max(0, 100 - w.percent)
+
+// What is left of each limit, as segmented bars.
 export function UsageBars({ usage }: { usage: Usage }) {
   return (
     <div class={`usage-bars ${usage.stale ? 'stale' : ''}`} title={usage.stale ? UPDATING : undefined}>
@@ -46,11 +49,11 @@ export function UsageBars({ usage }: { usage: Usage }) {
           <div class="row">
             <span>{w.label}</span>
             <span class="spacer" />
-            <span class="muted">{w.percent}% used</span>
+            <span class="muted">{left(w)}% left</span>
           </div>
-          <div class={`segments ${w.percent >= 90 ? 'high' : ''}`}>
+          <div class={`segments ${left(w) <= 10 ? 'low' : ''}`}>
             {Array.from({ length: 20 }, (_, i) => (
-              <i key={i} class={i < Math.round(w.percent / 5) ? 'on' : ''} />
+              <i key={i} class={i < Math.round(left(w) / 5) ? 'on' : ''} />
             ))}
           </div>
         </div>
@@ -76,10 +79,10 @@ export function UsageMeter() {
       <button class={`pill usage-pill ${stale ? 'stale' : ''}`} title={stale ? UPDATING : 'Subscription limits'} onClick={() => setOpen(!open)}>
         {stale ? <span class="spinner small" /> : <Gauge size={15} />}
         {usage.map((u) => {
-          const top = Math.max(...u.windows.map((w) => w.percent))
+          const least = Math.min(...u.windows.map(left))
           return (
-            <span key={u.provider} class={top >= 90 ? 'high' : ''}>
-              {SHORT[u.provider] ?? u.name} {top}%
+            <span key={u.provider} class={least <= 10 ? 'low' : ''}>
+              {SHORT[u.provider] ?? u.name} {least}% left
             </span>
           )
         })}
@@ -97,10 +100,10 @@ export function UsageMeter() {
                   <div class="row">
                     <span>{w.label}</span>
                     <span class="spacer" />
-                    <b>{w.percent}%</b>
+                    <b>{left(w)}% left</b>
                   </div>
                   <div class="usage-bar">
-                    <i class={w.percent >= 90 ? 'high' : ''} style={{ width: `${Math.min(w.percent, 100)}%` }} />
+                    <i class={left(w) <= 10 ? 'low' : ''} style={{ width: `${left(w)}%` }} />
                   </div>
                   {w.resets && <small>Resets {w.resets}</small>}
                 </div>

@@ -737,12 +737,12 @@ mark { background: color-mix(in srgb, var(--attn) 50%, transparent); color: inhe
 
 .menu.appearance { width: 270px; padding: 10px; }
 .usage-pill { font-variant-numeric: tabular-nums; }
-.usage-pill .high, .usage-row b { color: var(--text); }
+.usage-pill .low, .usage-row b { color: var(--text); }
 .menu.usage { width: 260px; padding: 6px 10px 10px; }
 .usage-row { display: flex; flex-direction: column; gap: 4px; padding: 4px 0 6px; font-size: 13px; }
 .usage-bar { height: 6px; border-radius: 3px; background: var(--raised); overflow: hidden; }
 .usage-bar i { display: block; height: 100%; background: var(--muted); border-radius: 3px; }
-.usage-bar i.high { background: var(--text); }
+.usage-bar i.low { background: var(--text); }
 .usage-bars { display: flex; flex-direction: column; gap: 8px; padding: 8px 8px 4px; font-size: 12px; }
 .usage-bars .row { flex-wrap: nowrap; margin-bottom: 4px; }
 .usage-bars > .row.muted { gap: 6px; margin-bottom: 0; }
@@ -750,7 +750,7 @@ mark { background: color-mix(in srgb, var(--attn) 50%, transparent); color: inhe
 .segments { display: flex; gap: 2px; }
 .segments i { flex: 1; height: 4px; border-radius: 1px; background: var(--line-strong); }
 .segments i.on { background: var(--text); }
-.segments.high i.on { background: var(--red); }
+.segments.low i.on { background: var(--red); }
 .menu.appearance > button > span:last-of-type { flex: 1; }
 .theme-swatch { width: 44px; height: 24px; border-radius: 6px; border: 1px solid var(--line-strong); flex: none; }
 .theme-swatch.system { background: linear-gradient(90deg, #ffffff 50%, #111113 50%); }
