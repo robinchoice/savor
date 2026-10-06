@@ -6,7 +6,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import * as store from './store.js'
 import type { Provider, Thread } from './store.js'
-import { BIN, command, mcpUrl } from './config.js'
+import { BIN, command, mcpUrl, VERSION } from './config.js'
 import { Rpc, RpcError } from './jsonrpc.js'
 import { configKey, rememberSession, sessionIdOf, summarize, systemPrompt, type Host, type Session, type TurnInput } from './session.js'
 
@@ -50,7 +50,7 @@ export class AcpSession implements Session {
     const init = await this.rpc.request('initialize', {
       protocolVersion: 1,
       clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
-      clientInfo: { name: 'savor', version: '0.6.10' },
+      clientInfo: { name: 'savor', version: VERSION },
     })
     const mcpServers = [{ type: 'http', name: 'savor', url: mcpUrl(p.id, tid), headers: [{ name: 'Authorization', value: `Bearer ${store.state().mcpToken}` }] }]
     const sid = sessionIdOf(this.thread, a.provider)
