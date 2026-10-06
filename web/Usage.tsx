@@ -5,11 +5,14 @@ import { api, type Usage } from './api'
 
 const SHORT: Record<string, string> = { claude: 'Claude', codex: 'Codex' }
 
+// The last answer, so a menu shows the limits as soon as it opens.
+let last: Usage[] = []
+
 // How much of the Claude and Codex subscription limits is used, refreshed every minute.
 export function useUsage() {
-  const [usage, setUsage] = useState<Usage[]>([])
+  const [usage, setUsage] = useState(last)
   useEffect(() => {
-    const load = () => document.visibilityState === 'visible' && api<Usage[]>('GET', '/usage').then(setUsage, () => {})
+    const load = () => document.visibilityState === 'visible' && api<Usage[]>('GET', '/usage').then((u) => setUsage((last = u)), () => {})
     load()
     const timer = setInterval(load, 60_000)
     addEventListener('visibilitychange', load)

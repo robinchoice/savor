@@ -216,7 +216,10 @@ export interface UsageWindow { label: string; percent: number; resets: string | 
 export interface Usage { provider: Provider; name: string; windows: UsageWindow[] }
 
 const USAGE_MS = 60_000
-let usageCache: { at: number; list: Promise<Usage[]> } | null = null
+// The last known usage is served right away; asking the agents takes several seconds.
+let usage: Usage[] = []
+let usageAt = 0
+let usageRefresh: Promise<Usage[]> | null = null
 
 const windowLabel = (mins: number) => (mins === 10080 ? 'Weekly' : mins % 1440 === 0 ? `${mins / 1440} days` : mins % 60 === 0 ? `${mins / 60} hours` : `${mins} minutes`)
 const resetTime = (s: number) => new Date(s * 1000).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).replace(/\u202f?\s?([AP]M)$/, (_, m) => m.toLowerCase())
@@ -240,16 +243,24 @@ const usageProbes: Partial<Record<Provider, () => Promise<UsageWindow[]>>> = {
 }
 
 export function listUsage(): Promise<Usage[]> {
-  if (usageCache && Date.now() - usageCache.at < USAGE_MS) return usageCache.list
-  const list = listAgents().then(async (agents) =>
-    (
-      await Promise.all(
-        agents
-          .filter((a) => a.installed && a.signedIn && usageProbes[a.id])
-          .map(async (a) => ({ provider: a.id, name: a.name, windows: await usageProbes[a.id]!().catch(() => []) })),
+  if (!usageRefresh && Date.now() - usageAt >= USAGE_MS) {
+    usageAt = Date.now()
+    usageRefresh = listAgents()
+      .then(async (agents) =>
+        (
+          await Promise.all(
+            agents
+              .filter((a) => a.installed && a.signedIn && usageProbes[a.id])
+              .map(async (a) => {
+                const windows = await usageProbes[a.id]!().catch(() => [])
+                // An agent that does not answer this time keeps its last known values.
+                return { provider: a.id, name: a.name, windows: windows.length ? windows : (usage.find((u) => u.provider === a.id)?.windows ?? []) }
+              }),
+          )
+        ).filter((u) => u.windows.length),
       )
-    ).filter((u) => u.windows.length),
-  )
-  usageCache = { at: Date.now(), list }
-  return list
+      .then((list) => (usage = list), () => usage)
+      .finally(() => (usageRefresh = null))
+  }
+  return usage.length || !usageRefresh ? Promise.resolve(usage) : usageRefresh
 }
