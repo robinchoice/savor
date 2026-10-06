@@ -837,6 +837,63 @@ test('agents can start conversations in a worktree', async () => {
   await api('DELETE', `/projects/${project.id}/worktrees?path=${encodeURIComponent(child.worktree.path)}`)
 })
 
+test('agents can start conversations in other projects, and input from a paired device stays visible there', async () => {
+  const [project] = (await api('GET', '/projects')).body
+  const folder = path.join(TMP, 'design-target')
+  const other = (await api('POST', '/projects', { path: folder, name: 'Design Target', create: true })).body
+  await api('PATCH', `/projects/${other.id}`, { agent: { provider: 'claude', model: 'design-model', reasoning: 'high', fast: false, permissionMode: 'acceptEdits' } })
+  const { mcpToken } = JSON.parse(fs.readFileSync(path.join(HOME, 'state.json'), 'utf8'))
+  const connect = async (thread) => {
+    const client = new Client({ name: 'e2e', version: '1' })
+    await client.connect(new StreamableHTTPClientTransport(new URL(`${base}/mcp?project=${project.id}&thread=${thread.id}`), { requestInit: { headers: { authorization: `Bearer ${mcpToken}` } } }))
+    return client
+  }
+  const call = async (client, name, args) => {
+    const r = await client.callTool({ name, arguments: args })
+    return { isError: !!r.isError, text: r.content[0].text }
+  }
+  const childIn = async (pid, title) => {
+    let child
+    await until(async () => (child = (await api('GET', `/projects/${pid}/threads`)).body.find((t) => t.title === title)))
+    await until(async () => (await api('GET', `/projects/${pid}/threads/${child.id}`)).body.messages.some((m) => m.text === `Echo: ${title}`))
+    return { ...child, messages: (await api('GET', `/projects/${pid}/threads/${child.id}`)).body.messages }
+  }
+
+  // The agent learns the projects, an unknown one fails with the list, and a path works like the id.
+  const [thread] = (await api('GET', `/projects/${project.id}/threads`)).body
+  const client = await connect(thread)
+  assert.ok(JSON.parse((await call(client, 'list_projects', {})).text).some((p) => p.id === other.id && p.name === 'Design Target'))
+  const unknown = await call(client, 'start_conversation', { prompt: 'lost', project: 'nope' })
+  assert.ok(unknown.isError && unknown.text.includes(other.id), unknown.text)
+  const started = JSON.parse((await call(client, 'start_conversation', { prompt: 'design session', project: folder })).text)
+  await client.close()
+  assert.equal(started.project, other.id)
+  assert.ok(started.url.endsWith(`/p/${other.id}/t/${started.id}`), started.url)
+  const child = await childIn(other.id, 'design session')
+  assert.equal(child.id, started.id)
+  assert.equal(child.parentId, undefined)
+  assert.equal(child.worktree, undefined)
+  assert.equal(child.messages[0].origin, 'local')
+  // Without agent settings it gets that project's default agent; agent settings change only what they name.
+  assert.equal(child.agent.model, 'design-model')
+  assert.equal(fs.realpathSync(agentRuns().filter((r) => r.agent === 'claude').at(-1).cwd), fs.realpathSync(folder))
+  assert.ok(!(await api('GET', `/projects/${project.id}/threads`)).body.some((t) => t.title === 'design session'))
+
+  // Started from a paired device's input, the conversation there says which device it came from.
+  const device = await pairDevice('CI design phone')
+  const remote = (await api('POST', `/projects/${project.id}/threads`, { text: 'plan the designs' }, device)).body
+  await until(async () => (await api('GET', `/projects/${project.id}/threads/${remote.id}`)).body.messages.some((m) => m.text === 'Echo: plan the designs'))
+  const remoteClient = await connect(remote)
+  await call(remoteClient, 'start_conversation', { prompt: 'remote design session', project: other.id, agent: { provider: 'claude', reasoning: 'low' } })
+  await remoteClient.close()
+  const fromPhone = await childIn(other.id, 'remote design session')
+  assert.deepEqual([fromPhone.messages[0].origin, fromPhone.messages[0].device], ['remote', 'CI design phone'])
+  assert.deepEqual([fromPhone.agent.model, fromPhone.agent.reasoning], ['design-model', 'low'])
+
+  await api('DELETE', `/devices/${(await api('GET', '/devices')).body.find((d) => d.name === 'CI design phone').id}`)
+  await api('DELETE', `/projects/${other.id}`)
+})
+
 test('the terminal runs a shell per folder and worktree, on paired devices only once allowed here', async () => {
   const [project] = (await api('GET', '/projects')).body
   const t = `/projects/${project.id}/terminal`

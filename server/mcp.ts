@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import path from 'node:path'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import { z } from 'zod'
@@ -15,9 +16,16 @@ import { addWorktree } from './git.js'
 
 const ok = (data: unknown) => ({ content: [{ type: 'text' as const, text: typeof data === 'string' ? data : JSON.stringify(data) }] })
 
+function findProject(ref: string) {
+  const all = store.listProjects()
+  const found = all.find((p) => p.id === ref || (path.isAbsolute(ref) && path.resolve(ref) === path.resolve(p.path)))
+  if (!found) throw new Error(`Unknown project ${ref}. Known projects: ${all.map((p) => `${p.id} (${p.name}, ${p.path})`).join('; ')}`)
+  return found
+}
+
 function buildServer(p: Project, tid: string) {
   const server = new McpServer({ name: 'savor', version: '0.6.5' })
-  const threadUrl = (id: string) => appUrl(`/p/${p.id}/t/${id}`)
+  const threadUrl = (id: string, project = p) => appUrl(`/p/${project.id}/t/${id}`)
   const touchThread = () => emit({ type: 'thread', projectId: p.id, threadId: tid })
   const modelInfo = () => store.getThread(p, tid).agent
 
@@ -206,14 +214,19 @@ function buildServer(p: Project, tid: string) {
 
   // ---- conversations ----
 
+  server.registerTool('list_projects', { description: 'The Savor projects on this computer, for start_conversation.' }, async () =>
+    ok(store.listProjects().map(({ id, name, path }) => ({ id, name, path }))),
+  )
+
   server.registerTool(
     'start_conversation',
     {
       description:
-        'Start a new conversation in this project with its own agent, e.g. to delegate a separate task. Without agent settings it uses this conversation’s agent. With `worktree`, the conversation works in its own git worktree of that branch (created from HEAD when new); otherwise it works where this conversation works.',
+        'Start a new conversation with its own agent, e.g. to delegate a separate task. It starts in this project unless `project` names another one (see list_projects). Without agent settings it uses this conversation’s agent, or the other project’s default agent; agent settings change that agent. With `worktree`, the conversation works in its own git worktree of that branch (created from HEAD when new); otherwise it works where this conversation works, or in another project’s folder.',
       inputSchema: {
         prompt: z.string().min(1),
         label: z.string().optional(),
+        project: z.string().min(1).optional().describe('Project id or absolute path, see list_projects'),
         worktree: z.string().min(1).optional().describe('Branch name for a separate git worktree'),
         agent: z
           .object({ provider: z.enum(Object.keys(STATIC) as [string, ...string[]]), model: z.string().optional(), reasoning: z.string().optional(), fast: z.boolean().optional(), permissionMode: z.string().optional() })
@@ -221,15 +234,32 @@ function buildServer(p: Project, tid: string) {
           .describe('See list_agents for providers, models, reasoning levels and permission modes'),
       },
     },
-    async ({ prompt, label, worktree, agent }) => {
+    async ({ prompt, label, project, worktree, agent }) => {
+      const target = project ? findProject(project) : p
+      const here = target.id === p.id
       const current = modelInfo()
-      const chosen = agent ? mergeAgent(current, { ...agent, provider: agent.provider as store.Provider }) : current
+      const base = here ? current : target.agent
+      const chosen = agent ? mergeAgent(base, { ...agent, provider: agent.provider as store.Provider }) : base
       if (chosen.permissionMode !== current.permissionMode && STATIC[chosen.provider].modes.find((m) => m.id === chosen.permissionMode)?.unsafe)
         throw new Error('A started conversation cannot have broader permissions than this one.')
-      const t = store.createThread(p, { title: prompt, label, agent: chosen, parentId: tid, worktree: worktree ? addWorktree(p, worktree) : store.getThread(p, tid).worktree })
-      emit({ type: 'thread', projectId: p.id, threadId: t.id })
-      agents.send(p, t.id, { text: prompt, origin: agents.originOf(tid) })
-      return ok({ id: t.id, url: threadUrl(t.id) })
+      // A thread id only means something within its project, and this conversation's worktree belongs to this one.
+      const t = store.createThread(target, {
+        title: prompt,
+        label,
+        agent: chosen,
+        parentId: here ? tid : undefined,
+        worktree: worktree ? addWorktree(target, worktree) : here ? store.getThread(p, tid).worktree : null,
+      })
+      emit({ type: 'thread', projectId: target.id, threadId: t.id })
+      const origin = agents.originOf(tid)
+      const device = agents.deviceOf(tid)
+      agents.send(target, t.id, { text: prompt, origin, device })
+      // Input from a paired device that lands in another project shows up there, not only in this conversation.
+      if (!here && origin === 'remote') {
+        store.updateThread(target, t.id, { unread: true })
+        agents.notify(target, t.id, `Started from ${p.name} by ${device ?? 'a paired device'}`, 'Started from another project')
+      }
+      return ok({ id: t.id, project: target.id, url: threadUrl(t.id, target) })
     },
   )
 

@@ -28,6 +28,7 @@ const requests = new Map<string, RequestState>()
 const busy = new Map<string, string>() // threadId → turn start
 const turnConclusion = new Map<string, string>()
 const turnOrigin = new Map<string, Origin>()
+const turnDevice = new Map<string, string | undefined>()
 const sessions = new Map<string, { session: Session; idleTimer?: NodeJS.Timeout }>()
 const stopped = new Set<string>() // threads whose last turn the user stopped: don't pump the queue
 const approvals = new Map<string, (choice: string) => void>() // approval message id → resolver
@@ -43,6 +44,7 @@ export function awaitsBackground(p: Project, tid: string) {
 }
 export const markConcluded = (tid: string, messageId: string) => turnConclusion.set(tid, messageId)
 export const originOf = (tid: string): Origin => turnOrigin.get(tid) ?? 'local'
+export const deviceOf = (tid: string) => turnDevice.get(tid)
 
 export function request(tid: string) {
   let r = requests.get(tid)
@@ -96,6 +98,7 @@ function deliver(p: Project, tid: string, msg: Message) {
   store.updateMessage(p, tid, msg.id, { delivered: true })
   requests.set(tid, { inputId: msg.id, startedAt: store.now(), updates: new Map() })
   turnOrigin.set(tid, msg.origin ?? 'local')
+  turnDevice.set(tid, msg.device)
   const session = sessionFor(p, thread)
   beginTurn(p, tid)
   session.start(turnInput(p, thread, msg))
@@ -118,7 +121,7 @@ export function forget(tid: string) {
   sessions.delete(tid)
   clearTimeout(s?.idleTimer)
   s?.session.kill()
-  for (const state of [busy, requests, turnConclusion, turnOrigin]) state.delete(tid)
+  for (const state of [busy, requests, turnConclusion, turnOrigin, turnDevice]) state.delete(tid)
   stopped.delete(tid)
 }
 
