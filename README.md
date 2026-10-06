@@ -76,8 +76,8 @@ Everything lives in plain files: `~/.savor/state.json` holds projects, tokens an
 
 **Desktop app:** download the AppImage (Linux), dmg (macOS) or exe (Windows) from the [Releases page](https://github.com/robinchoice/savor/releases). The app starts its own daemon, finds agent CLIs through your login shell's `PATH`, downloads Chromium for the preview on first use, and updates itself from new releases. You still need at least one logged-in agent CLI (`claude`, `codex`, …).
 
-- Linux: `chmod +x Savor-*.AppImage && ./Savor-*.AppImage`. No extra flags are needed: where Chromium's sandbox can't use user namespaces, for example on Ubuntu 24.04 and later because of AppArmor, the AppImage starts itself with `--no-sandbox`.
-- macOS: `Savor-<version>-arm64.dmg` is for Apple Silicon, `Savor-<version>-x64.dmg` for Intel. The builds are ad-hoc signed and not notarized, so macOS blocks the first launch: open System Settings → Privacy & Security and click **Open Anyway**. Up to macOS 14, a right-click → Open works too. The app only updates itself once builds are signed with a Developer ID.
+- Linux: `chmod +x Savor.AppImage && ./Savor.AppImage`. No extra flags are needed: where Chromium's sandbox can't use user namespaces, for example on Ubuntu 24.04 and later because of AppArmor, the AppImage starts itself with `--no-sandbox`.
+- macOS: `Savor-arm64.dmg` is for Apple Silicon, `Savor-x64.dmg` for Intel. The builds are ad-hoc signed and not notarized, so macOS blocks the first launch: open System Settings → Privacy & Security and click **Open Anyway**. Up to macOS 14, a right-click → Open works too. The app only updates itself once builds are signed with a Developer ID.
 - Windows builds are not code-signed yet: SmartScreen asks once.
 
 **From source** (Node ≥ 22.12):

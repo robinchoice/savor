@@ -53,6 +53,7 @@
       "target": [
         "AppImage"
       ],
+      "artifactName": "${productName}.${ext}",
       "category": "Development",
       "syncDesktopName": true,
       "extraResources": [
@@ -86,7 +87,7 @@
         }
       ],
       "category": "public.app-category.developer-tools",
-      "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "artifactName": "${productName}-${arch}.${ext}",
       "extraResources": [
         {
           "from": "../node_modules/node-pty",
@@ -115,6 +116,9 @@
           ]
         }
       ]
+    },
+    "nsis": {
+      "artifactName": "${productName}-Setup.${ext}"
     },
     "publish": [
       {
