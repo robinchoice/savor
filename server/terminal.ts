@@ -25,9 +25,10 @@ function shell() {
 export const running = (cwd: string) => sessions.has(cwd)
 
 export async function start(projectId: string, cwd: string, cols: number, rows: number) {
-  if (sessions.has(cwd)) return resize(projectId, cwd, cols, rows)
-  // Loaded on first use: it is a native module, and the daemon runs without it.
+  // Loaded on first use: it is a native module, and the daemon runs without it. Loading it before the
+  // check keeps two calls at once from starting two shells.
   const pty = await import('node-pty')
+  if (sessions.has(cwd)) return resize(projectId, cwd, cols, rows)
   // The desktop app runs the daemon as Node inside Electron; programs started in the shell must not.
   const { ELECTRON_RUN_AS_NODE, ...env } = process.env
   const s: Session = {

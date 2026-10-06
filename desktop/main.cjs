@@ -74,6 +74,14 @@ function contextMenu(contents, params) {
       { role: 'selectAll', enabled: flags.canSelectAll },
     ])
   else if (params.selectionText.trim()) groups.push([{ role: 'copy' }])
+  // The selection, or else the clipboard, runs as a command in the open project's terminal. Several lines are only pasted.
+  const command = runInTerminal && (params.selectionText.trim() || clipboard.readText().trim())
+  if (command) {
+    const preview = command.split('\n')[0]
+    const shown = preview.length > 40 || command.includes('\n') ? `${preview.slice(0, 40)}…` : preview
+    const label = command.includes('\n') ? `Paste “${shown}” into Terminal` : `Run “${shown}” in Terminal`
+    groups.push([{ label, click: () => contents.send('run-in-terminal', command) }])
+  }
   return Menu.buildFromTemplate(groups.flatMap((group, i) => (i ? [{ type: 'separator' }, ...group] : group)))
 }
 
@@ -102,6 +110,9 @@ const updater = () => (app.isPackaged && fs.existsSync(path.join(process.resourc
 
 // What preload.cjs offers the UI. Only the Savor page itself may ask.
 const fromUi = (e) => new URL(e.senderFrame.url).origin === `http://localhost:${PORT}`
+// Whether the UI shows a project, whose terminal can run a command from the context menu.
+let runInTerminal = false
+ipcMain.on('run-in-terminal-available', (e, on) => fromUi(e) && (runInTerminal = !!on))
 ipcMain.handle('pick-folder', async (e) => (fromUi(e) ? ((await dialog.showOpenDialog(win, { properties: ['openDirectory', 'createDirectory'] })).filePaths[0] ?? null) : null))
 // The version of a release that finished downloading and waits to be installed.
 let ready = null

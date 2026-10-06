@@ -3,7 +3,7 @@ import { Folder, GitBranch, Lock, Maximize2, Minimize2, RotateCcw, SquareTermina
 import { Terminal as XTerm } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
-import { api, useApi, type Project } from './api'
+import { api, desktop, useApi, type Project } from './api'
 import { transport } from './transport'
 import { setPrefs, usePrefs } from './prefs'
 
@@ -89,6 +89,15 @@ export function TerminalPanel({ project, threadId }: { project: Project; threadI
   )
 }
 
+// A command from the context menu goes to the shell on screen, or waits until the opened panel shows one.
+let runner: ((command: string) => void) | null = null
+let queued: string | null = null
+function runInTerminal(command: string) {
+  if (runner) return runner(command)
+  queued = command
+  setPrefs({ terminalOpen: true })
+}
+
 const KEYS: [string, string][] = [
   ['esc', '\x1b'],
   ['tab', '\t'],
@@ -132,6 +141,13 @@ function Shell({ project, path, restart }: { project: Project; path: string; res
       await api('POST', `${base}/input`, { path, data }).catch(() => {})
       sending = false
       flush()
+    }
+    const run = async (command: string) => {
+      if (!running) await open()
+      // Several lines are pasted for review, not run: the shell would run each line on its own.
+      const data = command.includes('\n') ? `\x1b[200~${command}\x1b[201~` : `${command}\r`
+      await api('POST', `${base}/input`, { path, data }).catch((e: Error) => term.write(`\r\n${e.message}\r\n`))
+      term.focus()
     }
     send.current = (data) => {
       if (!running) return void open()
@@ -179,10 +195,15 @@ function Shell({ project, path, restart }: { project: Project; path: string; res
       observer.observe(ref.current!)
       term.focus()
       stop = transport.stream(`/api${base}/stream?path=${encodeURIComponent(path)}`, onData)
-      open()
+      runner = run
+      const command = queued
+      queued = null
+      if (command) run(command)
+      else open()
     })
     return () => {
       closed = true
+      if (runner === run) runner = null
       stop()
       observer.disconnect()
       clearTimeout(resizing)
@@ -223,6 +244,10 @@ export function TerminalButton({ project }: { project: Project }) {
     addEventListener('keydown', on, true)
     return () => removeEventListener('keydown', on, true)
   }, [terminalOpen])
+  useEffect(() => {
+    desktop?.setRunInTerminal?.(runInTerminal)
+    return () => desktop?.setRunInTerminal?.(null)
+  }, [])
   return (
     <button class={`icon-btn ${terminalOpen ? 'on' : ''}`} title="Terminal (Ctrl+`)" onClick={() => setPrefs({ terminalOpen: !terminalOpen })}>
       <SquareTerminal size={16} />
