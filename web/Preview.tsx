@@ -20,10 +20,14 @@ export function Preview({ base, threadId, url, onPick, narrow, chatHidden, onTog
   const [picking, setPicking] = useState(false)
   const [error, setError] = useState('')
   const [stream, setStream] = useState(0)
+  // The cursor the page shows under the mouse, e.g. a hand over links.
+  const [cursor, setCursor] = useState('default')
   // The space for the page here, and the size of the frames that arrive.
   const [space, setSpace] = useState({ width: 0, height: 0 })
   const [shown, setShown] = useState({ width: 0, height: 0 })
   const asked = useRef('')
+  // One hover request at a time; moves in between only keep the latest point.
+  const hovering = useRef<{ x: number; y: number } | null | false>(false)
   const wrap = useRef<HTMLDivElement>(null)
   const img = useRef<HTMLImageElement>(null)
   const prefs = usePrefs()
@@ -73,6 +77,15 @@ export function Preview({ base, threadId, url, onPick, narrow, chatHidden, onTog
     const el = img.current!
     const r = el.getBoundingClientRect()
     return { x: Math.round(((e.clientX - r.left) / r.width) * el.naturalWidth), y: Math.round(((e.clientY - r.top) / r.height) * el.naturalHeight) }
+  }
+  const hover = async (p: { x: number; y: number }) => {
+    if (hovering.current !== false) return void (hovering.current = p)
+    hovering.current = null
+    const r = await api<{ cursor: string }>('POST', `${base}/browser/hover`, p).catch(() => null)
+    if (r) setCursor(r.cursor === 'auto' ? 'default' : r.cursor)
+    const next = hovering.current
+    hovering.current = false
+    if (next) hover(next)
   }
   const click = async (e: MouseEvent) => {
     img.current?.focus()
@@ -136,7 +149,7 @@ export function Preview({ base, threadId, url, onPick, narrow, chatHidden, onTog
           <img
             ref={img}
             class={`screen ${picking ? 'picking' : ''} ${device === 'phone' ? 'phone' : ''}`}
-            style={shown.width ? { width: shown.width * scale, height: shown.height * scale } : undefined}
+            style={{ ...(shown.width && { width: shown.width * scale, height: shown.height * scale }), ...(!picking && { cursor }) }}
             src={`data:image/jpeg;base64,${frame}`}
             alt="Preview"
             tabIndex={0}
@@ -146,6 +159,7 @@ export function Preview({ base, threadId, url, onPick, narrow, chatHidden, onTog
               if (width !== shown.width || height !== shown.height) setShown({ width, height })
             }}
             onClick={click}
+            onMouseMove={(e) => hover(point(e))}
             onWheel={(e) => (e.preventDefault(), input({ type: 'scroll', dy: e.deltaY }))}
             onKeyDown={(e) => {
               if (e.metaKey || e.ctrlKey) return

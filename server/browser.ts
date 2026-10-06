@@ -219,6 +219,16 @@ export async function userInput(tid: string, e: UserInput) {
   if (e.type === 'reload') await page.reload()
 }
 
+// Move the mouse there, so hover styles show, and report the cursor the page wants at that point.
+export async function hover(tid: string, x: number, y: number) {
+  const { page } = session(tid)
+  await page.mouse.move(x, y)
+  return page.evaluate(({ x, y }) => {
+    const el = document.elementFromPoint(x, y)
+    return el ? getComputedStyle(el).cursor : 'auto'
+  }, { x, y })
+}
+
 // Describe the element under a point so the user can point the agent at it ("make this bigger").
 export function pick(tid: string, x: number, y: number) {
   return session(tid).page.evaluate(
