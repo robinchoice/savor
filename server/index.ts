@@ -819,19 +819,25 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
 }
 
 // Run as a service from an AppImage (desktop/main.cjs --daemon): once an update has replaced the
-// AppImage and no agent is working, exit so the service manager starts the new version.
+// AppImage, exit so the service manager starts the new version. Working agents get five minutes to
+// finish; after that their turns are cut off and continue in the new version.
+const UPDATE_GRACE = 5 * 60_000
 function exitOnUpdate(file: string) {
   const id = (s?: fs.Stats) => s && `${s.ino}:${s.mtimeMs}:${s.size}`
   const installed = id(fs.statSync(file))
   let last = installed
+  let updatedAt = 0
   setInterval(() => {
     const now = id(fs.statSync(file, { throwIfNoEntry: false }))
     // Wait until the new file stays the same between two checks, in case it is still being written.
     const settled = now && now !== installed && now === last
     last = now
-    if (!settled || agents.anyBusy()) return
+    if (!settled) return
+    updatedAt ||= Date.now()
+    if (agents.anyBusy() && Date.now() - updatedAt < UPDATE_GRACE) return
     console.log('Savor was updated, exiting so the new version starts')
-    process.exit(0)
+    // The same way out as a stop of the service: agents and preview browsers are shut down first.
+    process.kill(process.pid, 'SIGTERM')
   }, 10_000)
 }
 
