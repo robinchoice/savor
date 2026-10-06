@@ -31,6 +31,13 @@ function useRoute() {
   return route
 }
 
+// The conversation that was open when a project was left; its tab opens it again, otherwise a new one.
+const lastThreadKey = (pid: string) => `savor-last-thread:${pid}`
+const projectHref = (pid: string) => {
+  const tid = localStorage.getItem(lastThreadKey(pid))
+  return `#/p/${pid}${tid ? `/t/${tid}` : ''}`
+}
+
 function App() {
   const [me, setMe] = useState<Me | null | false>(null)
   const [mode, setMode] = useState<'direct' | 'relay' | null>(null)
@@ -62,8 +69,13 @@ function App() {
   }, [mode, link.connected])
   useNotifications(route[2] === 't' ? route[3] : undefined, projects, me)
   useEffect(() => {
-    if (projects?.length && route[0] !== 'p' && route[0] !== 'all' && route[0] !== 'devices') go(`/p/${(projects.find((p) => p.pinned) ?? projects[0]).id}`)
+    if (projects?.length && route[0] !== 'p' && route[0] !== 'all' && route[0] !== 'devices') go(projectHref((projects.find((p) => p.pinned) ?? projects[0]).id))
   }, [projects, route[0]])
+  useEffect(() => {
+    if (route[0] !== 'p' || !route[1]) return
+    if (route[2] === 't' && route[3]) localStorage.setItem(lastThreadKey(route[1]), route[3])
+    else localStorage.removeItem(lastThreadKey(route[1]))
+  }, [route.join('/')])
 
   if (route[0] === 'pair') return <Pair code={route[1]} />
   if (route[0] === 'rpair') return <RemotePair daemonPk={route[1]} code={route[2]} />
@@ -200,7 +212,7 @@ function TopBar({ projects, active, all, me, setMe }: { projects: Project[]; act
         {sorted.filter((p) => p.pinned || p.id === active?.id).map((p) => (
           <a
             key={p.id}
-            href={`#/p/${p.id}`}
+            href={projectHref(p.id)}
             class={`project-tab ${p.id === active?.id ? 'active' : ''} ${drag?.id === p.id ? 'dragging' : ''} ${drag?.over === p.id ? (drag.after ? 'drop-after' : 'drop-before') : ''}`}
             draggable
             onDragStart={(e) => (e.dataTransfer!.effectAllowed = 'move', setDrag({ id: p.id }))}
@@ -335,7 +347,7 @@ function ProjectsMenu({ projects, active, me, setMe, close, onEnjoy }: { project
       </label>
       <div class="project-list">
         {shown.map((p) => (
-          <a key={p.id} href={`#/p/${p.id}`} class={p.id === active?.id ? 'active' : ''} title={p.path} onClick={close}>
+          <a key={p.id} href={projectHref(p.id)} class={p.id === active?.id ? 'active' : ''} title={p.path} onClick={close}>
             <span class="avatar" style={avatarStyle(p.tint)}>
               {initial(p.name)}
             </span>

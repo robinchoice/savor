@@ -98,6 +98,10 @@ export function Composer(props: Props) {
     }
   }, [popover])
 
+  // Ready to type on arrival, except on touch screens where the keyboard would cover the conversation.
+  useEffect(() => {
+    if (props.autoFocus && matchMedia('(pointer: fine)').matches) ref.current?.focus()
+  }, [])
   useEffect(() => {
     if (props.draft !== undefined) {
       setText(props.draft)
@@ -226,7 +230,6 @@ export function Composer(props: Props) {
         <textarea
           ref={ref}
           rows={1}
-          autoFocus={props.autoFocus}
           value={text}
           placeholder={props.placeholder}
           onInput={(e) => {

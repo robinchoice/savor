@@ -506,6 +506,7 @@ function ThreadView({ project, threadId }: { project: Project; threadId: string 
       review={review}
       setReview={saveReview}
       compact={floating}
+      autoFocus
     />
   )
 
