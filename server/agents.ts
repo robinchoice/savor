@@ -93,7 +93,7 @@ export function notify(p: Project, tid: string, body: string, status: string) {
 export interface Input { text: string; images?: string[]; files?: string[]; origin: Origin; device?: string }
 
 export function send(p: Project, tid: string, input: Input) {
-  const thread = store.updateThread(p, tid, { completed: false })
+  const thread = store.updateThread(p, tid, { completed: false, inputAt: store.now() })
   const queued = busy.has(tid)
   const msg = post(p, tid, { kind: 'user', text: input.text, images: input.images, files: input.files, modelInfo: thread.agent, origin: input.origin, device: input.device, delivered: !queued })
   stopped.delete(tid)

@@ -114,6 +114,27 @@ test('add a project and get a conclusion with next actions', async () => {
   await page.waitForSelector('.status:has-text("Finished")')
 })
 
+test('only new input moves a conversation up, finishing hides it right away', async () => {
+  const start = async (text) => {
+    await newConversation()
+    await send(text)
+    await page.waitForSelector(`text=Echo: ${text}`)
+    return new URL(page.url()).hash
+  }
+  const older = await start('older one')
+  const newer = await start('newer one')
+  const order = () => page.locator('.cards a.card').evaluateAll((cards) => cards.map((c) => c.getAttribute('href')))
+  assert.deepEqual((await order()).slice(0, 2), [newer, older])
+  await page.click(`a.card[href="${older}"]`)
+  await page.waitForSelector(`a.card.active[href="${older}"]`)
+  assert.deepEqual((await order()).slice(0, 2), [newer, older], 'opening keeps the order')
+  await send('again')
+  await page.waitForSelector('text=Echo: again')
+  await until(async () => (await order())[0] === older)
+  await page.click('.mark-complete')
+  await page.waitForSelector(`a.card[href="${older}"]`, { state: 'detached' })
+})
+
 test('agent settings fit the viewport and effort is directly selectable', async () => {
   await newConversation()
   for (const viewport of [{ width: 1400, height: 900 }, { width: 900, height: 600 }, { width: 390, height: 844 }]) {
@@ -1315,7 +1336,7 @@ test('unpinned projects leave the tab bar and stay in the Projects menu', async 
 
 test('a draft stays with its conversation', async () => {
   const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
-  const [one, other] = (await api('GET', `/projects/${project.id}/threads`)).body
+  const [one, other] = (await api('GET', `/projects/${project.id}/threads`)).body.filter((t) => !t.completed)
   const draft = () => page.inputValue('.composer textarea')
   await page.goto(`${base}/#/p/${project.id}/t/${one.id}`)
   await page.waitForSelector('.thread-head')

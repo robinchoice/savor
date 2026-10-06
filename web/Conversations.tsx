@@ -46,8 +46,8 @@ const RANK: Record<Reason, number> = { approval: 0, question: 0, failed: 1, new:
 const byUrgency = (list: Thread[]) =>
   list.sort((a, b) => {
     const [x, y] = [a.waitsFor!, b.waitsFor!]
-    // The longest waiting first; read results newest first.
-    return RANK[x.reason] - RANK[y.reason] || (x.reason === 'result' ? y.since.localeCompare(x.since) : x.since.localeCompare(y.since))
+    // What blocks an agent the longest waiting first, results the newest first.
+    return RANK[x.reason] - RANK[y.reason] || (RANK[x.reason] < 2 ? x.since.localeCompare(y.since) : y.since.localeCompare(x.since))
   })
 
 export function Conversations({ project, threadId, fanoutId, isNew }: { project: Project; threadId?: string; fanoutId?: string; isNew?: boolean }) {
@@ -96,10 +96,7 @@ export function Conversations({ project, threadId, fanoutId, isNew }: { project:
           {title} <span class="sec-count">{list.length}</span>
           <ChevronDown size={13} />
         </button>
-        {/* A closed section still shows the open conversation. */}
-        {list.filter((t) => !closed.includes(id) || t.id === threadId).map((t) => (
-          <ThreadCard key={t.id} project={project} thread={t} active={t.id === threadId} />
-        ))}
+        {!closed.includes(id) && list.map((t) => <ThreadCard key={t.id} project={project} thread={t} active={t.id === threadId} />)}
       </div>
     )
 
