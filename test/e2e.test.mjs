@@ -210,7 +210,7 @@ test('questions are answered in one reply', async () => {
   await newConversation()
   await send('ask: Ship it?')
   await page.waitForSelector('.option')
-  assert.equal(await page.locator('.filter.attention').count(), 1, 'Your turn filter lights up')
+  await page.waitForSelector('.sec.for-you .card.active .chip.blocked >> text=Question')
   assert.deepEqual(await page.locator('.option:not(.other)').allTextContents(), ['NoRecommended', 'Yes'], 'the recommended option comes first')
   assert.ok(await page.locator('.composer button:has-text("Send answers")').isDisabled(), 'nothing is sent before every question has an answer')
   await page.click('.option:has-text("Yes")')

@@ -7,7 +7,7 @@ import {
   CircleAlert, ArrowUp, ArrowLeft, Pencil, Brain, Terminal, Wrench, ArrowRight, Smartphone, Monitor, ShieldQuestion, X, ChevronUp, ChevronDown, ChevronRight, Paperclip, GitBranch, GitFork, GitMerge, Trash2, Copy, FileDiff, Split, Workflow as WorkflowIcon,
 } from 'lucide-preact'
 import {
-  api, cap, duration, formatStamp, formatTime, go, PROVIDER_NAMES, runTrigger, useApi, type ActivityEvent, type AgentConfig, type Attachment, type Decision, type Message, type Proc, type Project, type Thread, type Worktree,
+  api, cap, duration, formatStamp, formatTime, go, PROVIDER_NAMES, runTrigger, useApi, kindOf, RINGS, type ActivityEvent, type AgentConfig, type Attachment, type Decision, type Message, type Proc, type Project, type Reason, type Thread, type Worktree,
 } from './api'
 import { Composer, type Picked } from './Composer'
 import { transport } from './transport'
@@ -41,49 +41,78 @@ export const Label = ({ label }: { label: Thread['label'] }) =>
     </span>
   )
 
-type Filter = 'all' | 'needs' | 'working' | 'unread'
+// "For you" first: what blocks an agent, then new results, then read ones that wait for a follow-up or Finish.
+const RANK: Record<Reason, number> = { approval: 0, question: 0, failed: 1, new: 2, result: 3 }
+const byUrgency = (list: Thread[]) =>
+  list.sort((a, b) => {
+    const [x, y] = [a.waitsFor!, b.waitsFor!]
+    // The longest waiting first; read results newest first.
+    return RANK[x.reason] - RANK[y.reason] || (x.reason === 'result' ? y.since.localeCompare(x.since) : x.since.localeCompare(y.since))
+  })
 
 export function Conversations({ project, threadId, fanoutId, isNew }: { project: Project; threadId?: string; fanoutId?: string; isNew?: boolean }) {
-  const [threads] = useApi<Thread[]>(`/projects/${project.id}/threads`, (e) => e.projectId === project.id && ['thread', 'status', 'message', 'processes'].includes(e.type))
+  const [threads] = useApi<Thread[]>(`/projects/${project.id}/threads`, (e) => e.projectId === project.id && ['thread', 'status', 'message', 'processes', 'activity'].includes(e.type))
   const [worktrees] = useApi<Worktree[]>(`/projects/${project.id}/worktrees`, (e) => e.projectId === project.id && e.type === 'thread')
-  const [filter, setFilter] = useState<Filter>('all')
   const [query, setQuery] = useState('')
-  const [showCompleted, setShowCompleted] = useState(() => localStorage.getItem('savor-show-completed') === 'true')
-  useEffect(() => localStorage.setItem('savor-show-completed', String(showCompleted)), [showCompleted])
-
-  const all = (threads ?? []).filter((t) => showCompleted || !t.completed || t.id === threadId)
-  const counts = {
-    all: all.length,
-    needs: all.filter((t) => t.needsYou).length,
-    working: all.filter((t) => t.busy || t.waiting).length,
-    unread: all.filter((t) => t.unread).length,
+  const [closed, setClosed] = useState<string[]>(() => JSON.parse(localStorage.getItem('savor-closed-sections') ?? '["finished"]'))
+  const toggle = (id: string) => {
+    const next = closed.includes(id) ? closed.filter((c) => c !== id) : [...closed, id]
+    localStorage.setItem('savor-closed-sections', JSON.stringify(next))
+    setClosed(next)
   }
+
   const q = query.toLowerCase()
-  const visible = all
-    .filter((t) => filter === 'all' || (filter === 'needs' ? t.needsYou : filter === 'working' ? t.busy || t.waiting : t.unread))
-    .filter((t) => !q || t.title.toLowerCase().includes(q) || t.summary?.toLowerCase().includes(q) || t.label?.name.toLowerCase().includes(q))
+  const visible = (threads ?? []).filter((t) => !q || t.title.toLowerCase().includes(q) || t.summary?.toLowerCase().includes(q) || t.label?.name.toLowerCase().includes(q))
+  const open = visible.filter((t) => !t.completed)
+  const forYou = byUrgency(open.filter((t) => t.waitsFor))
+  const working = open.filter((t) => !t.waitsFor && (t.busy || t.waiting))
+  const rest = open.filter((t) => !t.waitsFor && !t.busy && !t.waiting)
+  const finished = visible.filter((t) => t.completed)
+  const next = forYou.find((t) => t.id !== threadId)
+  const goNext = () => next && go(`/p/${project.id}/t/${next.id}`)
 
-  // The conversations of a fan-out are listed together, each under its worktree.
+  // J opens the next conversation that needs you; Alt+J also while typing.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const typing = (e.target as HTMLElement).closest?.('input, textarea, select, [contenteditable]')
+      if (e.code !== 'KeyJ' || e.ctrlKey || e.metaKey || e.shiftKey || (typing && !e.altKey) || !next) return
+      e.preventDefault()
+      goNext()
+    }
+    addEventListener('keydown', onKey)
+    return () => removeEventListener('keydown', onKey)
+  }, [next?.id])
+
+  // Worktrees and fan-outs keep their actions below the conversations; their conversations carry the branch.
   const fanouts = new Map<string, Thread[]>()
-  for (const t of visible) if (t.fanout) (fanouts.get(t.fanout.id) ?? fanouts.set(t.fanout.id, []).get(t.fanout.id)!).push(t)
+  for (const t of open) if (t.fanout) (fanouts.get(t.fanout.id) ?? fanouts.set(t.fanout.id, []).get(t.fanout.id)!).push(t)
   const fanoutPaths = new Set((threads ?? []).flatMap((t) => (t.fanout && t.worktree ? [t.worktree.path] : [])))
-  // Conversations in a worktree are listed under it, worktrees without conversations too.
-  const groups = new Map<string, { branch: string; path: string; threads: Thread[] }>()
-  for (const w of worktrees ?? []) if (!fanoutPaths.has(w.path)) groups.set(w.path, { branch: w.branch, path: w.path, threads: [] })
-  for (const t of visible) if (t.worktree && !t.fanout) (groups.get(t.worktree.path) ?? groups.set(t.worktree.path, { ...t.worktree, threads: [] }).get(t.worktree.path)!).threads.push(t)
-  const plain = visible.filter((t) => !t.worktree && !t.fanout)
+  const plainWorktrees = (worktrees ?? []).filter((w) => !fanoutPaths.has(w.path))
 
-  const filterTab = (id: Filter, label: string, ring?: string) => (
-    <button class={`filter ${filter === id ? 'active' : ''} ${id === 'needs' && counts.needs ? 'attention' : ''}`} onClick={() => setFilter(id)}>
-      {ring && <span class={`ring ${ring}`} />} {label} <b>{counts[id]}</b>
-    </button>
-  )
+  const section = (id: string, title: string, list: Thread[]) =>
+    list.length > 0 && (
+      <div class={`sec ${id} ${closed.includes(id) ? 'closed' : ''}`}>
+        <button class="sec-head" onClick={() => toggle(id)}>
+          {title} <span class="sec-count">{list.length}</span>
+          <ChevronDown size={13} />
+        </button>
+        {/* A closed section still shows the open conversation. */}
+        {list.filter((t) => !closed.includes(id) || t.id === threadId).map((t) => (
+          <ThreadCard key={t.id} project={project} thread={t} active={t.id === threadId} />
+        ))}
+      </div>
+    )
 
   return (
     <div class={`conversations ${threadId || fanoutId || isNew ? 'has-detail' : ''}`}>
       <aside class="conv-list">
         <div class="conv-head">
           <h2>Conversations</h2>
+          {next && (
+            <button class="next-btn" title="Open the next conversation that needs you (J)" onClick={goNext}>
+              Next <kbd>J</kbd>
+            </button>
+          )}
           <a class="new-btn" href={`#/p/${project.id}/new`} title="New conversation">
             <Plus size={18} />
           </a>
@@ -92,49 +121,35 @@ export function Conversations({ project, threadId, fanoutId, isNew }: { project:
           <Search size={15} />
           <input placeholder="Search conversations..." value={query} onInput={(e) => setQuery(e.currentTarget.value)} />
         </label>
-        <div class="filters">
-          {filterTab('all', 'All')}
-          {filterTab('needs', 'Your turn', 'needs')}
-          {filterTab('working', 'Working', 'busy')}
-          {filterTab('unread', 'Unread', 'unread')}
-        </div>
         <div class="cards">
-          {plain.map((t) => (
-            <ThreadCard key={t.id} project={project} thread={t} active={t.id === threadId} />
-          ))}
-          {[...fanouts].map(([id, list]) => (
-            <div class="wt-group" key={id}>
-              <a class={`fan-head ${id === fanoutId ? 'active' : ''}`} href={`#/p/${project.id}/fan/${id}`} title="Compare the results">
-                <Split size={14} />
-                <span class="fan-title">{list[0].title}</span>
-                <span class="muted small">{list.some((t) => t.busy || t.waiting) ? `${list.filter((t) => !t.busy && !t.waiting).length} of ${list.length} finished` : 'Compare'}</span>
-              </a>
-              {[...list].sort((a, b) => a.createdAt.localeCompare(b.createdAt)).map((t) => (
-                <Fragment key={t.id}>
-                  {t.worktree && <WorktreeHead project={project} branch={t.worktree.branch} path={t.worktree.path} info={worktrees?.find((w) => w.path === t.worktree!.path)} />}
-                  <ThreadCard project={project} thread={t} active={t.id === threadId} />
-                </Fragment>
-              ))}
+          {section('for-you', 'For you', forYou)}
+          {section('working', 'Working', working)}
+          {section('open', 'Open', rest)}
+          {(fanouts.size > 0 || plainWorktrees.length > 0) && (
+            <div class={`sec worktrees ${closed.includes('worktrees') ? 'closed' : ''}`}>
+              <button class="sec-head" onClick={() => toggle('worktrees')}>
+                Worktrees <span class="sec-count">{fanouts.size + plainWorktrees.length}</span>
+                <ChevronDown size={13} />
+              </button>
+              {!closed.includes('worktrees') && (
+                <>
+                  {[...fanouts].map(([id, list]) => (
+                    <a key={id} class={`fan-head ${id === fanoutId ? 'active' : ''}`} href={`#/p/${project.id}/fan/${id}`} title="Compare the results">
+                      <Split size={14} />
+                      <span class="fan-title">{list[0].title}</span>
+                      <span class="muted small">{list.some((t) => t.busy || t.waiting) ? `${list.filter((t) => !t.busy && !t.waiting).length} of ${list.length} finished` : 'Compare'}</span>
+                    </a>
+                  ))}
+                  {plainWorktrees.map((w) => (
+                    <WorktreeHead key={w.path} project={project} branch={w.branch} path={w.path} info={w} />
+                  ))}
+                </>
+              )}
             </div>
-          ))}
-          {[...groups.values()].map((g) => (
-            <div class="wt-group" key={g.path}>
-              <WorktreeHead project={project} branch={g.branch} path={g.path} info={worktrees?.find((w) => w.path === g.path)} />
-              {g.threads.map((t) => (
-                <ThreadCard key={t.id} project={project} thread={t} active={t.id === threadId} />
-              ))}
-            </div>
-          ))}
-          {threads && !visible.length && !groups.size && <p class="muted center">No conversations{filter !== 'all' ? ' in this filter' : ' yet'}.</p>}
+          )}
+          {section('finished', 'Finished', finished)}
+          {threads && !visible.length && <p class="muted center">{q ? 'No matching conversations.' : 'No conversations yet.'}</p>}
         </div>
-        <footer class="conv-foot">
-          <span>
-            {all.length} conversation{all.length === 1 ? '' : 's'}
-          </span>
-          <label>
-            <input type="checkbox" checked={showCompleted} onChange={(e) => setShowCompleted(e.currentTarget.checked)} /> Show finished
-          </label>
-        </footer>
       </aside>
       {threadId ? <ThreadView key={threadId} project={project} threadId={threadId} /> : fanoutId ? <Fanout key={fanoutId} project={project} id={fanoutId} /> : <NewConversation project={project} />}
     </div>
@@ -190,67 +205,91 @@ function WorktreeHead({ project, branch, path, info }: { project: Project; branc
   )
 }
 
-function ThreadCard({ project, thread: t, active }: { project: Project; thread: Thread; active: boolean }) {
-  const [firstOpen, setFirstOpen] = useState<string | null>(null)
+const REASONS: Record<Reason, string> = { approval: 'Approval', question: 'Question', failed: 'Failed', new: 'New result', result: 'Result' }
+// Markdown of a result as one plain line.
+const plain = (md: string) => md.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1').replace(/[*_`#>|]+/g, '').replace(/\s+/g, ' ').trim()
+const short = (ms: number) => {
+  const s = Math.max(0, Math.floor(ms / 1000))
+  return s < 60 ? `${s}s` : s < 3600 ? `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s` : `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`
+}
+
+function Elapsed({ since }: { since: string }) {
+  const [now, setNow] = useState(Date.now())
   useEffect(() => {
-    if (t.needsYou) api<{ decisions: Decision[]; messages: Message[] }>('GET', `/projects/${project.id}/threads/${t.id}`).then((d) => {
-      const pendingApproval = d.messages.find((m) => m.approval?.status === 'pending')
-      setFirstOpen(d.decisions.find((x) => !x.resolved)?.title ?? pendingApproval?.approval?.title ?? null)
-    })
-  }, [t.needsYou, t.updatedAt])
+    const timer = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(timer)
+  }, [])
+  return <>{short(now - Date.parse(since))}</>
+}
+
+function ThreadCard({ project, thread: t, active }: { project: Project; thread: Thread; active: boolean }) {
   const { conversations, show } = usePrefs()
   const href = `#/p/${project.id}/t/${t.id}`
-  // The ring from the logo says what the conversation is waiting for.
-  const state = t.needsYou ? 'needs' : t.busy || t.waiting ? 'busy' : t.error === STOPPED ? 'stopped' : t.error ? 'error' : t.unread ? 'unread' : t.completed ? 'done' : ''
-  const ring = <span class={`ring ${state}`} title={{ busy: 'Working', needs: 'Your turn', stopped: 'Stopped', error: 'Error', unread: 'Unread', done: 'Finished', '': 'Ready' }[state]} />
-  // Compact: one line with the title, what the conversation is waiting for as a dot.
-  if (conversations === 'compact')
+  const w = t.waitsFor
+  const kind = kindOf(t)
+  const finish = (e: Event) => {
+    e.preventDefault()
+    api('PATCH', `/projects/${project.id}/threads/${t.id}`, { completed: true })
+  }
+  const chip = w && <span class={`chip ${kind}`}>{w.reason === 'question' && w.more ? `${w.more + 1} questions` : REASONS[w.reason]}</span>
+  const ring = <span class={`ring ${RINGS[kind]}`} title={w ? REASONS[w.reason] : kind === 'working' ? 'Working' : kind === 'done' ? 'Finished' : t.error === STOPPED ? 'Stopped' : 'Ready'} />
+  const when = kind === 'working' ? t.startedAt && <Elapsed since={t.startedAt} /> : show.date && formatStamp(w?.since ?? t.updatedAt)
+  const branch = t.worktree && (
+    <span class="branch-tag" title={t.worktree.path}>
+      <GitBranch size={11} /> {t.worktree.branch}
+    </span>
+  )
+  // Open and finished conversations take one line, in the compact density all do.
+  if (conversations === 'compact' || kind === 'idle' || kind === 'done')
     return (
-      <a href={href} class={`card compact ${active ? 'active' : ''} ${t.unread ? 'unread' : ''}`}>
+      <a href={href} class={`card compact ${kind} ${active ? 'active' : ''}`}>
+        {ring}
         <div class="card-title" title={t.title}>{t.summary ?? t.title}</div>
         <span class="card-meta">
-          {ring}
-          {show.count && (
-            <span>
-              <MessageSquare size={13} /> {t.messageCount}
-            </span>
-          )}
-          {show.date && formatStamp(t.updatedAt)}
+          {conversations !== 'compact' && show.label && <Label label={t.label} />}
+          {chip}
+          {when}
         </span>
       </a>
     )
   return (
-    <a href={href} class={`card ${active ? 'active' : ''} ${t.unread ? 'unread' : ''}`}>
+    <a href={href} class={`card ${kind} ${active ? 'active' : ''}`}>
       <div class="card-top">
+        {chip}
         {show.label && <Label label={t.label} />}
-        <span class="card-state">
-          {state === 'needs' && 'Your turn'}
-          {ring}
+        {branch}
+        <span class="card-when">
+          {show.agent && (
+            <span title={PROVIDER_NAMES[t.agent.provider] ?? t.agent.provider}>
+              <ProviderIcon provider={t.agent.provider} size={12} />
+            </span>
+          )}
+          {show.count && (
+            <span>
+              <MessageSquare size={12} /> {t.messageCount}
+            </span>
+          )}
+          {when}
         </span>
-        {show.count && (
-          <span class="count">
-            <MessageSquare size={14} /> {t.messageCount}
-          </span>
-        )}
       </div>
       <div class="card-title" title={t.title}>{t.summary ?? t.title}</div>
-      <div class="card-meta">
-        <span>{[show.agent && (PROVIDER_NAMES[t.agent.provider] ?? t.agent.provider), show.date && formatStamp(t.updatedAt)].filter(Boolean).join(' · ')}</span>
-        {t.completed && (
-          <span class="completed-badge">
-            <Check size={12} /> Finished
-          </span>
-        )}
-        {t.error && t.error !== STOPPED && !t.busy && (
-          <span class="error-badge">
-            <CircleAlert size={12} /> Error
-          </span>
-        )}
-      </div>
-      {t.needsYou && firstOpen && (
-        <div class="needs-row">
-          <span>{firstOpen}</span>
-          <span class="respond">Answer</span>
+      {kind === 'working' ? (
+        <div class="card-step">
+          <span class="ring busy" /> <span>{t.waiting && !t.busy ? WAITING : t.step ?? 'Working'}</span>
+        </div>
+      ) : w?.reason === 'approval' || w?.reason === 'question' ? (
+        <div class="card-ask">
+          <span>{w.text}</span>
+          <span class="respond">{w.reason === 'approval' ? 'Review' : 'Answer'}</span>
+        </div>
+      ) : w ? (
+        <div class="card-text">{plain(w.text)}</div>
+      ) : null}
+      {w?.reason === 'result' && (
+        <div class="card-actions">
+          <button class="ghost small" onClick={finish}>
+            <Check size={12} /> Finish
+          </button>
         </div>
       )}
     </a>

@@ -200,8 +200,9 @@ route('GET', '/projects', () =>
       ...p,
       counts: {
         working: threads.filter((t) => agents.isBusy(t.id)).length,
-        unread: threads.filter((t) => t.unread).length,
-        needsYou: threads.filter((t) => t.needsYou).length,
+        // Questions, approvals and errors block the agent; unread results only wait to be read.
+        blocked: threads.filter((t) => !t.completed && (t.needsYou || failed(t))).length,
+        unread: threads.filter((t) => !t.completed && t.unread && !t.needsYou && !failed(t)).length,
       },
     }
   }),
@@ -264,9 +265,45 @@ route('DELETE', '/projects/:pid', (params, _, ctx) => {
 
 // ---- threads ----
 
+const STOPPED = 'Turn stopped.'
+const failed = (t: store.Thread) => !!t.error && t.error !== STOPPED && !agents.isBusy(t.id)
+
+// What the conversation lists show beyond the thread: why it waits for the user and what it does while it works.
+function listed(p: store.Project, t: store.Thread) {
+  const messages = store.readMessages(p, t.id)
+  const busy = agents.isBusy(t.id)
+  const waiting = agents.waiting(p, t)
+  const startedAt = busy ? agents.startedAt(t.id) : undefined
+  return { ...t, busy, waiting, messageCount: messages.length, waitsFor: waitsFor(p, t, messages, busy || waiting), ...(startedAt && { startedAt, step: step(p, t, startedAt) }) }
+}
+
+// A read result keeps waiting until a follow-up or Finish; `since` is when it started to wait.
+function waitsFor(p: store.Project, t: store.Thread, messages: store.Message[], working: boolean) {
+  if (t.completed) return null
+  const since = messages.at(-1)?.ts ?? t.updatedAt
+  if (t.needsYou) {
+    const approval = messages.filter((m) => m.approval?.status === 'pending').at(-1)?.approval
+    if (approval) return { reason: 'approval', text: approval.title, since }
+    const open = store.listDecisions(p, t.id).filter((d) => !d.resolved)
+    return { reason: 'question', text: open[0]?.title ?? '', more: Math.max(0, open.length - 1), since }
+  }
+  if (working) return null
+  if (failed(t)) return { reason: 'failed', text: t.error, since }
+  const last = messages.at(-1)
+  if (last?.kind === 'conclusion') return { reason: t.unread ? 'new' : 'result', text: (last.text ?? '').slice(0, 300), since }
+  return null
+}
+
+// The tool the agent runs right now, or the last one of this turn.
+function step(p: store.Project, t: store.Thread, startedAt: string) {
+  const events = store.readActivity(p, t.id).filter((e) => e.time >= startedAt)
+  const label = (events.filter((e) => !e.finishedAt).at(-1) ?? events.at(-1))?.label
+  return label?.replaceAll(`${store.cwdOf(p, t)}/`, '') ?? null
+}
+
 route('GET', '/projects/:pid/threads', (params) => {
   const p = project(params)
-  return store.listThreads(p).map((t) => ({ ...t, busy: agents.isBusy(t.id), waiting: agents.waiting(p, t), messageCount: store.readMessages(p, t.id).length }))
+  return store.listThreads(p).map((t) => listed(p, t))
 })
 route('POST', '/projects/:pid/threads', (params, b, ctx) => {
   const p = project(params)
@@ -665,7 +702,7 @@ route('GET', '/overview', () => {
   const threads = [], workflows = []
   for (const p of store.listProjects()) {
     const list = store.listThreads(p)
-    threads.push(...list.map((t) => ({ ...t, projectId: p.id, busy: agents.isBusy(t.id), waiting: agents.waiting(p, t) })))
+    threads.push(...list.map((t) => ({ ...listed(p, t), projectId: p.id })))
     workflows.push(...listWorkflows(p, list).map((wf) => ({ ...wf, projectId: p.id })))
   }
   return { threads, workflows }

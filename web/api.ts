@@ -130,7 +130,17 @@ export interface Thread {
   busy?: boolean
   waiting?: boolean
   messageCount?: number
+  waitsFor?: { reason: Reason; text: string; more?: number; since: string } | null
+  startedAt?: string
+  step?: string | null
 }
+// Why a conversation waits for the user: the first three block the agent, results only wait to be read.
+export type Reason = 'approval' | 'question' | 'failed' | 'new' | 'result'
+// How a conversation shows in the lists.
+export type ThreadKind = 'blocked' | 'failed' | 'new' | 'seen' | 'working' | 'idle' | 'done'
+const KINDS: Record<Reason, ThreadKind> = { approval: 'blocked', question: 'blocked', failed: 'failed', new: 'new', result: 'seen' }
+export const kindOf = (t: Thread): ThreadKind => (t.waitsFor ? KINDS[t.waitsFor.reason] : t.busy || t.waiting ? 'working' : t.completed ? 'done' : 'idle')
+export const RINGS: Record<ThreadKind, string> = { blocked: 'needs', failed: 'error', new: 'unread', seen: '', working: 'busy', idle: '', done: 'done' }
 export interface Worktree { branch: string; path: string; ahead: number; dirty: boolean }
 export interface Change { path: string; additions: number | null; deletions: number | null }
 // One conversation of a fan-out, as the comparison shows it.
@@ -151,7 +161,7 @@ export interface Project {
   verbosity: 'low' | 'medium' | 'high'
   paused: boolean
   pinned: boolean
-  counts: { working: number; unread: number; needsYou: number }
+  counts: { working: number; blocked: number; unread: number }
 }
 export interface Doc { id: string; title: string; content: string; updatedAt: string }
 export interface Workflow { id: string; name: string; prompt: string; collection: string; cron: string | null; timezone: string; scheduleLabel: string | null; enabled: boolean; catchUp: boolean; next: string[]; lastRunAt: string | null; nextRunAt?: string | null; lastRun?: Run | null }

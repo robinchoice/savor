@@ -1,6 +1,6 @@
 import { useState } from 'preact/hooks'
 import { Clock, Pause, Play, SquareArrowOutUpRight, Trash2, TriangleAlert, X } from 'lucide-preact'
-import { api, avatarStyle, formatStamp, go, initial, useApi, type Project, type Thread, type Workflow } from './api'
+import { api, avatarStyle, formatStamp, go, initial, kindOf, RINGS, useApi, type Project, type Thread, type Workflow } from './api'
 import { STATUS, schedule, when } from './Workflows'
 import { setPrefs, usePrefs } from './prefs'
 
@@ -9,7 +9,6 @@ interface Overview { threads: Of<Thread>[]; workflows: Of<Workflow>[] }
 // Workflows that may do the same job twice: the same name, or prompts that share many words.
 interface Group { key: string; workflows: Of<Workflow>[]; why: string; strong: boolean }
 
-const STOPPED = 'Turn stopped.'
 const norm = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '')
 const words = (s: string) => new Set(s.toLowerCase().match(/[\p{L}\p{N}]{4,}/gu) ?? [])
 // Share of the words in either prompt that are in both. Unrelated prompts in the same style stay under 0.2.
@@ -51,17 +50,17 @@ export function AllProjects({ projects, section }: { projects: Project[]; sectio
   return <div class="page">{section === 'workflows' ? <AllWorkflows workflows={data?.workflows} byId={byId} /> : <AllConversations threads={data?.threads} byId={byId} />}</div>
 }
 
-type ThreadFilter = 'all' | 'needs' | 'working' | 'unread' | 'workflows'
+type ThreadFilter = 'all' | 'you' | 'working' | 'workflows'
 
 function AllConversations({ threads, byId }: { threads?: Of<Thread>[]; byId: Map<string, Project> }) {
   const [filter, setFilter] = useState<ThreadFilter>('all')
   const [showCompleted, setShowCompleted] = useState(false)
   const all = (threads ?? []).filter((t) => showCompleted || !t.completed).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-  const test: Record<ThreadFilter, (t: Thread) => boolean> = { all: () => true, needs: (t) => t.needsYou, working: (t) => !!(t.busy || t.waiting), unread: (t) => t.unread, workflows: (t) => !!t.workflow }
+  const test: Record<ThreadFilter, (t: Thread) => boolean> = { all: () => true, you: (t) => !!t.waitsFor, working: (t) => kindOf(t) === 'working', workflows: (t) => !!t.workflow }
   const tab = (id: ThreadFilter, label: string, ring?: string) => {
     const n = all.filter(test[id]).length
     return (
-      <button class={`filter ${filter === id ? 'active' : ''} ${id === 'needs' && n ? 'attention' : ''}`} onClick={() => setFilter(id)}>
+      <button class={`filter ${filter === id ? 'active' : ''} ${id === 'you' && n ? 'attention' : ''}`} onClick={() => setFilter(id)}>
         {ring && <span class={`ring ${ring}`} />} {label} <b>{n}</b>
       </button>
     )
@@ -72,9 +71,8 @@ function AllConversations({ threads, byId }: { threads?: Of<Thread>[]; byId: Map
       <h1>Conversations in all projects</h1>
       <div class="filters">
         {tab('all', 'All')}
-        {tab('needs', 'Your turn', 'needs')}
+        {tab('you', 'For you', 'needs')}
         {tab('working', 'Working', 'busy')}
-        {tab('unread', 'Unread', 'unread')}
         {tab('workflows', 'From workflows')}
         <label class="check small muted">
           <input type="checkbox" checked={showCompleted} onChange={(e) => setShowCompleted(e.currentTarget.checked)} /> Show finished
@@ -82,14 +80,13 @@ function AllConversations({ threads, byId }: { threads?: Of<Thread>[]; byId: Map
       </div>
       <div>
         {shown.map((t) => {
-          const state = t.needsYou ? 'needs' : t.busy || t.waiting ? 'busy' : t.error === STOPPED ? 'stopped' : t.error ? 'error' : t.unread ? 'unread' : t.completed ? 'done' : ''
           return (
             <a key={t.id} class="ov-row" href={`#/p/${t.projectId}/t/${t.id}`}>
               <Avatar project={byId.get(t.projectId)} />
               <span class="ov-title">{t.summary ?? t.title}</span>
               {t.workflow && <span class="ov-tag">workflow</span>}
               <span class="ov-meta wide-only">{byId.get(t.projectId)?.name}</span>
-              <span class={`ring ${state}`} />
+              <span class={`ring ${RINGS[kindOf(t)]}`} />
               <span class="ov-meta">{formatStamp(t.updatedAt)}</span>
             </a>
           )

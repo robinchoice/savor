@@ -207,7 +207,7 @@ function TopBar({ projects, active, all, me, setMe }: { projects: Project[]; act
         <a href="#/all" class={`project-tab all-tab ${all ? 'active' : ''}`} title="Conversations and workflows of all projects">
           <Layers size={16} />
           <span class="name">All</span>
-          <Counts project={{ counts: { working: total('working'), unread: total('unread'), needsYou: total('needsYou') } }} />
+          <Counts project={{ counts: { working: total('working'), blocked: total('blocked'), unread: total('unread') } }} />
         </a>
         <span class="tab-sep" />
         {sorted.filter((p) => p.pinned || p.id === active?.id).map((p) => (
@@ -276,9 +276,14 @@ const Counts = ({ project: p }: { project: Pick<Project, 'counts'> }) => (
         <span class="ring busy" /> {p.counts.working}
       </span>
     )}
-    {p.counts.needsYou + p.counts.unread > 0 && (
-      <span class="badge unread" title="Your turn or unread">
-        <span class={`ring ${p.counts.needsYou ? 'needs' : 'unread'}`} /> {p.counts.needsYou + p.counts.unread}
+    {p.counts.blocked > 0 && (
+      <span class="badge blocked" title="Questions, approvals and errors">
+        <span class="ring needs" /> {p.counts.blocked}
+      </span>
+    )}
+    {p.counts.unread > 0 && (
+      <span class="badge unread" title="New results">
+        <span class="ring unread" /> {p.counts.unread}
       </span>
     )}
   </>
@@ -435,15 +440,16 @@ function SubBar({ project, section }: { project: Project; section?: string }) {
   }, [project.id, project.path])
   useEffect(() => void load(), [project.id])
   useEvent((e) => e.type === 'processes' && e.projectId === project.id && load(), [project.id])
-  const tab = (id: string, label: string, Icon: any, href: string, badge?: number) => (
+  const tab = (id: string, label: string, Icon: any, href: string, counts?: Project['counts']) => (
     <a href={href} class={`subtab ${(['t', 'new', undefined].includes(section) ? 't' : section) === id ? 'active' : ''}`}>
       <Icon size={15} /> {label}
-      {badge ? <i class="dot-count">{badge}</i> : null}
+      {counts?.blocked ? <i class="pill-count blocked" title="Questions, approvals and errors">{counts.blocked}</i> : null}
+      {counts?.unread ? <i class="pill-count" title="New results">{counts.unread}</i> : null}
     </a>
   )
   return (
     <div class="subbar">
-      {tab('t', 'Conversations', MessageSquare, `#/p/${project.id}`, project.counts.unread + project.counts.needsYou)}
+      {tab('t', 'Conversations', MessageSquare, `#/p/${project.id}`, project.counts)}
       {tab('files', 'Files', FilesIcon, `#/p/${project.id}/files`)}
       {tab('workflows', 'Workflows', WorkflowIcon, `#/p/${project.id}/workflows`)}
       <div class="subbar-right">

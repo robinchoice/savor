@@ -231,7 +231,7 @@ test('idle sockets cannot lock real devices out', async () => {
   assert.ok(codes.every((c) => [4429, 4408, 1000].includes(c)), 'idle sockets are closed after the handshake timeout: ' + codes)
   await page.fill('.composer textarea', 'still reachable')
   await page.keyboard.press('Enter')
-  await page.waitForSelector('text=Echo: still reachable')
+  await page.waitForSelector('.msg >> text=Echo: still reachable')
 })
 
 test('revoking the device cuts its open tunnel at once', async () => {

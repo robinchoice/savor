@@ -94,9 +94,9 @@ export function useNotifications(currentThread: string | undefined, projects: Pr
     navigator.serviceWorker?.addEventListener('message', onMessage)
     return () => navigator.serviceWorker?.removeEventListener('message', onMessage)
   }, [])
-  // Unread + needs-you count on the tab title and the installed app icon.
+  // Blocked conversations and new results counted on the tab title and the installed app icon.
   useEffect(() => {
-    const n = projects?.reduce((sum, p) => sum + p.counts.unread + p.counts.needsYou, 0) ?? 0
+    const n = projects?.reduce((sum, p) => sum + p.counts.blocked + p.counts.unread, 0) ?? 0
     document.title = n ? `(${n}) Savor` : 'Savor'
     if (n) navigator.setAppBadge?.(n)
     else navigator.clearAppBadge?.()
