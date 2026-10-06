@@ -46,7 +46,7 @@ async function ensureDaemon() {
 }
 
 // Electron shows no context menu on its own; this one offers what a browser would for links, images, selections and fields.
-function contextMenu(contents, params) {
+async function contextMenu(contents, params) {
   const groups = []
   if (params.misspelledWord) {
     const fixes = params.dictionarySuggestions.slice(0, 5).map((word) => ({ label: word, click: () => contents.replaceMisspelling(word) }))
@@ -76,7 +76,7 @@ function contextMenu(contents, params) {
   else if (params.selectionText.trim()) groups.push([{ role: 'copy' }])
   // The selection, or else the clipboard, goes to the open project: run in its terminal (several lines
   // are only pasted), quoted in its conversation, or opened in Files when it names one of its files.
-  const text = projectRoot && (params.selectionText.trim() || clipboard.readText().trim())
+  const text = projectRoot && (params.selectionText.trim() || (await clipboard.readText()).trim())
   if (text) {
     const first = text.split('\n')[0]
     const shown = first.length > 40 || text.includes('\n') ? `${first.slice(0, 40)}…` : first
@@ -119,8 +119,8 @@ async function createWindow() {
     shell.openExternal(url)
     return { action: 'deny' }
   })
-  win.webContents.on('context-menu', (_e, params) => {
-    const menu = contextMenu(win.webContents, params)
+  win.webContents.on('context-menu', async (_e, params) => {
+    const menu = await contextMenu(win.webContents, params)
     if (menu.items.length) menu.popup({ window: win })
   })
   win.loadURL(`http://localhost:${PORT}/?token=${token}`)
