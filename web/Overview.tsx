@@ -1,9 +1,9 @@
 import { Fragment } from 'preact'
 import { useState } from 'preact/hooks'
-import { ArrowRight, ChevronDown, Clock, Pause, Play, SquareArrowOutUpRight, Trash2, TriangleAlert, X } from 'lucide-preact'
+import { ArrowRight, ChevronDown, Plus, Clock, Pause, Play, SquareArrowOutUpRight, Trash2, TriangleAlert, X } from 'lucide-preact'
 import { api, avatarStyle, formatStamp, go, initial, kindOf, RINGS, useApi, type AgentConfig, type ApprovalOption, type Attachment, type Decision, type Project, type Thread, type Workflow } from './api'
 import { Composer } from './Composer'
-import { Elapsed, plain } from './Conversations'
+import { Elapsed, plain, ThreadCard, ThreadView } from './Conversations'
 import { STATUS, schedule, when } from './Workflows'
 import { setPrefs, usePrefs } from './prefs'
 
@@ -48,14 +48,15 @@ const Avatar = ({ project }: { project?: Project }) => (
   </span>
 )
 
-// Routes: all[/workflows]
-export function AllProjects({ projects, section }: { projects: Project[]; section?: string }) {
+// Routes: all[/inbox[/new | /:pid/:tid] | /workflows]
+export function AllProjects({ projects, section, rest }: { projects: Project[]; section?: string; rest: string[] }) {
   const [data] = useApi<Overview>('/overview', (e) => ['projects', 'thread', 'status', 'workflows'].includes(e.type))
   const byId = new Map(projects.map((p) => [p.id, p]))
+  if (section === 'inbox') return <AllInbox threads={data?.threads} projects={projects} byId={byId} rest={rest} />
   return <div class="page">{section === 'workflows' ? <AllWorkflows workflows={data?.workflows} byId={byId} /> : <AllOverview data={data} projects={projects} byId={byId} />}</div>
 }
 
-const threadHref = (t: Of<Thread>) => `#/p/${t.projectId}/t/${t.id}`
+const threadHref = (t: Of<Thread>) => `#/all/inbox/${t.projectId}/${t.id}`
 const lastActive = (threads: Of<Thread>[], pid: string) => threads.filter((t) => t.projectId === pid).reduce((max, t) => (t.updatedAt > max ? t.updatedAt : max), '')
 // Earlier conversations by how long ago they changed.
 function dayOf(iso: string) {
@@ -243,6 +244,63 @@ function WaitCard({ t, project }: { t: Listed; project?: Project }) {
   )
 }
 
+type InboxFilter = 'all' | 'you' | 'working'
+
+// The open conversations of every project in one list, the chosen one beside it.
+function AllInbox({ threads, projects, byId, rest }: { threads?: Listed[]; projects: Project[]; byId: Map<string, Project>; rest: string[] }) {
+  const [filter, setFilter] = useState<InboxFilter>('all')
+  const [pid, tid] = rest
+  const project = byId.get(pid)
+  const open = (threads ?? []).filter((t) => !t.completed && byId.has(t.projectId)).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+  const test: Record<InboxFilter, (t: Thread) => boolean> = { all: () => true, you: (t) => !!t.waitsFor, working: (t) => kindOf(t) === 'working' }
+  const shown = open.filter(test[filter])
+  const tab = (id: InboxFilter, label: string) => {
+    const n = open.filter(test[id]).length
+    return (
+      <button class={`filter ${filter === id ? 'active' : ''} ${id === 'you' && n ? 'attention' : ''}`} onClick={() => setFilter(id)}>
+        {label} <b>{n}</b>
+      </button>
+    )
+  }
+  return (
+    <div class={`conversations all-inbox ${tid || pid === 'new' ? 'has-detail' : ''}`}>
+      <aside class="conv-list">
+        <div class="conv-head">
+          <h2>Inbox</h2>
+          <a class="new-btn" href="#/all/inbox/new" title="New conversation">
+            <Plus size={18} />
+          </a>
+        </div>
+        <div class="filters">
+          {tab('all', 'All')}
+          {tab('you', 'For you')}
+          {tab('working', 'Working')}
+        </div>
+        <div class="cards">
+          {shown.map((t, i) => (
+            <Fragment key={t.id}>
+              {dayOf(t.updatedAt) !== dayOf(shown[i - 1]?.updatedAt ?? '') && <div class="all-day">{dayOf(t.updatedAt)}</div>}
+              <ThreadCard project={byId.get(t.projectId)!} thread={t} active={t.id === tid} href={threadHref(t)} badge />
+            </Fragment>
+          ))}
+          {threads && !shown.length && <p class="muted center">No open conversations{filter !== 'all' ? ' in this filter' : ''}.</p>}
+        </div>
+      </aside>
+      {project && tid ? (
+        <ThreadView key={tid} project={project} threadId={tid} back="/all/inbox" />
+      ) : (
+        <section class="thread new-thread">
+          <div class="new-hero">
+            <h1>What do you want to build?</h1>
+            <p class="muted">Start a conversation in any project, or pick one from the list.</p>
+          </div>
+          <StartAnywhere projects={projects} initial={null} />
+        </section>
+      )}
+    </div>
+  )
+}
+
 // A new conversation in any project, without opening it first.
 function StartAnywhere({ projects, initial }: { projects: Project[]; initial: string | null }) {
   const [chosen, setChosen] = useState<string | null>(null)
@@ -252,7 +310,7 @@ function StartAnywhere({ projects, initial }: { projects: Project[]; initial: st
   if (!project) return null
   const send = async (text: string, attachments: Attachment[]) => {
     const t = await api<Thread>('POST', `/projects/${project.id}/threads`, { text, attachments, agent: agent ?? project.agent })
-    go(`/p/${project.id}/t/${t.id}`)
+    go(`/all/inbox/${project.id}/${t.id}`)
   }
   const choose = (pid: string) => {
     setChosen(pid)

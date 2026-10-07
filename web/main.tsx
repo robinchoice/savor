@@ -1,7 +1,7 @@
 import './monitoring'
 import { render } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
-import { Coffee, Download, Folder, FolderOpen, Monitor, Pin, PinOff, Search, Files as FilesIcon, MessageSquare, Moon, Plus, Server, SlidersHorizontal, Sun, Workflow as WorkflowIcon, ChevronDown, Layers, LayoutList, Smartphone, X } from 'lucide-preact'
+import { Coffee, Download, Folder, FolderOpen, Monitor, Pin, PinOff, Search, Files as FilesIcon, MessageSquare, Moon, Plus, Server, SlidersHorizontal, Sun, Workflow as WorkflowIcon, ChevronDown, Inbox, Layers, LayoutList, Smartphone, X } from 'lucide-preact'
 import { api, avatarStyle, connectEvents, desktop, go, initial, Unauthorized, useApi, useEvent, type Me, type Project } from './api'
 import { Conversations } from './Conversations'
 import { FilesView } from './Files'
@@ -111,7 +111,7 @@ function App() {
 
   let main = <Welcome />
   if (route[0] === 'devices') main = <Devices />
-  else if (route[0] === 'all') main = <AllProjects projects={projects ?? []} section={route[1]} />
+  else if (route[0] === 'all') main = <AllProjects projects={projects ?? []} section={route[1]} rest={route.slice(2)} />
   else if (project) {
     if (section === 'files') main = <FilesView key={project.id} project={project} rest={rest} />
     else if (section === 'workflows') main = <Workflows key={project.id} project={project} rest={rest} />
@@ -479,6 +479,7 @@ function AllBar({ section }: { section?: string }) {
   return (
     <div class="subbar">
       {tab('', 'Overview', LayoutList)}
+      {tab('inbox', 'Inbox', Inbox)}
       {tab('workflows', 'Workflows', WorkflowIcon)}
     </div>
   )

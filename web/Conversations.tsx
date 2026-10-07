@@ -4,10 +4,10 @@ import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import {
   Asterisk, Hexagon, Code2, Sparkles, Orbit, Plus, Search, MessageSquare, Check, MoreHorizontal, PanelLeft, PanelRight, FileText, Globe,
-  CircleAlert, ArrowUp, ArrowLeft, Pencil, MessageSquarePlus, Brain, Terminal, Wrench, ArrowRight, Smartphone, Monitor, Bot, ShieldQuestion, X, ChevronUp, ChevronDown, ChevronRight, Paperclip, GitBranch, GitFork, GitMerge, Trash2, Copy, FileDiff, Split, Workflow as WorkflowIcon,
+  CircleAlert, ArrowUp, ArrowLeft, Pencil, MessageSquarePlus, Brain, Terminal, Wrench, ArrowRight, Smartphone, Monitor, Bot, ShieldQuestion, X, ChevronUp, ChevronDown, ChevronRight, Paperclip, GitBranch, GitFork, GitMerge, Trash2, Copy, FileDiff, Split, SquareArrowOutUpRight, Workflow as WorkflowIcon,
 } from 'lucide-preact'
 import {
-  api, cap, duration, formatStamp, formatTime, go, PROVIDER_NAMES, runTrigger, useApi, kindOf, RINGS, type ActivityEvent, type AgentConfig, type Attachment, type Decision, type Message, type Proc, type Project, type Reason, type Thread, type Worktree,
+  api, avatarStyle, cap, duration, formatStamp, formatTime, go, initial, PROVIDER_NAMES, runTrigger, useApi, kindOf, RINGS, type ActivityEvent, type AgentConfig, type Attachment, type Decision, type Message, type Proc, type Project, type Reason, type Thread, type Worktree,
 } from './api'
 import { Composer, type Picked } from './Composer'
 import { transport } from './transport'
@@ -219,9 +219,14 @@ export function Elapsed({ since }: { since: string }) {
   return <>{short(now - Date.parse(since))}</>
 }
 
-function ThreadCard({ project, thread: t, active }: { project: Project; thread: Thread; active: boolean }) {
+// Lists outside the project link elsewhere and name the project on each card.
+export function ThreadCard({ project, thread: t, active, href = `#/p/${project.id}/t/${t.id}`, badge }: { project: Project; thread: Thread; active: boolean; href?: string; badge?: boolean }) {
   const { conversations, show } = usePrefs()
-  const href = `#/p/${project.id}/t/${t.id}`
+  const avatar = badge && (
+    <span class="avatar small" style={avatarStyle(project.tint)} title={project.name}>
+      {initial(project.name)}
+    </span>
+  )
   const w = t.waitsFor
   const kind = kindOf(t)
   const finish = (e: Event) => {
@@ -241,6 +246,7 @@ function ThreadCard({ project, thread: t, active }: { project: Project; thread: 
     return (
       <a href={href} class={`card compact ${kind} ${active ? 'active' : ''}`}>
         {ring}
+        {avatar}
         <div class="card-title" title={t.title}>{t.summary ?? t.title}</div>
         <span class="card-meta">
           {conversations !== 'compact' && show.label && <Label label={t.label} />}
@@ -252,6 +258,7 @@ function ThreadCard({ project, thread: t, active }: { project: Project; thread: 
   return (
     <a href={href} class={`card ${kind} ${active ? 'active' : ''}`}>
       <div class="card-top">
+        {avatar}
         {chip}
         {show.label && <Label label={t.label} />}
         {branch}
@@ -350,7 +357,8 @@ function useNarrow() {
   return narrow
 }
 
-function ThreadView({ project, threadId }: { project: Project; threadId: string }) {
+// `back` is where the arrow leads; set outside the project, a second button opens the conversation there.
+export function ThreadView({ project, threadId, back }: { project: Project; threadId: string; back?: string }) {
   const base = `/projects/${project.id}/threads/${threadId}`
   const [data, reload, loadError] = useApi<ThreadData>(base, (e) => (e.threadId === threadId && ['message', 'thread', 'status'].includes(e.type)) || (e.projectId === project.id && e.type === 'processes'))
   const [activity] = useApi<ActivityEvent[]>(`${base}/activity`, (e) => e.threadId === threadId && (e.type === 'activity' || e.type === 'status'))
@@ -496,7 +504,7 @@ function ThreadView({ project, threadId }: { project: Project; threadId: string 
   const remove = async () => {
     if (!confirm('Delete this conversation and its history?')) return
     await api('DELETE', base)
-    go(`/p/${project.id}`)
+    go(back ?? `/p/${project.id}`)
   }
   const step = (dir: 1 | -1) => setFind((f) => ({ ...f, at: f.at + dir }))
 
@@ -569,7 +577,7 @@ function ThreadView({ project, threadId }: { project: Project; threadId: string 
       {!(browserMode && chatHidden && !narrow) && (
         <section class="thread">
           <header class="thread-head">
-            <a class="square back" href={`#/p/${project.id}`} title="All conversations">
+            <a class="square back" href={`#${back ?? `/p/${project.id}`}`} title="All conversations">
               <ArrowLeft size={17} />
             </a>
             {browserMode && (
@@ -608,6 +616,11 @@ function ThreadView({ project, threadId }: { project: Project; threadId: string 
               </div>
             </div>
             <div class="head-actions">
+              {back && (
+                <a class="square" href={`#/p/${project.id}/t/${threadId}`} title={`Open in ${project.name}`}>
+                  <SquareArrowOutUpRight size={16} />
+                </a>
+              )}
               {!compactHead && (
                 <button class={`square ${thread.completed ? 'on' : ''}`} title={thread.completed ? 'Reopen' : 'Finish'} onClick={() => patch({ completed: !thread.completed })}>
                   <Check size={17} />
