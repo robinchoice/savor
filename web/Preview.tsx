@@ -5,6 +5,8 @@ import { transport } from './transport'
 import { setPrefs, usePrefs, type Device } from './prefs'
 import type { Picked } from './Composer'
 
+// Shortcuts with Ctrl or Cmd that edit the page; the rest stay with Savor and the browser.
+const EDITING = new Set(['a', 'z', 'y'])
 const KEYS = new Set(['Enter', 'Backspace', 'Delete', 'Tab', 'Escape', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'PageUp', 'PageDown'])
 const DEVICES: [Device, typeof Scan, string, string][] = [
   ['fit', Scan, 'Fit', 'Draw the page in the size of this space'],
@@ -13,7 +15,7 @@ const DEVICES: [Device, typeof Scan, string, string][] = [
 ]
 
 // Shows the same headless page the agent drives, drawn in the size of the space it gets here.
-// Clicks, keys and scrolling are forwarded to it.
+// Mouse, keys, scrolling and the clipboard are forwarded to it.
 export function Preview({ base, threadId, url, onPick, narrow, chatHidden, onToggleChat }: { base: string; threadId: string; url: string | null; onPick: (p: Picked) => void; narrow: boolean; chatHidden: boolean; onToggleChat: () => void }) {
   const [frame, setFrame] = useState<string | null>(null)
   const [address, setAddress] = useState(url ?? '')
@@ -72,7 +74,15 @@ export function Preview({ base, threadId, url, onPick, narrow, chatHidden, onTog
   }, [wanted.width, wanted.height, shown.width, shown.height])
 
   const scale = shown.width ? Math.min(1, space.width / shown.width, space.height / shown.height) : 1
-  const input = (body: object) => api('POST', `${base}/browser/input`, body).catch((e) => setError(e.message))
+  // One request after the other, so a release never overtakes its press.
+  const queue = useRef<Promise<unknown>>(Promise.resolve())
+  const send = (fn: () => Promise<unknown>) => (queue.current = queue.current.then(fn).catch((e) => setError(e.message)))
+  const input = (body: object) => send(() => api('POST', `${base}/browser/input`, body))
+  const copy = (cut: boolean) =>
+    send(async () => {
+      const { text } = await api<{ text: string }>('POST', `${base}/browser/copy`, { cut })
+      if (text) await navigator.clipboard.writeText(text)
+    })
   const point = (e: MouseEvent) => {
     const el = img.current!
     const r = el.getBoundingClientRect()
@@ -87,9 +97,16 @@ export function Preview({ base, threadId, url, onPick, narrow, chatHidden, onTog
     hovering.current = false
     if (next) hover(next)
   }
-  const click = async (e: MouseEvent) => {
-    img.current?.focus()
-    if (!picking) return input({ type: 'click', ...point(e) })
+  const mouse = (e: MouseEvent, type: 'down' | 'up') => {
+    if (picking || e.button !== 0) return
+    if (type === 'down') {
+      e.preventDefault()
+      img.current?.focus()
+    }
+    input({ type, ...point(e), clicks: e.detail })
+  }
+  const pick = async (e: MouseEvent) => {
+    if (!picking) return
     setPicking(false)
     const picked = await api<Picked | null>('POST', `${base}/browser/pick`, point(e))
     if (picked) onPick(picked)
@@ -158,14 +175,29 @@ export function Preview({ base, threadId, url, onPick, narrow, chatHidden, onTog
               const { naturalWidth: width, naturalHeight: height } = e.currentTarget
               if (width !== shown.width || height !== shown.height) setShown({ width, height })
             }}
-            onClick={click}
+            // Captured, so a drag that leaves the picture still ends in the page.
+            onPointerDown={(e) => e.currentTarget.setPointerCapture(e.pointerId)}
+            onMouseDown={(e) => mouse(e, 'down')}
+            onMouseUp={(e) => mouse(e, 'up')}
+            onClick={pick}
             onMouseMove={(e) => hover(point(e))}
             onWheel={(e) => (e.preventDefault(), input({ type: 'scroll', dy: e.deltaY }))}
             onKeyDown={(e) => {
-              if (e.metaKey || e.ctrlKey) return
+              // AltGr comes as Ctrl+Alt on Windows and types a character.
+              const mod = (e.ctrlKey || e.metaKey) && !e.altKey
+              const k = e.key.toLowerCase()
+              // Pasting arrives as a paste event, with the clipboard's text.
+              if (mod && !(k === 'c' || k === 'x' || EDITING.has(k) || KEYS.has(e.key))) return
               e.preventDefault()
-              if (KEYS.has(e.key)) input({ type: 'key', key: e.key })
+              if (mod && (k === 'c' || k === 'x')) return copy(k === 'x')
+              const combo = `${mod ? 'ControlOrMeta+' : ''}${e.altKey && !e.ctrlKey ? 'Alt+' : ''}${e.shiftKey ? 'Shift+' : ''}${e.key}`
+              if (mod || KEYS.has(e.key)) input({ type: 'key', key: combo })
               else if (e.key.length === 1) input({ type: 'type', text: e.key })
+            }}
+            onPaste={(e) => {
+              e.preventDefault()
+              const text = e.clipboardData?.getData('text/plain')
+              if (text) input({ type: 'paste', text })
             }}
           />
         ) : (

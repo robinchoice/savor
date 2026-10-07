@@ -1673,6 +1673,52 @@ test('browser mode gives the page the stage and draws it in the size of that spa
   await page.setViewportSize({ width: 1400, height: 900 })
 })
 
+test('the preview takes the mouse, shortcuts and the clipboard', async (t) => {
+  let typed = null
+  const site = http.createServer((req, res) => {
+    if (req.url.startsWith('/v?')) typed = decodeURIComponent(req.url.slice(3))
+    res.setHeader('content-type', 'text/html').end(`<input style="position:fixed;left:0;top:0;width:300px;height:40px" oninput="fetch('/v?' + encodeURIComponent(this.value))">
+      <p style="position:fixed;left:0;top:100px;margin:0;font:40px monospace">Brotzeit Weißwurst</p>`)
+  }).listen(0)
+  t.after(() => site.close())
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], { origin: base })
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
+  const thread = (await api('POST', `/projects/${project.id}/threads`, { text: 'build a form' })).body
+  await page.goto(`${base}/#/p/${project.id}/t/${thread.id}`)
+  await page.waitForSelector('text=Echo: build a form')
+  await api('POST', `/projects/${project.id}/threads/${thread.id}/browser/open`, { url: `http://127.0.0.1:${site.address().port}/` })
+  await page.waitForSelector('.stage .screen')
+  // Points in the page, where they are drawn in the UI.
+  const at = (x, y) => page.evaluate(([x, y]) => {
+    const img = document.querySelector('.screen'), r = img.getBoundingClientRect()
+    return { x: r.left + (x * r.width) / img.naturalWidth, y: r.top + (y * r.height) / img.naturalHeight }
+  }, [x, y])
+  const clipboard = () => page.evaluate(() => navigator.clipboard.readText())
+
+  let p = await at(100, 20)
+  await page.mouse.click(p.x, p.y)
+  await page.evaluate(() => navigator.clipboard.writeText('Leberkäs'))
+  await page.keyboard.press('Control+v')
+  await until(() => typed === 'Leberkäs')
+  await page.keyboard.press('Control+a')
+  await page.keyboard.press('Control+x')
+  await until(() => typed === '')
+  assert.equal(await clipboard(), 'Leberkäs')
+
+  // A double click selects a word, a drag selects across words (from behind, a press in the selection would drag it).
+  p = await at(60, 120)
+  await page.mouse.dblclick(p.x, p.y)
+  await page.keyboard.press('Control+c')
+  await until(async () => (await clipboard()) === 'Brotzeit')
+  const end = await at(400, 120)
+  await page.mouse.move(end.x, end.y)
+  await page.mouse.down()
+  await page.mouse.move(p.x - 55, p.y, { steps: 5 })
+  await page.mouse.up()
+  await page.keyboard.press('Control+c')
+  await until(async () => (await clipboard()).startsWith('Brotzeit Wei'))
+})
+
 test('a turn cut off by a restart continues in the same agent session', async () => {
   const [project] = (await api('GET', '/projects')).body
   const t = `/projects/${project.id}/threads`

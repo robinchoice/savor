@@ -202,21 +202,39 @@ export const pointer = (tid: string, action: 'click' | 'dblclick' | 'move' | 'do
 // ---- user input from the UI (coordinates in page CSS pixels) ----
 
 export type UserInput =
-  | { type: 'click'; x: number; y: number }
+  | { type: 'down' | 'up'; x: number; y: number; clicks?: number }
   | { type: 'scroll'; dy: number }
-  | { type: 'type'; text: string }
+  | { type: 'type' | 'paste'; text: string }
   | { type: 'key'; key: string }
   | { type: 'back' | 'forward' | 'reload' }
 
 export async function userInput(tid: string, e: UserInput) {
   const { page } = session(tid)
-  if (e.type === 'click') await page.mouse.click(e.x, e.y)
+  // Pressed and released separately, so dragging selects text; clicks counts double and triple clicks.
+  if (e.type === 'down' || e.type === 'up') {
+    await page.mouse.move(e.x, e.y)
+    await page.mouse[e.type]({ clickCount: e.clicks ?? 1 })
+  }
   if (e.type === 'scroll') await page.mouse.wheel(0, e.dy)
   if (e.type === 'type') await page.keyboard.type(e.text)
+  if (e.type === 'paste') await page.keyboard.insertText(e.text)
   if (e.type === 'key') await page.keyboard.press(e.key)
   if (e.type === 'back') await page.goBack()
   if (e.type === 'forward') await page.goForward()
   if (e.type === 'reload') await page.reload()
+}
+
+// The text selected in the page, for the user's clipboard. Cutting also removes it from a field.
+export function copy(tid: string, cut: boolean) {
+  return session(tid).page.evaluate((cut) => {
+    const el = document.activeElement
+    if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+      const text = el.value.slice(el.selectionStart ?? 0, el.selectionEnd ?? 0)
+      if (cut && text && !el.readOnly) document.execCommand('delete')
+      return text
+    }
+    return getSelection()?.toString() ?? ''
+  }, cut)
 }
 
 // Move the mouse there, so hover styles show, and report the cursor the page wants at that point.

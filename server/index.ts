@@ -504,6 +504,7 @@ route('POST', '/projects/:pid/threads/:tid/browser/input', async (params, b) => 
   await browser.userInput(params.tid, b)
   return {}
 })
+route('POST', '/projects/:pid/threads/:tid/browser/copy', async (params, b) => ({ text: await browser.copy(params.tid, !!b.cut) }))
 route('POST', '/projects/:pid/threads/:tid/browser/viewport', async (params, b) => {
   await browser.resize(params.tid, b.width, b.height)
   return {}
