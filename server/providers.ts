@@ -199,13 +199,16 @@ const skillProbes: Record<string, (cwd: string) => Promise<SkillInfo[]>> = {
 }
 const skillCache = new Map<string, { at: number; list: Promise<SkillInfo[]> }>()
 
+// Savor answers /btw itself, for both agents.
+const BTW: SkillInfo = { name: 'btw', description: 'Ask a side question, also while the agent works; the answer stays out of the conversation' }
+
 export async function listSkills(provider: string, cwd: string): Promise<SkillInfo[]> {
   const probe = skillProbes[provider]
   if (!probe || !(await listAgents()).find((a) => a.id === provider)?.installed) return []
   const key = `${provider} ${cwd}`
   const hit = skillCache.get(key)
   if (hit && Date.now() - hit.at < CACHE_MS) return hit.list
-  const list = probe(cwd)
+  const list = probe(cwd).then((l) => [...l, BTW])
   skillCache.set(key, { at: Date.now(), list })
   return list
 }

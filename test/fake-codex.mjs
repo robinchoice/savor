@@ -51,7 +51,7 @@ let turnId = null
 
 async function runTurn(params) {
   const text = params.input.find((i) => i.type === 'text')?.text ?? ''
-  const input = text.slice(text.indexOf('New input:\n') + 'New input:\n'.length).trim()
+  const input = text.includes('New input:\n') ? text.slice(text.indexOf('New input:\n') + 'New input:\n'.length).trim() : text
   const turn = { id: `turn-${nextId++}`, items: [], status: 'inProgress', error: null }
   turnId = turn.id
   notify('turn/started', { threadId, turn })
@@ -80,11 +80,11 @@ async function runTurn(params) {
     const { action } = await serverRequest('mcpServer/elicitation/request', { threadId, turnId, serverName: 'docs', mode: 'url', message: 'Sign in to Docs.', url: input.slice('open-page:'.length).trim(), elicitationId: 'e1' })
     reply = `Codex page: ${action}`
   } else {
-    reply = `Codex echo: ${input}`
+    reply = input.includes('Question: ') ? `Codex aside in ${threadId}: ${input.slice(input.indexOf('Question: ') + 10)}` : `Codex echo: ${input}`
   }
   if (turnId !== turn.id) return
   // Like the real app-server, calling an MCP tool first asks the client to approve it.
-  const ok = await serverRequest('mcpServer/elicitation/request', {
+  const ok = !mcpUrl ? { action: 'accept' } : await serverRequest('mcpServer/elicitation/request', {
     threadId,
     turnId,
     serverName: 'savor',

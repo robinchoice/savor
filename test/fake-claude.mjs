@@ -25,6 +25,7 @@
 // - anything else → acknowledgement plus a conclusion echoing the input with one suggestion
 // While the test's outdated file exists it refuses to start, like a release that lacks an option.
 // `--version` and `auth status` answer like the real CLI, so Savor lists the fake as installed.
+// With --no-session-persistence it answers a side question (/btw) on stdin.
 // Started without an MCP config it is Savor's probe and answers the initialize request with its models and
 // commands.
 import readline from 'node:readline'
@@ -41,6 +42,14 @@ if (args[0] === '--version') {
 }
 if (args[0] === 'auth' && args[1] === 'status') {
   console.log(JSON.stringify({ loggedIn: true, email: 'fake@claude.test' }))
+  process.exit(0)
+}
+// A side question: one answer as JSON, about the session it was resumed from.
+if (args.includes('--no-session-persistence')) {
+  let prompt = ''
+  for await (const chunk of process.stdin) prompt += chunk
+  const from = args.includes('--resume') ? args[args.indexOf('--resume') + 1] : 'nothing'
+  console.log(JSON.stringify({ type: 'result', is_error: false, result: `Aside from ${from}${args.includes('--fork-session') ? ' (fork)' : ''}: ${prompt.slice(prompt.indexOf('Question: ') + 10)}` }))
   process.exit(0)
 }
 if (!args.includes('--mcp-config')) {

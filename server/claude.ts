@@ -1,7 +1,7 @@
 // Claude Code: one long-lived `claude -p --input-format stream-json` process per conversation and
 // settings. Turns go in as user messages on stdin; permission prompts and clarifying questions come
 // back as control requests on stdout and are answered on stdin.
-import { spawn, type ChildProcess } from 'node:child_process'
+import { execFile, spawn, type ChildProcess } from 'node:child_process'
 import readline from 'node:readline'
 import crypto from 'node:crypto'
 import fs from 'node:fs'
@@ -207,6 +207,28 @@ export class ClaudeSession implements Session {
     if (choice === 'deny') return this.respond(requestId, { behavior: 'deny', message: 'The user denied this action.' })
     this.respond(requestId, { behavior: 'allow', updatedInput: input, ...(choice === 'always' && { updatedPermissions: persist }) })
   }
+}
+
+// A side question (/btw): a copy of the session answers once, without tools, and the copy is not kept.
+// The conversation itself, also a turn that is running, stays as it is.
+export function claudeAside(cwd: string, sid: string | undefined, model: string, prompt: string) {
+  const args = ['-p', '--output-format', 'json', '--no-session-persistence', '--settings', JSON.stringify({ disableAllHooks: true }), '--tools', '']
+  if (sid) args.push('--resume', sid, '--fork-session')
+  if (model) args.push('--model', model)
+  return new Promise<string>((resolve, reject) => {
+    const child = execFile(...command(BIN.claude, args), { cwd, timeout: 180_000, maxBuffer: 16 * 1024 * 1024 }, (err, stdout, stderr) => {
+      let r: any
+      try {
+        r = JSON.parse(stdout)
+      } catch {
+        return reject(new Error(stderr.trim() || err?.message || 'Claude Code did not answer.'))
+      }
+      if (r.is_error) reject(new Error(r.result || 'Claude Code did not answer.'))
+      else resolve(r.result ?? '')
+    })
+    // The prompt goes in on stdin: as an argument, the list after --tools would take it.
+    child.stdin!.end(prompt)
+  })
 }
 
 // Built-in commands that only steer the terminal UI, or change what Savor sets itself (model, effort,

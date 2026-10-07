@@ -88,7 +88,8 @@ export function Composer(props: Props) {
   // Agents read a slash command only as the first word of a message: the list is open while that word is typed.
   const slash = slashOpen && !popover && /^\/\S*$/.test(text) ? text.slice(1).toLowerCase() : null
   const rank = (s: Skill) => (s.name.toLowerCase().startsWith(slash!) ? 0 : 1)
-  const matches = slash === null ? [] : (skills ?? []).filter((s) => s.name.toLowerCase().includes(slash)).sort((a, b) => rank(a) - rank(b))
+  // /btw asks about a conversation, so a new one doesn't offer it.
+  const matches = slash === null ? [] : (skills ?? []).filter((s) => s.name.toLowerCase().includes(slash) && (props.threadId || s.name !== 'btw')).sort((a, b) => rank(a) - rank(b))
   const pickSkill = (s: Skill) => {
     setText(`/${s.name} `)
     ref.current?.focus()
@@ -148,8 +149,21 @@ export function Composer(props: Props) {
   const hasInput = !!(text.trim() || files.length || review.length)
   const allPicked = !!answers && answers.picked === answers.total
   const canSend = answers ? allPicked || hasInput : hasInput && (!fanout || fanout.length > 1)
+  // A side question (/btw) is answered next to the conversation, also while the agent works, and stays out of it.
+  const [aside, setAside] = useState<{ question: string; answer?: string; error?: string } | null>(null)
+  const ask = (question: string) => {
+    setText('')
+    setAside({ question })
+    const settle = (r: { answer?: string; error?: string }) => setAside((a) => (a?.question === question ? { question, ...r } : a))
+    api<{ text: string }>('POST', `/projects/${props.project.id}/threads/${props.threadId}/btw`, { text: question }).then(
+      (r) => settle({ answer: r.text }),
+      (e: Error) => settle({ error: e.message }),
+    )
+  }
   const submit = async () => {
     if (!canSend) return
+    const btw = props.threadId && !answers && text.match(/^\/btw\s+(\S[\s\S]*)$/)?.[1].trim()
+    if (btw) return ask(btw)
     const full = (text + pickedContext(props.picked ?? []) + reviewMessage(review)).trimStart()
     setText('')
     setFiles([])
@@ -261,6 +275,17 @@ export function Composer(props: Props) {
               <small>{s.description}</small>
             </button>
           ))}
+        </div>
+      )}
+      {aside && (
+        <div class="aside">
+          <div class="aside-head">
+            <b>/btw</b> <span>{aside.question}</span>
+            <button class="icon-btn" aria-label="Close" onClick={() => setAside(null)}>
+              <X size={13} />
+            </button>
+          </div>
+          {aside.error ? <div class="error-text">{aside.error}</div> : <div class="aside-answer">{aside.answer ?? 'Thinking…'}</div>}
         </div>
       )}
       {props.answering && (

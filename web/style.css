@@ -295,6 +295,11 @@ main { flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
 .answered { display: flex; align-items: center; gap: 6px; color: var(--muted); }
 .composer.answering, .composer.answering:focus-within { box-shadow: 0 0 0 1px color-mix(in srgb, var(--attn) 55%, transparent); }
 .answering-row { padding: 10px 14px 0; font-size: 12px; color: var(--attn); }
+.aside { margin: 10px 12px 0; padding: 8px 10px; border-radius: 8px; background: var(--raised); font-size: 13px; max-height: 40vh; overflow: auto; }
+.aside-head { display: flex; align-items: center; gap: 6px; color: var(--muted); }
+.aside-head b { font-weight: 500; color: var(--text); }
+.aside-head span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aside-answer { margin-top: 6px; white-space: pre-wrap; }
 .answering-row span { color: var(--muted); }
 
 .working-row { flex: none; display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 13px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }

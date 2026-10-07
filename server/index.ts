@@ -18,6 +18,8 @@ import { closeDevice, pairingLink, relayStatus, startRelay } from './relay-clien
 import { newNonce, securityHeaders, withNonce } from '../shared/headers.js'
 import { fanoutBranches } from '../shared/fanout.js'
 import { handleMcp } from './mcp.js'
+import { claudeAside } from './claude.js'
+import { codexAside } from './codex.js'
 import { isUnsafe, listAgents, listSkills, listUsage, mergeAgent } from './providers.js'
 import { nextRun, runs, runWorkflow, syncSchedules, validateCron } from './scheduler.js'
 import * as git from './git.js'
@@ -588,6 +590,20 @@ route('POST', '/projects/:pid/terminal', (params, b, ctx) => {
   const p = project(params)
   if (!terminalPlaces(p).some((place) => place.path === b.path)) throw new store.NotFound('terminal folder')
   return terminal.add(p.id, b.path)
+})
+// A side question (/btw) is answered by a copy of the agent session, also while the agent works. Neither
+// the question nor the answer becomes part of the conversation.
+route('POST', '/projects/:pid/threads/:tid/btw', async (params, b) => {
+  const p = project(params)
+  const t = store.getThread(p, params.tid)
+  const question = String(b.text ?? '').trim()
+  if (!question) throw new BadRequest('Write the question after /btw.')
+  const { provider, model } = t.agent
+  const sid = t.agentSessions.find((s) => s.provider === provider)?.sessionId
+  const prompt = `The user asks a quick side question while you work on this conversation. Answer it briefly from what you already know. Don't use tools; this answer does not become part of the conversation.\n\nQuestion: ${question}`
+  if (provider === 'claude') return { text: await claudeAside(store.cwdOf(p, t), sid, model, prompt) }
+  if (provider === 'codex') return { text: await codexAside(store.cwdOf(p, t), sid, model, prompt) }
+  throw new BadRequest('Side questions work with Claude Code and Codex.')
 })
 // A conversation continues in the agent's own terminal UI, resuming its session there. Savor's process
 // for it goes first, so the two don't write to one session; the next input here resumes what happened there.

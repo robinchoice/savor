@@ -1432,6 +1432,34 @@ test('typing / lists the skills of the agent and runs the one picked', async () 
   await api('PATCH', `/projects/${project.id}`, { agent: project.agent })
 })
 
+test('/btw asks a copy of the agent session, also while it works, and stays out of the conversation', async () => {
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
+  const thread = (await api('POST', `/projects/${project.id}/threads`, { text: 'slow: long work', agent: { provider: 'claude' } })).body
+  const url = `/projects/${project.id}/threads/${thread.id}`
+  await until(async () => (await api('GET', url)).body.thread.agentSessions.length)
+  await page.goto(`${base}/#/p/${project.id}/t/${thread.id}`)
+  await page.fill('.composer textarea', '/btw what are you doing?')
+  await page.press('.composer textarea', 'Enter')
+  const sid = (await api('GET', url)).body.thread.agentSessions[0].sessionId
+  await page.waitForSelector(`.aside-answer >> text=Aside from ${sid} (fork): what are you doing?`)
+  assert.equal(await page.inputValue('.composer textarea'), '')
+  const messages = (await api('GET', url)).body.messages
+  assert.ok(!messages.some((m) => m.text.includes('what are you doing')))
+  assert.equal((await api('GET', url)).body.busy, true)
+  await page.click('.aside button[aria-label="Close"]')
+  assert.equal(await page.locator('.aside').count(), 0)
+  fs.writeFileSync(AGENT_LOG + '.release', 'slow: long work')
+  await until(async () => (await api('GET', url)).body.messages.some((m) => m.text === 'Echo: long work'))
+
+  // Codex answers in an ephemeral fork of its thread.
+  const codex = (await api('POST', `/projects/${project.id}/threads`, { text: 'hello', agent: { provider: 'codex', permissionMode: 'default' } })).body
+  await until(async () => !(await api('GET', `/projects/${project.id}/threads/${codex.id}`)).body.busy && (await api('GET', `/projects/${project.id}/threads/${codex.id}`)).body.messages.some((m) => m.text === 'Codex echo: hello'))
+  const answer = await api('POST', `/projects/${project.id}/threads/${codex.id}/btw`, { text: 'which file?' })
+  assert.equal(answer.body.text, 'Codex aside in fork-of-fake-codex-thread: which file?')
+  assert.equal((await api('POST', `/projects/${project.id}/threads/${codex.id}/btw`, { text: ' ' })).status, 400)
+  await api('PATCH', `/projects/${project.id}`, { agent: project.agent })
+})
+
 test("Codex's own commands run through the app-server methods behind them", async () => {
   const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
   const thread = (await api('POST', `/projects/${project.id}/threads`, { text: '/review', agent: { provider: 'codex', permissionMode: 'default' } })).body

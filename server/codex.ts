@@ -236,6 +236,33 @@ export class CodexSession implements Session {
   }
 }
 
+// A side question (/btw): an ephemeral fork of the session answers once in a read-only sandbox. The
+// conversation itself, also a turn that is running, stays as it is.
+export async function codexAside(cwd: string, sid: string | undefined, model: string, prompt: string) {
+  let text = ''
+  let settle: { resolve: (t: string) => void; reject: (e: Error) => void }
+  const answered = new Promise<string>((resolve, reject) => (settle = { resolve, reject }))
+  const rpc = new Rpc(spawnAppServer(), {
+    notification: (method, params) => {
+      if (method === 'item/completed' && params.item?.type === 'agentMessage') text = params.item.text
+      if (method === 'turn/completed') params.turn.status === 'completed' ? settle.resolve(text) : settle.reject(new Error(params.turn.error?.message ?? 'Codex did not answer.'))
+    },
+    request: async () => ({ decision: 'decline', action: 'decline' }),
+  })
+  const timer = setTimeout(() => settle.reject(new Error('Codex did not answer in time.')), 180_000)
+  try {
+    await rpc.request('initialize', { clientInfo: CLIENT, capabilities: CAPABILITIES })
+    rpc.notify('initialized', {})
+    const settings = { cwd, sandbox: 'read-only', approvalPolicy: 'never', model: model || null, ephemeral: true }
+    const r = sid ? await rpc.request('thread/fork', { threadId: sid, ...settings }) : await rpc.request('thread/start', settings)
+    await rpc.request('turn/start', { threadId: r.thread.id, input: [{ type: 'text', text: prompt, text_elements: [] }] })
+    return await answered
+  } finally {
+    clearTimeout(timer)
+    rpc.end()
+  }
+}
+
 // A short app-server run to ask Codex something outside a conversation.
 async function probe<T>(ask: (rpc: Rpc) => Promise<T>) {
   const child = spawnAppServer()
