@@ -1843,10 +1843,9 @@ test('the All tab answers questions in place and starts what waits in the backlo
   await page.click(`.wait-card:has-text("Ship the footer?") >> button:text-is("Yes")`)
   await until(async () => (await read(asked.id)).decisions.every((d) => d.resolved && d.selected === 0))
 
-  // The backlog holds your own items and the next steps conversations suggest, until started or dismissed.
+  // The backlog holds the items put there, until started or deleted, and not the next steps conversations suggest.
   assert.equal((await api('POST', `/projects/${project.id}/backlog`, { title: '  ' })).status, 400)
-  const key = `${done.id}:Do it again`
-  assert.ok((await api('GET', '/backlog')).body.suggested.some((s) => s.key === key && s.projectId === project.id))
+  assert.deepEqual((await api('GET', '/backlog')).body, { items: [] })
   await page.goto(`${base}/#/all/board`)
   await page.fill('.board-add textarea', 'Write the footer copy')
   await page.click('.board-add >> text=Add')
@@ -1856,8 +1855,6 @@ test('the All tab answers questions in place and starts what waits in the backlo
   await page.click('.board-card:has-text("Write the footer copy") >> text=Start')
   await until(async () => (await api('GET', threads)).body.some((t) => t.title === 'Write the footer copy'))
   await until(async () => !(await api('GET', '/backlog')).body.items.length)
-  assert.equal((await api('POST', `/projects/${project.id}/backlog/dismiss`, { key })).status, 200)
-  assert.ok(!(await api('GET', '/backlog')).body.suggested.some((s) => s.key === key))
 
   // Agents put follow-ups on the backlog and find them there.
   const { mcpToken } = JSON.parse(fs.readFileSync(path.join(HOME, 'state.json'), 'utf8'))

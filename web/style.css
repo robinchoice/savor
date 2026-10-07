@@ -941,10 +941,8 @@ details.box[open] > summary .chev { transform: rotate(180deg); }
 .board-card { background: var(--card); border: 1px solid transparent; border-radius: 10px; padding: 9px 11px; display: flex; flex-direction: column; gap: 3px; transition: border-color 0.18s ease; }
 .board-card:hover { border-color: var(--line-strong); }
 .board-card[draggable='true'] { cursor: grab; }
-.board-card.suggested { background: none; border: 1px dashed var(--line-strong); }
 .board-card-top { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); min-width: 0; }
 .board-card-top .ov-meta { margin-left: auto; }
-.board-from { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--faint); }
 .board-title { font-weight: 500; overflow-wrap: anywhere; }
 .board-actions { display: flex; gap: 6px; margin-top: 4px; }
 .board-add { background: var(--card); border-radius: 12px; padding: 8px 10px; display: flex; flex-direction: column; gap: 4px; margin-bottom: 4px; }

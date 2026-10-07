@@ -311,14 +311,12 @@ function AllInbox({ threads, projects, byId, rest }: { threads?: Listed[]; proje
 }
 
 interface BacklogItem { id: string; title: string; createdAt: string; projectId: string }
-interface Suggestion { key: string; title: string; threadId: string; threadTitle: string; projectId: string }
-type Card = { item: BacklogItem } | { suggestion: Suggestion }
 
 // What to start next and what agents work on now. Questions and results stay in Overview and Inbox.
 function AllBoard({ threads, projects, byId, only }: { threads?: Listed[]; projects: Project[]; byId: Map<string, Project>; only?: Project }) {
-  const [backlog] = useApi<{ items: BacklogItem[]; suggested: Suggestion[] }>('/backlog', (e) => ['backlog', 'thread', 'status', 'message', 'projects'].includes(e.type))
+  const [backlog] = useApi<{ items: BacklogItem[] }>('/backlog', (e) => ['backlog', 'projects'].includes(e.type))
   const [byProject, setByProject] = useState(false)
-  const [dragged, setDragged] = useState<Card | null>(null)
+  const [dragged, setDragged] = useState<BacklogItem | null>(null)
   const [over, setOver] = useState(false)
   const [menu, setMenu] = useState(false)
   const choose = (pid: string | null) => {
@@ -329,23 +327,13 @@ function AllBoard({ threads, projects, byId, only }: { threads?: Listed[]; proje
   const shown = (pid: string) => (only ? pid === only.id : byId.has(pid))
   const doing = (threads ?? []).filter((t) => shown(t.projectId) && !t.completed && !t.waitsFor && (t.busy || t.waiting))
   const items = (backlog?.items ?? []).filter((i) => shown(i.projectId))
-  const suggested = (backlog?.suggested ?? []).filter((s) => shown(s.projectId))
   // One project needs neither groups nor a name on every card.
   const named = !byProject && !only
-  const start = async (card: Card) => {
-    if ('item' in card) {
-      await api('POST', `/projects/${card.item.projectId}/threads`, { text: card.item.title })
-      await api('DELETE', `/projects/${card.item.projectId}/backlog/${card.item.id}`)
-    } else {
-      // Like “Start in a new conversation” on the suggestion: the same agent, in the same worktree.
-      const s = card.suggestion
-      const from = threads?.find((t) => t.id === s.threadId)
-      await api('POST', `/projects/${s.projectId}/threads`, { text: s.title, agent: from?.agent, worktree: from?.worktree?.branch ?? null })
-      await api('POST', `/projects/${s.projectId}/backlog/dismiss`, { key: s.key })
-    }
+  const remove = (item: BacklogItem) => api('DELETE', `/projects/${item.projectId}/backlog/${item.id}`)
+  const start = async (item: BacklogItem) => {
+    await api('POST', `/projects/${item.projectId}/threads`, { text: item.title })
+    await remove(item)
   }
-  const remove = (card: Card) =>
-    'item' in card ? api('DELETE', `/projects/${card.item.projectId}/backlog/${card.item.id}`) : api('POST', `/projects/${card.suggestion.projectId}/backlog/dismiss`, { key: card.suggestion.key })
   // By project, each project's cards follow its name in the order of the tabs.
   const grouped = <T extends { projectId: string }>(list: T[], render: (x: T) => preact.JSX.Element) =>
     byProject && !only
@@ -360,31 +348,27 @@ function AllBoard({ threads, projects, byId, only }: { threads?: Listed[]; proje
             </Fragment>
           ))
       : list.map(render)
-  const backlogCard = (card: Card) => {
-    const own = 'item' in card
-    const { title, projectId } = own ? card.item : card.suggestion
-    return (
-      <div key={own ? card.item.id : card.suggestion.key} class={`board-card ${own ? '' : 'suggested'}`} draggable onDragStart={(e) => (e.dataTransfer!.setData('text/plain', title), setDragged(card))} onDragEnd={() => (setDragged(null), setOver(false))}>
-        <div class="board-card-top">
-          {named && (
-            <>
-              <Avatar project={byId.get(projectId)} /> {byId.get(projectId)?.name}
-            </>
-          )}
-          {own ? <span class="ov-meta">{formatStamp(card.item.createdAt)}</span> : <span class="board-from">from “{card.suggestion.threadTitle}”</span>}
-        </div>
-        <div class="board-title">{title}</div>
-        <div class="board-actions">
-          <button class="ghost small" onClick={() => start(card)}>
-            <Play size={12} /> Start
-          </button>
-          <button class="ghost small" onClick={() => remove(card)}>
-            {own ? 'Delete' : 'Dismiss'}
-          </button>
-        </div>
+  const backlogCard = (item: BacklogItem) => (
+    <div key={item.id} class="board-card" draggable onDragStart={(e) => (e.dataTransfer!.setData('text/plain', item.title), setDragged(item))} onDragEnd={() => (setDragged(null), setOver(false))}>
+      <div class="board-card-top">
+        {named && (
+          <>
+            <Avatar project={byId.get(item.projectId)} /> {byId.get(item.projectId)?.name}
+          </>
+        )}
+        <span class="ov-meta">{formatStamp(item.createdAt)}</span>
       </div>
-    )
-  }
+      <div class="board-title">{item.title}</div>
+      <div class="board-actions">
+        <button class="ghost small" onClick={() => start(item)}>
+          <Play size={12} /> Start
+        </button>
+        <button class="ghost small" onClick={() => remove(item)}>
+          Delete
+        </button>
+      </div>
+    </div>
+  )
   const drop = (e: DragEvent) => {
     e.preventDefault()
     setOver(false)
@@ -428,13 +412,11 @@ function AllBoard({ threads, projects, byId, only }: { threads?: Listed[]; proje
       <div class="board-cols">
         <section class="board-col">
           <div class="board-col-head">
-            Backlog <span>{items.length + suggested.length}</span>
+            Backlog <span>{items.length}</span>
           </div>
           <div class="board-col-body">
             <AddToBacklog key={only?.id} projects={projects} initial={only?.id ?? null} />
-            {grouped(items, (item) => backlogCard({ item }))}
-            {suggested.length > 0 && <div class="board-group">Suggested by agents · {suggested.length}</div>}
-            {grouped(suggested, (suggestion) => backlogCard({ suggestion }))}
+            {grouped(items, backlogCard)}
           </div>
         </section>
         <section class={`board-col ${over ? 'over' : ''}`} onDragOver={(e) => dragged && (e.preventDefault(), setOver(true))} onDragLeave={() => setOver(false)} onDrop={drop}>
