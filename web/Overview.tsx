@@ -3,7 +3,7 @@ import { useState } from 'preact/hooks'
 import { ArrowRight, ChevronDown, Plus, Clock, Pause, Play, SquareArrowOutUpRight, Trash2, TriangleAlert, X } from 'lucide-preact'
 import { api, avatarStyle, formatStamp, go, initial, kindOf, RINGS, useApi, type AgentConfig, type ApprovalOption, type Attachment, type Decision, type Project, type Thread, type Workflow } from './api'
 import { Composer } from './Composer'
-import { Elapsed, plain, ThreadCard, ThreadView } from './Conversations'
+import { byUrgency, Elapsed, NextButton, plain, ThreadCard, ThreadView } from './Conversations'
 import { STATUS, schedule, when } from './Workflows'
 import { setPrefs, usePrefs } from './prefs'
 
@@ -260,6 +260,7 @@ function AllInbox({ threads, projects, byId, rest }: { threads?: Listed[]; proje
   const open = (threads ?? []).filter((t) => !t.completed && byId.has(t.projectId)).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
   const test: Record<InboxFilter, (t: Thread) => boolean> = { all: () => true, you: (t) => !!t.waitsFor, working: (t) => kindOf(t) === 'working' }
   const shown = open.filter(test[filter])
+  const next = byUrgency(open.filter(test.you)).find((t) => t.id !== tid)
   const tab = (id: InboxFilter, label: string) => {
     const n = open.filter(test[id]).length
     return (
@@ -273,6 +274,7 @@ function AllInbox({ threads, projects, byId, rest }: { threads?: Listed[]; proje
       <aside class="conv-list">
         <div class="conv-head">
           <h2>Inbox</h2>
+          {next && <NextButton path={`/all/inbox/${next.projectId}/${next.id}`} />}
           <a class="new-btn" href="#/all/inbox/new" title="New conversation">
             <Plus size={18} />
           </a>

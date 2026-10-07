@@ -43,12 +43,31 @@ export const Label = ({ label }: { label: Thread['label'] }) =>
 
 // "For you" first: what blocks an agent, then new results, then read ones that wait for a follow-up or Finish.
 const RANK: Record<Reason, number> = { approval: 0, question: 0, failed: 1, new: 2, result: 3 }
-const byUrgency = (list: Thread[]) =>
+export const byUrgency = <T extends Thread>(list: T[]) =>
   list.sort((a, b) => {
     const [x, y] = [a.waitsFor!, b.waitsFor!]
     // What blocks an agent the longest waiting first, results the newest first.
     return RANK[x.reason] - RANK[y.reason] || (RANK[x.reason] < 2 ? x.since.localeCompare(y.since) : y.since.localeCompare(x.since))
   })
+
+// Opens the next conversation that needs you, also with J, and with Alt+J while typing.
+export function NextButton({ path }: { path: string }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const typing = (e.target as HTMLElement).closest?.('input, textarea, select, [contenteditable]')
+      if (e.code !== 'KeyJ' || e.ctrlKey || e.metaKey || e.shiftKey || (typing && !e.altKey)) return
+      e.preventDefault()
+      go(path)
+    }
+    addEventListener('keydown', onKey)
+    return () => removeEventListener('keydown', onKey)
+  }, [path])
+  return (
+    <button class="next-btn" title="Open the next conversation that needs you (J)" onClick={() => go(path)}>
+      Next <kbd>J</kbd>
+    </button>
+  )
+}
 
 export function Conversations({ project, threadId, fanoutId, isNew }: { project: Project; threadId?: string; fanoutId?: string; isNew?: boolean }) {
   const [threads] = useApi<Thread[]>(`/projects/${project.id}/threads`, (e) => e.projectId === project.id && ['thread', 'status', 'message', 'processes', 'activity'].includes(e.type))
@@ -69,19 +88,6 @@ export function Conversations({ project, threadId, fanoutId, isNew }: { project:
   const rest = open.filter((t) => !t.waitsFor && !t.busy && !t.waiting)
   const finished = visible.filter((t) => t.completed)
   const next = forYou.find((t) => t.id !== threadId)
-  const goNext = () => next && go(`/p/${project.id}/t/${next.id}`)
-
-  // J opens the next conversation that needs you; Alt+J also while typing.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const typing = (e.target as HTMLElement).closest?.('input, textarea, select, [contenteditable]')
-      if (e.code !== 'KeyJ' || e.ctrlKey || e.metaKey || e.shiftKey || (typing && !e.altKey) || !next) return
-      e.preventDefault()
-      goNext()
-    }
-    addEventListener('keydown', onKey)
-    return () => removeEventListener('keydown', onKey)
-  }, [next?.id])
 
   // Worktrees and fan-outs keep their actions below the conversations; their conversations carry the branch.
   const fanouts = new Map<string, Thread[]>()
@@ -105,11 +111,7 @@ export function Conversations({ project, threadId, fanoutId, isNew }: { project:
       <aside class="conv-list">
         <div class="conv-head">
           <h2>Conversations</h2>
-          {next && (
-            <button class="next-btn" title="Open the next conversation that needs you (J)" onClick={goNext}>
-              Next <kbd>J</kbd>
-            </button>
-          )}
+          {next && <NextButton path={`/p/${project.id}/t/${next.id}`} />}
           <a class="new-btn" href={`#/p/${project.id}/new`} title="New conversation">
             <Plus size={18} />
           </a>

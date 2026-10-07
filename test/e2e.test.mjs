@@ -1982,6 +1982,15 @@ test('the All tab answers questions in place and starts what waits in the backlo
   const done = (await api('POST', threads, { text: 'plan the footer', agent: { provider: 'claude' } })).body
   await until(async () => (await read(asked.id)).decisions.some((d) => !d.resolved) && (await read(done.id)).messages.some((m) => m.kind === 'conclusion') && !(await read(done.id)).busy)
 
+  // The inbox opens the next conversation that needs you, across projects, as with J in a project.
+  await page.goto(`${base}/#/all/inbox`)
+  await page.click('.all-inbox .next-btn')
+  await page.waitForFunction(() => /^#\/all\/inbox\/[^/]+\/[^/]+$/.test(location.hash))
+  const first = await page.evaluate(() => location.hash)
+  // The composer has the focus now, so it takes Alt+J.
+  await page.keyboard.press('Alt+j')
+  await page.waitForFunction((first) => location.hash !== first, first)
+
   // The overview brings the open question along and answers it right there.
   const listed = (await api('GET', '/overview')).body.threads.find((t) => t.id === asked.id)
   assert.deepEqual(listed.decisions.map((d) => d.options), [['Yes', 'No']])
