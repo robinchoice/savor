@@ -16,6 +16,8 @@ export interface Prefs {
   previewDevice: Device
   // Workflow groups marked as “Not a duplicate” in All projects.
   notDuplicates: string[]
+  // The project the All board last showed alone, null for all of them.
+  boardProject: string | null
   // The terminal panel below the project.
   terminalOpen: boolean
   terminalHeight: number
@@ -31,6 +33,7 @@ let prefs: Prefs = {
   chatWidth: 420,
   previewDevice: 'fit',
   notDuplicates: [],
+  boardProject: null,
   terminalOpen: false,
   terminalHeight: 300,
   terminalMax: false,

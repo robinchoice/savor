@@ -51,12 +51,13 @@ const Avatar = ({ project }: { project?: Project }) => (
 // Routes: all[/inbox[/new | /:pid/:tid] | /board[/:pid] | /workflows]
 export function AllProjects({ projects, section, rest }: { projects: Project[]; section?: string; rest: string[] }) {
   const [data] = useApi<Overview>('/overview', (e) => ['projects', 'thread', 'status', 'workflows'].includes(e.type))
+  const { boardProject } = usePrefs()
   const byId = new Map(projects.map((p) => [p.id, p]))
   if (section === 'inbox') return <AllInbox threads={data?.threads} projects={projects} byId={byId} rest={rest} />
   if (section === 'board')
     return (
       <div class="page">
-        <AllBoard threads={data?.threads} projects={projects} byId={byId} only={byId.get(rest[0])} />
+        <AllBoard threads={data?.threads} projects={projects} byId={byId} only={byId.get(rest[0] ?? boardProject)} />
       </div>
     )
   return <div class="page">{section === 'workflows' ? <AllWorkflows workflows={data?.workflows} byId={byId} /> : <AllOverview data={data} projects={projects} byId={byId} />}</div>
@@ -320,6 +321,11 @@ function AllBoard({ threads, projects, byId, only }: { threads?: Listed[]; proje
   const [dragged, setDragged] = useState<Card | null>(null)
   const [over, setOver] = useState(false)
   const [menu, setMenu] = useState(false)
+  const choose = (pid: string | null) => {
+    setPrefs({ boardProject: pid })
+    setMenu(false)
+    go(pid ? `/all/board/${pid}` : '/all/board')
+  }
   const shown = (pid: string) => (only ? pid === only.id : byId.has(pid))
   const doing = (threads ?? []).filter((t) => shown(t.projectId) && !t.completed && !t.waitsFor && (t.busy || t.waiting))
   const items = (backlog?.items ?? []).filter((i) => shown(i.projectId))
@@ -403,13 +409,11 @@ function AllBoard({ threads, projects, byId, only }: { threads?: Listed[]; proje
           </button>
           {menu && (
             <div class="menu right">
-              <a href="#/all/board" onClick={() => setMenu(false)}>
-                All projects
-              </a>
+              <button onClick={() => choose(null)}>All projects</button>
               {projects.map((p) => (
-                <a key={p.id} href={`#/all/board/${p.id}`} onClick={() => setMenu(false)}>
+                <button key={p.id} onClick={() => choose(p.id)}>
                   <Avatar project={p} /> {p.name}
-                </a>
+                </button>
               ))}
             </div>
           )}
