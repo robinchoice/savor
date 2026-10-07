@@ -1,7 +1,7 @@
 import './monitoring'
 import { render } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
-import { Coffee, Download, Folder, FolderOpen, Monitor, Pin, PinOff, Search, Files as FilesIcon, MessageSquare, Moon, Plus, Server, SlidersHorizontal, Sun, Workflow as WorkflowIcon, ChevronDown, Inbox, Layers, LayoutList, Smartphone, X } from 'lucide-preact'
+import { Coffee, Download, Folder, FolderOpen, Monitor, Pin, PinOff, Search, Files as FilesIcon, MessageSquare, Moon, Plus, Server, SlidersHorizontal, SquareKanban, Sun, Workflow as WorkflowIcon, ChevronDown, Inbox, Layers, LayoutList, Smartphone, X } from 'lucide-preact'
 import { api, avatarStyle, connectEvents, desktop, go, initial, Unauthorized, useApi, useEvent, type Me, type Project } from './api'
 import { Conversations } from './Conversations'
 import { FilesView } from './Files'
@@ -480,6 +480,7 @@ function AllBar({ section }: { section?: string }) {
     <div class="subbar">
       {tab('', 'Overview', LayoutList)}
       {tab('inbox', 'Inbox', Inbox)}
+      {tab('board', 'Board', SquareKanban)}
       {tab('workflows', 'Workflows', WorkflowIcon)}
     </div>
   )

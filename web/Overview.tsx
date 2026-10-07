@@ -48,11 +48,17 @@ const Avatar = ({ project }: { project?: Project }) => (
   </span>
 )
 
-// Routes: all[/inbox[/new | /:pid/:tid] | /workflows]
+// Routes: all[/inbox[/new | /:pid/:tid] | /board | /workflows]
 export function AllProjects({ projects, section, rest }: { projects: Project[]; section?: string; rest: string[] }) {
   const [data] = useApi<Overview>('/overview', (e) => ['projects', 'thread', 'status', 'workflows'].includes(e.type))
   const byId = new Map(projects.map((p) => [p.id, p]))
   if (section === 'inbox') return <AllInbox threads={data?.threads} projects={projects} byId={byId} rest={rest} />
+  if (section === 'board')
+    return (
+      <div class="page">
+        <AllBoard threads={data?.threads} projects={projects} byId={byId} />
+      </div>
+    )
   return <div class="page">{section === 'workflows' ? <AllWorkflows workflows={data?.workflows} byId={byId} /> : <AllOverview data={data} projects={projects} byId={byId} />}</div>
 }
 
@@ -297,6 +303,177 @@ function AllInbox({ threads, projects, byId, rest }: { threads?: Listed[]; proje
           <StartAnywhere projects={projects} initial={null} />
         </section>
       )}
+    </div>
+  )
+}
+
+interface BacklogItem { id: string; title: string; createdAt: string; projectId: string }
+interface Suggestion { key: string; title: string; threadId: string; threadTitle: string; projectId: string }
+type Card = { item: BacklogItem } | { suggestion: Suggestion }
+
+// What to start next and what agents work on now. Questions and results stay in Overview and Inbox.
+function AllBoard({ threads, projects, byId }: { threads?: Listed[]; projects: Project[]; byId: Map<string, Project> }) {
+  const [backlog] = useApi<{ items: BacklogItem[]; suggested: Suggestion[] }>('/backlog', (e) => ['backlog', 'thread', 'status', 'message', 'projects'].includes(e.type))
+  const [byProject, setByProject] = useState(false)
+  const [dragged, setDragged] = useState<Card | null>(null)
+  const [over, setOver] = useState(false)
+  const doing = (threads ?? []).filter((t) => !t.completed && !t.waitsFor && (t.busy || t.waiting))
+  const items = (backlog?.items ?? []).filter((i) => byId.has(i.projectId))
+  const suggested = (backlog?.suggested ?? []).filter((s) => byId.has(s.projectId))
+  const start = async (card: Card) => {
+    if ('item' in card) {
+      await api('POST', `/projects/${card.item.projectId}/threads`, { text: card.item.title })
+      await api('DELETE', `/projects/${card.item.projectId}/backlog/${card.item.id}`)
+    } else {
+      // Like “Start in a new conversation” on the suggestion: the same agent, in the same worktree.
+      const s = card.suggestion
+      const from = threads?.find((t) => t.id === s.threadId)
+      await api('POST', `/projects/${s.projectId}/threads`, { text: s.title, agent: from?.agent, worktree: from?.worktree?.branch ?? null })
+      await api('POST', `/projects/${s.projectId}/backlog/dismiss`, { key: s.key })
+    }
+  }
+  const remove = (card: Card) =>
+    'item' in card ? api('DELETE', `/projects/${card.item.projectId}/backlog/${card.item.id}`) : api('POST', `/projects/${card.suggestion.projectId}/backlog/dismiss`, { key: card.suggestion.key })
+  // By project, each project's cards follow its name in the order of the tabs.
+  const grouped = <T extends { projectId: string }>(list: T[], render: (x: T) => preact.JSX.Element) =>
+    byProject
+      ? projects
+          .filter((p) => list.some((x) => x.projectId === p.id))
+          .map((p) => (
+            <Fragment key={p.id}>
+              <div class="board-group">
+                <Avatar project={p} /> {p.name}
+              </div>
+              {list.filter((x) => x.projectId === p.id).map(render)}
+            </Fragment>
+          ))
+      : list.map(render)
+  const backlogCard = (card: Card) => {
+    const own = 'item' in card
+    const { title, projectId } = own ? card.item : card.suggestion
+    return (
+      <div key={own ? card.item.id : card.suggestion.key} class={`board-card ${own ? '' : 'suggested'}`} draggable onDragStart={(e) => (e.dataTransfer!.setData('text/plain', title), setDragged(card))} onDragEnd={() => (setDragged(null), setOver(false))}>
+        <div class="board-card-top">
+          {!byProject && (
+            <>
+              <Avatar project={byId.get(projectId)} /> {byId.get(projectId)?.name}
+            </>
+          )}
+          {own ? <span class="ov-meta">{formatStamp(card.item.createdAt)}</span> : <span class="board-from">from “{card.suggestion.threadTitle}”</span>}
+        </div>
+        <div class="board-title">{title}</div>
+        <div class="board-actions">
+          <button class="ghost small" onClick={() => start(card)}>
+            <Play size={12} /> Start
+          </button>
+          <button class="ghost small" onClick={() => remove(card)}>
+            {own ? 'Delete' : 'Dismiss'}
+          </button>
+        </div>
+      </div>
+    )
+  }
+  const drop = (e: DragEvent) => {
+    e.preventDefault()
+    setOver(false)
+    if (dragged) start(dragged)
+    setDragged(null)
+  }
+  return (
+    <div class="board">
+      <div class="board-head">
+        <h1>Board</h1>
+        <span class="muted small wide-only">What to start next and what runs now.</span>
+        <div class="filters">
+          <button class={`filter ${byProject ? '' : 'active'}`} onClick={() => setByProject(false)}>Flat</button>
+          <button class={`filter ${byProject ? 'active' : ''}`} onClick={() => setByProject(true)}>By project</button>
+        </div>
+      </div>
+      <div class="board-cols">
+        <section class="board-col">
+          <div class="board-col-head">
+            Backlog <span>{items.length + suggested.length}</span>
+          </div>
+          <div class="board-col-body">
+            <AddToBacklog projects={projects} />
+            {grouped(items, (item) => backlogCard({ item }))}
+            {suggested.length > 0 && <div class="board-group">Suggested by agents · {suggested.length}</div>}
+            {grouped(suggested, (suggestion) => backlogCard({ suggestion }))}
+          </div>
+        </section>
+        <section class={`board-col ${over ? 'over' : ''}`} onDragOver={(e) => dragged && (e.preventDefault(), setOver(true))} onDragLeave={() => setOver(false)} onDrop={drop}>
+          <div class="board-col-head">
+            <span class="ring busy" /> Doing <span>{doing.length}</span>
+          </div>
+          <div class="board-col-body">
+            {grouped(doing, (t) => (
+              <a key={t.id} class="board-card" href={threadHref(t)}>
+                <div class="board-card-top">
+                  {!byProject && (
+                    <>
+                      <Avatar project={byId.get(t.projectId)} /> {byId.get(t.projectId)?.name}
+                    </>
+                  )}
+                  {t.workflow && <span class="ov-tag">workflow</span>}
+                  <span class="ov-meta">{t.startedAt && <Elapsed since={t.startedAt} />}</span>
+                </div>
+                <div class="board-title">{t.summary ?? t.title}</div>
+                <div class="all-row-sub">{t.waiting && !t.busy ? 'Waiting for background work' : t.step ?? 'Working'}</div>
+              </a>
+            ))}
+            <p class="muted small center">{dragged ? 'Drop here to start it' : doing.length ? '' : 'No agent works right now. Start something from the backlog.'}</p>
+          </div>
+        </section>
+      </div>
+    </div>
+  )
+}
+
+// A line to do later, or to start right away, in any project.
+function AddToBacklog({ projects }: { projects: Project[] }) {
+  const [text, setText] = useState('')
+  const [chosen, setChosen] = useState<string | null>(null)
+  const [menu, setMenu] = useState(false)
+  const project = projects.find((p) => p.id === chosen) ?? projects.find((p) => p.pinned) ?? projects[0]
+  if (!project) return null
+  const add = async (now: boolean) => {
+    const title = text.trim()
+    if (!title) return
+    setText('')
+    await (now ? api('POST', `/projects/${project.id}/threads`, { text: title }) : api('POST', `/projects/${project.id}/backlog`, { title }))
+  }
+  return (
+    <div class="board-add">
+      <textarea
+        rows={2}
+        placeholder="Add something to do later…"
+        value={text}
+        onInput={(e) => setText(e.currentTarget.value)}
+        onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), add(false))}
+      />
+      <div class="board-add-row">
+        <div class="menu-anchor">
+          <button class="pill" onClick={() => setMenu(!menu)}>
+            <Avatar project={project} /> {project.name} <ChevronDown size={14} />
+          </button>
+          {menu && (
+            <div class="menu">
+              {projects.map((p) => (
+                <button key={p.id} onClick={() => (setChosen(p.id), setMenu(false))}>
+                  <Avatar project={p} /> {p.name}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        <span class="spacer" />
+        <button class="ghost small" disabled={!text.trim()} onClick={() => add(false)}>
+          Add
+        </button>
+        <button class="primary small" disabled={!text.trim()} title="Start a conversation with it now" onClick={() => add(true)}>
+          Start now
+        </button>
+      </div>
     </div>
   )
 }

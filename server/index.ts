@@ -723,6 +723,50 @@ route('GET', '/overview', () => {
   return { threads, workflows }
 })
 
+// ---- backlog ----
+
+// The next steps a conversation's last conclusion suggests, while it waits for a follow-up.
+function suggestions(p: store.Project, t: store.Thread) {
+  if (t.completed || agents.isBusy(t.id) || agents.waiting(p, t) || store.listDecisions(p, t.id).some((d) => !d.resolved)) return []
+  const last = store.readMessages(p, t.id).at(-1)
+  return last?.kind === 'conclusion' ? (last.suggestions ?? []).map((title) => ({ key: `${t.id}:${title}`, title, threadId: t.id, threadTitle: t.summary ?? t.title })) : []
+}
+route('GET', '/backlog', () => {
+  const items = [], suggested = []
+  for (const p of store.listProjects()) {
+    const backlog = store.readBacklog(p)
+    items.push(...backlog.items.map((i) => ({ ...i, projectId: p.id })))
+    for (const t of store.listThreads(p)) suggested.push(...suggestions(p, t).filter((s) => !backlog.dismissed.includes(s.key)).map((s) => ({ ...s, projectId: p.id })))
+  }
+  return { items, suggested }
+})
+route('POST', '/projects/:pid/backlog', (params, b) => {
+  const p = project(params)
+  const title = typeof b.title === 'string' ? b.title.trim() : ''
+  if (!title) throw new BadRequest('Describe what to do.')
+  const backlog = store.readBacklog(p)
+  const item = { id: store.newId(), title, createdAt: store.now() }
+  store.saveBacklog(p, { ...backlog, items: [item, ...backlog.items] })
+  emit({ type: 'backlog', projectId: p.id })
+  return item
+})
+route('DELETE', '/projects/:pid/backlog/:id', (params) => {
+  const p = project(params)
+  const backlog = store.readBacklog(p)
+  store.saveBacklog(p, { ...backlog, items: backlog.items.filter((i) => i.id !== params.id) })
+  emit({ type: 'backlog', projectId: p.id })
+  return {}
+})
+// A dismissed suggestion stays hidden; keys of suggestions no conversation offers anymore are dropped.
+route('POST', '/projects/:pid/backlog/dismiss', (params, b) => {
+  const p = project(params)
+  const backlog = store.readBacklog(p)
+  const offered = new Set(store.listThreads(p).flatMap((t) => suggestions(p, t).map((s) => s.key)))
+  store.saveBacklog(p, { ...backlog, dismissed: [...backlog.dismissed, String(b.key)].filter((k) => offered.has(k)) })
+  emit({ type: 'backlog', projectId: p.id })
+  return {}
+})
+
 // ---- processes ----
 
 route('GET', '/projects/:pid/processes', (params) => store.listProcs(project(params)))

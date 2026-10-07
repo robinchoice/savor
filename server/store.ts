@@ -492,6 +492,15 @@ export function deleteDoc(p: Project, id: string) {
   fs.rmSync(path.join(docsDir(p), `${path.basename(id)}.md`), { force: true })
 }
 
+// ---- backlog ----
+
+// What to start later: the user's own items, and the agents' suggested next steps that were dismissed.
+export interface BacklogItem { id: string; title: string; createdAt: string }
+export interface Backlog { items: BacklogItem[]; dismissed: string[] }
+const backlogFile = (p: Project) => path.join(dataDir(p), 'backlog.json')
+export const readBacklog = (p: Project): Backlog => ({ items: [], dismissed: [], ...readJson<Partial<Backlog>>(backlogFile(p), {}) })
+export const saveBacklog = (p: Project, b: Backlog) => writeJson(backlogFile(p), b)
+
 // ---- workflows ----
 
 const wfDir = (p: Project) => path.join(dataDir(p), 'workflows')

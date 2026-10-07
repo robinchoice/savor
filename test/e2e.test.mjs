@@ -1904,3 +1904,35 @@ test('a fork continues in a conversation of its own, as a copy of the agent sess
   await idle(working.id)
   await api('PATCH', `/projects/${project.id}`, { agent: project.agent })
 })
+
+test('the All tab answers questions in place and starts what waits in the backlog', async () => {
+  const [project] = (await api('GET', '/projects')).body
+  const threads = `/projects/${project.id}/threads`
+  const read = async (id) => (await api('GET', `${threads}/${id}`)).body
+  const asked = (await api('POST', threads, { text: 'ask: Ship the footer?', agent: { provider: 'claude' } })).body
+  const done = (await api('POST', threads, { text: 'plan the footer', agent: { provider: 'claude' } })).body
+  await until(async () => (await read(asked.id)).decisions.some((d) => !d.resolved) && (await read(done.id)).messages.some((m) => m.kind === 'conclusion') && !(await read(done.id)).busy)
+
+  // The overview brings the open question along and answers it right there.
+  const listed = (await api('GET', '/overview')).body.threads.find((t) => t.id === asked.id)
+  assert.deepEqual(listed.decisions.map((d) => d.options), [['Yes', 'No']])
+  await page.goto(`${base}/#/all`)
+  await page.click(`.wait-card:has-text("Ship the footer?") >> button:text-is("Yes")`)
+  await until(async () => (await read(asked.id)).decisions.every((d) => d.resolved && d.selected === 0))
+
+  // The backlog holds your own items and the next steps conversations suggest, until started or dismissed.
+  assert.equal((await api('POST', `/projects/${project.id}/backlog`, { title: '  ' })).status, 400)
+  const key = `${done.id}:Do it again`
+  assert.ok((await api('GET', '/backlog')).body.suggested.some((s) => s.key === key && s.projectId === project.id))
+  await page.goto(`${base}/#/all/board`)
+  await page.fill('.board-add textarea', 'Write the footer copy')
+  await page.click('.board-add >> text=Add')
+  await page.waitForSelector('.board-card:has-text("Write the footer copy")')
+  const [item] = (await api('GET', '/backlog')).body.items
+  assert.deepEqual([item.title, item.projectId], ['Write the footer copy', project.id])
+  await page.click('.board-card:has-text("Write the footer copy") >> text=Start')
+  await until(async () => (await api('GET', threads)).body.some((t) => t.title === 'Write the footer copy'))
+  await until(async () => !(await api('GET', '/backlog')).body.items.length)
+  assert.equal((await api('POST', `/projects/${project.id}/backlog/dismiss`, { key })).status, 200)
+  assert.ok(!(await api('GET', '/backlog')).body.suggested.some((s) => s.key === key))
+})
