@@ -340,6 +340,25 @@ function buildServer(p: Project, tid: string) {
     },
   )
 
+  server.registerTool(
+    'complete_conversation',
+    {
+      description:
+        'Mark a finished conversation as done, in this project or in another one named by `project` (ids from list_conversations), like the user does in the list. Only for conversations whose request is carried out, with nothing left open. New input reopens it.',
+      inputSchema: { id: z.string(), project: PROJECT },
+    },
+    async ({ id, project }) => {
+      const target = project ? findProject(project) : p
+      if (target.id === p.id && id === tid) throw new Error('This is your own conversation.')
+      const t = store.getThread(target, id)
+      if (agents.isBusy(id) || agents.waiting(target, t)) throw new Error('The conversation is still working.')
+      if (t.needsYou) throw new Error('The conversation waits for the user.')
+      store.updateThread(target, id, { completed: true })
+      emit({ type: 'thread', projectId: target.id, threadId: id })
+      return ok({ id, completed: true, url: threadUrl(id, target) })
+    },
+  )
+
   // ---- background processes ----
 
   server.registerTool(

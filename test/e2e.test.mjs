@@ -1102,6 +1102,13 @@ test('agents send messages to conversations in other projects, marked as theirs,
   const fromPhone = (await messages(other.id, target.id)).find((m) => m.text === 'from the phone')
   assert.deepEqual([fromPhone.origin, fromPhone.device, fromPhone.from.threadId], ['remote', 'CI message phone', remote.id])
 
+  // A finished conversation gets marked as done, in another project too, but never the agent's own.
+  const closer = await connect(project.id, sender.id)
+  assert.ok((await call(closer, 'complete_conversation', { id: sender.id })).isError)
+  assert.ok(!(await call(closer, 'complete_conversation', { id: target.id, project: other.id })).isError)
+  await closer.close()
+  assert.equal((await api('GET', `/projects/${other.id}/threads/${target.id}`)).body.thread.completed, true)
+
   await api('DELETE', `/devices/${(await api('GET', '/devices')).body.find((d) => d.name === 'CI message phone').id}`)
   await api('DELETE', `/projects/${other.id}`)
 })
