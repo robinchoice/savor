@@ -15,6 +15,7 @@ import { Preview } from './Preview'
 import { Changes, type ReviewComment, type Source } from './Changes'
 import { Fanout } from './Fanout'
 import { setPrefs, usePrefs } from './prefs'
+import { showTerminal } from './Terminal'
 
 export function Markdown({ text }: { text: string }) {
   const html = useMemo(() => DOMPurify.sanitize(marked.parse(text, { async: false }) as string), [text])
@@ -503,6 +504,9 @@ export function ThreadView({ project, threadId, back }: { project: Project; thre
     const t = await api<Thread>('POST', `${base}/fork`)
     go(`/p/${project.id}/t/${t.id}`)
   }
+  // Claude Code's and Codex's own terminal UI resume the conversation's session.
+  const inTerminal = ['claude', 'codex'].includes(thread.agent.provider) && thread.agentSessions.some((s) => s.provider === thread.agent.provider)
+  const openInTerminal = async () => showTerminal((await api<{ id: string }>('POST', `${base}/terminal`)).id)
   const remove = async () => {
     if (!confirm('Delete this conversation and its history?')) return
     await api('DELETE', base)
@@ -645,6 +649,7 @@ export function ThreadView({ project, threadId, back }: { project: Project; thre
                       {compactHead && <button onClick={showActivity}>Show activity</button>}
                       <button onClick={rename}>Rename label</button>
                       {!busy && <button onClick={fork}>Fork conversation</button>}
+                      {!busy && inTerminal && <button onClick={openInTerminal}>Open in terminal</button>}
                       <button onClick={() => navigator.clipboard.writeText(`${project.path}/.savor/threads/${thread.id}/messages.jsonl`)}>Copy file path</button>
                       {stoppable && <button onClick={stop}>Stop agent</button>}
                       <button class="danger" onClick={remove}>

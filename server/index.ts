@@ -6,7 +6,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import * as store from './store.js'
 import { emit, subscribe } from './events.js'
-import { HOST, PORT, PUBLIC_URL, VERSION } from './config.js'
+import { BIN, HOST, PORT, PUBLIC_URL, VERSION } from './config.js'
 import * as agents from './agents.js'
 import * as browser from './browser.js'
 import * as processes from './processes.js'
@@ -588,6 +588,19 @@ route('POST', '/projects/:pid/terminal', (params, b, ctx) => {
   const p = project(params)
   if (!terminalPlaces(p).some((place) => place.path === b.path)) throw new store.NotFound('terminal folder')
   return terminal.add(p.id, b.path)
+})
+// A conversation continues in the agent's own terminal UI, resuming its session there. Savor's process
+// for it goes first, so the two don't write to one session; the next input here resumes what happened there.
+route('POST', '/projects/:pid/threads/:tid/terminal', (params, _, ctx) => {
+  terminalAllowed(ctx)
+  const p = project(params)
+  const t = store.getThread(p, params.tid)
+  const provider = t.agent.provider
+  const sid = t.agentSessions.find((s) => s.provider === provider)?.sessionId
+  if (!sid || (provider !== 'claude' && provider !== 'codex')) throw new BadRequest('Only a Claude Code or Codex conversation that has started can continue in the terminal.')
+  if (agents.isBusy(t.id)) throw new BadRequest('The agent is still working. Open it in the terminal when it has finished.')
+  agents.stopAgent(p, t.id)
+  return terminal.add(p.id, store.cwdOf(p, t), provider === 'claude' ? `${BIN.claude} --resume ${sid}` : `${BIN.codex} resume ${sid}`)
 })
 route('DELETE', '/projects/:pid/terminal/:tid', (params, _, ctx) => {
   terminalAllowed(ctx)

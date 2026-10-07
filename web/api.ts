@@ -127,6 +127,7 @@ export interface Thread {
   context?: { tokens: number; window: number | null } | null
   parentId?: string
   fork?: { provider: string; sessionId: string | null }
+  agentSessions: { provider: string; sessionId: string }[]
   worktree?: { branch: string; path: string } | null
   fanout?: { id: string; base: string }
   workflow?: { id: string; name: string; trigger: Run['trigger']; due?: string }

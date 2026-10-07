@@ -10,7 +10,8 @@ import { newId } from './store.js'
 
 const SCROLLBACK = 200_000
 
-interface Term { id: string; projectId: string; cwd: string; pty: IPty | null; output: string }
+// `command` runs in the shell once it starts, e.g. an agent's terminal UI.
+interface Term { id: string; projectId: string; cwd: string; pty: IPty | null; output: string; command?: string }
 interface Viewer { res: ServerResponse; remote: boolean }
 
 const terms = new Map<string, Term>()
@@ -26,8 +27,8 @@ function shell() {
   return process.env.SHELL || os.userInfo().shell || '/bin/sh'
 }
 
-export function add(projectId: string, cwd: string) {
-  const t: Term = { id: newId(), projectId, cwd, pty: null, output: '' }
+export function add(projectId: string, cwd: string, command?: string) {
+  const t: Term = { id: newId(), projectId, cwd, pty: null, output: '', command }
   terms.set(t.id, t)
   emit({ type: 'terminal', projectId })
   return { id: t.id, path: cwd, running: false }
@@ -68,6 +69,9 @@ export async function start(t: Term, cols: number, rows: number) {
     send(t.id, { exit: exitCode })
     emit({ type: 'terminal', projectId: t.projectId })
   })
+  // Only the first start runs it; a restart gets a plain shell.
+  if (t.command) p.write(t.command + '\r')
+  t.command = undefined
   send(t.id, { reset: true, o: '', running: true })
   emit({ type: 'terminal', projectId: t.projectId })
 }

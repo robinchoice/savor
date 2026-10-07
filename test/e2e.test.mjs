@@ -1167,6 +1167,26 @@ test('the terminal starts with a shell per folder and worktree, opens and closes
   assert.deepEqual((await api('GET', t)).body.terminals.map((x) => [x.path, x.running]), [[project.path, false]])
 })
 
+test("a conversation continues in the agent's own terminal UI", async () => {
+  const [project] = (await api('GET', '/projects')).body
+  const thread = (await api('POST', `/projects/${project.id}/threads`, { text: 'before the terminal' })).body
+  const url = `/projects/${project.id}/threads/${thread.id}`
+  await until(async () => (await api('GET', url)).body.messages.some((m) => m.text === 'Echo: before the terminal'))
+  await until(async () => !(await api('GET', url)).body.busy)
+  const sid = (await api('GET', url)).body.thread.agentSessions[0].sessionId
+
+  await page.goto(`${base}/#/p/${project.id}/t/${thread.id}`)
+  await page.click('.thread-head button[title="More"]')
+  await page.click('.menu button:has-text("Open in terminal")')
+  // A new terminal in the conversation's folder resumes the agent's session there.
+  await page.waitForSelector(`.terminal-screen >> text=--resume ${sid}`)
+  const { terminals } = (await api('GET', `/projects/${project.id}/terminal`)).body
+  assert.equal(terminals.filter((x) => x.path === project.path).length, 2)
+  await page.click('.terminal-place.on button[title="Close terminal"]')
+  await page.click('.terminal-bar button[title^="Close ("]')
+  await api('PATCH', url, { completed: true })
+})
+
 test('a prompt fans out to several agents in worktrees of their own, and the picked one merges', async () => {
   const [project] = (await api('GET', '/projects')).body
   assert.equal((await api('POST', `/projects/${project.id}/fanout`, { text: 'x', agents: [{ provider: 'claude' }] })).status, 400)

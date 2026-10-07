@@ -45,6 +45,14 @@ export function TerminalPanel({ project, threadId }: { project: Project; threadI
   // The panel follows the open conversation into its worktree, until a terminal is picked there. One
   // closed meanwhile, here or elsewhere, falls back to the first.
   const setSelected = (id: string | null) => setPick({ threadId, id })
+  useEffect(() => {
+    selector = (id) => {
+      wanted = null
+      reload().then(() => setSelected(id))
+    }
+    if (wanted) selector(wanted)
+    return () => void (selector = null)
+  }, [threadId])
   const place = places.find((p) => threadId && p.threads.includes(threadId)) ?? places[0]
   const current = terminals.find((t) => pick.threadId === threadId && t.id === pick.id) ?? terminals.find((t) => t.path === place?.path) ?? terminals[0]
   const label = (t: TerminalTab) => {
@@ -157,6 +165,16 @@ let queued: string | null = null
 export function runInTerminal(command: string) {
   if (runner) return runner(command)
   queued = command
+  setPrefs({ terminalOpen: true })
+}
+
+// A terminal made elsewhere (e.g. a conversation opened in the agent's terminal UI) is shown, also when
+// the panel opens only now.
+let selector: ((id: string) => void) | null = null
+let wanted: string | null = null
+export function showTerminal(id: string) {
+  wanted = id
+  selector?.(id)
   setPrefs({ terminalOpen: true })
 }
 
