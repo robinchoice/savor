@@ -290,7 +290,9 @@ function waitsFor(p: store.Project, t: store.Thread, messages: store.Message[], 
   if (working) return null
   if (failed(t)) return { reason: 'failed', text: t.error, since }
   const last = messages.at(-1)
-  if (last?.kind === 'conclusion' && (t.unread || !t.workflow)) return { reason: t.unread ? 'new' : 'result', text: (last.text ?? '').slice(0, 300), since }
+  // Unread is also what someone marked as unread again, whatever came last.
+  if (t.unread) return { reason: 'new', text: (last?.text ?? '').slice(0, 300), since }
+  if (last?.kind === 'conclusion' && !t.workflow) return { reason: 'result', text: (last.text ?? '').slice(0, 300), since }
   return null
 }
 
@@ -374,6 +376,7 @@ route('PATCH', '/projects/:pid/threads/:tid', (params, b, ctx) => {
   const p = project(params)
   const patch: Partial<store.Thread> = {}
   if (typeof b.completed === 'boolean') patch.completed = b.completed
+  if (typeof b.unread === 'boolean') patch.unread = b.unread
   if (typeof b.title === 'string') patch.title = b.title
   if (typeof b.label === 'string') patch.label = b.label ? { name: b.label, hue: store.hueFor(b.label) } : null
   if (b.agent) {

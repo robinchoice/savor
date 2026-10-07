@@ -4,7 +4,7 @@ import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import {
   Asterisk, Hexagon, Code2, Sparkles, Orbit, Plus, Search, MessageSquare, Check, MoreHorizontal, PanelLeft, PanelRight, FileText, Globe,
-  CircleAlert, ArrowUp, ArrowLeft, Pencil, MessageSquarePlus, Brain, Terminal, Wrench, ArrowRight, Smartphone, Monitor, Bot, ShieldQuestion, X, ChevronUp, ChevronDown, ChevronRight, Paperclip, GitBranch, GitFork, GitMerge, Trash2, Copy, FileDiff, Split, SquareArrowOutUpRight, Workflow as WorkflowIcon,
+  CircleAlert, ArrowUp, ArrowLeft, Pencil, MessageSquarePlus, Brain, Terminal, Wrench, ArrowRight, Smartphone, Monitor, Bot, ShieldQuestion, X, ChevronUp, ChevronDown, ChevronRight, Paperclip, GitBranch, GitFork, GitMerge, Trash2, Copy, FileDiff, Split, SquareArrowOutUpRight, Workflow as WorkflowIcon, Mail, MailOpen,
 } from 'lucide-preact'
 import {
   api, avatarStyle, cap, duration, formatStamp, formatTime, go, initial, PROVIDER_NAMES, runTrigger, useApi, kindOf, RINGS, type ActivityEvent, type AgentConfig, type Attachment, type Decision, type Message, type Proc, type Project, type Reason, type Thread, type Worktree,
@@ -236,6 +236,12 @@ export function ThreadCard({ project, thread: t, active, href = `#/p/${project.i
     e.preventDefault()
     api('PATCH', `/projects/${project.id}/threads/${t.id}`, { completed: true })
   }
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
+  const onContextMenu = (e: MouseEvent) => {
+    e.preventDefault()
+    setMenu({ x: e.clientX, y: e.clientY })
+  }
+  const contextMenu = menu && <CardMenu project={project} thread={t} active={active} href={href} at={menu} close={() => setMenu(null)} />
   const chip = w && <span class={`chip ${kind}`}>{w.reason === 'question' && w.more ? `${w.more + 1} questions` : REASONS[w.reason]}</span>
   const ring = <span class={`ring ${RINGS[kind]}`} title={w ? REASONS[w.reason] : kind === 'working' ? 'Working' : kind === 'done' ? 'Finished' : t.error === STOPPED ? 'Stopped' : 'Ready'} />
   const when = kind === 'working' ? t.startedAt && <Elapsed since={t.startedAt} /> : show.date && formatStamp(w?.since ?? t.updatedAt)
@@ -247,59 +253,101 @@ export function ThreadCard({ project, thread: t, active, href = `#/p/${project.i
   // Open and finished conversations take one line, in the compact density all do.
   if (conversations === 'compact' || kind === 'idle' || kind === 'done')
     return (
-      <a href={href} class={`card compact ${kind} ${active ? 'active' : ''}`}>
-        {ring}
-        {avatar}
-        <div class="card-title" title={t.title}>{t.summary ?? t.title}</div>
-        <span class="card-meta">
-          {conversations !== 'compact' && show.label && <Label label={t.label} />}
-          {chip}
-          {when}
-        </span>
-      </a>
+      <>
+        <a href={href} class={`card compact ${kind} ${active ? 'active' : ''}`} onContextMenu={onContextMenu}>
+          {ring}
+          {avatar}
+          <div class="card-title" title={t.title}>{t.summary ?? t.title}</div>
+          <span class="card-meta">
+            {conversations !== 'compact' && show.label && <Label label={t.label} />}
+            {chip}
+            {when}
+          </span>
+        </a>
+        {contextMenu}
+      </>
     )
   return (
-    <a href={href} class={`card ${kind} ${active ? 'active' : ''}`}>
-      <div class="card-top">
-        {avatar}
-        {chip}
-        {show.label && <Label label={t.label} />}
-        {branch}
-        <span class="card-when">
-          {show.agent && (
-            <span title={PROVIDER_NAMES[t.agent.provider] ?? t.agent.provider}>
-              <ProviderIcon provider={t.agent.provider} size={12} />
-            </span>
-          )}
-          {show.count && (
-            <span>
-              <MessageSquare size={12} /> {t.messageCount}
-            </span>
-          )}
-          {when}
-        </span>
-      </div>
-      <div class="card-title" title={t.title}>{t.summary ?? t.title}</div>
-      {kind === 'working' ? (
-        <div class="card-step">
-          <span class="ring busy" /> <span>{t.waiting && !t.busy ? waitingFor(t) : t.step ?? 'Working'}</span>
+    <>
+      <a href={href} class={`card ${kind} ${active ? 'active' : ''}`} onContextMenu={onContextMenu}>
+        <div class="card-top">
+          {avatar}
+          {chip}
+          {show.label && <Label label={t.label} />}
+          {branch}
+          <span class="card-when">
+            {show.agent && (
+              <span title={PROVIDER_NAMES[t.agent.provider] ?? t.agent.provider}>
+                <ProviderIcon provider={t.agent.provider} size={12} />
+              </span>
+            )}
+            {show.count && (
+              <span>
+                <MessageSquare size={12} /> {t.messageCount}
+              </span>
+            )}
+            {when}
+          </span>
         </div>
-      ) : w?.reason === 'approval' || w?.reason === 'question' ? (
-        <div class="card-ask">
-          <span>{w.text}</span>
-          <span class="respond">{w.reason === 'approval' ? 'Review' : 'Answer'}</span>
-        </div>
-      ) : w ? (
-        <div class="card-text">{plain(w.text)}</div>
-      ) : null}
-      {w?.reason === 'result' && (
-        <div class="card-actions">
-          <button class="ghost small" onClick={finish}>
-            <Check size={12} /> Finish
-          </button>
-        </div>
+        <div class="card-title" title={t.title}>{t.summary ?? t.title}</div>
+        {kind === 'working' ? (
+          <div class="card-step">
+            <span class="ring busy" /> <span>{t.waiting && !t.busy ? waitingFor(t) : t.step ?? 'Working'}</span>
+          </div>
+        ) : w?.reason === 'approval' || w?.reason === 'question' ? (
+          <div class="card-ask">
+            <span>{w.text}</span>
+            <span class="respond">{w.reason === 'approval' ? 'Review' : 'Answer'}</span>
+          </div>
+        ) : w ? (
+          <div class="card-text">{plain(w.text)}</div>
+        ) : null}
+        {w?.reason === 'result' && (
+          <div class="card-actions">
+            <button class="ghost small" onClick={finish}>
+              <Check size={12} /> Finish
+            </button>
+          </div>
+        )}
+      </a>
+      {contextMenu}
+    </>
+  )
+}
+
+// Right-clicking a conversation marks it unread again, or read. Marking the open one unread leaves it,
+// since showing it would mark it read at once.
+function CardMenu({ project, thread: t, active, href, at, close }: { project: Project; thread: Thread; active: boolean; href: string; at: { x: number; y: number }; close: () => void }) {
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const on = (e: MouseEvent) => !e.composedPath().includes(ref.current!) && close()
+    setTimeout(() => {
+      addEventListener('click', on)
+      addEventListener('contextmenu', on)
+    })
+    return () => {
+      removeEventListener('click', on)
+      removeEventListener('contextmenu', on)
+    }
+  }, [])
+  const mark = (unread: boolean) => {
+    close()
+    // A finished conversation marked unread comes back among the open ones.
+    api('PATCH', `/projects/${project.id}/threads/${t.id}`, { unread, ...(unread && t.completed && { completed: false }) })
+    if (unread && active) go(href.slice(1).replace(/\/t\/[^/]+$|\/[^/]+\/[^/]+$/, ''))
+  }
+  return (
+    <div ref={ref} class="menu" style={{ position: 'fixed', left: at.x, top: at.y }}>
+      {t.unread ? (
+        <button onClick={() => mark(false)}>
+          <MailOpen size={14} /> Mark as read
+        </button>
+      ) : (
+        <button onClick={() => mark(true)}>
+          <Mail size={14} /> Mark as unread
+        </button>
       )}
-    </a>
+    </div>
   )
 }
 
