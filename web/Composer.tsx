@@ -610,7 +610,7 @@ function AgentMenu({ agent, agents, setAgent, close }: { agent: AgentConfig; age
           {(agents.length ? agents : Object.entries(PROVIDER_NAMES).map(([id, name]) => ({ id, name }) as ProviderInfo)).map((p) => {
             const l = limit(p.id)
             return (
-              <button key={p.id} class={`ap-agent ${agent.provider === p.id ? 'selected' : ''} ${p.modes && (!p.installed || p.signedIn === false) ? 'off' : ''}`} title={l?.all ?? status(p)} onClick={() => (p.modes ? choose(p) : set({ provider: p.id, model: '' }))}>
+              <button key={p.id} class={`ap-agent ${agent.provider === p.id ? 'selected' : ''} ${p.modes && (!p.installed || p.signedIn === false) ? 'off' : ''}`} title={l?.all ?? status(p)} onClick={() => agent.provider !== p.id && (p.modes ? choose(p) : set({ provider: p.id, model: '' }))}>
                 <ProviderIcon provider={p.id} size={16} />
                 <span>
                   {p.name}
