@@ -53,22 +53,27 @@ export const byUrgency = <T extends Thread>(list: T[]) =>
   })
 
 // Opens the next conversation that needs you, also with J, and with Alt+J while typing.
-export function NextButton({ path }: { path: string }) {
-  // Read at key time: effects run after paint, so J right after J would still hold the conversation just opened.
-  const latest = useRef(path)
-  latest.current = path
+// It skips the open one by the address, not by the last render: hashchange comes later, so J right after J
+// would otherwise open the same conversation again.
+export function NextButton({ paths }: { paths: string[] }) {
+  const latest = useRef(paths)
+  latest.current = paths
+  const open = () => {
+    const path = latest.current.find((p) => `#${p}` !== location.hash)
+    if (path) go(path)
+  }
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const typing = (e.target as HTMLElement).closest?.('input, textarea, select, [contenteditable]')
       if (e.code !== 'KeyJ' || e.ctrlKey || e.metaKey || e.shiftKey || (typing && !e.altKey)) return
       e.preventDefault()
-      go(latest.current)
+      open()
     }
     addEventListener('keydown', onKey)
     return () => removeEventListener('keydown', onKey)
   }, [])
   return (
-    <button class="next-btn" title="Open the next conversation that needs you (J)" onClick={() => go(path)}>
+    <button class="next-btn" title="Open the next conversation that needs you (J)" onClick={open}>
       Next <kbd>J</kbd>
     </button>
   )
@@ -116,7 +121,7 @@ export function Conversations({ project, threadId, fanoutId, isNew }: { project:
       <aside class="conv-list">
         <div class="conv-head">
           <h2>Conversations</h2>
-          {next && <NextButton path={`/p/${project.id}/t/${next.id}`} />}
+          {next && <NextButton paths={forYou.map((t) => `/p/${project.id}/t/${t.id}`)} />}
           <a class="new-btn" href={`#/p/${project.id}/new`} title="New conversation">
             <Plus size={18} />
           </a>

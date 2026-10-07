@@ -261,7 +261,8 @@ function AllInbox({ threads, projects, byId, rest }: { threads?: Listed[]; proje
   const open = (threads ?? []).filter((t) => !t.completed && byId.has(t.projectId)).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
   const test: Record<InboxFilter, (t: Thread) => boolean> = { all: () => true, you: (t) => !!t.waitsFor, working: (t) => kindOf(t) === 'working' }
   const shown = open.filter(test[filter])
-  const next = byUrgency(open.filter(test.you)).find((t) => t.id !== tid)
+  const forYou = byUrgency(open.filter(test.you))
+  const next = forYou.find((t) => t.id !== tid)
   const tab = (id: InboxFilter, label: string) => {
     const n = open.filter(test[id]).length
     return (
@@ -275,7 +276,7 @@ function AllInbox({ threads, projects, byId, rest }: { threads?: Listed[]; proje
       <aside class="conv-list">
         <div class="conv-head">
           <h2>Inbox</h2>
-          {next && <NextButton path={`/all/inbox/${next.projectId}/${next.id}`} />}
+          {next && <NextButton paths={forYou.map((t) => `/all/inbox/${t.projectId}/${t.id}`)} />}
           <a class="new-btn" href="#/all/inbox/new" title="New conversation">
             <Plus size={18} />
           </a>
