@@ -109,7 +109,10 @@ interface Req { id: number; method?: string; path?: string; body?: string; cance
 class Conn {
   deviceId: string | null = null
   private channel: t.Channel | null = null
-  private pairing: { code: string; channel: t.Channel }[] | null = null
+  private pairing: { code: string; channel: t.Channel; check: string }[] | null = null
+  // Set while a pairing waits for someone at this computer to allow it.
+  private cancelApproval: (() => void) | null = null
+  private closed = false
   private streams = new Map<number, AbortController>()
   private handshakeTimer: NodeJS.Timeout
 
@@ -133,6 +136,8 @@ class Conn {
   dispose() {
     clearTimeout(this.handshakeTimer)
     for (const s of this.streams.values()) s.abort()
+    this.closed = true
+    this.cancelApproval?.()
     this.channel = null
     conns.delete(this.c)
   }
@@ -141,6 +146,7 @@ class Conn {
     if (typeof d !== 'string') return this.fail('bad frame')
     try {
       if (this.channel) return this.onRequest(d)
+      if (this.cancelApproval) return
       if (this.pairing) return this.onPairing(d)
       this.onHello(JSON.parse(d))
     } catch {
@@ -171,18 +177,31 @@ class Conn {
   }
 
   private onPairing(d: string) {
-    for (const { code, channel } of this.pairing!) {
+    for (const { code, channel, check } of this.pairing!) {
       let m: any
       try {
         m = channel.open(d)
       } catch {
         continue
       }
-      const devicePk = t.publicKey(m?.device)
-      const device = devices.redeemWithKey(code, typeof m.name === 'string' ? m.name : '', t.b64.enc(devicePk))
-      emit({ type: 'devices' })
-      this.send(channel.seal({ paired: true, deviceId: device.id }))
-      return this.fail('paired')
+      const devicePk = t.b64.enc(t.publicKey(m?.device))
+      const name = typeof m.name === 'string' ? m.name : ''
+      const request = devices.requestApproval(code, name, 'relay', check)
+      this.cancelApproval = request.cancel
+      clearTimeout(this.handshakeTimer)
+      this.send(channel.seal({ waiting: true }))
+      request.approved.then((approved) => {
+        if (this.closed) return
+        if (!approved) {
+          this.send(channel.seal({ paired: false }))
+          return this.fail('declined')
+        }
+        const device = devices.addKeyDevice(name, devicePk)
+        emit({ type: 'devices' })
+        this.send(channel.seal({ paired: true, deviceId: device.id }))
+        this.fail('paired')
+      })
+      return
     }
     devices.pairingFailed()
     this.fail('pairing failed')

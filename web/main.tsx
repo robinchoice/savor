@@ -7,7 +7,7 @@ import { Conversations } from './Conversations'
 import { FilesView } from './Files'
 import { Workflows } from './Workflows'
 import { AllProjects } from './Overview'
-import { Settings, Devices, Pair, RemotePair } from './Settings'
+import { Settings, Devices, Pair, PairingRequests, RemotePair } from './Settings'
 import { loadProfile, remote, setTransport } from './transport'
 import { ProcessesPopover } from './Processes'
 import { runInTerminal, TerminalButton, TerminalPanel } from './Terminal'
@@ -128,6 +128,7 @@ function App() {
       {route[0] === 'all' && <AllBar section={route[1]} />}
       <main>{main}</main>
       {project && terminalOpen && <TerminalPanel key={project.id} project={project} threadId={section === 't' ? rest[0] : undefined} />}
+      {me.origin === 'local' && <PairingRequests />}
     </div>
   )
 }

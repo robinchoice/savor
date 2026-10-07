@@ -13,8 +13,11 @@
 // Pairing handshake (device knows S_d and a one-time code from the QR code shown on the desktop):
 //   device → daemon  hello { e: E_c }        daemon → device  welcome { e: E_d }
 //   keys = HKDF(DH(E_c,E_d) ‖ DH(E_c,S_d), salt = SHA-256(code), transcript)
-//   device → daemon  seal({ name, device: S_c })   daemon → device  seal({ paired: true })
-// The welcome carries no proof in this mode, so a relay can't test code guesses offline.
+//   device → daemon  seal({ name, device: S_c })   daemon → device  seal({ waiting: true })
+//   daemon → device  seal({ paired: true | false })   once someone at the desktop allowed or declined it
+// The welcome carries no proof in this mode, so a relay can't test code guesses offline. Both sides
+// show a six-digit check number from the same key derivation, so the person at the desktop can tell
+// their own device from anyone else who got hold of the code.
 //
 // Everything decoded from the wire goes through publicKey()/b64.dec(), which throw on bad input;
 // callers treat any throw as a failed handshake.
@@ -76,8 +79,9 @@ function concat(...parts: Uint8Array[]) {
 }
 
 function derive(ikm: Uint8Array[], transcript: Uint8Array[], salt?: Uint8Array) {
-  const okm = hkdf(sha256, concat(...ikm), salt, concat(PROTOCOL, ...transcript), 64)
-  return { toDaemon: okm.slice(0, 32), toDevice: okm.slice(32) }
+  const okm = hkdf(sha256, concat(...ikm), salt, concat(PROTOCOL, ...transcript), 68)
+  const check = String(new DataView(okm.buffer, okm.byteOffset + 64, 4).getUint32(0) % 1_000_000).padStart(6, '0')
+  return { toDaemon: okm.slice(0, 32), toDevice: okm.slice(32, 64), check }
 }
 
 // Encrypts the device's static key in the hello; the key is unique per ephemeral, so nonce 0 is safe.
@@ -135,7 +139,7 @@ export function devicePairing(daemonPk: Uint8Array, code: string) {
     finish(welcome: { e: unknown }) {
       const ed = publicKey(welcome.e)
       const k = derive([dh(e.sk, ed), dh(e.sk, daemonPk)], [daemonPk, e.pk, ed], pairingSalt(code))
-      return new Channel(k.toDaemon, k.toDevice)
+      return { channel: new Channel(k.toDaemon, k.toDevice), check: k.check }
     },
   }
 }
@@ -168,7 +172,7 @@ export function daemonPairing(daemon: KeyPair, hello: { e: unknown }, codes: str
     welcome: { type: 'welcome', e: b64.enc(e.pk) },
     candidates: codes.map((code) => {
       const k = derive(ikm, transcript, pairingSalt(code))
-      return { code, channel: new Channel(k.toDevice, k.toDaemon) }
+      return { code, channel: new Channel(k.toDevice, k.toDaemon), check: k.check }
     }),
   }
 }

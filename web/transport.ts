@@ -113,23 +113,30 @@ async function welcome(ws: WebSocket, hello: object) {
   return reply
 }
 
-// First contact: prove knowledge of the one-time code and register this device's key.
-export async function pairThroughRelay(daemonPkText: string, code: string, name: string) {
+// First contact: prove knowledge of the one-time code and register this device's key. The computer
+// asks before it lets the device in; onCheck gets the number both of them show meanwhile.
+export async function pairThroughRelay(daemonPkText: string, code: string, name: string, onCheck: (check: string) => void) {
   const daemonPk = t.publicKey(daemonPkText)
   const key = await createDeviceKey()
   const ws = relaySocket(daemonPk)
   const pairing = t.devicePairing(daemonPk, code)
-  const channel = pairing.finish(await welcome(ws, pairing.hello))
-  ws.send(channel.seal({ name, device: t.b64.enc(key.pk) }))
-  const reply = await nextMessage(ws)
-  ws.close()
-  let result: any
-  try {
-    result = channel.open(reply)
-  } catch {
-    throw new Error(JSON.parse(reply).error === 'pairing failed' ? 'Pairing code invalid or expired.' : 'Pairing failed.')
+  const { channel, check } = pairing.finish(await welcome(ws, pairing.hello))
+  const reply = async () => {
+    const text = await nextMessage(ws)
+    try {
+      return channel.open(text)
+    } catch {
+      throw new Error(JSON.parse(text).error === 'pairing failed' ? 'Pairing code invalid or expired.' : 'Pairing failed.')
+    }
   }
-  if (!result.paired) throw new Error('Pairing failed.')
+  ws.send(channel.seal({ name, device: t.b64.enc(key.pk) }))
+  let result = await reply()
+  if (result.waiting) {
+    onCheck(check)
+    result = await reply()
+  }
+  ws.close()
+  if (!result.paired) throw new Error('Pairing was not allowed on your computer.')
   localStorage.setItem(PROFILE_KEY, JSON.stringify({ daemonPk: daemonPkText, name }))
 }
 

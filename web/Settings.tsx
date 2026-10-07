@@ -231,6 +231,8 @@ export function Devices() {
   const [address, setAddress] = useState<{ url: string | null; fallback: string } | null>(null)
   const [addressDraft, setAddressDraft] = useState<string | null>(null)
   useEffect(() => void api('GET', '/devices/address').then(setAddress), [])
+  // Allowing a device voids every open code, so the QR code goes too.
+  useEffect(() => setPairing(null), [devices?.length])
   const saveAddress = async () => {
     try {
       setAddress(await api('PUT', '/devices/address', { url: addressDraft ?? '' }))
@@ -362,22 +364,74 @@ export function Devices() {
   )
 }
 
+const spaced = (check: string) => `${check.slice(0, 3)} ${check.slice(3)}`
+
+// A device with a valid code waits until it is allowed here. Both show the same number, so a request
+// from someone else who got hold of the code stands out.
+export function PairingRequests() {
+  const [requests] = useApi<{ id: string; name: string; via: 'relay' | 'lan'; check: string }[]>('/devices/requests', (e) => e.type === 'devices')
+  const request = requests?.[0]
+  if (!request) return null
+  const decide = (approve: boolean) => api('POST', `/devices/requests/${request.id}`, { approve }).catch(() => {})
+  return (
+    <div class="overlay">
+      <div class="dialog pick-dialog pairing-request">
+        <header class="dialog-head">
+          <Smartphone size={18} />
+          <div class="dialog-title">
+            <b>Allow “{request.name}”?</b>
+          </div>
+        </header>
+        <div class="dialog-body">
+          <p>
+            A device wants to use Savor on this computer {request.via === 'relay' ? 'through the relay' : 'directly'}. Only allow it if it is yours and shows this number:
+          </p>
+          <b class="check-number">{spaced(request.check)}</b>
+          <p class="muted">If you didn't just pair a device, decline and don't share the pairing code again.</p>
+        </div>
+        <footer class="dialog-foot">
+          <button class="ghost danger" onClick={() => decide(false)}>
+            Decline
+          </button>
+          <button class="primary" onClick={() => decide(true)}>
+            Allow
+          </button>
+        </footer>
+      </div>
+    </div>
+  )
+}
+
+function Waiting({ check }: { check: string }) {
+  return (
+    <div class="gate">
+      <img src="/icon.svg" alt="" />
+      <h1>Allow this device on your computer</h1>
+      <p class="muted">Your computer asks whether to let this device in. Check that it shows the same number:</p>
+      <b class="check-number">{spaced(check)}</b>
+    </div>
+  )
+}
+
 // Pairing a phone through the relay: the QR code carries the computer's public key and a one-time code.
 export function RemotePair({ daemonPk, code }: { daemonPk: string; code: string }) {
   const [name, setName] = useState(/iPhone|Android|iPad/.exec(navigator.userAgent)?.[0] ?? 'My phone')
   const [busy, setBusy] = useState(false)
+  const [check, setCheck] = useState('')
   const [error, setError] = useState('')
   const submit = async (e: Event) => {
     e.preventDefault()
     setBusy(true)
     try {
-      await pairThroughRelay(daemonPk, code, name)
+      await pairThroughRelay(daemonPk, code, name, setCheck)
       location.replace('/')
     } catch (err) {
       setError((err as Error).message)
+      setCheck('')
       setBusy(false)
     }
   }
+  if (check) return <Waiting check={check} />
   return (
     <div class="gate">
       <img src="/icon.svg" alt="" />
@@ -400,13 +454,18 @@ export function RemotePair({ daemonPk, code }: { daemonPk: string; code: string 
 export function Pair({ code: initial }: { code?: string }) {
   const [code, setCode] = useState(initial ?? '')
   const [name, setName] = useState(/iPhone|Android|iPad/.exec(navigator.userAgent)?.[0] ?? 'My device')
+  const [check, setCheck] = useState('')
   const [error, setError] = useState('')
   const submit = async (e: Event) => {
     e.preventDefault()
-    const r = await fetch('/api/pair', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code, name }) })
-    if (!r.ok) return setError((await r.json()).error ?? 'Pairing failed')
-    location.replace('/')
+    const next = String(crypto.getRandomValues(new Uint32Array(1))[0] % 1_000_000).padStart(6, '0')
+    setCheck(next)
+    const r = await fetch('/api/pair', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code, name, check: next }) }).catch(() => null)
+    if (r?.ok) return location.replace('/')
+    setCheck('')
+    setError((await r?.json().catch(() => null))?.error ?? 'Pairing failed')
   }
+  if (check) return <Waiting check={check} />
   return (
     <div class="gate">
       <img src="/icon.svg" alt="" />

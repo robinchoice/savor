@@ -47,6 +47,16 @@ async function until(fn, ms = 10_000) {
   throw new Error('timed out')
 }
 
+// Pairs over the LAN; this computer answers the request the device's code opened.
+async function redeem(code, name, approve = true) {
+  const reply = fetch(`${base}/api/pair`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code, name, check: '042137' }) })
+  let request
+  await until(async () => (request = (await api('GET', '/devices/requests')).body.find((r) => r.name === name)))
+  assert.deepEqual([request.via, request.check], ['lan', '042137'])
+  await api('POST', `/devices/requests/${request.id}`, { approve })
+  return reply
+}
+
 async function newConversation() {
   await page.click('.new-btn')
   await page.waitForSelector('text=What do you want to build?')
@@ -438,8 +448,7 @@ test('presets are saved globally and only from this computer', async () => {
   const preset = (await api('POST', '/presets', { name: 'Careful Codex', agent })).body
   assert.deepEqual((await api('GET', '/presets')).body.map((p) => p.name), ['Careful Codex'])
   const pairing = (await api('POST', '/devices/pairing')).body
-  const redeem = await fetch(`${base}/api/pair`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code: pairing.code, name: 'CI watch' }) })
-  const device = redeem.headers.get('set-cookie').split(';')[0]
+  const device = (await redeem(pairing.code, 'CI watch')).headers.get('set-cookie').split(';')[0]
   assert.equal((await api('POST', '/presets', { name: 'Sneaky', agent }, device)).status, 403)
   assert.equal((await api('GET', '/presets', undefined, device)).status, 200)
   await api('DELETE', `/presets/${preset.id}`)
@@ -637,12 +646,23 @@ test('a workflow lists its runs, catches up a missed time and skips one while a 
 
 test('auth: tokens, pairing and remote limits', async () => {
   assert.equal((await api('GET', '/projects', undefined, '')).status, 401)
+  const pair = (body) => fetch(`${base}/api/pair`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
   const pairing = (await api('POST', '/devices/pairing')).body
-  const redeem = await fetch(`${base}/api/pair`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code: pairing.code, name: 'CI phone' }) })
-  assert.equal(redeem.status, 200)
-  const device = redeem.headers.get('set-cookie').split(';')[0]
+  const other = (await api('POST', '/devices/pairing')).body
+  assert.equal((await pair({ code: pairing.code, name: 'no check' })).status, 400)
+  const paired = await redeem(pairing.code, 'CI phone')
+  assert.equal(paired.status, 200)
+  const device = paired.headers.get('set-cookie').split(';')[0]
   assert.equal((await api('GET', '/me', undefined, device)).body.origin, 'remote')
   assert.equal((await api('POST', '/devices/pairing', undefined, device)).status, 403)
+  assert.equal((await api('GET', '/devices/requests', undefined, device)).status, 403)
+  // Allowing a device voids every other open code.
+  assert.equal((await pair({ code: other.code, name: 'late', check: '000000' })).status, 400)
+  // A declined request spends its code and adds no device.
+  const declined = await redeem((await api('POST', '/devices/pairing')).body.code, 'CI stranger', false)
+  assert.equal(declined.status, 403)
+  assert.ok(!declined.headers.get('set-cookie'))
+  assert.ok(!(await api('GET', '/devices')).body.some((d) => d.name === 'CI stranger'))
   assert.equal((await api('POST', '/projects', { path: '/' }, device)).status, 403)
   assert.equal((await api('GET', '/enjoy', undefined, device)).status, 403)
   // Pairing links use the address set for direct connections, which only this computer can change.
@@ -652,15 +672,14 @@ test('auth: tokens, pairing and remote limits', async () => {
   assert.match((await api('POST', '/devices/pairing')).body.url, /^https:\/\/desk\.tailnet\.example\/#\/pair\/[0-9A-F]{10}$/)
   assert.equal((await api('PUT', '/devices/address', { url: '' })).body.url, null)
   assert.ok((await api('POST', '/devices/pairing')).body.url.startsWith('http://localhost:'))
-  const again = await fetch(`${base}/api/pair`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code: pairing.code, name: 'x' }) })
-  assert.equal(again.status, 400)
+  assert.equal((await pair({ code: pairing.code, name: 'x', check: '000000' })).status, 400)
 
   // Revoking a LAN device ends its open event stream right away, not only its next request.
   const events = await fetch(`${base}/api/events`, { headers: { cookie: device } })
   const reader = events.body.getReader()
   await reader.read()
-  const paired = (await api('GET', '/devices')).body.find((d) => d.name === 'CI phone')
-  await api('DELETE', `/devices/${paired.id}`)
+  const phone = (await api('GET', '/devices')).body.find((d) => d.name === 'CI phone')
+  await api('DELETE', `/devices/${phone.id}`)
   const outcome = await Promise.race([
     (async () => {
       for (;;) if ((await reader.read()).done) return 'ended'
@@ -687,8 +706,7 @@ test('the MCP token stays off agent command lines, which every user on the machi
 
 test('what a paired device changes never runs as local', async () => {
   const pairing = (await api('POST', '/devices/pairing')).body
-  const redeem = await fetch(`${base}/api/pair`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code: pairing.code, name: 'CI tablet' }) })
-  const device = redeem.headers.get('set-cookie').split(';')[0]
+  const device = (await redeem(pairing.code, 'CI tablet')).headers.get('set-cookie').split(';')[0]
   const [project] = (await api('GET', '/projects')).body
   const pid = project.id
   const bypass = { ...project.agent, permissionMode: 'bypassPermissions' }
@@ -766,8 +784,7 @@ const gitIn = (cwd, ...args) => execFileSync('git', ['-c', 'user.email=t@test', 
 const agentRuns = () => fs.readFileSync(AGENT_LOG, 'utf8').trim().split('\n').map((l) => JSON.parse(l))
 async function pairDevice(name) {
   const pairing = (await api('POST', '/devices/pairing')).body
-  const redeem = await fetch(`${base}/api/pair`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code: pairing.code, name }) })
-  return redeem.headers.get('set-cookie').split(';')[0]
+  return (await redeem(pairing.code, name)).headers.get('set-cookie').split(';')[0]
 }
 
 test('a paired device keeps its push subscription until it is revoked', async () => {

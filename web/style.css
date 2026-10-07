@@ -967,6 +967,8 @@ details.box[open] > summary .chev { transform: rotate(180deg); }
 .pick-dialog { width: min(100%, 480px); }
 .pick-dialog .dialog-body { padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 12px; }
 .pick-dialog p { margin: 0; font-size: 13px; }
+.check-number { display: block; font: 600 32px/1.2 'Geist Mono Variable', ui-monospace, monospace; letter-spacing: 0.08em; text-align: center; margin: 8px 0; }
+.pairing-request .dialog-foot { justify-content: flex-end; }
 .attn-text { color: var(--attn); }
 .pick-others { display: flex; gap: 10px; align-items: flex-start; background: var(--card); border-radius: 10px; padding: 10px 12px; font-size: 13px; }
 .pick-others input { margin-top: 3px; }

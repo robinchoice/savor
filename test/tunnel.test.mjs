@@ -44,7 +44,8 @@ test('session: an unknown device key or a fake daemon key breaks the handshake',
 test('pairing: only the right one-time code opens the channel', () => {
   const p = t.devicePairing(daemon.pk, 'ab12cd34ef')
   const dp = t.daemonPairing(daemon, p.hello, ['0000000000', 'AB12CD34EF'])
-  const first = p.finish(dp.welcome).seal({ name: 'phone' })
+  const device = p.finish(dp.welcome)
+  const first = device.channel.seal({ name: 'phone' })
   const matched = dp.candidates.filter(({ channel }) => {
     try {
       return channel.open(first).name === 'phone'
@@ -55,6 +56,12 @@ test('pairing: only the right one-time code opens the channel', () => {
   assert.deepEqual(
     matched.map((c) => c.code),
     ['AB12CD34EF'],
+  )
+  // Both sides show the same check number, and only for the right code.
+  assert.match(device.check, /^\d{6}$/)
+  assert.deepEqual(
+    dp.candidates.map((c) => c.check === device.check),
+    [false, true],
   )
 })
 

@@ -2,17 +2,23 @@ import crypto from 'node:crypto'
 import type { IncomingMessage } from 'node:http'
 import * as store from './store.js'
 import type { Origin } from './store.js'
+import { emit } from './events.js'
 
 // Three kinds of credentials:
 // - the owner token (printed on start). It only counts as "local" when used from this machine.
 // - device tokens, handed out by redeeming a short-lived pairing code on the LAN. Always "remote".
 // - device keys, registered by pairing through the relay. The relay tunnel forwards their requests
 //   to this server with the internal relay token. Always "remote".
+// Either way a valid code only asks: the device is added once someone allows it on this computer.
 
 const PAIRING_TTL_MS = 10 * 60_000
+const APPROVAL_MS = Number(process.env.SAVOR_PAIRING_APPROVAL_MS ?? 2 * 60_000)
 const MAX_FAILED_PAIRINGS = 10
 const pairings = new Map<string, number>()
 let failedPairings = 0
+
+export interface PairingRequest { id: string; name: string; via: 'relay' | 'lan'; check: string }
+const requests = new Map<string, PairingRequest & { decide(approved: boolean): void }>()
 
 export interface Auth { origin: Origin; device?: store.Device }
 
@@ -57,16 +63,47 @@ function takeCode(code: string) {
   if (!expires || expires < Date.now()) throw new Error('Pairing code invalid or expired.')
 }
 
+const deviceName = (name: string) => name.slice(0, 60) || 'Device'
+
+// Spends the code and asks this computer to let the device in. Resolves false when declined, when
+// nobody answers in time or when the device gives up. Once one is allowed, every open code is void.
+export function requestApproval(code: string, name: string, via: PairingRequest['via'], check: string) {
+  takeCode(code)
+  failedPairings = 0
+  const id = store.newId()
+  let decide!: (approved: boolean) => void
+  const approved = new Promise<boolean>((resolve) => {
+    const timer = setTimeout(() => decide(false), APPROVAL_MS)
+    decide = (yes) => {
+      if (!requests.delete(id)) return
+      clearTimeout(timer)
+      if (yes) pairings.clear()
+      emit({ type: 'devices' })
+      resolve(yes)
+    }
+  })
+  requests.set(id, { id, name: deviceName(name), via, check, decide })
+  emit({ type: 'devices' })
+  return { approved, cancel: () => decide(false) }
+}
+
+export const pairingRequests = (): PairingRequest[] => [...requests.values()].map(({ decide, ...r }) => r)
+
+export function decidePairing(id: string, approved: boolean) {
+  const request = requests.get(id)
+  if (!request) throw new store.NotFound('pairing request')
+  request.decide(approved)
+}
+
 function addDevice(device: Omit<store.Device, 'id' | 'createdAt' | 'lastSeenAt'>) {
   const s = store.state()
-  const d = { id: store.newId(), ...device, name: device.name.slice(0, 60) || 'Device', createdAt: store.now(), lastSeenAt: store.now() }
+  const d = { id: store.newId(), ...device, name: deviceName(device.name), createdAt: store.now(), lastSeenAt: store.now() }
   s.devices.push(d)
   store.saveState(s)
   return d
 }
 
-export function redeem(code: string, name: string) {
-  takeCode(code)
+export function addTokenDevice(name: string) {
   const token = crypto.randomBytes(32).toString('hex')
   addDevice({ name, tokenHash: store.hash(token) })
   return token
@@ -76,11 +113,7 @@ export function redeem(code: string, name: string) {
 
 export const openPairingCodes = () => [...pairings].filter(([, expires]) => expires > Date.now()).map(([code]) => code)
 
-export function redeemWithKey(code: string, name: string, publicKey: string) {
-  takeCode(code)
-  failedPairings = 0
-  return addDevice({ name, tokenHash: '', publicKey })
-}
+export const addKeyDevice = (name: string, publicKey: string) => addDevice({ name, tokenHash: '', publicKey })
 
 // Guessing codes through the relay gets a handful of tries, then every open code is void.
 export function pairingFailed() {

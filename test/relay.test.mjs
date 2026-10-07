@@ -152,7 +152,7 @@ test('pairing refuses a device key that is not a key', async () => {
   await ws.opened
   const welcome = new Promise((resolve) => ws.addEventListener('message', (m) => resolve(JSON.parse(m.data)), { once: true }))
   ws.send(JSON.stringify(pairing.hello))
-  const channel = pairing.finish(await welcome)
+  const { channel } = pairing.finish(await welcome)
   const reply = new Promise((resolve) => ws.addEventListener('message', (m) => resolve(String(m.data)), { once: true }))
   ws.send(channel.seal({ name: 'bad key', device: 'AAAA' }))
   assert.equal(JSON.parse(await reply).error, 'bad handshake')
@@ -167,12 +167,32 @@ test('a wrong pairing code is rejected', async () => {
   await page.waitForSelector('text=Pairing code invalid or expired.')
 })
 
+// Someone at the computer answers the request, after checking that both show the same number.
+async function answerPairing(approve) {
+  let request
+  await until(async () => ([request] = await local('GET', '/devices/requests')).length)
+  assert.equal(request.via, 'relay')
+  assert.equal((await page.textContent('.check-number')).replace(' ', ''), request.check)
+  await local('POST', `/devices/requests/${request.id}`, { approve })
+}
+
+test('a pairing declined on the computer adds no device', async () => {
+  const { relayUrl } = await local('POST', '/devices/pairing')
+  await page.goto(relayUrl)
+  await page.fill('input', 'CI stranger')
+  await page.click('button:has-text("Pair")')
+  await answerPairing(false)
+  await page.waitForSelector('text=Pairing was not allowed on your computer.')
+  assert.deepEqual(await local('GET', '/devices'), [])
+})
+
 test('pair through the relay and work on the project remotely', async () => {
   const { relayUrl } = await local('POST', '/devices/pairing')
   assert.ok(relayUrl.startsWith(relayBase))
   await page.goto(relayUrl)
   await page.fill('input', 'CI phone')
   await page.click('button:has-text("Pair")')
+  await answerPairing(true)
   await page.waitForSelector('text=What do you want to build?')
   await page.fill('.composer textarea', 'hello through the relay')
   await page.keyboard.press('Enter')

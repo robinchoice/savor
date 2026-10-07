@@ -142,6 +142,12 @@ route('PUT', '/relay', (_, b, ctx) => {
   startRelay()
   return relayStatus()
 })
+route('GET', '/devices/requests', (_, __, ctx) => (localOnly(ctx), devices.pairingRequests()))
+route('POST', '/devices/requests/:id', (params, b, ctx) => {
+  localOnly(ctx)
+  devices.decidePairing(params.id, b.approve === true)
+  return {}
+})
 route('DELETE', '/devices/:id', (params, _, ctx) => {
   localOnly(ctx)
   devices.revokeDevice(params.id)
@@ -793,12 +799,18 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
 
   if (url.pathname === '/api/pair' && req.method === 'POST') {
     const b = await readBody(req)
-    let token: string
+    const name = String(b.name ?? '')
+    // The device makes up the check number it shows; this computer shows the same one when asking.
+    if (!/^\d{6}$/.test(String(b.check))) return json(res, 400, { error: 'Missing check number.' })
+    let request: ReturnType<typeof devices.requestApproval>
     try {
-      token = devices.redeem(String(b.code ?? ''), String(b.name ?? ''))
+      request = devices.requestApproval(String(b.code ?? ''), name, 'lan', String(b.check))
     } catch (e) {
       return json(res, 400, { error: (e as Error).message })
     }
+    res.on('close', request.cancel)
+    if (!(await request.approved)) return json(res, 403, { error: 'Pairing was not allowed on your computer.' })
+    const token = devices.addTokenDevice(name)
     emit({ type: 'devices' })
     res.writeHead(200, { 'set-cookie': `savor_device=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=31536000`, 'content-type': 'application/json' })
     return res.end('{}')
