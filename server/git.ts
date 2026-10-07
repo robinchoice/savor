@@ -23,6 +23,20 @@ export function branches(cwd: string) {
   }
 }
 
+// Conversations are private. Unless the repository already ignores .savor/, it is excluded locally
+// (.git/info/exclude), so they don't end up in a commit.
+export function keepOutOfGit(dir: string) {
+  try {
+    git(dir, 'check-ignore', '-q', '.savor/')
+    return
+  } catch {}
+  try {
+    const file = path.resolve(dir, git(dir, 'rev-parse', '--git-path', 'info/exclude'))
+    fs.mkdirSync(path.dirname(file), { recursive: true })
+    fs.appendFileSync(file, '\n.savor/\n.savor-logs/\n')
+  } catch {} // not a git repository
+}
+
 // ---- worktrees ----
 
 export interface Worktree { branch: string; path: string; ahead: number; dirty: boolean }

@@ -150,8 +150,6 @@ export interface Change { path: string; additions: number | null; deletions: num
 export interface FanoutRun { thread: Thread; worktree: Worktree | null; changes: Change[]; merged: boolean; answer: string | null; workTiming: { startedAt: string; finishedAt: string } | null }
 export interface CommitFile { path: string; additions: number | null; deletions: number | null; patch: string }
 export interface Commit { hash: string; subject: string; body: string; author: string; date: string; files: CommitFile[] }
-export interface EnjoyProject { path: string; name: string; missing: boolean; projectId: string | null; conversations: number; added: number; documents: number; workflows: number }
-export interface EnjoyResult { path: string; projectId: string; added: number; updated: number; kept: number; documents: number; workflows: number }
 export interface ImportableSession { provider: 'claude' | 'codex'; id: string; title: string; startedAt: string; messages: number; imported: boolean }
 export interface Decision { id: string; groupId: string; title: string; body: string; options: string[]; recommended?: number; selected: number | null; answer: string | null; resolved: boolean }
 export interface ActivityEvent { id: number; type: 'thinking' | 'command' | 'edit' | 'note'; label: string; time: string; finishedAt?: string }

@@ -83,7 +83,6 @@ const server = spawn(process.execPath, [path.join(ROOT, 'dist/server/index.mjs')
     SAVOR_ANTIGRAVITY_BIN: missing,
     CLAUDE_CONFIG_DIR: path.join(TMP, 'claude'),
     CODEX_HOME: path.join(TMP, 'codex'),
-    SAVOR_ENJOY_DIR: path.join(TMP, 'enjoy'),
     DEMO_SITE_URL: `http://localhost:${SITE_PORT}/`,
   },
   stdio: ['ignore', 'pipe', 'inherit'],

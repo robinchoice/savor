@@ -22,7 +22,6 @@ import { isUnsafe, listAgents, listSkills, listUsage, mergeAgent } from './provi
 import { nextRun, runs, runWorkflow, syncSchedules, validateCron } from './scheduler.js'
 import * as git from './git.js'
 import { deleteSessions, importSessions, listSessions } from './import.js'
-import { importEnjoy, keepOutOfGit, listEnjoy } from './enjoy.js'
 import * as voice from './voice.js'
 import * as push from './push.js'
 
@@ -228,19 +227,9 @@ route('POST', '/projects', (_, b, ctx) => {
     s.projectsDir = path.dirname(p.path)
     store.saveState(s)
   }
-  keepOutOfGit(p.path)
+  git.keepOutOfGit(p.path)
   emit({ type: 'projects' })
   return p
-})
-// Projects that live in Enjoy on this computer, and bringing them over with their records.
-route('GET', '/enjoy', (_, __, ctx) => (localOnly(ctx), listEnjoy()))
-route('POST', '/enjoy', (_, b, ctx) => {
-  localOnly(ctx)
-  const results = importEnjoy((b.paths ?? []).map(String))
-  syncSchedules()
-  emit({ type: 'projects' })
-  for (const r of results) for (const type of ['thread', 'documents', 'workflows'] as const) emit({ type, projectId: r.projectId })
-  return results
 })
 route('PUT', '/projects/order', (_, b) => {
   store.reorderProjects((b.ids ?? []).map(String))
@@ -919,7 +908,7 @@ http
   .listen(PORT, HOST, () => {
     // Conversations are private: kept out of git and readable only by this user, also in projects added before.
     for (const p of store.listProjects()) {
-      keepOutOfGit(p.path)
+      git.keepOutOfGit(p.path)
       fs.chmodSync(store.dataDir(p), 0o700)
     }
     syncSchedules()

@@ -13,10 +13,10 @@ interface Parsed { id: string; title: string; startedAt: string; updatedAt: stri
 const claudeDir = () => process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), '.claude')
 const codexDir = () => process.env.CODEX_HOME ?? path.join(os.homedir(), '.codex')
 
-// Savor's and Enjoy's turn envelopes wrap the user's text; only the input is shown.
+// Savor's turn envelope wraps the user's text; only the input is shown.
 function unwrap(text: string) {
   const i = text.indexOf('New input:\n')
-  return (i >= 0 && /^(Savor|Enjoy) context:/.test(text) ? text.slice(i + 'New input:\n'.length) : text).trim()
+  return (i >= 0 && /^Savor context:/.test(text) ? text.slice(i + 'New input:\n'.length) : text).trim()
 }
 
 // Transcripts get big; only lines that can matter are parsed.

@@ -89,8 +89,6 @@ export interface Thread {
   // Set for one of several conversations that got the same prompt to compare their results: the
   // fan-out they belong to and the commit their worktrees started from.
   fanout?: { id: string; base: string }
-  // Set by the import from Enjoy: what the conversation looked like there when it was last brought over.
-  imported?: { messages: number; completed: boolean; open: number }
   // Set for a run of a workflow: which one started the conversation and what set it off. A run that was
   // caught up carries the scheduled time it was due.
   workflow?: { id: string; name: string; trigger: 'scheduled' | 'manual' | 'caught'; due?: string }

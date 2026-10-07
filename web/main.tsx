@@ -13,7 +13,6 @@ import { ProcessesPopover } from './Processes'
 import { runInTerminal, TerminalButton, TerminalPanel } from './Terminal'
 import { quoteInComposer } from './Composer'
 import { useNotifications } from './notify'
-import { EnjoyImport, EnjoyOffer, useEnjoyProjects } from './EnjoyImport'
 import { AccountDialog, AppearanceMenu, FeedbackDialog } from './Account'
 import { usePrefs } from './prefs'
 import { UsageMeter } from './Usage'
@@ -163,7 +162,7 @@ function UpdateBanner() {
 
 function TopBar({ projects, active, all, me, setMe }: { projects: Project[]; active?: Project; all: boolean; me: Me; setMe: (m: Me) => void }) {
   const [menu, setMenu] = useState<'projects' | 'appearance' | null>(null)
-  const [dialog, setDialog] = useState<'account' | 'feedback' | 'enjoy' | null>(null)
+  const [dialog, setDialog] = useState<'account' | 'feedback' | null>(null)
   const { theme, feedbackButton } = usePrefs()
   const ThemeIcon = theme === 'system' ? Monitor : theme === 'dark' ? Moon : Sun
   const total = (k: keyof Project['counts']) => projects.reduce((n, p) => n + p.counts[k], 0)
@@ -196,7 +195,7 @@ function TopBar({ projects, active, all, me, setMe }: { projects: Project[]; act
   // A click outside a menu closes it, unless that click just opened the other menu.
   const closeMenu = (which: typeof menu) => setMenu((m) => (m === which ? null : m))
   // Where the account dialog leads.
-  const open = (what: 'feedback' | 'appearance' | 'enjoy') => {
+  const open = (what: 'feedback' | 'appearance') => {
     setDialog(what === 'appearance' ? null : what)
     if (what === 'appearance') setMenu(what)
   }
@@ -240,7 +239,7 @@ function TopBar({ projects, active, all, me, setMe }: { projects: Project[]; act
           <button class="pill" onClick={() => setMenu(menu === 'projects' ? null : 'projects')}>
             <FolderOpen size={15} /> Projects <ChevronDown size={14} />
           </button>
-          {menu === 'projects' && <ProjectsMenu projects={projects} active={active} me={me} setMe={setMe} close={() => closeMenu('projects')} onEnjoy={() => (setMenu(null), setDialog('enjoy'))} />}
+          {menu === 'projects' && <ProjectsMenu projects={projects} active={active} me={me} setMe={setMe} close={() => closeMenu('projects')} />}
         </div>
         {feedbackButton && (
           <button class="icon-btn wide-only" title="Send feedback" onClick={() => setDialog('feedback')}>
@@ -264,7 +263,6 @@ function TopBar({ projects, active, all, me, setMe }: { projects: Project[]; act
         </button>
         {dialog === 'account' && <AccountDialog me={me} projects={projects.length} toggleAwake={toggleAwake} open={open} onClose={() => setDialog(null)} />}
         {dialog === 'feedback' && <FeedbackDialog me={me} onClose={() => setDialog(null)} />}
-        {dialog === 'enjoy' && <EnjoyImport onClose={() => setDialog(null)} />}
       </div>
     </header>
   )
@@ -290,8 +288,7 @@ const Counts = ({ project: p }: { project: Pick<Project, 'counts'> }) => (
   </>
 )
 
-function ProjectsMenu({ projects, active, me, setMe, close, onEnjoy }: { projects: Project[]; active?: Project; me: Me; setMe: (m: Me) => void; close: () => void; onEnjoy: () => void }) {
-  const enjoy = useEnjoyProjects()
+function ProjectsMenu({ projects, active, me, setMe, close }: { projects: Project[]; active?: Project; me: Me; setMe: (m: Me) => void; close: () => void }) {
   const [query, setQuery] = useState('')
   const [step, setStep] = useState<'new' | 'open' | null>(null)
   const [name, setName] = useState('')
@@ -412,11 +409,6 @@ function ProjectsMenu({ projects, active, me, setMe, close, onEnjoy }: { project
               <button class="ghost wide" onClick={openFolder}>
                 <Folder size={16} /> Open any folder
               </button>
-              {enjoy.length > 0 && (
-                <button class="import-link" onClick={onEnjoy}>
-                  <Download size={13} /> Import from Enjoy…
-                </button>
-              )}
             </>
           )}
         </div>
@@ -492,7 +484,6 @@ function Welcome() {
       <img src="/icon.svg" alt="" />
       <h2>Open a project</h2>
       <p class="muted">Use Projects to start a new project or open a folder. Conversations, documents and workflows live in its <code>.savor/</code> directory.</p>
-      <EnjoyOffer />
     </div>
   )
 }

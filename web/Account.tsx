@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks'
 import { ArrowUpRight, Bot, Check, ChevronDown, ChevronRight, Laptop, MessageSquare, Plus, SlidersHorizontal, Smartphone, X } from 'lucide-preact'
 import { api, cap, desktop, useAgents, useApi, type Me } from './api'
-import { useEnjoyProjects } from './EnjoyImport'
 import { useNotificationToggle } from './notify'
 import { setPrefs, usePrefs, type Density, type Prefs, type Theme } from './prefs'
 import { qr, RELAY_LABEL, type DeviceRow, type RelayState } from './Settings'
@@ -225,10 +224,9 @@ function RelayRow({ onClose }: { onClose: () => void }) {
 }
 
 // Savor has no accounts: this is the computer it runs on, or on a paired device, that device.
-export function AccountDialog({ me, projects, toggleAwake, open, onClose }: { me: Me; projects: number; toggleAwake: () => void; open: (what: 'feedback' | 'appearance' | 'enjoy') => void; onClose: () => void }) {
+export function AccountDialog({ me, projects, toggleAwake, open, onClose }: { me: Me; projects: number; toggleAwake: () => void; open: (what: 'feedback' | 'appearance') => void; onClose: () => void }) {
   const local = me.origin === 'local'
   const prefs = usePrefs()
-  const enjoy = useEnjoyProjects()
   const [canNotify, notifyOn, toggleNotify] = useNotificationToggle(!local)
   const [update, setUpdate] = useState('')
   const [available, setAvailable] = useState(false)
@@ -318,12 +316,6 @@ export function AccountDialog({ me, projects, toggleAwake, open, onClose }: { me
                 <ChevronRight size={15} />
               </button>
               {local && <RelayRow onClose={onClose} />}
-              {enjoy.length > 0 && (
-                <button class="setting" onClick={() => open('enjoy')}>
-                  <span>Import from Enjoy…</span>
-                  <ChevronRight size={15} />
-                </button>
-              )}
             </div>
           </details>
           <details class="box" open>
