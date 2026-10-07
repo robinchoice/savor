@@ -722,6 +722,8 @@ test('the MCP token stays off agent command lines, which every user on the machi
   assert.ok(runs.filter((r) => r.agent === 'codex').every((r) => r.argv[2] === 'app-server'))
   for (const r of runs) assert.ok(!r.argv.some((a) => a.includes(mcpToken)), `${r.agent} got the MCP token on its command line`)
   for (const r of runs.filter((r) => r.agent === 'claude')) assert.equal(r.configMode, 0o600)
+  // The user's hooks run as in the terminal.
+  for (const r of runs.filter((r) => r.agent === 'claude')) assert.ok(!JSON.parse(r.argv[r.argv.indexOf('--settings') + 1]).disableAllHooks)
 })
 
 test('what a paired device changes never runs as local', async () => {

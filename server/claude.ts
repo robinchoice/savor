@@ -64,8 +64,8 @@ export class ClaudeSession implements Session {
       '--permission-mode', a.permissionMode || 'acceptEdits',
       '--permission-prompts', 'host',
       '--permission-prompt-tool', 'stdio',
-      // Hooks expect a terminal session; here they would run unseen in every conversation.
-      '--settings', JSON.stringify({ disableAllHooks: true, fastMode: a.fast, ultracode: a.reasoning === 'ultracode' }),
+      // The user's hooks run as in the terminal, e.g. guards that block a Bash command.
+      '--settings', JSON.stringify({ fastMode: a.fast, ultracode: a.reasoning === 'ultracode' }),
       '--chrome',
     ]
     if (a.model) args.push('--model', a.model)
