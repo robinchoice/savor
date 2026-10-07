@@ -276,6 +276,28 @@ test('approvals are routed to the user, "Always allow" remembers the rule', asyn
   await page.waitForSelector('text=Permission: deny')
 })
 
+test('an MCP server can ask to open a page, as a link with Done and Decline', async () => {
+  await newConversation()
+  await send('open-page: https://docs.example/sign-in')
+  await page.waitForSelector('.approval:has-text("docs asks you to open a page") >> text=Sign in to Docs.')
+  assert.equal(await page.locator('.approval a.approval-link').getAttribute('href'), 'https://docs.example/sign-in')
+  await page.click('.approval button:has-text("Done, continue")')
+  await page.waitForSelector('text=Page: accept')
+  // Only web pages become links.
+  await send('open-page: javascript:alert(1)')
+  await page.waitForSelector('text=Page: refused')
+
+  const [project] = (await api('GET', '/projects')).body
+  const thread = (await api('POST', `/projects/${project.id}/threads`, { text: 'open-page: https://docs.example/codex', agent: { provider: 'codex', permissionMode: 'default' } })).body
+  const t = `/projects/${project.id}/threads/${thread.id}`
+  let approval
+  await until(async () => (approval = (await api('GET', t)).body.messages.find((m) => m.approval?.status === 'pending')))
+  assert.equal(approval.approval.url, 'https://docs.example/codex')
+  await api('POST', `${t}/approvals/${approval.id}`, { choice: 'decline' })
+  await until(async () => (await api('GET', t)).body.messages.some((m) => m.text === 'Codex page: decline'))
+  await api('PATCH', `/projects/${project.id}`, { agent: project.agent })
+})
+
 test("an agent's own clarifying questions become decisions", async () => {
   await newConversation()
   await send('native-ask: Which color?')

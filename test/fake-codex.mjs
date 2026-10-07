@@ -4,6 +4,7 @@
 // bearer token comes from the environment variable they name).
 // - "approve: <anything>" → item/commandExecution/requestApproval, then "Codex permission: <decision>"
 // - "ask-native: <question>" → item/tool/requestUserInput with the options Red/Blue, then "Codex answered: <label>"
+// - "open-page: <url>" → an MCP server asks through a URL elicitation to open that page, then "Codex page: <action>"
 // - a skill item in the input → "Codex skill: <name> from <path>"
 // - anything else → "Codex echo: <input>"
 import fs from 'node:fs'
@@ -73,6 +74,9 @@ async function runTurn(params) {
       questions: [{ id: 'color', header: 'Color', question, isOther: false, isSecret: false, options: [{ label: 'Red', description: '' }, { label: 'Blue', description: '' }] }],
     })
     reply = `Codex answered: ${answers.color.answers[0]}`
+  } else if (input.startsWith('open-page:')) {
+    const { action } = await serverRequest('mcpServer/elicitation/request', { threadId, turnId, serverName: 'docs', mode: 'url', message: 'Sign in to Docs.', url: input.slice('open-page:'.length).trim(), elicitationId: 'e1' })
+    reply = `Codex page: ${action}`
   } else {
     reply = `Codex echo: ${input}`
   }

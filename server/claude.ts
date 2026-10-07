@@ -9,7 +9,7 @@ import path from 'node:path'
 import * as store from './store.js'
 import type { ApprovalOption, Thread } from './store.js'
 import { BIN, command, mcpUrl } from './config.js'
-import { configKey, forkOf, rememberSession, sessionIdOf, summarize, systemPrompt, type Host, type Session, type TurnInput } from './session.js'
+import { configKey, forkOf, OPEN_PAGE, rememberSession, sessionIdOf, summarize, systemPrompt, webUrl, type Host, type Session, type TurnInput } from './session.js'
 import type { ModelInfo, SkillInfo } from './providers.js'
 
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
@@ -174,6 +174,12 @@ export class ClaudeSession implements Session {
   }
 
   private async control(requestId: string, req: any) {
+    if (req.subtype === 'elicitation') {
+      const url = req.mode === 'url' && webUrl(req.url)
+      if (!url) throw new Error('Savor does not answer MCP elicitation forms.')
+      const choice = await this.host.approve({ title: req.title ?? `${req.mcp_server_name} asks you to open a page`, detail: req.message ?? '', url, options: OPEN_PAGE })
+      return this.respond(requestId, { action: choice })
+    }
     if (req.subtype !== 'can_use_tool') throw new Error(`Savor does not handle ${req.subtype} requests.`)
     const input = req.input ?? {}
     if (req.tool_name === 'AskUserQuestion') {

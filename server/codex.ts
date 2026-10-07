@@ -5,7 +5,7 @@ import * as store from './store.js'
 import type { ApprovalOption, Thread } from './store.js'
 import { BIN, command, mcpUrl, VERSION } from './config.js'
 import { Rpc } from './jsonrpc.js'
-import { configKey, forkOf, rememberSession, sessionIdOf, summarize, systemPrompt, type Host, type Session, type TurnInput } from './session.js'
+import { configKey, forkOf, OPEN_PAGE, rememberSession, sessionIdOf, summarize, systemPrompt, webUrl, type Host, type Session, type TurnInput } from './session.js'
 import type { ModelInfo, SkillInfo } from './providers.js'
 
 const MODES: Record<string, { sandbox: string; approvalPolicy: string; approvalsReviewer: string }> = {
@@ -160,6 +160,12 @@ export class CodexSession implements Session {
       const granted: Record<string, unknown> = {}
       for (const [k, v] of Object.entries(params.permissions ?? {})) if (v != null) granted[k] = v
       return { permissions: granted, scope: choice }
+    }
+    if (method === 'mcpServer/elicitation/request' && params.mode === 'url') {
+      const url = webUrl(params.url)
+      if (!url) throw new Error('Savor opens only http and https pages.')
+      const choice = await this.host.approve({ title: `${params.serverName} asks you to open a page`, detail: params.message ?? '', url, options: OPEN_PAGE })
+      return { action: choice, content: null, _meta: null }
     }
     if (method === 'mcpServer/elicitation/request') {
       const meta = params._meta ?? {}

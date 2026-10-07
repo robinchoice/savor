@@ -879,6 +879,11 @@ function MessageItem({ m, thread, workflow, decisions, active, answers, setAnswe
             <ShieldQuestion size={16} /> {a.title ?? 'Permission request'}
           </div>
           {a.detail && <pre>{a.detail.slice(0, 1500)}</pre>}
+          {a.url && (
+            <a class="approval-link" href={a.url} target="_blank" rel="noreferrer">
+              {a.url}
+            </a>
+          )}
           {a.status === 'pending' && a.options?.length ? (
             <div class="row">
               {a.options.map((o) => (

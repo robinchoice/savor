@@ -45,7 +45,7 @@ export function systemPrompt(p: Project, thread: Thread) {
 // reads a slash command at the very start of an input.
 export interface TurnInput { context: string; input: string; images: string[] }
 export interface Answer { selected: number | null; answer: string | null }
-export interface ApprovalRequest { title: string; detail: string; options: ApprovalOption[] }
+export interface ApprovalRequest { title: string; detail: string; url?: string; options: ApprovalOption[] }
 
 export interface Host {
   p: Project
@@ -103,6 +103,15 @@ export const ALLOW_DENY: ApprovalOption[] = [
   { id: 'allow', label: 'Allow', kind: 'allow' },
   { id: 'deny', label: 'Deny', kind: 'deny' },
 ]
+
+// An MCP server asks the user to open a page, e.g. to sign in, and waits until they are done there.
+export const OPEN_PAGE: ApprovalOption[] = [
+  { id: 'accept', label: 'Done, continue', kind: 'allow' },
+  { id: 'decline', label: 'Decline', kind: 'deny' },
+]
+
+// Only web pages are offered as links; anything else could run script in Savor's page.
+export const webUrl = (url: unknown) => (typeof url === 'string' && /^https?:\/\//i.test(url) ? url : null)
 
 export const summarize = (input: unknown) => {
   const s = typeof input === 'string' ? input : JSON.stringify(input) ?? ''

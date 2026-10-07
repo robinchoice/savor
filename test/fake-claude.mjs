@@ -9,6 +9,7 @@
 //   test's release file names the input, the task is done and it concludes in a turn it starts by itself
 // - "own-server: <text>" → reports a background task of its own that keeps running after the conclusion
 // - "native-ask: <question>" → an AskUserQuestion control request with the options Blue/Green
+// - "open-page: <url>" → an MCP server asks through an elicitation control request to open that page, then "Page: <action>"
 // - "recall" → concludes with the history Savor handed over in front of the input, or "nothing"
 // - "context: <text>" → concludes with the Savor context it got in front of the input
 // - "note: <text>" → concludes with the note Savor put between that context and the input, or "none"
@@ -143,6 +144,9 @@ async function turn(text, command) {
       tool_use_id: 'toolu_ask',
     })
     await call('send_conclusion_message', { text: `Answered: ${verdict.updatedInput?.answers?.[question] ?? verdict.behavior}` })
+  } else if (input.startsWith('open-page:')) {
+    const verdict = await control({ subtype: 'elicitation', mcp_server_name: 'docs', message: 'Sign in to Docs.', mode: 'url', url: input.slice('open-page:'.length).trim(), elicitation_id: 'e1' })
+    await call('send_conclusion_message', { text: `Page: ${verdict?.action ?? 'refused'}` })
   } else if (input.startsWith('recall')) {
     const handed = text.includes('Earlier in this conversation')
     await call('send_conclusion_message', { text: `Handed over: ${handed ? text.slice(0, text.indexOf('Savor context:')).trim() : 'nothing'}` })

@@ -69,7 +69,7 @@ export const readFileAsDataUrl = (f: Blob) =>
 export interface AgentConfig { provider: string; model: string; reasoning: string; fast: boolean; permissionMode: string }
 export interface Question { title: string; body: string; options: string[]; recommended?: number }
 export interface ApprovalOption { id: string; label: string; kind: 'allow' | 'deny' }
-export interface Approval { title: string; detail: string; options: ApprovalOption[]; status: 'pending' | 'resolved'; choice?: string }
+export interface Approval { title: string; detail: string; url?: string; options: ApprovalOption[]; status: 'pending' | 'resolved'; choice?: string }
 export interface Message {
   id: string
   ts: string

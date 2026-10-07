@@ -262,6 +262,7 @@ main { flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
 .approval { display: flex; flex-direction: column; gap: 10px; background: var(--card); border-radius: 16px; padding: 16px 18px; }
 .approval-title { display: flex; align-items: center; gap: 8px; font-weight: 500; }
 .approval pre { max-height: 200px; overflow: auto; background: var(--raised); padding: 10px; border-radius: 8px; font-size: 12px; }
+.approval-link { overflow-wrap: anywhere; }
 
 .md { overflow-wrap: anywhere; }
 .md > :first-child { margin-top: 0; }

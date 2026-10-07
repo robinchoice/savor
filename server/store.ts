@@ -23,7 +23,8 @@ export interface Project {
 export interface Question { title: string; body: string; options: string[]; recommended?: number }
 export type Origin = 'local' | 'remote'
 export interface ApprovalOption { id: string; label: string; kind: 'allow' | 'deny' }
-export interface Approval { title: string; detail: string; options: ApprovalOption[]; status: 'pending' | 'resolved'; choice?: string }
+// `url` is a page an MCP server asks the user to open, e.g. to sign in.
+export interface Approval { title: string; detail: string; url?: string; options: ApprovalOption[]; status: 'pending' | 'resolved'; choice?: string }
 export interface Message {
   id: string
   ts: string
