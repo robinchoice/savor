@@ -20,6 +20,11 @@ const UNAVAILABLE = ['ScheduleWakeup', 'CronCreate', 'PushNotification', 'Remote
 const UNAVAILABLE_NOTE = `
 - ${UNAVAILABLE.join(', ')} are switched off here: Savor closes your process once no background work is pending, so timers and session crons would never fire, and there is no terminal for notifications. To wait, wait inside the turn or run the wait as a background command. For anything later or recurring, save a workflow with create_workflow (cron and timezone); Savor's scheduler runs it and shows the result. To notify the user, send your conclusion.`
 
+// In -p sessions Claude Code stops background shell commands at their timeout, so a dev server
+// started that way would vanish from the preview after half an hour.
+const BACKGROUND_NOTE = `
+- Background shell commands (run_in_background) stop at their timeout here: 30 minutes by default, 2 hours at most. Start dev servers and watchers that should keep running detached instead (setsid or nohup, output to their log file), then register them.`
+
 // A Claude Code older than the options Savor passes refuses to start.
 const exitError = (code: number | null, stderr: string) =>
   /unknown option/.test(stderr) ? `Claude Code is too old for Savor (${stderr}). Update it with \`claude update\` and send your message again.` : `claude exited with ${code}: ${stderr}`
@@ -52,7 +57,7 @@ export class ClaudeSession implements Session {
       '--input-format', 'stream-json',
       '--output-format', 'stream-json',
       '--verbose',
-      '--append-system-prompt', systemPrompt(p, thread) + UNAVAILABLE_NOTE,
+      '--append-system-prompt', systemPrompt(p, thread) + UNAVAILABLE_NOTE + BACKGROUND_NOTE,
       '--mcp-config', mcpConfig,
       '--allowedTools', 'mcp__savor',
       '--disallowed-tools', UNAVAILABLE.join(','),

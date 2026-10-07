@@ -1453,6 +1453,7 @@ ${extra}`
   assert.equal(arg('--disallowed-tools'), 'ScheduleWakeup,CronCreate,PushNotification,RemoteTrigger')
   assert.ok(run.argv.includes('--chrome'))
   assert.match(arg('--append-system-prompt'), /Answer in German\./)
+  assert.match(arg('--append-system-prompt'), /Start dev servers and watchers that should keep running detached/)
 
   // Importing again: what happened in Enjoy since comes in, what was continued in Savor stays.
   fs.mkdirSync(path.join(enjoy, 'threads/bbbb2222'))
