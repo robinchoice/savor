@@ -209,8 +209,12 @@ export class ClaudeSession implements Session {
   }
 }
 
-// A short run to learn which models and skills Claude Code offers in a folder: the answers to its
-// initialize and context usage requests. No prompt is sent.
+// Built-in commands that only steer the terminal UI, or change what Savor sets itself (model, effort,
+// fast mode, the session), stay out of the "/" list. All others run in Savor as in the terminal.
+const HIDDEN_COMMANDS = new Set(['clear', 'color', 'config', 'doctor', 'effort', 'fast', 'focus', 'heapdump', 'model', 'reload-plugins', 'rename', 'workflow-launch-exec'])
+
+// A short run to learn which models and commands Claude Code offers in a folder: the answer to its
+// initialize request. No prompt is sent.
 export function probeClaude(cwd?: string) {
   return new Promise<{ models: ModelInfo[]; skills: SkillInfo[] }>((resolve) => {
     const child = spawn(...command(BIN.claude, ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--settings', JSON.stringify({ disableAllHooks: true })]), { cwd, stdio: ['pipe', 'pipe', 'ignore'] })
@@ -221,7 +225,6 @@ export function probeClaude(cwd?: string) {
     }
     const timer = setTimeout(() => done(), 15_000)
     child.on('error', () => done()).on('exit', () => done())
-    const ask = (subtype: string) => child.stdin!.write(JSON.stringify({ type: 'control_request', request_id: crypto.randomUUID(), request: { subtype } }) + '\n')
     let offer: any
     readline.createInterface({ input: child.stdout! }).on('line', (line) => {
       let ev: any
@@ -230,16 +233,10 @@ export function probeClaude(cwd?: string) {
       } catch {
         return
       }
-      if (ev.type !== 'control_response') return
-      if (!offer) {
-        offer = ev.response?.response ?? {}
-        return ask('get_context_usage')
-      }
+      if (ev.type !== 'control_response' || offer) return
+      offer = ev.response?.response ?? {}
       const models = (offer.models ?? []) as { value: string; displayName?: string; description?: string; supportedEffortLevels?: string[] }[]
       const commands = (offer.commands ?? []) as { name: string; description?: string; builtin?: boolean }[]
-      // Most built-in commands steer the terminal UI (/color, /focus, /config). Of those, only the ones
-      // Claude Code keeps among its skills (/code-review, /init) are listed.
-      const builtinSkills = new Set(((ev.response?.response?.skills?.skillFrontmatter ?? []) as { name: string }[]).map((s) => s.name))
       done(
         models.map((m) => ({
           id: m.value === 'default' ? '' : m.value,
@@ -247,9 +244,9 @@ export function probeClaude(cwd?: string) {
           detail: m.description,
           efforts: m.supportedEffortLevels?.length ? [...m.supportedEffortLevels, 'ultracode'] : [],
         })),
-        commands.filter((c) => !c.builtin || builtinSkills.has(c.name)).map((c) => ({ name: c.name, description: c.description ?? '' })),
+        commands.filter((c) => !c.builtin || !(HIDDEN_COMMANDS.has(c.name) || c.name.startsWith('_'))).map((c) => ({ name: c.name, description: c.description ?? '' })),
       )
     })
-    ask('initialize')
+    child.stdin!.write(JSON.stringify({ type: 'control_request', request_id: crypto.randomUUID(), request: { subtype: 'initialize' } }) + '\n')
   })
 }

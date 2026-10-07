@@ -28,6 +28,13 @@ function spawnAppServer(projectId?: string, threadId?: string) {
 const skillsIn = async (rpc: Rpc, cwd: string) =>
   (((await rpc.request('skills/list', { cwds: [cwd] })).data[0]?.skills ?? []) as { name: string; description: string; path: string; enabled: boolean }[]).filter((s) => s.enabled)
 
+// Codex's own commands, as its TUI offers them. Savor runs them through the app-server methods behind them.
+const COMMANDS: SkillInfo[] = [
+  { name: 'review', description: 'Review the uncommitted changes, or what the text after the command asks for' },
+  { name: 'compact', description: 'Summarize the conversation so far to free up context' },
+  { name: 'goal', description: 'Work on a goal across turns until it is met; /goal alone shows it, /goal clear drops it' },
+]
+
 const ALLOW_SESSION_DENY: ApprovalOption[] = [
   { id: 'accept', label: 'Allow', kind: 'allow' },
   { id: 'acceptForSession', label: 'Allow for this session', kind: 'allow' },
@@ -44,6 +51,8 @@ export class CodexSession implements Session {
   private failure: string | null = null
   private limited = false
   private stopping = false
+  // Codex works on an active goal turn after turn by itself; the request ends once the goal does.
+  private goal = false
 
   constructor(private host: Host, private thread: Thread) {
     const { p } = host
@@ -75,10 +84,14 @@ export class CodexSession implements Session {
     this.failure = null
     this.limited = false
     const items: unknown[] = [{ type: 'text', text: context + input, text_elements: [] }, ...images.map((path) => ({ type: 'localImage', path }))]
-    const name = input.match(/^\/(\S+)/)?.[1]
+    const [, name, arg = ''] = input.match(/^\/(\S+)\s*([\s\S]*)$/) ?? []
     const effort = this.thread.agent.reasoning || null
     this.ready
       .then(async () => {
+        if (input.startsWith('!')) return void (await this.rpc.request('thread/shellCommand', { threadId: this.threadId, command: input.slice(1).trim() }))
+        if (name === 'review') return void (await this.rpc.request('review/start', { threadId: this.threadId, target: arg.trim() ? { type: 'custom', instructions: arg.trim() } : { type: 'uncommittedChanges' } }))
+        if (name === 'compact') return void (await this.rpc.request('thread/compact/start', { threadId: this.threadId }))
+        if (name === 'goal') return this.goalCommand(arg.trim())
         // A slash command that names a skill hands Codex the skill itself, as a $mention does in its own UI.
         const skill = name && (await skillsIn(this.rpc, this.host.cwd)).find((s) => s.name === name)
         if (skill) items.push({ type: 'skill', name: skill.name, path: skill.path })
@@ -88,7 +101,20 @@ export class CodexSession implements Session {
       .catch((e: Error) => this.host.ended({ error: e.message }))
   }
 
+  // "/goal <objective>" sets a goal Codex starts on by itself; "/goal" shows it and "/goal clear" drops it,
+  // which take no turn.
+  private async goalCommand(arg: string) {
+    if (arg && arg !== 'clear') return void (await this.rpc.request('thread/goal/set', { threadId: this.threadId, objective: arg, status: 'active' }))
+    if (arg === 'clear') {
+      await this.rpc.request('thread/goal/clear', { threadId: this.threadId })
+      return this.host.ended({ text: 'Goal cleared.' })
+    }
+    const { goal } = await this.rpc.request('thread/goal/get', { threadId: this.threadId })
+    this.host.ended({ text: goal ? `Goal (${goal.status}): ${goal.objective}` : 'No goal set.' })
+  }
+
   interrupt() {
+    if (this.goal) this.rpc.request('thread/goal/set', { threadId: this.threadId, status: 'paused' }).catch(() => {})
     if (this.turnId) this.rpc.request('turn/interrupt', { threadId: this.threadId, turnId: this.turnId }).catch(() => {})
   }
 
@@ -105,7 +131,15 @@ export class CodexSession implements Session {
   private onNotification(method: string, params: any) {
     const { activity } = this.host
     if (params?.threadId && params.threadId !== this.threadId) return
-    if (method === 'turn/started') this.host.working()
+    if (method === 'turn/started') {
+      // Commands and goals start their turns themselves.
+      this.turnId = params.turn.id
+      this.host.working()
+    } else if (method === 'thread/goal/updated' || method === 'thread/goal/cleared') {
+      const was = this.goal
+      this.goal = params.goal?.status === 'active'
+      if (was && !this.goal && !this.turnId) this.host.ended({ text: this.lastText })
+    }
     else if (method === 'thread/tokenUsage/updated') this.host.context(params.tokenUsage.last.totalTokens, params.tokenUsage.modelContextWindow)
     else if (method === 'item/started') {
       const item = params.item
@@ -119,6 +153,9 @@ export class CodexSession implements Session {
       activity.finish(item.id)
       if (item.type === 'mcpToolCall' && item.error) activity.instant('note', `${item.tool} failed · ${summarize(item.error.message ?? item.error)}`)
       if (item.type === 'agentMessage' && item.text?.trim()) activity.instant('note', (this.lastText = item.text))
+      else if (item.type === 'exitedReviewMode' && item.review?.trim()) this.lastText = item.review
+      else if (item.type === 'contextCompaction') this.lastText = 'Context compacted.'
+      else if (item.type === 'commandExecution' && item.source === 'userShell') this.lastText = `\`\`\`\n$ ${item.command}\n${(item.aggregatedOutput ?? '').trimEnd()}\n\`\`\``
       else if (item.type === 'reasoning') activity.instant('thinking', 'Thinking')
       else if (item.type === 'fileChange') activity.instant('edit', `edit · ${(item.changes ?? []).map((c: any) => c.path).join(', ')}`)
     } else if (method === 'error') {
@@ -127,6 +164,7 @@ export class CodexSession implements Session {
     } else if (method === 'turn/completed') {
       const turn = params.turn
       this.turnId = null
+      if (turn.status === 'completed' && this.goal) return
       if (turn.status !== 'failed') return this.host.ended({ text: turn.status === 'interrupted' ? '' : this.lastText })
       const error = turn.error?.message ?? this.failure ?? 'Codex turn failed.'
       if (!this.limited && !usageLimit(turn.error)) return this.host.ended({ error })
@@ -238,4 +276,4 @@ function resetOf(limits: any) {
   return spent.length ? Math.max(...spent.map((w) => w.resetsAt * 1000)) : null
 }
 
-export const codexSkills = (cwd: string) => probe<SkillInfo[]>(async (rpc) => (await skillsIn(rpc, cwd)).map((s) => ({ name: s.name, description: s.description })))
+export const codexSkills = (cwd: string) => probe<SkillInfo[]>(async (rpc) => [...(await skillsIn(rpc, cwd)).map((s) => ({ name: s.name, description: s.description })), ...COMMANDS])

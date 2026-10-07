@@ -6,6 +6,8 @@
 // - "ask-native: <question>" → item/tool/requestUserInput with the options Red/Blue, then "Codex answered: <label>"
 // - "open-page: <url>" → an MCP server asks through a URL elicitation to open that page, then "Codex page: <action>"
 // - a skill item in the input → "Codex skill: <name> from <path>"
+// - review/start, thread/compact/start and thread/shellCommand → a turn with the item Codex reports for each
+// - thread/goal/set → two turns, the second one meets the goal
 // - anything else → "Codex echo: <input>"
 import fs from 'node:fs'
 import readline from 'node:readline'
@@ -98,6 +100,24 @@ async function runTurn(params) {
   turnId = null
 }
 
+// A turn Codex starts by itself, as for its commands and goals, made of the given items.
+function itemsTurn(items, after = () => {}) {
+  const turn = { id: `turn-${nextId++}`, items: [], status: 'inProgress', error: null }
+  setTimeout(() => {
+    notify('turn/started', { threadId, turn })
+    for (const item of items) notify('item/completed', { threadId, turnId: turn.id, item })
+    after()
+    notify('turn/completed', { threadId, turn: { ...turn, status: 'completed' } })
+  }, 10)
+  return turn
+}
+
+let goal = null
+const setGoal = (status) => {
+  goal = { ...goal, status }
+  notify('thread/goal/updated', { threadId, turnId: null, goal })
+}
+
 const rl = readline.createInterface({ input: process.stdin })
 rl.on('line', (line) => {
   const msg = JSON.parse(line)
@@ -126,7 +146,30 @@ rl.on('line', (line) => {
       return reply({ thread: { id: threadId }, model: 'fake-model' })
     case 'turn/start':
       runTurn(msg.params).then(() => {}, (e) => notify('error', { error: { message: e.message }, willRetry: false, threadId, turnId }))
-      return reply({ turn: { id: `turn-${nextId}`, items: [], status: 'inProgress', error: null } })
+      return reply({ turn: { id: turnId, items: [], status: 'inProgress', error: null } })
+    case 'review/start': {
+      const t = msg.params.target
+      return reply({ reviewThreadId: threadId, turn: itemsTurn([{ type: 'exitedReviewMode', id: 'r1', review: `Codex review of ${t.type}${t.instructions ? `: ${t.instructions}` : ''}` }]) })
+    }
+    case 'thread/compact/start':
+      itemsTurn([{ type: 'contextCompaction', id: 'c1' }])
+      return reply({})
+    case 'thread/shellCommand':
+      itemsTurn([{ type: 'commandExecution', id: 's1', source: 'userShell', command: `/bin/bash -lc '${msg.params.command}'`, aggregatedOutput: 'fake output\n', status: 'completed' }])
+      return reply({})
+    case 'thread/goal/set':
+      goal = { threadId, objective: msg.params.objective, status: 'active' }
+      reply({ goal })
+      notify('thread/goal/updated', { threadId, turnId: null, goal })
+      return itemsTurn([{ type: 'agentMessage', id: 'g1', text: 'Codex goal: halfway' }], () =>
+        setTimeout(() => itemsTurn([{ type: 'agentMessage', id: 'g2', text: `Codex goal met: ${goal.objective}` }], () => setGoal('complete')), 50),
+      )
+    case 'thread/goal/get':
+      return reply({ goal })
+    case 'thread/goal/clear':
+      goal = null
+      reply({})
+      return notify('thread/goal/cleared', { threadId })
     case 'turn/interrupt': {
       const id = turnId
       turnId = null

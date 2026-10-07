@@ -244,7 +244,7 @@ export function Composer(props: Props) {
       {error && <div class="error-text pad">{error}</div>}
       {slash !== null && (!skills || matches.length > 0) && (
         <div class="menu up slash">
-          {!skills && <div class="menu-label">Loading skills…</div>}
+          {!skills && <div class="menu-label">Loading commands…</div>}
           {matches.map((s, i) => (
             <button
               key={s.name}

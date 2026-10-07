@@ -1377,17 +1377,17 @@ test('a draft stays with its conversation', async () => {
 test('typing / lists the skills of the agent and runs the one picked', async () => {
   const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
   const skills = async (provider) => (await api('GET', `/projects/${project.id}/skills?provider=${provider}`)).body.map((s) => s.name)
-  // Each agent reports its own skills. Of Claude Code's built-in commands only its skills are listed, and
-  // the skills Codex has switched off stay out.
-  assert.deepEqual(await skills('claude'), ['greet', 'tools:lint', 'code-review'])
-  assert.deepEqual(await skills('codex'), ['greet'])
+  // Each agent reports its own skills and commands. Claude Code's commands for the terminal UI stay out,
+  // as do the skills Codex has switched off; Codex's own commands come last.
+  assert.deepEqual(await skills('claude'), ['greet', 'tools:lint', 'code-review', 'compact', 'btw'])
+  assert.deepEqual(await skills('codex'), ['greet', 'review', 'compact', 'goal', 'btw'])
   assert.deepEqual(await skills('grok'), [])
 
   await page.goto(`${base}/#/p/${project.id}/new`)
   await page.waitForSelector('text=What do you want to build?')
   await page.fill('.composer textarea', '/')
   await page.waitForSelector('.slash button.selected:has-text("/greet")')
-  assert.equal(await page.locator('.slash button').count(), 3)
+  assert.equal(await page.locator('.slash button').count(), 4)
   // The list narrows while the name is typed, and Enter completes the name instead of sending.
   await page.keyboard.type('li')
   await page.waitForSelector('.slash button.selected:has-text("/tools:lint")')
@@ -1407,6 +1407,34 @@ test('typing / lists the skills of the agent and runs the one picked', async () 
   // Codex gets the skill itself next to the text.
   const thread = (await api('POST', `/projects/${project.id}/threads`, { text: '/greet Robin', agent: { provider: 'codex', permissionMode: 'default' } })).body
   await until(async () => (await api('GET', `/projects/${project.id}/threads/${thread.id}`)).body.messages.some((m) => m.text === 'Codex skill: greet from /fake/skills/greet/SKILL.md'))
+  await api('PATCH', `/projects/${project.id}`, { agent: project.agent })
+})
+
+test("Codex's own commands run through the app-server methods behind them", async () => {
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
+  const thread = (await api('POST', `/projects/${project.id}/threads`, { text: '/review', agent: { provider: 'codex', permissionMode: 'default' } })).body
+  const said = async (text) => {
+    await until(async () => (await api('GET', `/projects/${project.id}/threads/${thread.id}`)).body.messages.some((m) => m.kind === 'conclusion' && m.text === text))
+    await until(async () => !(await api('GET', `/projects/${project.id}/threads/${thread.id}`)).body.busy)
+  }
+  const send = (text) => api('POST', `/projects/${project.id}/threads/${thread.id}/messages`, { text })
+  await said('Codex review of uncommittedChanges')
+  await send('/review only the tests')
+  await said('Codex review of custom: only the tests')
+  await send('/compact')
+  await said('Context compacted.')
+  await send('!ls -a')
+  await said("```\n$ /bin/bash -lc 'ls -a'\nfake output\n```")
+  // A goal keeps Codex working turn after turn; the request ends once the goal is met.
+  await send('/goal ship it')
+  await said('Codex goal met: ship it')
+  const conclusions = (await api('GET', `/projects/${project.id}/threads/${thread.id}`)).body.messages.filter((m) => m.kind === 'conclusion')
+  assert.ok(!conclusions.some((m) => m.text === 'Codex goal: halfway'))
+  await send('/goal')
+  await said('Goal (complete): ship it')
+  await send('/goal clear')
+  await said('Goal cleared.')
+  await api('PATCH', `/projects/${project.id}/threads/${thread.id}`, { completed: true })
   await api('PATCH', `/projects/${project.id}`, { agent: project.agent })
 })
 

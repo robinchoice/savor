@@ -26,7 +26,7 @@
 // While the test's outdated file exists it refuses to start, like a release that lacks an option.
 // `--version` and `auth status` answer like the real CLI, so Savor lists the fake as installed.
 // Started without an MCP config it is Savor's probe and answers the initialize request with its models and
-// commands, and the context usage request with its skills.
+// commands.
 import readline from 'node:readline'
 import crypto from 'node:crypto'
 import fs from 'node:fs'
@@ -47,7 +47,6 @@ if (!args.includes('--mcp-config')) {
   readline.createInterface({ input: process.stdin }).on('line', (line) => {
     const msg = JSON.parse(line)
     const answer = (response) => console.log(JSON.stringify({ type: 'control_response', response: { subtype: 'success', request_id: msg.request_id, response } }))
-    if (msg.request?.subtype === 'get_context_usage') return answer({ skills: { skillFrontmatter: [{ name: 'greet', source: 'userSettings' }, { name: 'code-review', source: 'built-in' }] } })
     if (msg.request?.subtype !== 'initialize') return
     const models = [
       { value: 'default', displayName: 'Default (recommended)', supportedEffortLevels: ['low', 'high'] },
@@ -59,6 +58,8 @@ if (!args.includes('--mcp-config')) {
       { name: 'tools:lint', description: '(tools) Check the code', argumentHint: '' },
       { name: 'code-review', description: 'Review the current diff', argumentHint: '', builtin: true },
       { name: 'compact', description: 'Free up context by summarizing the conversation so far', argumentHint: '', builtin: true },
+      { name: 'color', description: 'Set the prompt bar color', argumentHint: '', builtin: true },
+      { name: '__remote-workflow', description: '', argumentHint: '', builtin: true },
     ]
     answer({ models, commands })
   })
