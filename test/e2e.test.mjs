@@ -877,6 +877,60 @@ test('agents can start conversations in a worktree', async () => {
   await api('DELETE', `/projects/${project.id}/worktrees?path=${encodeURIComponent(child.worktree.path)}`)
 })
 
+test('a new worktree gets the files .worktreeinclude names, and its first turn waits for the project setup', async () => {
+  const [project] = (await api('GET', '/projects')).body
+  const p = `/projects/${project.id}`
+  fs.writeFileSync(path.join(PROJECT, '.gitignore'), '.env\nsecret/\n')
+  fs.writeFileSync(path.join(PROJECT, '.worktreeinclude'), '.env\nsecret/\nnotes.local\n')
+  gitIn(PROJECT, 'add', '.gitignore', '.worktreeinclude')
+  gitIn(PROJECT, 'commit', '-q', '-m', 'ignore secrets')
+  fs.writeFileSync(path.join(PROJECT, '.env'), 'KEY=main\n')
+  fs.mkdirSync(path.join(PROJECT, 'secret'))
+  fs.writeFileSync(path.join(PROJECT, 'secret', 'token.txt'), 'abc\n')
+  fs.writeFileSync(path.join(PROJECT, 'notes.local'), 'not ignored, so not copied\n')
+  const threadIn = async (body) => {
+    const t = (await api('POST', `${p}/threads`, body)).body
+    return { ...t, url: `${p}/threads/${t.id}` }
+  }
+  const conclusion = async (t) => {
+    await until(async () => (await api('GET', t.url)).body.messages.some((m) => m.kind === 'conclusion'))
+    return (await api('GET', t.url)).body.messages.find((m) => m.kind === 'conclusion').text
+  }
+
+  // The setup command is a shell command on this computer: a paired device can't set it.
+  const device = await pairDevice('CI setup phone')
+  assert.equal((await api('PATCH', p, { worktreeSetup: 'true' }, device)).status, 403)
+  await api('PATCH', p, { worktreeSetup: 'sleep 1; echo "$SAVOR_ROOT_PATH" > setup.txt; cat .env' })
+  const ok = await threadIn({ text: 'note: set up', worktree: 'setup/ok' })
+  assert.equal(await conclusion(ok), "Note: Savor ran the project's worktree setup `sleep 1; echo \"$SAVOR_ROOT_PATH\" > setup.txt; cat .env` in this new worktree, and it succeeded.")
+  const wt = ok.worktree.path
+  assert.equal(fs.readFileSync(path.join(wt, '.env'), 'utf8'), 'KEY=main\n')
+  assert.equal(fs.readFileSync(path.join(wt, 'secret', 'token.txt'), 'utf8'), 'abc\n')
+  assert.ok(!fs.existsSync(path.join(wt, 'notes.local')))
+  assert.equal(fs.readFileSync(path.join(wt, 'setup.txt'), 'utf8').trim(), PROJECT)
+  assert.equal(fs.readFileSync(`${wt}.setup.log`, 'utf8'), 'KEY=main\n')
+  assert.ok((await api('GET', `${ok.url}/activity`)).body.some((e) => e.label === 'Worktree setup · sleep 1; echo "$SAVOR_ROOT_PATH" > setup.txt; cat .env' && e.finishedAt))
+
+  // A failed setup still starts the turn, and the agent gets the end of its output.
+  await api('PATCH', p, { worktreeSetup: 'echo cannot install >&2; exit 3' })
+  const failed = await threadIn({ text: 'note: set up', worktree: 'setup/failed' })
+  const note = await conclusion(failed)
+  assert.ok(note.startsWith("Note: The project's worktree setup `echo cannot install >&2; exit 3` failed in this new worktree (exit code 3)."), note)
+  assert.ok(note.includes(`all of it is in ${failed.worktree.path}.setup.log:\ncannot install\n`), note)
+
+  // Stop works while the turn waits for the setup.
+  await api('PATCH', p, { worktreeSetup: 'sleep 5' })
+  const stopped = await threadIn({ text: 'note: never', worktree: 'setup/stopped' })
+  assert.equal((await api('GET', stopped.url)).body.busy, true)
+  await api('POST', `${stopped.url}/stop`)
+  await until(async () => !(await api('GET', stopped.url)).body.busy)
+  assert.ok((await api('GET', stopped.url)).body.messages.some((m) => m.kind === 'error' && m.text === 'Turn stopped.'))
+
+  await api('PATCH', p, { worktreeSetup: '' })
+  for (const t of [ok, failed, stopped]) await api('DELETE', `${p}/worktrees?path=${encodeURIComponent(t.worktree.path)}`)
+  assert.ok(!fs.existsSync(`${wt}.setup.log`))
+})
+
 test('agents can start conversations in other projects, and input from a paired device stays visible there', async () => {
   const [project] = (await api('GET', '/projects')).body
   const folder = path.join(TMP, 'design-target')

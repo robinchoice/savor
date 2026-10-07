@@ -11,6 +11,7 @@ import { ClaudeSession } from './claude.js'
 import { CodexSession } from './codex.js'
 import { AcpSession } from './acp.js'
 import * as push from './push.js'
+import { setupOf } from './git.js'
 
 const IDLE_CLOSE_MS = 5 * 60_000
 
@@ -31,6 +32,7 @@ const sessions = new Map<string, { session: Session; idleTimer?: NodeJS.Timeout 
 const stopped = new Set<string>() // threads whose last turn the user stopped: don't pump the queue
 const approvals = new Map<string, (choice: string) => void>() // approval message id → resolver
 const questions = new Map<string, (answers: Answer[]) => void>() // decision group id → resolver
+const preparing = new Map<string, { p: Project; activity: Activity }>() // threads whose turn waits for their new worktree's setup
 
 export const isBusy = (tid: string) => busy.has(tid)
 export const anyBusy = () => busy.size > 0
@@ -122,9 +124,24 @@ function deliver(p: Project, tid: string, msg: Message) {
   const thread = store.updateThread(p, tid, { needsYou: false, workingSince: startedAt })
   store.updateMessage(p, tid, msg.id, { delivered: true })
   requests.set(tid, { inputId: msg.id, startedAt, updates: new Map() })
-  const session = sessionFor(p, thread)
+  const setup = setupOf(thread.worktree?.path)
+  if (!setup) {
+    const session = sessionFor(p, thread)
+    beginTurn(p, tid)
+    return session.start(turnInput(p, thread, msg))
+  }
+  // The first turn in a new worktree starts once the project's setup command is done, and the agent
+  // is told how it went.
   beginTurn(p, tid)
-  session.start(turnInput(p, thread, msg))
+  const activity = new Activity(p, tid, () => true)
+  activity.start('setup', 'command', `Worktree setup · ${p.worktreeSetup}`)
+  preparing.set(tid, { p, activity })
+  setup.then((note) => {
+    if (!preparing.delete(tid)) return
+    activity.finish('setup')
+    const now = store.getThread(p, tid)
+    sessionFor(p, now).start(turnInput(p, now, msg, note))
+  })
 }
 
 function pump(p: Project, tid: string) {
@@ -135,7 +152,11 @@ function pump(p: Project, tid: string) {
 
 export function stop(tid: string) {
   stopped.add(tid)
-  current(tid)?.kill()
+  const setup = preparing.get(tid)
+  if (!setup) return current(tid)?.kill()
+  preparing.delete(tid)
+  setup.activity.finish('setup')
+  endTurn(setup.p, tid, { error: 'Turn stopped.' }, store.getThread(setup.p, tid).agent)
 }
 
 // The conversation was deleted: end its session, and nothing it still reports touches the removed records.
@@ -144,7 +165,7 @@ export function forget(tid: string) {
   sessions.delete(tid)
   clearTimeout(s?.idleTimer)
   s?.session.kill()
-  for (const state of [busy, requests, turnConclusion]) state.delete(tid)
+  for (const state of [busy, requests, turnConclusion, preparing]) state.delete(tid)
   stopped.delete(tid)
 }
 

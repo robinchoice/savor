@@ -17,6 +17,8 @@ export interface Project {
   paused: boolean
   // Pinned projects are tabs; the others are reached through the Projects menu.
   pinned: boolean
+  // A shell command that runs in each new worktree before its first turn, e.g. `npm install`.
+  worktreeSetup: string
 }
 export interface Question { title: string; body: string; options: string[]; recommended?: number }
 export type Origin = 'local' | 'remote'
@@ -243,7 +245,7 @@ export const defaultAgent = (): AgentConfig => ({ provider: 'claude', model: '',
 
 function loadProject(ref: { path: string }): Project | null {
   const p = readJson<(Partial<Project> & Pick<Project, 'id' | 'name'>) | null>(path.join(ref.path, '.savor', 'project.json'), null)
-  return p && ({ tint: TINTS[0], verbosity: 'medium', paused: false, pinned: true, ...p, agent: { ...defaultAgent(), ...p.agent }, path: ref.path } as Project)
+  return p && ({ tint: TINTS[0], verbosity: 'medium', paused: false, pinned: true, worktreeSetup: '', ...p, agent: { ...defaultAgent(), ...p.agent }, path: ref.path } as Project)
 }
 
 export const listProjects = (): Project[] => state().projects.flatMap((ref) => loadProject(ref) ?? [])
@@ -279,6 +281,7 @@ export function addProject(dir: string, name?: string): Project {
     verbosity: 'medium' as const,
     paused: false,
     pinned: true,
+    worktreeSetup: '',
   }
   writeJson(path.join(abs, '.savor', 'project.json'), project)
   if (!s.projects.some((r) => r.id === project.id)) {

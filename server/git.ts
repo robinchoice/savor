@@ -1,5 +1,5 @@
 // Git for projects: worktrees per conversation, merging them back, and diffs of commits and changes.
-import { execFileSync, spawnSync } from 'node:child_process'
+import { execFileSync, spawn, spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import * as store from './store.js'
@@ -66,7 +66,57 @@ export function addWorktree(p: Project, branch: string): { branch: string; path:
   if (fs.existsSync(dir)) throw new GitError(`${dir} already exists.`)
   fs.mkdirSync(worktreesDir(p), { recursive: true })
   git(p.path, 'worktree', 'add', ...(branchExists(p, branch) ? [dir, branch] : ['-b', branch, dir]))
+  copyIncluded(p, dir)
+  if (p.worktreeSetup.trim()) setups.set(dir, runSetup(p, dir, p.worktreeSetup.trim()))
   return { branch, path: dir }
+}
+
+// A new worktree is a clean checkout, so gitignored files such as .env are missing. The ones that
+// .worktreeinclude in the project folder names (gitignore syntax, as Claude Code reads it) are copied
+// over; tracked files never are.
+function copyIncluded(p: Project, dir: string) {
+  const include = path.join(p.path, '.worktreeinclude')
+  if (!fs.existsSync(include)) return
+  const listed = git(p.path, 'ls-files', '--others', '--ignored', `--exclude-from=${include}`, '-z')
+  if (!listed) return
+  // Of those, only what git ignores: an untracked file waiting for its first commit stays where it is.
+  const ignored = spawnSync('git', ['check-ignore', '--stdin', '-z'], { cwd: p.path, input: listed, maxBuffer: 32 * 1024 * 1024 }).stdout.toString()
+  for (const file of ignored.split('\0').filter(Boolean)) {
+    const target = path.join(dir, file)
+    if (fs.existsSync(target)) continue
+    fs.mkdirSync(path.dirname(target), { recursive: true })
+    fs.copyFileSync(path.join(p.path, file), target, fs.constants.COPYFILE_FICLONE)
+  }
+}
+
+// The project's setup command (e.g. `npm install`) runs in each new worktree, and the worktree's
+// first turn waits for it. It resolves to what the agent is told about it.
+const SETUP_TIMEOUT_MS = 20 * 60_000
+const setups = new Map<string, Promise<string>>() // worktree path → note for the agent
+export const setupOf = (dir: string | undefined) => (dir ? setups.get(dir) : undefined)
+export const setupLog = (dir: string) => `${dir}.setup.log`
+
+function runSetup(p: Project, dir: string, command: string) {
+  return new Promise<string>((resolve) => {
+    const log = fs.openSync(setupLog(dir), 'w')
+    const child = spawn(command, { cwd: dir, shell: true, stdio: ['ignore', log, log], env: { ...process.env, SAVOR_ROOT_PATH: p.path, SAVOR_WORKTREE_PATH: dir } })
+    let timedOut = false
+    const timer = setTimeout(() => ((timedOut = true), child.kill('SIGTERM')), SETUP_TIMEOUT_MS)
+    // A process that fails to start reports an error and may still report its exit.
+    let settled = false
+    const done = (failure: string | null) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      fs.closeSync(log)
+      setups.delete(dir)
+      if (!failure) return resolve(`Savor ran the project's worktree setup \`${command}\` in this new worktree, and it succeeded.\n\n`)
+      const tail = fs.readFileSync(setupLog(dir), 'utf8').trimEnd().split('\n').slice(-30).join('\n')
+      resolve(`The project's worktree setup \`${command}\` failed in this new worktree (${failure}). The end of its output, all of it is in ${setupLog(dir)}:\n${tail}\n\nSort out what your task needs before you start on it.\n\n`)
+    }
+    child.on('error', (e) => done(e.message))
+    child.on('exit', (code, signal) => done(code === 0 ? null : timedOut ? `stopped after ${SETUP_TIMEOUT_MS / 60_000} minutes` : signal ? `ended by ${signal}` : `exit code ${code}`))
+  })
 }
 
 export function mergeWorktree(p: Project, branch: string) {
@@ -94,6 +144,7 @@ export function isMerged(p: Project, branch: string, base: string) {
 
 export function removeWorktree(p: Project, dir: string) {
   git(p.path, 'worktree', 'remove', '--force', dir)
+  fs.rmSync(setupLog(dir), { force: true })
 }
 
 export function deleteBranch(p: Project, branch: string) {

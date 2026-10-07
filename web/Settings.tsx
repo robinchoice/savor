@@ -7,7 +7,7 @@ import { pairThroughRelay } from './transport'
 const TINTS = ['#b5654a', '#8b6bc7', '#3f9a78', '#c59a3d', '#c8577a', '#4a9bb8', '#7a8794']
 
 export function Settings({ project }: { project: Project }) {
-  const [draft, setDraft] = useState({ name: project.name, tint: project.tint, verbosity: project.verbosity, paused: project.paused, agent: project.agent })
+  const [draft, setDraft] = useState({ name: project.name, tint: project.tint, verbosity: project.verbosity, paused: project.paused, agent: project.agent, worktreeSetup: project.worktreeSetup })
   const [role, setRole] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
@@ -54,6 +54,10 @@ export function Settings({ project }: { project: Project }) {
         <label>
           Role & instructions <small class="muted">ROLE.md — every agent in this project gets this</small>
           <textarea rows={8} value={role ?? ''} placeholder="e.g. You are the engineer for a small bakery's ordering app. Keep the UI in German." onInput={(e) => (setSaved(false), setRole(e.currentTarget.value))} />
+        </label>
+        <label>
+          Worktree setup <small class="muted">runs in every new worktree before the agent starts; gitignored files named in .worktreeinclude, such as .env, are copied over first</small>
+          <textarea class="mono" rows={2} value={draft.worktreeSetup} placeholder="e.g. npm install" onInput={(e) => set({ worktreeSetup: e.currentTarget.value })} />
         </label>
         <div class="row wide">
           <label>

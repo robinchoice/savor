@@ -162,6 +162,7 @@ export interface Project {
   verbosity: 'low' | 'medium' | 'high'
   paused: boolean
   pinned: boolean
+  worktreeSetup: string
   counts: { working: number; blocked: number; unread: number }
 }
 export interface Doc { id: string; title: string; content: string; updatedAt: string }

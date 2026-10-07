@@ -244,12 +244,14 @@ route('PUT', '/projects/order', (_, b) => {
 route('GET', '/projects/:pid/role', (params) => ({ role: store.readRole(project(params)) }))
 route('PATCH', '/projects/:pid', (params, b, ctx) => {
   const p = project(params)
-  // ROLE.md and the default agent apply to every conversation in the project, so devices can't change them.
+  // ROLE.md and the default agent apply to every conversation in the project, and the worktree setup
+  // is a shell command on this computer, so devices can't change them.
   const agent = b.agent && agentFrom(ctx, p.agent, b.agent)
   const roleChanged = typeof b.role === 'string' && b.role !== store.readRole(p)
-  if (roleChanged || (agent && JSON.stringify(agent) !== JSON.stringify(p.agent))) localOnly(ctx)
+  const setupChanged = typeof b.worktreeSetup === 'string' && b.worktreeSetup !== p.worktreeSetup
+  if (roleChanged || setupChanged || (agent && JSON.stringify(agent) !== JSON.stringify(p.agent))) localOnly(ctx)
   if (roleChanged) store.saveRole(p, b.role)
-  const patch = Object.fromEntries(Object.entries(b).filter(([k]) => ['name', 'tint', 'agent', 'verbosity', 'paused', 'pinned'].includes(k)))
+  const patch = Object.fromEntries(Object.entries(b).filter(([k]) => ['name', 'tint', 'agent', 'verbosity', 'paused', 'pinned', 'worktreeSetup'].includes(k)))
   if (agent) patch.agent = agent
   const updated = store.updateProject(p.id, patch)
   emit({ type: 'projects' })
