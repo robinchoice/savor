@@ -928,7 +928,8 @@ details.box[open] > summary .chev { transform: rotate(180deg); }
 .board { display: flex; flex-direction: column; height: 100%; max-width: 1220px; margin: 0 auto; padding: 16px 20px 18px; gap: 12px; }
 .board-head { display: flex; align-items: baseline; gap: 12px; }
 .board-head h1 { font-size: 18px; }
-.board-head .filters { margin-left: auto; padding: 0; }
+.board-head .menu-anchor { margin-left: auto; align-self: center; }
+.board-head .filters { padding: 0; }
 .board-cols { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .board-col { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; display: flex; flex-direction: column; min-height: 0; transition: border-color 0.18s ease, background 0.18s ease; }
 .board-col.over { border-color: var(--line-strong); background: var(--card-hover); }

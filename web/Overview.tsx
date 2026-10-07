@@ -48,7 +48,7 @@ const Avatar = ({ project }: { project?: Project }) => (
   </span>
 )
 
-// Routes: all[/inbox[/new | /:pid/:tid] | /board | /workflows]
+// Routes: all[/inbox[/new | /:pid/:tid] | /board[/:pid] | /workflows]
 export function AllProjects({ projects, section, rest }: { projects: Project[]; section?: string; rest: string[] }) {
   const [data] = useApi<Overview>('/overview', (e) => ['projects', 'thread', 'status', 'workflows'].includes(e.type))
   const byId = new Map(projects.map((p) => [p.id, p]))
@@ -56,7 +56,7 @@ export function AllProjects({ projects, section, rest }: { projects: Project[]; 
   if (section === 'board')
     return (
       <div class="page">
-        <AllBoard threads={data?.threads} projects={projects} byId={byId} />
+        <AllBoard threads={data?.threads} projects={projects} byId={byId} only={byId.get(rest[0])} />
       </div>
     )
   return <div class="page">{section === 'workflows' ? <AllWorkflows workflows={data?.workflows} byId={byId} /> : <AllOverview data={data} projects={projects} byId={byId} />}</div>
@@ -312,14 +312,18 @@ interface Suggestion { key: string; title: string; threadId: string; threadTitle
 type Card = { item: BacklogItem } | { suggestion: Suggestion }
 
 // What to start next and what agents work on now. Questions and results stay in Overview and Inbox.
-function AllBoard({ threads, projects, byId }: { threads?: Listed[]; projects: Project[]; byId: Map<string, Project> }) {
+function AllBoard({ threads, projects, byId, only }: { threads?: Listed[]; projects: Project[]; byId: Map<string, Project>; only?: Project }) {
   const [backlog] = useApi<{ items: BacklogItem[]; suggested: Suggestion[] }>('/backlog', (e) => ['backlog', 'thread', 'status', 'message', 'projects'].includes(e.type))
   const [byProject, setByProject] = useState(false)
   const [dragged, setDragged] = useState<Card | null>(null)
   const [over, setOver] = useState(false)
-  const doing = (threads ?? []).filter((t) => !t.completed && !t.waitsFor && (t.busy || t.waiting))
-  const items = (backlog?.items ?? []).filter((i) => byId.has(i.projectId))
-  const suggested = (backlog?.suggested ?? []).filter((s) => byId.has(s.projectId))
+  const [menu, setMenu] = useState(false)
+  const shown = (pid: string) => (only ? pid === only.id : byId.has(pid))
+  const doing = (threads ?? []).filter((t) => shown(t.projectId) && !t.completed && !t.waitsFor && (t.busy || t.waiting))
+  const items = (backlog?.items ?? []).filter((i) => shown(i.projectId))
+  const suggested = (backlog?.suggested ?? []).filter((s) => shown(s.projectId))
+  // One project needs neither groups nor a name on every card.
+  const named = !byProject && !only
   const start = async (card: Card) => {
     if ('item' in card) {
       await api('POST', `/projects/${card.item.projectId}/threads`, { text: card.item.title })
@@ -336,7 +340,7 @@ function AllBoard({ threads, projects, byId }: { threads?: Listed[]; projects: P
     'item' in card ? api('DELETE', `/projects/${card.item.projectId}/backlog/${card.item.id}`) : api('POST', `/projects/${card.suggestion.projectId}/backlog/dismiss`, { key: card.suggestion.key })
   // By project, each project's cards follow its name in the order of the tabs.
   const grouped = <T extends { projectId: string }>(list: T[], render: (x: T) => preact.JSX.Element) =>
-    byProject
+    byProject && !only
       ? projects
           .filter((p) => list.some((x) => x.projectId === p.id))
           .map((p) => (
@@ -354,7 +358,7 @@ function AllBoard({ threads, projects, byId }: { threads?: Listed[]; projects: P
     return (
       <div key={own ? card.item.id : card.suggestion.key} class={`board-card ${own ? '' : 'suggested'}`} draggable onDragStart={(e) => (e.dataTransfer!.setData('text/plain', title), setDragged(card))} onDragEnd={() => (setDragged(null), setOver(false))}>
         <div class="board-card-top">
-          {!byProject && (
+          {named && (
             <>
               <Avatar project={byId.get(projectId)} /> {byId.get(projectId)?.name}
             </>
@@ -384,10 +388,36 @@ function AllBoard({ threads, projects, byId }: { threads?: Listed[]; projects: P
       <div class="board-head">
         <h1>Board</h1>
         <span class="muted small wide-only">What to start next and what runs now.</span>
-        <div class="filters">
-          <button class={`filter ${byProject ? '' : 'active'}`} onClick={() => setByProject(false)}>Flat</button>
-          <button class={`filter ${byProject ? 'active' : ''}`} onClick={() => setByProject(true)}>By project</button>
+        <div class="menu-anchor">
+          <button class="pill" onClick={() => setMenu(!menu)}>
+            {only ? (
+              <>
+                <Avatar project={only} /> {only.name}
+              </>
+            ) : (
+              'All projects'
+            )}{' '}
+            <ChevronDown size={14} />
+          </button>
+          {menu && (
+            <div class="menu right">
+              <a href="#/all/board" onClick={() => setMenu(false)}>
+                All projects
+              </a>
+              {projects.map((p) => (
+                <a key={p.id} href={`#/all/board/${p.id}`} onClick={() => setMenu(false)}>
+                  <Avatar project={p} /> {p.name}
+                </a>
+              ))}
+            </div>
+          )}
         </div>
+        {!only && (
+          <div class="filters">
+            <button class={`filter ${byProject ? '' : 'active'}`} onClick={() => setByProject(false)}>Flat</button>
+            <button class={`filter ${byProject ? 'active' : ''}`} onClick={() => setByProject(true)}>By project</button>
+          </div>
+        )}
       </div>
       <div class="board-cols">
         <section class="board-col">
@@ -395,7 +425,7 @@ function AllBoard({ threads, projects, byId }: { threads?: Listed[]; projects: P
             Backlog <span>{items.length + suggested.length}</span>
           </div>
           <div class="board-col-body">
-            <AddToBacklog projects={projects} />
+            <AddToBacklog key={only?.id} projects={projects} initial={only?.id ?? null} />
             {grouped(items, (item) => backlogCard({ item }))}
             {suggested.length > 0 && <div class="board-group">Suggested by agents · {suggested.length}</div>}
             {grouped(suggested, (suggestion) => backlogCard({ suggestion }))}
@@ -409,7 +439,7 @@ function AllBoard({ threads, projects, byId }: { threads?: Listed[]; projects: P
             {grouped(doing, (t) => (
               <a key={t.id} class="board-card" href={threadHref(t)}>
                 <div class="board-card-top">
-                  {!byProject && (
+                  {named && (
                     <>
                       <Avatar project={byId.get(t.projectId)} /> {byId.get(t.projectId)?.name}
                     </>
@@ -430,11 +460,11 @@ function AllBoard({ threads, projects, byId }: { threads?: Listed[]; projects: P
 }
 
 // A line to do later, or to start right away, in any project.
-function AddToBacklog({ projects }: { projects: Project[] }) {
+function AddToBacklog({ projects, initial }: { projects: Project[]; initial: string | null }) {
   const [text, setText] = useState('')
   const [chosen, setChosen] = useState<string | null>(null)
   const [menu, setMenu] = useState(false)
-  const project = projects.find((p) => p.id === chosen) ?? projects.find((p) => p.pinned) ?? projects[0]
+  const project = projects.find((p) => p.id === (chosen ?? initial)) ?? projects.find((p) => p.pinned) ?? projects[0]
   if (!project) return null
   const add = async (now: boolean) => {
     const title = text.trim()
