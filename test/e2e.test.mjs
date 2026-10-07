@@ -1944,6 +1944,8 @@ test('the All tab answers questions in place and starts what waits in the backlo
   await page.click('.all-inbox .next-btn')
   await page.waitForFunction(() => /^#\/all\/inbox\/[^/]+\/[^/]+$/.test(location.hash))
   const first = await page.evaluate(() => location.hash)
+  // The hash changes before Savor renders the conversation; until then J would still lead to it.
+  await page.waitForSelector(`.all-inbox .card.active[href="${first}"]`)
   // The composer has the focus now, so it takes Alt+J.
   await page.keyboard.press('Alt+j')
   await page.waitForFunction((first) => location.hash !== first, first)
