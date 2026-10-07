@@ -122,6 +122,7 @@ export interface Thread {
   completed: boolean
   needsYou: boolean
   error: string | null
+  resumeAt?: string | null
   context?: { tokens: number; window: number | null } | null
   parentId?: string
   fork?: { provider: string; sessionId: string | null }

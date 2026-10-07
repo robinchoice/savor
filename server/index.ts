@@ -268,7 +268,8 @@ route('DELETE', '/projects/:pid', (params, _, ctx) => {
 // ---- threads ----
 
 const STOPPED = 'Turn stopped.'
-const failed = (t: store.Thread) => !!t.error && t.error !== STOPPED && !agents.isBusy(t.id)
+// A turn that waits for a usage limit to reset counts as working, not as failed.
+const failed = (t: store.Thread) => !!t.error && t.error !== STOPPED && !agents.isBusy(t.id) && !t.resumeAt
 
 // What the conversation lists show beyond the thread: why it waits for the user and what it does while it works.
 function listed(p: store.Project, t: store.Thread) {

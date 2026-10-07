@@ -42,6 +42,7 @@ export class CodexSession implements Session {
   private turnId: string | null = null
   private lastText = ''
   private failure: string | null = null
+  private limited = false
   private stopping = false
 
   constructor(private host: Host, private thread: Thread) {
@@ -72,6 +73,7 @@ export class CodexSession implements Session {
   start({ context, input, images }: TurnInput) {
     this.lastText = ''
     this.failure = null
+    this.limited = false
     const items: unknown[] = [{ type: 'text', text: context + input, text_elements: [] }, ...images.map((path) => ({ type: 'localImage', path }))]
     const name = input.match(/^\/(\S+)/)?.[1]
     const effort = this.thread.agent.reasoning || null
@@ -121,11 +123,18 @@ export class CodexSession implements Session {
       else if (item.type === 'fileChange') activity.instant('edit', `edit · ${(item.changes ?? []).map((c: any) => c.path).join(', ')}`)
     } else if (method === 'error') {
       if (!params.willRetry) this.failure = params.error?.message ?? 'Codex reported an error.'
+      this.limited ||= usageLimit(params.error)
     } else if (method === 'turn/completed') {
       const turn = params.turn
       this.turnId = null
-      if (turn.status === 'failed') this.host.ended({ error: turn.error?.message ?? this.failure ?? 'Codex turn failed.' })
-      else this.host.ended({ text: turn.status === 'interrupted' ? '' : this.lastText })
+      if (turn.status !== 'failed') return this.host.ended({ text: turn.status === 'interrupted' ? '' : this.lastText })
+      const error = turn.error?.message ?? this.failure ?? 'Codex turn failed.'
+      if (!this.limited && !usageLimit(turn.error)) return this.host.ended({ error })
+      // The error names the reset only in words; the account's rate limits have it as a time.
+      codexUsage()
+        .then((limits) => resetOf(limits))
+        .catch(() => null)
+        .then((resetsAt) => this.host.ended({ error, resetsAt }))
     }
   }
 
@@ -214,5 +223,13 @@ export const probeCodex = () =>
 
 // The account's rate limits: how much of each window is used and when it resets.
 export const codexUsage = () => probe(async (rpc) => (await rpc.request('account/rateLimits/read', {})).rateLimits)
+
+const usageLimit = (error: any) => JSON.stringify(error?.codexErrorInfo ?? '').includes('usageLimitExceeded')
+
+// When every used-up window has reset again (ms), or null when none is used up.
+function resetOf(limits: any) {
+  const spent = [limits?.primary, limits?.secondary].filter((w) => w && w.usedPercent >= 100 && w.resetsAt)
+  return spent.length ? Math.max(...spent.map((w) => w.resetsAt * 1000)) : null
+}
 
 export const codexSkills = (cwd: string) => probe<SkillInfo[]>(async (rpc) => (await skillsIn(rpc, cwd)).map((s) => ({ name: s.name, description: s.description })))

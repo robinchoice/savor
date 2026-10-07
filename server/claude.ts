@@ -35,6 +35,8 @@ export class ClaudeSession implements Session {
   private stopping = false
   private tokens = 0
   private model = ''
+  // When the usage limit Claude ran into resets (ms), while it holds.
+  private limit: number | null = null
 
   constructor(private host: Host, thread: Thread) {
     const { p } = host
@@ -132,6 +134,11 @@ export class ClaudeSession implements Session {
       return this.host.backgroundChanged()
     }
     if (ev.type === 'assistant' || ev.type === 'user' || (ev.type === 'system' && ['init', 'task_notification'].includes(ev.subtype))) this.host.working()
+    if (ev.type === 'rate_limit_event') {
+      const info = ev.rate_limit_info ?? {}
+      this.limit = info.status === 'rejected' && info.resetsAt && !info.isUsingOverage ? info.resetsAt * 1000 : null
+      return
+    }
     if (ev.type === 'system' && ev.subtype === 'init' && ev.session_id) {
       rememberSession(p, tid, 'claude', ev.session_id)
     } else if (ev.type === 'assistant') {
@@ -148,7 +155,7 @@ export class ClaudeSession implements Session {
     } else if (ev.type === 'result') {
       const window = ev.modelUsage?.[this.model]?.contextWindow
       if (window) this.host.context(this.tokens, window)
-      this.host.ended(ev.is_error && !/interrupt/i.test(ev.subtype ?? '') ? { error: ev.result || ev.subtype } : { text: ev.is_error ? '' : ev.result ?? '' })
+      this.host.ended(ev.is_error && !/interrupt/i.test(ev.subtype ?? '') ? { error: ev.result || ev.subtype, resetsAt: this.limit } : { text: ev.is_error ? '' : ev.result ?? '' })
     }
   }
 

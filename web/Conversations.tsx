@@ -272,7 +272,7 @@ function ThreadCard({ project, thread: t, active }: { project: Project; thread: 
       <div class="card-title" title={t.title}>{t.summary ?? t.title}</div>
       {kind === 'working' ? (
         <div class="card-step">
-          <span class="ring busy" /> <span>{t.waiting && !t.busy ? WAITING : t.step ?? 'Working'}</span>
+          <span class="ring busy" /> <span>{t.waiting && !t.busy ? waitingFor(t) : t.step ?? 'Working'}</span>
         </div>
       ) : w?.reason === 'approval' || w?.reason === 'question' ? (
         <div class="card-ask">
@@ -319,8 +319,9 @@ function NewConversation({ project }: { project: Project }) {
   )
 }
 
-// Between turns: the agent ended its turn without a conclusion and continues when its background work is done.
-const WAITING = 'Waiting for background work'
+// Between turns: the agent ended its turn without a conclusion and continues when its background work
+// is done, or Savor continues the turn once the usage limit it stopped at resets.
+const waitingFor = (t: Thread) => (t.resumeAt ? `Usage limit · continues ${formatStamp(t.resumeAt)}` : 'Waiting for background work')
 // What the daemon records as the error of a turn the user stopped. That is not a failure.
 const STOPPED = 'Turn stopped.'
 
@@ -470,7 +471,7 @@ function ThreadView({ project, threadId }: { project: Project; threadId: string 
   const canComplete = !busy && !thread.completed && last?.kind === 'conclusion' && !openDecisions
   const queued = messages.filter((m) => m.kind === 'user' && m.delivered === false).length
   const status = busy || waiting
-    ? { icon: <span class="ring busy" />, text: busy ? 'Working' : WAITING, cls: 'working' }
+    ? { icon: <span class="ring busy" />, text: busy ? 'Working' : waitingFor(thread), cls: 'working' }
     : thread.needsYou
       ? { icon: <span class="ring needs" />, text: 'Your turn', cls: 'needs' }
       : thread.error === STOPPED
@@ -533,7 +534,7 @@ function ThreadView({ project, threadId }: { project: Project; threadId: string 
   const said = thread.needsYou ? 'Your turn' : last && last.kind !== 'user' && messages.length > seen ? last.text : ''
   const bubble = busy || waiting ? (
     <button class="bubble" title="Show the conversation" onClick={showChat}>
-      <span class="spinner" /> {busy ? workingLabel : WAITING}
+      <span class="spinner" /> {busy ? workingLabel : waitingFor(thread)}
       {elapsed && <span class="muted"> · {elapsed}</span>}
     </button>
   ) : said ? (
@@ -709,7 +710,7 @@ function ThreadView({ project, threadId }: { project: Project; threadId: string 
                 ))}
                 {(busy || waiting) && (
                   <button class="working-row" title="Show activity" onClick={showActivity}>
-                    <span class="spinner" /> {busy ? workingLabel : WAITING}{elapsed && <span class="muted"> · {elapsed}</span>} <ChevronRight size={13} />
+                    <span class="spinner" /> {busy ? workingLabel : waitingFor(thread)}{elapsed && <span class="muted"> · {elapsed}</span>} <ChevronRight size={13} />
                   </button>
                 )}
                 {showNext && lastConclusion ? (

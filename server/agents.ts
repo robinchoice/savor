@@ -14,6 +14,8 @@ import * as push from './push.js'
 import { setupOf } from './git.js'
 
 const IDLE_CLOSE_MS = 5 * 60_000
+// A turn that stopped at a usage limit continues this long after the limit resets.
+const LIMIT_MARGIN_MS = 60_000
 
 // The current request of a thread is its latest user input plus what the agent already sent for it.
 // MCP tools use it to allow one acknowledgement and one conclusion per input and idempotent updates.
@@ -33,6 +35,7 @@ const stopped = new Set<string>() // threads whose last turn the user stopped: d
 const approvals = new Map<string, (choice: string) => void>() // approval message id → resolver
 const questions = new Map<string, (answers: Answer[]) => void>() // decision group id → resolver
 const preparing = new Map<string, { p: Project; activity: Activity }>() // threads whose turn waits for their new worktree's setup
+const resumeTimers = new Map<string, NodeJS.Timeout>() // threads waiting for a usage limit to reset
 
 export const isBusy = (tid: string) => busy.has(tid)
 export const anyBusy = () => busy.size > 0
@@ -96,6 +99,8 @@ export function notify(p: Project, tid: string, body: string, status: string) {
 export interface Input { text: string; images?: string[]; files?: string[]; origin: Origin; device?: string; from?: Message['from']; chained?: boolean }
 
 export function send(p: Project, tid: string, input: Input) {
+  // New input replaces the turn that waits for a usage limit to reset; it may go to another agent.
+  setResume(p, tid, null)
   const thread = store.updateThread(p, tid, { completed: false, inputAt: store.now() })
   const queued = busy.has(tid)
   const msg = post(p, tid, { kind: 'user', text: input.text, images: input.images, files: input.files, modelInfo: thread.agent, origin: input.origin, device: input.device, from: input.from, chained: input.chained || undefined, delivered: !queued })
@@ -109,7 +114,10 @@ export function send(p: Project, tid: string, input: Input) {
 export function sendNow(p: Project, tid: string) {
   stopped.delete(tid)
   if (busy.has(tid)) current(tid)?.interrupt()
-  else pump(p, tid)
+  else {
+    setResume(p, tid, null)
+    pump(p, tid)
+  }
 }
 
 export function removeQueued(p: Project, tid: string, mid: string) {
@@ -145,7 +153,7 @@ function deliver(p: Project, tid: string, msg: Message) {
 }
 
 function pump(p: Project, tid: string) {
-  if (busy.has(tid) || stopped.has(tid)) return
+  if (busy.has(tid) || stopped.has(tid) || store.getThread(p, tid).resumeAt) return
   const next = store.readMessages(p, tid).find((m) => m.kind === 'user' && m.delivered === false)
   if (next) deliver(p, tid, next)
 }
@@ -165,7 +173,8 @@ export function forget(tid: string) {
   sessions.delete(tid)
   clearTimeout(s?.idleTimer)
   s?.session.kill()
-  for (const state of [busy, requests, turnConclusion, preparing]) state.delete(tid)
+  clearTimeout(resumeTimers.get(tid))
+  for (const state of [busy, requests, turnConclusion, preparing, resumeTimers]) state.delete(tid)
   stopped.delete(tid)
 }
 
@@ -174,11 +183,11 @@ const current = (tid: string) => sessions.get(tid)?.session
 // Background work inside the agent's own process (shell commands, subagents). It ends with the process.
 export const runsBackground = (tid: string) => !!current(tid)?.background?.()
 
-// Between turns with a conclusion still owed: the agent waits for a process it registered or for
-// background work of its own. A stop or a failure ends that.
+// Between turns with a conclusion still owed: the agent waits for a process it registered, for
+// background work of its own or for a usage limit to reset. A stop or a failure ends that.
 export function waiting(p: Project, t: Thread) {
   const r = requests.get(t.id)
-  return !t.error && (awaitsBackground(p, t.id) || (!busy.has(t.id) && !!r?.ack && !r.conclusion && runsBackground(t.id)))
+  return !!t.resumeAt || (!t.error && (awaitsBackground(p, t.id) || (!busy.has(t.id) && !!r?.ack && !r.conclusion && runsBackground(t.id))))
 }
 
 // The user's Stop. A running turn ends with its process. Between turns the process goes right away,
@@ -215,13 +224,17 @@ function beginTurn(p: Project, tid: string) {
   emit({ type: 'status', projectId: p.id, threadId: tid })
 }
 
-function endTurn(p: Project, tid: string, result: { text?: string; error?: string }, agent: AgentConfig) {
+function endTurn(p: Project, tid: string, result: { text?: string; error?: string; resetsAt?: number | null }, agent: AgentConfig) {
   const startedAt = busy.get(tid)
   if (!startedAt) return
   if (result.error) {
+    // A reset that is already well past can't explain the error: no second try then.
+    const resumeAt = result.resetsAt && result.resetsAt + LIMIT_MARGIN_MS > Date.now() ? new Date(result.resetsAt + LIMIT_MARGIN_MS).toISOString() : null
     store.updateThread(p, tid, { error: result.error })
+    setResume(p, tid, resumeAt)
     post(p, tid, { kind: 'error', text: result.error, modelInfo: agent })
-    if (result.error !== 'Turn stopped.') notify(p, tid, result.error, 'Stopped with an error')
+    if (resumeAt) notify(p, tid, result.error, 'Waits for a usage limit')
+    else if (result.error !== 'Turn stopped.') notify(p, tid, result.error, 'Stopped with an error')
   } else {
     store.updateThread(p, tid, { error: null })
     // Fallback for agents that ignore the message protocol: surface their final text. An agent that
@@ -428,15 +441,50 @@ function cancelPending(p: Project, tid: string) {
   refreshNeedsYou(p, tid)
 }
 
+// ---- continuing a request ----
+
+// The agent resumes its own session on the input it still owes a conclusion for, and is told why.
+function continueRequest(p: Project, thread: Thread, input: Message, note: string) {
+  const r = request(p, thread.id)
+  r.startedAt ??= thread.workingSince ?? store.now()
+  store.updateThread(p, thread.id, { workingSince: r.startedAt })
+  const session = sessionFor(p, thread)
+  beginTurn(p, thread.id)
+  session.start(turnInput(p, thread, input, note))
+}
+
+// ---- usage limits ----
+
+const LIMITED = `You stopped at a usage limit while working on the input below, and the limit has reset since. Check what is already done before you repeat anything, then finish the work. This is still the same request: do not acknowledge it again.\n\n`
+
+// `at` is when the turn continues, or null for no longer. What is queued waits until then.
+function setResume(p: Project, tid: string, at: string | null) {
+  clearTimeout(resumeTimers.get(tid))
+  resumeTimers.delete(tid)
+  if (store.getThread(p, tid).resumeAt !== at) store.updateThread(p, tid, { resumeAt: at })
+  if (at) resumeTimers.set(tid, setTimeout(() => resumeAfterLimit(p, tid), Math.max(0, Date.parse(at) - Date.now())))
+}
+
+function resumeAfterLimit(p: Project, tid: string) {
+  setResume(p, tid, null)
+  const thread = store.getThread(p, tid)
+  const r = request(p, tid)
+  const input = store.readMessages(p, tid).find((m) => m.id === r.inputId)
+  if (input && !r.conclusion && !busy.has(tid)) continueRequest(p, thread, input, LIMITED)
+  else pump(p, tid)
+}
+
 // ---- restarts ----
 
 const INTERRUPTED = `Savor was restarted while you were working on the input below. Your process was cut off, and so was whatever command or tool call was running. Check what is already done before you repeat anything, then finish the work. This is still the same request: do not acknowledge it again.\n\n`
 
 // A turn that the end of the daemon cut off continues at the next start. The agent resumes its own
 // session and is told what happened, so it decides what to redo; Savor repeats nothing by itself.
+// A turn that waits for a usage limit continues when it resets, also if that was while Savor was down.
 export function resumeInterrupted() {
   for (const p of store.listProjects())
     for (const thread of store.listThreads(p)) {
+      if (thread.resumeAt) setResume(p, thread.id, thread.resumeAt)
       if (!thread.workingSince) continue
       const tid = thread.id
       // Whoever asked for these approvals is gone; the agent asks again when it gets there.
@@ -445,10 +493,7 @@ export function resumeInterrupted() {
       const input = store.readMessages(p, tid).find((m) => m.id === r.inputId)
       const waitsForYou = store.getThread(p, tid).needsYou
       if (input && !r.conclusion && !waitsForYou) {
-        r.startedAt = thread.workingSince
-        const session = sessionFor(p, thread)
-        beginTurn(p, tid)
-        session.start(turnInput(p, thread, input, INTERRUPTED))
+        continueRequest(p, thread, input, INTERRUPTED)
         continue
       }
       store.updateThread(p, tid, { workingSince: null })

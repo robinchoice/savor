@@ -60,7 +60,8 @@ export interface Host {
   context(tokens: number, window?: number | null): void
   approve(req: ApprovalRequest): Promise<string>
   ask(questions: Question[]): Promise<Answer[]>
-  ended(result: { text?: string; error?: string }): void
+  // `resetsAt` (ms) is set when the turn stopped at a usage limit that resets then.
+  ended(result: { text?: string; error?: string; resetsAt?: number | null }): void
   // The agent process is gone; a running turn ends with `error`.
   closed(error: string): void
 }

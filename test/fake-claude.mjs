@@ -12,6 +12,9 @@
 // - "recall" → concludes with the history Savor handed over in front of the input, or "nothing"
 // - "context: <text>" → concludes with the Savor context it got in front of the input
 // - "note: <text>" → concludes with the note Savor put between that context and the input, or "none"
+// - "limit: <text>" → acknowledges, waits for the test's release file, then stops at a usage limit that reset
+//   58 seconds ago ("limit-later: <text>" right away, at one that resets in an hour); continued once the limit
+//   reset, it concludes
 // - "slow: <text>" → acknowledges, waits for the test's release file or an interrupt, then echoes
 //   (and says so when Savor told it that a restart cut the turn off)
 // - a last text block of its own that starts with "/" → "Skill <name and arguments>", the way Claude Code runs slash commands
@@ -142,6 +145,18 @@ async function turn(text, command) {
     await call('send_conclusion_message', { text: `Handed over: ${handed ? text.slice(0, text.indexOf('Savor context:')).trim() : 'nothing'}` })
   } else if (input.startsWith('context:')) {
     await call('send_conclusion_message', { text: `Context: ${text.match(/Savor context:\n(.*)\n/)[1]}` })
+  } else if (input.startsWith('limit:') || input.startsWith('limit-later:')) {
+    if (text.includes('You stopped at a usage limit')) {
+      out({ type: 'rate_limit_event', rate_limit_info: { status: 'allowed' } })
+      await call('send_conclusion_message', { text: `Echo: ${input} (after the limit)` })
+    } else {
+      await call('send_acknowledgement_message', { text: 'On it.', summary: 'Work on the request.' })
+      if (input.startsWith('limit:')) await released(input)
+      const resetsAt = Math.floor(Date.now() / 1000) + (input.startsWith('limit:') ? -58 : 3600)
+      out({ type: 'rate_limit_event', rate_limit_info: { status: 'rejected', resetsAt, rateLimitType: 'five_hour' } })
+      out({ type: 'result', subtype: 'success', is_error: true, result: "You've hit your limit · resets 3pm" })
+      return
+    }
   } else if (input.startsWith('note:')) {
     await call('send_conclusion_message', { text: `Note: ${text.match(/Savor context:\n.*\n\n([\s\S]*)New input:/)[1].trim() || 'none'}` })
   } else if (command) {

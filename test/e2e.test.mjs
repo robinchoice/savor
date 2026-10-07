@@ -1691,6 +1691,47 @@ test('a turn cut off by a restart continues in the same agent session', async ()
   assert.equal(saved.workingSince, null)
 })
 
+test('a turn that stops at a usage limit continues once it resets, also after a restart, and what is queued waits', async () => {
+  const [project] = (await api('GET', '/projects')).body
+  const t = `/projects/${project.id}/threads`
+  const read = async (id) => (await api('GET', `${t}/${id}`)).body
+  const thread = (await api('POST', t, { text: 'limit: soon' })).body
+  await until(async () => (await read(thread.id)).messages.some((m) => m.text === 'On it.'))
+  assert.equal((await api('POST', `${t}/${thread.id}/messages`, { text: 'queued behind the limit' })).body.delivered, false)
+  fs.writeFileSync(AGENT_LOG + '.release', 'limit: soon')
+  await until(async () => (await read(thread.id)).thread.resumeAt)
+  let r = await read(thread.id)
+  assert.equal(r.waiting, true)
+  assert.ok(r.messages.some((m) => m.kind === 'error' && m.text === "You've hit your limit · resets 3pm"))
+  assert.ok(r.messages.some((m) => m.text === 'queued behind the limit' && m.delivered === false), 'the queue waits for the limit')
+  // The turn continues on the same request, and the queue follows.
+  await until(async () => (await read(thread.id)).messages.some((m) => m.text === 'Echo: limit: soon (after the limit)'))
+  await until(async () => (await read(thread.id)).messages.some((m) => m.text === 'Echo: queued behind the limit'))
+  r = await read(thread.id)
+  assert.equal(r.messages.filter((m) => m.kind === 'ack').length, 2)
+  assert.deepEqual([r.thread.resumeAt, r.thread.error, r.waiting], [null, null, false])
+
+  // A limit that resets later: the conversation shows when it continues, a stop cancels that.
+  const stopped = (await api('POST', t, { text: 'limit-later: stop me' })).body
+  await until(async () => (await read(stopped.id)).thread.resumeAt)
+  await page.goto(`${base}/#/p/${project.id}/t/${stopped.id}`)
+  await page.waitForSelector('.working-row:has-text("Usage limit · continues")')
+  await api('POST', `${t}/${stopped.id}/stop`)
+  r = await read(stopped.id)
+  assert.deepEqual([r.thread.resumeAt, r.waiting, r.messages.at(-1).text], [null, false, 'Turn stopped.'])
+
+  // The time to continue is kept on disk; one that passed while Savor was down continues at the start.
+  const later = (await api('POST', t, { text: 'limit-later: survive' })).body
+  await until(async () => (await read(later.id)).thread.resumeAt)
+  server.kill()
+  await new Promise((resolve) => server.on('exit', resolve))
+  const file = path.join(project.path, '.savor', 'threads', later.id, 'thread.json')
+  fs.writeFileSync(file, JSON.stringify({ ...JSON.parse(fs.readFileSync(file, 'utf8')), resumeAt: new Date(Date.now() - 1000).toISOString() }))
+  await startDaemon()
+  await until(async () => (await read(later.id)).messages.some((m) => m.text === 'Echo: limit-later: survive (after the limit)'))
+  assert.equal((await read(later.id)).thread.resumeAt, null)
+})
+
 test("the header shows how full the agent's context window is", async () => {
   const [project] = (await api('GET', '/projects')).body
   await page.goto(`${base}/#/p/${project.id}`)
