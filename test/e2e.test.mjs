@@ -1938,8 +1938,22 @@ test('the All tab answers questions in place and starts what waits in the backlo
   await page.waitForFunction(() => /^#\/all\/inbox\/[^/]+\/[^/]+$/.test(location.hash))
   const first = await page.evaluate(() => location.hash)
   // The composer has the focus now, so it takes Alt+J.
+  await page.evaluate(() => { window.__keys = []; addEventListener('keydown', (e) => window.__keys.push([e.code, e.key, e.altKey, e.defaultPrevented, document.activeElement?.tagName, document.activeElement?.className]), true) })
+  const dump = async (when) => console.log('DBG', when, JSON.stringify(await page.evaluate(() => ({ hash: location.hash, active: [document.activeElement?.tagName, document.activeElement?.className], next: [...document.querySelectorAll('.next-btn')].map((b) => b.outerHTML.slice(0, 80)), cards: document.querySelectorAll('.all-inbox .cards .card').length, keys: window.__keys }))), JSON.stringify((await api('GET', '/overview')).body.threads.filter((t) => t.waitsFor && !t.completed).length))
+  await dump('before')
   await page.keyboard.press('Alt+j')
-  await page.waitForFunction((first) => location.hash !== first, first)
+  try {
+    await page.waitForFunction((first) => location.hash !== first, first, { timeout: 8000 })
+  } catch (e) {
+    await dump('after')
+    await page.keyboard.press('j')
+    await new Promise((r) => setTimeout(r, 1500))
+    await dump('after plain j')
+    await page.click('.all-inbox .next-btn').catch((e) => console.log('DBG click failed', e.message))
+    await new Promise((r) => setTimeout(r, 1500))
+    await dump('after click')
+    throw e
+  }
 
   // The overview brings the open question along and answers it right there.
   const listed = (await api('GET', '/overview')).body.threads.find((t) => t.id === asked.id)
