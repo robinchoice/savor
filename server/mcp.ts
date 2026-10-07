@@ -26,6 +26,8 @@ function findProject(ref: string) {
   return found
 }
 
+const PROJECT = z.string().min(1).optional().describe('Project id or absolute path, see list_projects; defaults to this project')
+
 function buildServer(p: Project, tid: string) {
   const server = new McpServer({ name: 'savor', version: VERSION })
   const threadUrl = (id: string, project = p) => appUrl(`/p/${project.id}/t/${id}`)
@@ -217,6 +219,27 @@ function buildServer(p: Project, tid: string) {
     return ok({ threadId: t.id, url: threadUrl(t.id) })
   })
 
+  // ---- backlog ----
+
+  server.registerTool(
+    'add_to_backlog',
+    {
+      description:
+        'Put something on the backlog of this project, or of another one named by `project`: work worth doing later that nobody started yet, e.g. a follow-up you noticed but that is outside the current request. The user starts it from the board in All projects. Check list_backlog first so the same item is not added twice.',
+      inputSchema: { title: z.string().trim().min(1).max(300).describe('What to do, as a prompt an agent can start from'), project: PROJECT },
+    },
+    async ({ title, project }) => {
+      const target = project ? findProject(project) : p
+      const item = store.addBacklogItem(target, title)
+      emit({ type: 'backlog', projectId: target.id })
+      return ok({ id: item.id, project: target.id, url: appUrl('/all/board') })
+    },
+  )
+
+  server.registerTool('list_backlog', { description: 'List the backlog of this project, or of another one named by `project`.', inputSchema: { project: PROJECT } }, async ({ project }) =>
+    ok(store.readBacklog(project ? findProject(project) : p).items),
+  )
+
   // ---- conversations ----
 
   server.registerTool('list_projects', { description: 'The Savor projects on this computer, for start_conversation, send_to_conversation and the `project` of the other conversation tools.' }, async () =>
@@ -271,8 +294,6 @@ function buildServer(p: Project, tid: string) {
   server.registerTool('list_agents', { description: 'The agents installed on this computer with their models, reasoning levels and permission modes, for start_conversation.' }, async () =>
     ok({ current: modelInfo(), agents: await listAgents() }),
   )
-
-  const PROJECT = z.string().min(1).optional().describe('Project id or absolute path, see list_projects; defaults to this project')
 
   server.registerTool('list_conversations', { description: 'List the conversations in this project, or in another one named by `project`.', inputSchema: { project: PROJECT } }, async ({ project }) => {
     const target = project ? findProject(project) : p

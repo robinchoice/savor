@@ -744,9 +744,7 @@ route('POST', '/projects/:pid/backlog', (params, b) => {
   const p = project(params)
   const title = typeof b.title === 'string' ? b.title.trim() : ''
   if (!title) throw new BadRequest('Describe what to do.')
-  const backlog = store.readBacklog(p)
-  const item = { id: store.newId(), title, createdAt: store.now() }
-  store.saveBacklog(p, { ...backlog, items: [item, ...backlog.items] })
+  const item = store.addBacklogItem(p, title)
   emit({ type: 'backlog', projectId: p.id })
   return item
 })

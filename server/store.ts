@@ -500,6 +500,12 @@ export interface Backlog { items: BacklogItem[]; dismissed: string[] }
 const backlogFile = (p: Project) => path.join(dataDir(p), 'backlog.json')
 export const readBacklog = (p: Project): Backlog => ({ items: [], dismissed: [], ...readJson<Partial<Backlog>>(backlogFile(p), {}) })
 export const saveBacklog = (p: Project, b: Backlog) => writeJson(backlogFile(p), b)
+export function addBacklogItem(p: Project, title: string): BacklogItem {
+  const backlog = readBacklog(p)
+  const item = { id: newId(), title, createdAt: now() }
+  saveBacklog(p, { ...backlog, items: [item, ...backlog.items] })
+  return item
+}
 
 // ---- workflows ----
 

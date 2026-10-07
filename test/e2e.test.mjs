@@ -1935,4 +1935,15 @@ test('the All tab answers questions in place and starts what waits in the backlo
   await until(async () => !(await api('GET', '/backlog')).body.items.length)
   assert.equal((await api('POST', `/projects/${project.id}/backlog/dismiss`, { key })).status, 200)
   assert.ok(!(await api('GET', '/backlog')).body.suggested.some((s) => s.key === key))
+
+  // Agents put follow-ups on the backlog and find them there.
+  const { mcpToken } = JSON.parse(fs.readFileSync(path.join(HOME, 'state.json'), 'utf8'))
+  const client = new Client({ name: 'e2e', version: '1' })
+  await client.connect(new StreamableHTTPClientTransport(new URL(`${base}/mcp?project=${project.id}&thread=${done.id}`), { requestInit: { headers: { authorization: `Bearer ${mcpToken}` } } }))
+  const call = async (name, args) => JSON.parse((await client.callTool({ name, arguments: args })).content[0].text)
+  const added = await call('add_to_backlog', { title: 'Translate the footer' })
+  assert.ok(added.url.endsWith('/#/all/board'))
+  assert.deepEqual((await call('list_backlog', {})).map((i) => [i.id, i.title]), [[added.id, 'Translate the footer']])
+  await page.waitForSelector('.board-card:has-text("Translate the footer")')
+  await client.close()
 })
