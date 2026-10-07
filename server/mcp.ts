@@ -12,7 +12,8 @@ import * as browser from './browser.js'
 import * as processes from './processes.js'
 import { runWorkflow, syncSchedules, validateCron } from './scheduler.js'
 import { listAgents, mergeAgent, STATIC } from './providers.js'
-import { addWorktree } from './git.js'
+import { addWorktree, git } from './git.js'
+import * as ci from './ci.js'
 
 const SUMMARY = z.string().min(1).max(120).describe('One short sentence on what the user\'s latest input asks for, in their language. The conversation list shows it.')
 
@@ -343,6 +344,26 @@ function buildServer(p: Project, tid: string) {
     processes.unregister(p, pid)
     return ok({ unregistered: pid })
   })
+
+  // ---- CI ----
+
+  server.registerTool(
+    'watch_ci',
+    {
+      description:
+        'Wait for the GitHub Actions runs of a pushed commit without holding your turn (uses the GitHub CLI). When they have not all finished yet, Savor checks them every 20 seconds and continues this request with their result once they have: end your turn without a conclusion if your conclusion depends on them, e.g. a deploy to verify. Without `commit` it watches HEAD of your working directory.',
+      inputSchema: { commit: z.string().regex(/^[0-9a-f]{7,40}$/).optional() },
+    },
+    async ({ commit }) => {
+      const cwd = store.cwdOf(p, store.getThread(p, tid))
+      const sha = git(cwd, 'rev-parse', commit ?? 'HEAD')
+      const runs = await ci.runsOf(cwd, sha)
+      if (ci.finished(runs)) return ok(ci.report(sha, runs))
+      agents.watchCi(p, tid, sha)
+      const going = runs.filter((r) => r.status !== 'completed').length
+      return ok(`${runs.length ? `${going} of ${runs.length} runs are still going` : 'No runs have shown up yet'}. Savor continues this request with their result when they have finished: end your turn now, without a conclusion if it depends on them.`)
+    },
+  )
 
   // ---- product preview ----
 

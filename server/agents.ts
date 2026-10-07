@@ -12,10 +12,14 @@ import { CodexSession } from './codex.js'
 import { AcpSession } from './acp.js'
 import * as push from './push.js'
 import { setupOf } from './git.js'
+import * as ci from './ci.js'
 
 const IDLE_CLOSE_MS = 5 * 60_000
 // A turn that stopped at a usage limit continues this long after the limit resets.
 const LIMIT_MARGIN_MS = 60_000
+const CI_POLL_MS = 20_000
+// Runs show up seconds after a push. A commit without any after this has none to wait for.
+const CI_APPEAR_MS = 3 * 60_000
 
 // The current request of a thread is its latest user input plus what the agent already sent for it.
 // MCP tools use it to allow one acknowledgement and one conclusion per input and idempotent updates.
@@ -36,6 +40,7 @@ const approvals = new Map<string, (choice: string) => void>() // approval messag
 const questions = new Map<string, (answers: Answer[]) => void>() // decision group id → resolver
 const preparing = new Map<string, { p: Project; activity: Activity }>() // threads whose turn waits for their new worktree's setup
 const resumeTimers = new Map<string, NodeJS.Timeout>() // threads waiting for a usage limit to reset
+const ciTimers = new Map<string, NodeJS.Timeout>() // threads whose next look at CI is due
 
 export const isBusy = (tid: string) => busy.has(tid)
 export const anyBusy = () => busy.size > 0
@@ -174,7 +179,8 @@ export function forget(tid: string) {
   clearTimeout(s?.idleTimer)
   s?.session.kill()
   clearTimeout(resumeTimers.get(tid))
-  for (const state of [busy, requests, turnConclusion, preparing, resumeTimers]) state.delete(tid)
+  clearTimeout(ciTimers.get(tid))
+  for (const state of [busy, requests, turnConclusion, preparing, resumeTimers, ciTimers]) state.delete(tid)
   stopped.delete(tid)
 }
 
@@ -184,10 +190,16 @@ const current = (tid: string) => sessions.get(tid)?.session
 export const runsBackground = (tid: string) => !!current(tid)?.background?.()
 
 // Between turns with a conclusion still owed: the agent waits for a process it registered, for
-// background work of its own or for a usage limit to reset. A stop or a failure ends that.
+// background work of its own, for CI or for a usage limit to reset. A stop or a failure ends that.
 export function waiting(p: Project, t: Thread) {
   const r = requests.get(t.id)
-  return !!t.resumeAt || (!t.error && (awaitsBackground(p, t.id) || (!busy.has(t.id) && !!r?.ack && !r.conclusion && runsBackground(t.id))))
+  return !!t.resumeAt || waitsForCi(p, t) || (!t.error && (awaitsBackground(p, t.id) || (!busy.has(t.id) && !!r?.ack && !r.conclusion && runsBackground(t.id))))
+}
+
+const waitsForCi = (p: Project, t: Thread) => {
+  if (!t.ciWatch || busy.has(t.id)) return false
+  const r = request(p, t.id)
+  return r.inputId === t.ciWatch.inputId && !r.conclusion
 }
 
 // The user's Stop. A running turn ends with its process. Between turns the process goes right away,
@@ -232,6 +244,7 @@ function endTurn(p: Project, tid: string, result: { text?: string; error?: strin
     const resumeAt = result.resetsAt && result.resetsAt + LIMIT_MARGIN_MS > Date.now() ? new Date(result.resetsAt + LIMIT_MARGIN_MS).toISOString() : null
     store.updateThread(p, tid, { error: result.error })
     setResume(p, tid, resumeAt)
+    setCi(p, tid, null)
     post(p, tid, { kind: 'error', text: result.error, modelInfo: agent })
     if (resumeAt) notify(p, tid, result.error, 'Waits for a usage limit')
     else if (result.error !== 'Turn stopped.') notify(p, tid, result.error, 'Stopped with an error')
@@ -474,6 +487,54 @@ function resumeAfterLimit(p: Project, tid: string) {
   else pump(p, tid)
 }
 
+// ---- waiting for CI ----
+
+// The agent pushed and ended its turn: Savor looks at the commit's runs until they have all finished
+// and continues the request with their result. A failure after the agent concluded goes to the user.
+export function watchCi(p: Project, tid: string, sha: string) {
+  setCi(p, tid, { sha, since: store.now(), inputId: request(p, tid).inputId })
+  emit({ type: 'status', projectId: p.id, threadId: tid })
+}
+
+function setCi(p: Project, tid: string, watch: Thread['ciWatch'], delay = CI_POLL_MS) {
+  clearTimeout(ciTimers.get(tid))
+  ciTimers.delete(tid)
+  if (store.getThread(p, tid).ciWatch?.since !== watch?.since) store.updateThread(p, tid, { ciWatch: watch })
+  if (watch) ciTimers.set(tid, setTimeout(() => checkCi(p, tid, watch), delay))
+}
+
+async function checkCi(p: Project, tid: string, watch: NonNullable<Thread['ciWatch']>) {
+  const short = watch.sha.slice(0, 7)
+  let runs: ci.Run[] | null = null
+  let failure = ''
+  try {
+    runs = await ci.runsOf(store.cwdOf(p, store.getThread(p, tid)), watch.sha)
+  } catch (e) {
+    failure = (e as Error).message
+  }
+  // A stop or a new watch while gh was asked.
+  if (store.getThread(p, tid).ciWatch?.since !== watch.since) return
+  if (!runs) return ciDone(p, tid, watch, `Savor could not read the CI runs of ${short}: ${failure}`, true)
+  if (!runs.length && Date.now() - Date.parse(watch.since) > CI_APPEAR_MS) return ciDone(p, tid, watch, `No GitHub Actions runs showed up for ${short} within ${CI_APPEAR_MS / 60_000} minutes.`, true)
+  if (!ci.finished(runs) || busy.has(tid)) return setCi(p, tid, watch)
+  ciDone(p, tid, watch, ci.report(watch.sha, runs), ci.failed(runs).length > 0)
+}
+
+function ciDone(p: Project, tid: string, watch: NonNullable<Thread['ciWatch']>, result: string, bad: boolean) {
+  setCi(p, tid, null)
+  const thread = store.getThread(p, tid)
+  const r = request(p, tid)
+  const input = store.readMessages(p, tid).find((m) => m.id === r.inputId)
+  if (input && r.inputId === watch.inputId && !r.conclusion && !busy.has(tid))
+    return continueRequest(p, thread, input, `The CI runs you asked Savor to watch have finished.\n${result}\n\nThis is still the same request: do not acknowledge it again.\n\n`)
+  if (bad) {
+    post(p, tid, { kind: 'error', text: result })
+    store.updateThread(p, tid, { unread: true })
+    notify(p, tid, result, 'CI failed')
+  }
+  emit({ type: 'status', projectId: p.id, threadId: tid })
+}
+
 // ---- restarts ----
 
 const INTERRUPTED = `Savor was restarted while you were working on the input below. Your process was cut off, and so was whatever command or tool call was running. Check what is already done before you repeat anything, then finish the work. This is still the same request: do not acknowledge it again.\n\n`
@@ -485,6 +546,7 @@ export function resumeInterrupted() {
   for (const p of store.listProjects())
     for (const thread of store.listThreads(p)) {
       if (thread.resumeAt) setResume(p, thread.id, thread.resumeAt)
+      if (thread.ciWatch) setCi(p, thread.id, thread.ciWatch, 0)
       if (!thread.workingSince) continue
       const tid = thread.id
       // Whoever asked for these approvals is gone; the agent asks again when it gets there.

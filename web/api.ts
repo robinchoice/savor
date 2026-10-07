@@ -123,6 +123,7 @@ export interface Thread {
   needsYou: boolean
   error: string | null
   resumeAt?: string | null
+  ciWatch?: { sha: string } | null
   context?: { tokens: number; window: number | null } | null
   parentId?: string
   fork?: { provider: string; sessionId: string | null }

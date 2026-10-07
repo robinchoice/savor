@@ -72,6 +72,9 @@ export interface Thread {
   workingSince?: string | null
   // When Savor continues a turn that stopped at a usage limit: shortly after the limit resets.
   resumeAt?: string | null
+  // A pushed commit whose GitHub Actions runs the agent waits for, and the input it waits with: Savor
+  // continues that request with their result.
+  ciWatch?: { sha: string; since: string; inputId: string } | null
   // How much the agent's last request put into its model's context window, and how large that window
   // is, as far as the agent says.
   context?: { tokens: number; window: number | null } | null

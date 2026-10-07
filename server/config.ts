@@ -14,6 +14,7 @@ export const BIN = {
   grok: process.env.SAVOR_GROK_BIN ?? 'grok',
   antigravity: process.env.SAVOR_ANTIGRAVITY_BIN ?? 'agy',
   whisper: process.env.SAVOR_WHISPER_BIN ?? 'whisper-cli',
+  gh: process.env.SAVOR_GH_BIN ?? 'gh',
 }
 
 // On Windows, npm installs CLIs as .cmd shims. Node can only start those through cmd.exe, which

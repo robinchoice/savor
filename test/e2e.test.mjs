@@ -1,6 +1,7 @@
 // End-to-end tests: real daemon, real UI in headless Chromium, fake agents (test/fake-claude.mjs,
-// test/fake-codex.mjs speaking the app-server protocol, test/fake-acp.mjs speaking ACP for OpenCode)
-// and a fake whisper.cpp (test/fake-whisper.mjs) behind Chromium's fake microphone.
+// test/fake-codex.mjs speaking the app-server protocol, test/fake-acp.mjs speaking ACP for OpenCode),
+// a fake whisper.cpp (test/fake-whisper.mjs) behind Chromium's fake microphone and a fake GitHub CLI
+// (test/fake-gh.mjs).
 import { test, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync, spawn } from 'node:child_process'
@@ -69,6 +70,7 @@ async function startDaemon() {
       SAVOR_GROK_BIN: path.join(TMP, 'no-such-grok'),
       SAVOR_ANTIGRAVITY_BIN: path.join(TMP, 'no-such-agy'),
       SAVOR_WHISPER_BIN: path.join(ROOT, 'test/fake-whisper.mjs'),
+      SAVOR_GH_BIN: path.join(ROOT, 'test/fake-gh.mjs'),
       SAVOR_WHISPER_MODEL: WHISPER_MODEL,
       FAKE_AGENT_LOG: AGENT_LOG,
       CLAUDE_CONFIG_DIR: path.join(TMP, 'claude'),
@@ -1730,6 +1732,60 @@ test('a turn that stops at a usage limit continues once it resets, also after a 
   await startDaemon()
   await until(async () => (await read(later.id)).messages.some((m) => m.text === 'Echo: limit-later: survive (after the limit)'))
   assert.equal((await read(later.id)).thread.resumeAt, null)
+})
+
+test('agents wait for CI without holding their turn, and Savor continues the request with the result', async () => {
+  const [project] = (await api('GET', '/projects')).body
+  const t = `/projects/${project.id}/threads`
+  const read = async (id) => (await api('GET', `${t}/${id}`)).body
+  const conclusion = async (id) => {
+    await until(async () => (await read(id)).messages.some((m) => m.kind === 'conclusion'), 40_000)
+    return (await read(id)).messages.find((m) => m.kind === 'conclusion').text
+  }
+  const head = gitIn(PROJECT, 'rev-parse', 'HEAD')
+  const run = (status, conclusion, name = 'CI') => ({ databaseId: 7, name, workflowName: name, status, conclusion, url: `https://github.com/acme/app/actions/runs/7` })
+  const runs = (list) => fs.writeFileSync(AGENT_LOG + '.gh.json', JSON.stringify({ [head]: list }))
+
+  // Runs that already finished come back right away; gh failing reaches the agent as an error.
+  runs([run('completed', 'success')])
+  assert.equal(await conclusion((await api('POST', t, { text: 'ci: done already' })).body.id), `Watch: CI for ${head.slice(0, 7)}: all 1 runs passed.\n- CI: success https://github.com/acme/app/actions/runs/7`)
+  runs('logged-out')
+  assert.match(await conclusion((await api('POST', t, { text: 'ci: no login' })).body.id), /^Watch: gh run list failed: To get started with GitHub CLI/)
+
+  // Runs still going: the turn ends without a conclusion, the conversation waits, and the request continues with the result.
+  runs([run('in_progress', '')])
+  const waiting = (await api('POST', t, { text: 'ci: wait for it' })).body
+  await until(async () => (await read(waiting.id)).waiting)
+  assert.equal((await read(waiting.id)).thread.ciWatch.sha, head)
+  await page.goto(`${base}/#/p/${project.id}/t/${waiting.id}`)
+  await page.waitForSelector(`.working-row:has-text("Waiting for CI · ${head.slice(0, 7)}")`)
+  runs([run('completed', 'failure')])
+  assert.equal(
+    await conclusion(waiting.id),
+    `After CI: CI for ${head.slice(0, 7)}: 1 of 1 runs failed.\n- CI: failure https://github.com/acme/app/actions/runs/7\nThe log of a failed run: gh run view 7 --log-failed`,
+  )
+  assert.deepEqual([(await read(waiting.id)).thread.ciWatch, (await read(waiting.id)).waiting], [null, false])
+
+  // A stop ends the wait.
+  runs([run('in_progress', '')])
+  const stopped = (await api('POST', t, { text: 'ci: stop me' })).body
+  await until(async () => (await read(stopped.id)).waiting)
+  await api('POST', `${t}/${stopped.id}/stop`)
+  assert.deepEqual([(await read(stopped.id)).thread.ciWatch, (await read(stopped.id)).waiting], [null, false])
+
+  // An agent that concluded without waiting: the watch survives a restart, and only a failure reaches the user.
+  const concluded = (await api('POST', t, { text: 'ci-done: fire and forget' })).body
+  assert.equal(await conclusion(concluded.id), 'Done without waiting.')
+  assert.equal((await read(concluded.id)).waiting, false)
+  server.kill()
+  await new Promise((resolve) => server.on('exit', resolve))
+  runs([run('completed', 'cancelled', 'Deploy')])
+  await startDaemon()
+  // The list leaves the conversation unread, opening it would not.
+  await until(async () => (await api('GET', t)).body.find((x) => x.id === concluded.id).unread)
+  const after = await read(concluded.id)
+  assert.ok(after.messages.at(-1).kind === 'error' && after.messages.at(-1).text.startsWith(`CI for ${head.slice(0, 7)}: 1 of 1 runs failed.\n- Deploy: cancelled`))
+  assert.deepEqual([after.thread.ciWatch, after.messages.filter((m) => m.kind === 'conclusion').length], [null, 1])
 })
 
 test("the header shows how full the agent's context window is", async () => {
