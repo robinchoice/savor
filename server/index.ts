@@ -431,6 +431,7 @@ route('POST', '/projects/:pid/threads/:tid/send-now', (params) => {
   agents.sendNow(project(params), params.tid)
   return {}
 })
+route('POST', '/projects/:pid/threads/:tid/messages/:mid/steer', async (params) => ({ steered: await agents.steer(project(params), params.tid, params.mid) }))
 route('DELETE', '/projects/:pid/threads/:tid/messages/:mid', (params) => {
   agents.removeQueued(project(params), params.tid, params.mid)
   return {}

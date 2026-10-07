@@ -4,6 +4,7 @@
 // bearer token comes from the environment variable they name).
 // - "approve: <anything>" → item/commandExecution/requestApproval, then "Codex permission: <decision>"
 // - "ask-native: <question>" → item/tool/requestUserInput with the options Red/Blue, then "Codex answered: <label>"
+// - "slow: <text>" → waits for the test's release file, then "Codex echo: <text>" plus what turn/steer added meanwhile
 // - "open-page: <url>" → an MCP server asks through a URL elicitation to open that page, then "Codex page: <action>"
 // - a skill item in the input → "Codex skill: <name> from <path>"
 // - review/start, thread/compact/start and thread/shellCommand → a turn with the item Codex reports for each
@@ -48,6 +49,11 @@ async function conclude(text) {
 
 let threadId = 'fake-codex-thread'
 let turnId = null
+let added = []
+const released = async (input) => {
+  const release = process.env.FAKE_AGENT_LOG + '.release'
+  while (!fs.existsSync(release) || fs.readFileSync(release, 'utf8') !== input) await new Promise((r) => setTimeout(r, 20))
+}
 
 async function runTurn(params) {
   const text = params.input.find((i) => i.type === 'text')?.text ?? ''
@@ -80,6 +86,7 @@ async function runTurn(params) {
     const { action } = await serverRequest('mcpServer/elicitation/request', { threadId, turnId, serverName: 'docs', mode: 'url', message: 'Sign in to Docs.', url: input.slice('open-page:'.length).trim(), elicitationId: 'e1' })
     reply = `Codex page: ${action}`
   } else {
+    if (input.startsWith('slow:')) await released(input)
     reply = input.includes('Question: ') ? `Codex aside in ${threadId}: ${input.slice(input.indexOf('Question: ') + 10)}` : `Codex echo: ${input}`
   }
   if (turnId !== turn.id) return
@@ -94,6 +101,8 @@ async function runTurn(params) {
     requestedSchema: { type: 'object', properties: {} },
   })
   if (ok?.action !== 'accept') reply = `Codex MCP rejected: ${JSON.stringify(ok)}`
+  if (added.length) reply += ` (added: ${added.join(', ')})`
+  added = []
   await conclude(reply)
   notify('item/completed', { threadId, turnId, item: { type: 'agentMessage', id: 'msg1', text: reply, phase: 'final' } })
   notify('turn/completed', { threadId, turn: { ...turn, status: 'completed' } })
@@ -170,6 +179,10 @@ rl.on('line', (line) => {
       goal = null
       reply({})
       return notify('thread/goal/cleared', { threadId })
+    case 'turn/steer':
+      if (msg.params.expectedTurnId !== turnId) return out({ jsonrpc: '2.0', id: msg.id, error: { code: -32600, message: 'no active turn' } })
+      added.push(msg.params.input[0].text.split('\n')[1])
+      return reply({ turnId })
     case 'turn/interrupt': {
       const id = turnId
       turnId = null

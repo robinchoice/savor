@@ -29,6 +29,12 @@ const BACKGROUND_NOTE = `
 const exitError = (code: number | null, stderr: string) =>
   /unknown option/.test(stderr) ? `Claude Code is too old for Savor (${stderr}). Update it with \`claude update\` and send your message again.` : `claude exited with ${code}: ${stderr}`
 
+const pictures = (images: string[]) =>
+  images.map((file) => ({
+    type: 'image',
+    source: { type: 'base64', media_type: `image/${path.extname(file).slice(1).toLowerCase().replace('jpg', 'jpeg')}`, data: fs.readFileSync(file).toString('base64') },
+  }))
+
 const describe = (tool: string, input: any) =>
   tool === 'Bash' ? String(input?.command ?? '') : /^(Edit|Write|MultiEdit|NotebookEdit)$/.test(tool) ? String(input?.file_path ?? '') : JSON.stringify(input, null, 2).slice(0, 1500)
 
@@ -92,14 +98,17 @@ export class ClaudeSession implements Session {
   }
 
   start({ context, input, images }: TurnInput) {
-    const pictures = images.map((file) => ({
-      type: 'image',
-      source: { type: 'base64', media_type: `image/${path.extname(file).slice(1).toLowerCase().replace('jpg', 'jpeg')}`, data: fs.readFileSync(file).toString('base64') },
-    }))
+    const pics = pictures(images)
     // Claude Code runs a slash command only when the last text block starts with it. What stands in
     // front of that block still reaches the model.
-    const content = input.startsWith('/') ? [{ type: 'text', text: context }, ...pictures, { type: 'text', text: input }] : [{ type: 'text', text: context + input }, ...pictures]
+    const content = input.startsWith('/') ? [{ type: 'text', text: context }, ...pics, { type: 'text', text: input }] : [{ type: 'text', text: context + input }, ...pics]
     this.write({ type: 'user', message: { role: 'user', content } })
+  }
+
+  // A message written while a turn runs reaches Claude at its next step, within the same turn.
+  async steer({ text, images }: { text: string; images: string[] }) {
+    this.write({ type: 'user', message: { role: 'user', content: [{ type: 'text', text }, ...pictures(images)] } })
+    return true
   }
 
   interrupt() {

@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
-import { ArrowUp, AtSign, Bookmark, Check, ChevronDown, FileText, FolderGit2, GitBranch, ListPlus, MessageSquare, Mic, Paperclip, Plus, ShieldAlert, Split, Square, Workflow as WorkflowIcon, X, Zap, Crosshair } from 'lucide-preact'
+import { ArrowUp, AtSign, CornerDownRight, Bookmark, Check, ChevronDown, FileText, FolderGit2, GitBranch, ListPlus, MessageSquare, Mic, Paperclip, Plus, ShieldAlert, Split, Square, Workflow as WorkflowIcon, X, Zap, Crosshair } from 'lucide-preact'
 import { api, agentSummary, describeModel, effortLabel, modelName, PROVIDER_NAMES, readFileAsDataUrl, useAgents, useApi, type AgentConfig, type Attachment, type Doc, type Project, type ProviderInfo, type Preset, type Skill, type Workflow } from './api'
 import { ProviderIcon } from './Conversations'
 import { record, type Recording } from './voice'
@@ -14,6 +14,8 @@ interface Props {
   agent: AgentConfig
   setAgent: (a: AgentConfig) => Promise<unknown> | void
   onSend: (text: string, attachments: Attachment[]) => Promise<void> | void
+  // While the agent works: send into its running turn instead of queueing.
+  onSteer?: (text: string, attachments: Attachment[]) => Promise<void>
   busy?: boolean
   // Set while there is an agent to stop: in a turn, or with background work between turns.
   onStop?: () => void
@@ -160,7 +162,7 @@ export function Composer(props: Props) {
       (e: Error) => settle({ error: e.message }),
     )
   }
-  const submit = async () => {
+  const submit = async (steer = false) => {
     if (!canSend) return
     const btw = props.threadId && !answers && text.match(/^\/btw\s+(\S[\s\S]*)$/)?.[1].trim()
     if (btw) return ask(btw)
@@ -170,7 +172,7 @@ export function Composer(props: Props) {
     props.clearPicked?.(-1)
     try {
       const attachments = files.map(({ name, dataUrl }) => ({ name, dataUrl }))
-      await (answers ? answers.send(full, attachments) : props.onSend(full, attachments))
+      await (answers ? answers.send(full, attachments) : steer && props.onSteer ? props.onSteer(full, attachments) : props.onSend(full, attachments))
       // Kept until the message is accepted, so a refused one doesn't lose them.
       if (review.length) props.setReview?.([])
       setError('')
@@ -204,14 +206,21 @@ export function Composer(props: Props) {
         </button>
       )}
       {answers ? (
-        <button class="send wide" title={allPicked ? 'Send your answers and the comment' : canSend ? 'Send the comment; open questions stay unanswered' : 'Pick an answer for each question or write a comment'} disabled={!canSend} onClick={submit}>
+        <button class="send wide" title={allPicked ? 'Send your answers and the comment' : canSend ? 'Send the comment; open questions stay unanswered' : 'Pick an answer for each question or write a comment'} disabled={!canSend} onClick={() => submit()}>
           {allPicked || !hasInput ? 'Send answers' : 'Send comment'} <ArrowUp size={16} />
         </button>
       ) : (
-        <button class={`send ${fanout ? 'wide' : ''}`} title={props.busy ? 'Queue (Enter): sent after the current turn' : fanout ? 'Start one conversation per agent' : 'Send'} disabled={!canSend} onClick={submit}>
-          {props.busy ? <ListPlus size={16} /> : <ArrowUp size={16} />}
-          {fanout && `Start ${fanout.length}`}
-        </button>
+        <>
+          {props.busy && props.onSteer && (
+            <button class="send" title="Add to this turn (Ctrl+Enter): the agent reads it at its next step" disabled={!canSend} onClick={() => submit(true)}>
+              <CornerDownRight size={16} />
+            </button>
+          )}
+          <button class={`send ${fanout ? 'wide' : ''}`} title={props.busy ? 'Queue (Enter): sent after the current turn' : fanout ? 'Start one conversation per agent' : 'Send'} disabled={!canSend} onClick={() => submit()}>
+            {props.busy ? <ListPlus size={16} /> : <ArrowUp size={16} />}
+            {fanout && `Start ${fanout.length}`}
+          </button>
+        </>
       )}
     </>
   )
@@ -329,7 +338,7 @@ export function Composer(props: Props) {
               setSlashOpen(false)
             } else if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault()
-              submit()
+              submit(e.ctrlKey || e.metaKey)
             }
           }}
         />

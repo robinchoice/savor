@@ -457,6 +457,11 @@ export function ThreadView({ project, threadId, back }: { project: Project; thre
   })
   const elapsed = data.startedAt ? duration(Math.max(0, clock - Date.parse(data.startedAt))) : ''
   const send = (text: string, attachments: Attachment[] = []) => api('POST', `${base}/messages`, { text, attachments })
+  // Claude Code and Codex take input within a running turn; it is queued first, so it is not lost when the turn just ended.
+  const steer = async (text: string, attachments: Attachment[]) => {
+    const m = await api<Message>('POST', `${base}/messages`, { text, attachments })
+    await api('POST', `${base}/messages/${m.id}/steer`)
+  }
   const setAgent = (agent: AgentConfig) => api('PATCH', base, { agent })
   const patch = (b: object) => api('PATCH', base, b)
   const stop = () => api('POST', `${base}/stop`)
@@ -564,6 +569,7 @@ export function ThreadView({ project, threadId, back }: { project: Project; thre
       agent={thread.agent}
       setAgent={setAgent}
       onSend={send}
+      onSteer={['claude', 'codex'].includes(thread.agent.provider) ? steer : undefined}
       busy={busy}
       onStop={stoppable ? stop : undefined}
       placeholder={floating ? 'Tell the agent what to change…' : busy ? 'Add a follow-up (queued until the agent is done)…' : 'Add a follow-up...'}
@@ -972,6 +978,7 @@ function MessageItem({ m, thread, workflow, decisions, active, answers, setAnswe
       {queued && (
         <div class="queued-row">
           <b>Queued</b> <span>Sent after the current turn</span>
+          {['claude', 'codex'].includes(thread.agent.provider) && <button onClick={() => api('POST', `${base}/messages/${m.id}/steer`)}>Add to this turn</button>}
           <button onClick={() => api('POST', `${base}/send-now`)}>Stop work and send now</button>
           <button class="danger" onClick={() => api('DELETE', `${base}/messages/${m.id}`)}>
             Remove

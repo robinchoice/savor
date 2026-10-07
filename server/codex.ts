@@ -45,6 +45,8 @@ export class CodexSession implements Session {
   readonly config: string
   private rpc: Rpc
   private ready: Promise<void>
+  // The current input's way to its turn: input added right at the start waits for the turn to exist.
+  private starting: Promise<unknown> = Promise.resolve()
   private threadId = ''
   private turnId: string | null = null
   private lastText = ''
@@ -86,7 +88,7 @@ export class CodexSession implements Session {
     const items: unknown[] = [{ type: 'text', text: context + input, text_elements: [] }, ...images.map((path) => ({ type: 'localImage', path }))]
     const [, name, arg = ''] = input.match(/^\/(\S+)\s*([\s\S]*)$/) ?? []
     const effort = this.thread.agent.reasoning || null
-    this.ready
+    this.starting = this.ready
       .then(async () => {
         if (input.startsWith('!')) return void (await this.rpc.request('thread/shellCommand', { threadId: this.threadId, command: input.slice(1).trim() }))
         if (name === 'review') return void (await this.rpc.request('review/start', { threadId: this.threadId, target: arg.trim() ? { type: 'custom', instructions: arg.trim() } : { type: 'uncommittedChanges' } }))
@@ -99,6 +101,16 @@ export class CodexSession implements Session {
         this.turnId = r.turn.id
       })
       .catch((e: Error) => this.host.ended({ error: e.message }))
+  }
+
+  async steer({ text, images }: { text: string; images: string[] }) {
+    await this.starting
+    if (!this.turnId) return false
+    const input = [{ type: 'text', text, text_elements: [] }, ...images.map((path) => ({ type: 'localImage', path }))]
+    return this.rpc.request('turn/steer', { threadId: this.threadId, expectedTurnId: this.turnId, input }).then(
+      () => true,
+      () => false,
+    )
   }
 
   // "/goal <objective>" sets a goal Codex starts on by itself; "/goal" shows it and "/goal clear" drops it,

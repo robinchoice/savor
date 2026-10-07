@@ -1460,6 +1460,33 @@ test('/btw asks a copy of the agent session, also while it works, and stays out 
   await api('PATCH', `/projects/${project.id}`, { agent: project.agent })
 })
 
+test('input added to the running turn reaches the agent at its next step and belongs to the same request', async () => {
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
+  for (const agent of [{ provider: 'claude' }, { provider: 'codex', permissionMode: 'default' }]) {
+    const thread = (await api('POST', `/projects/${project.id}/threads`, { text: `slow: steered ${agent.provider}`, agent })).body
+    const url = `/projects/${project.id}/threads/${thread.id}`
+    await until(async () => (await api('GET', url)).body.busy)
+    await page.goto(`${base}/#/p/${project.id}/t/${thread.id}`)
+    await page.fill('.composer textarea', 'use tabs')
+    await page.press('.composer textarea', 'Control+Enter')
+    await until(async () => (await api('GET', url)).body.messages.some((m) => m.text === 'use tabs' && m.delivered))
+    // A queued one can be added from the queue too.
+    await page.fill('.composer textarea', 'and spaces')
+    await page.press('.composer textarea', 'Enter')
+    await page.click('.queued-row button:has-text("Add to this turn")')
+    await until(async () => (await api('GET', url)).body.messages.every((m) => m.delivered !== false))
+    assert.equal((await api('GET', url)).body.busy, true)
+    fs.writeFileSync(AGENT_LOG + '.release', `slow: steered ${agent.provider}`)
+    const echo = agent.provider === 'claude' ? 'Echo: steered claude (added: use tabs, and spaces)' : 'Codex echo: slow: steered codex (added: use tabs, and spaces)'
+    await until(async () => (await api('GET', url)).body.messages.some((m) => m.text === echo))
+    await until(async () => !(await api('GET', url)).body.busy)
+    // One request: the added input started no turn of its own.
+    assert.equal((await api('GET', url)).body.messages.filter((m) => m.kind === 'conclusion').length, 1)
+    await api('PATCH', url, { completed: true })
+  }
+  await api('PATCH', `/projects/${project.id}`, { agent: project.agent })
+})
+
 test("Codex's own commands run through the app-server methods behind them", async () => {
   const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
   const thread = (await api('POST', `/projects/${project.id}/threads`, { text: '/review', agent: { provider: 'codex', permissionMode: 'default' } })).body

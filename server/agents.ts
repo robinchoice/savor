@@ -125,6 +125,21 @@ export function sendNow(p: Project, tid: string) {
   }
 }
 
+// "Add to this turn": a queued input reaches the agent while it works, at its next step, without stopping
+// it, and becomes part of the running request. Input the agent can't take in now stays queued.
+export async function steer(p: Project, tid: string, mid: string) {
+  const msg = store.readMessages(p, tid).find((m) => m.id === mid)
+  const session = current(tid)
+  if (msg?.kind !== 'user' || msg.delivered !== false || !busy.has(tid) || !session?.steer) return false
+  const dir = store.attachmentDir(p, tid)
+  const files = (msg.files ?? []).map((f) => path.join(dir, f))
+  const text = `The user adds this to the current request while you work:\n${msg.text}${files.length ? `\n\nAttached files:\n${files.join('\n')}` : ''}`
+  if (!(await session.steer({ text, images: (msg.images ?? []).map((f) => path.join(dir, f)) }))) return false
+  store.updateMessage(p, tid, mid, { delivered: true })
+  emit({ type: 'message', projectId: p.id, threadId: tid })
+  return true
+}
+
 export function removeQueued(p: Project, tid: string, mid: string) {
   const msg = store.readMessages(p, tid).find((m) => m.id === mid)
   if (!msg || msg.kind !== 'user' || msg.delivered !== false) throw new store.NotFound(`queued message ${mid}`)

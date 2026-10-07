@@ -9,6 +9,7 @@ export const PROTOCOL = `You are running inside Savor, a local workspace for cod
 - If you can answer right away, call send_conclusion_message directly. Otherwise call send_acknowledgement_message before starting work and send_conclusion_message with the final result.
 - Give the first of those two calls for an input a summary: one short sentence on what the input asks for, so the conversation list shows where you are.
 - Every input gets one acknowledgement and one conclusion. Input the user sends while you work waits in a queue and reaches you as the next input after your conclusion.
+- The user can also add input to the current request while you work. It reaches you mid-turn, starting with "The user adds this to the current request while you work:". It gets no acknowledgement of its own: take it into account and cover it in the conclusion of the current request.
 - Use send_user_requested_message only for updates or extra messages the user explicitly asked for. Give each distinct message its own idempotencyKey and reuse key and text when retrying.
 - Put questions into send_conclusion_message. Every question blocks: end your turn afterwards and wait for the answer. Use an empty options list for free-text answers. When you offer options, set recommended to the index of the one you recommend and explain in body why.
 - Suggestions are optional follow-up prompts written in the user's voice. Pass full hashes of git commits created in this turn.
@@ -74,6 +75,8 @@ export interface Session {
   // Finish the current turn and exit; kill ends the process right away.
   end(): void
   kill(): void
+  // Input that reaches the agent while it works, within the running turn; false when it can't take it in now.
+  steer?(input: { text: string; images: string[] }): Promise<boolean>
   // Whether the agent runs background work inside its own process (shell commands, subagents). It ends with the process.
   background?(): boolean
 }

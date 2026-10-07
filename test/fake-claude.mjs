@@ -20,7 +20,7 @@
 //   the runs had finished or the call failed, else ends the turn, and concludes with the result Savor continues
 //   the request with ("ci-done: <text>" concludes right after asking)
 // - "slow: <text>" → acknowledges, waits for the test's release file or an interrupt, then echoes
-//   (and says so when Savor told it that a restart cut the turn off)
+//   (and says so when Savor told it that a restart cut the turn off, and names what the user added meanwhile)
 // - a last text block of its own that starts with "/" → "Skill <name and arguments>", the way Claude Code runs slash commands
 // - anything else → acknowledgement plus a conclusion echoing the input with one suggestion
 // While the test's outdated file exists it refuses to start, like a release that lacks an option.
@@ -104,6 +104,8 @@ const released = async (input) => {
 
 let started = false
 let interrupted = false
+// What the user added to the running turn, as Claude Code takes it in at its next step.
+let added = []
 
 async function turn(text, command) {
   const input = command ?? text.slice(text.indexOf('New input:\n') + 'New input:\n'.length).trim()
@@ -192,7 +194,8 @@ async function turn(text, command) {
     await call('send_acknowledgement_message', { text: 'On it.', summary: 'Work on the request.' })
     const release = process.env.FAKE_AGENT_LOG + '.release'
     while (!interrupted && (!fs.existsSync(release) || fs.readFileSync(release, 'utf8') !== input)) await sleep(20)
-    if (!interrupted) await call('send_conclusion_message', { text: `Echo: ${input.slice(5).trim()}${text.includes('Savor was restarted') ? ' (after a restart)' : ''}` })
+    if (!interrupted) await call('send_conclusion_message', { text: `Echo: ${input.slice(5).trim()}${text.includes('Savor was restarted') ? ' (after a restart)' : ''}${added.length ? ` (added: ${added.join(', ')})` : ''}` })
+    added = []
   } else {
     await call('send_acknowledgement_message', { text: 'On it.', summary: 'Work on the request.' })
     await call('send_conclusion_message', { text: `Echo: ${input}`, suggestions: ['Do it again'] })
@@ -210,6 +213,7 @@ rl.on('line', (line) => {
   }
   if (msg.type === 'user') {
     const texts = msg.message.content.filter((c) => c.type === 'text').map((c) => c.text)
+    if (texts[0].startsWith('The user adds this to the current request while you work:\n')) return added.push(texts[0].split('\n')[1])
     turn(texts[0], texts.length > 1 && texts.at(-1).startsWith('/') ? texts.at(-1) : null)
   }
 })
