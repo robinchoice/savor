@@ -20,6 +20,7 @@
 
 - Robin works in Savor while you change it. Changes reach `savor.service` only through a release and an update. Test against a dev server and don't restart `savor.service`: your own session may run inside it.
 - The e2e tests start `dist/server/index.mjs` when it exists, not `server/`. Without a fresh `npm run build` they test an old server and fail on new features.
+- `npm test` holds `flock /tmp/savor-test.lock`, so test runs from parallel sessions and worktrees queue instead of overloading the CPU. A run that seems stuck before its first test is waiting for another one.
 
 ## Releases
 
