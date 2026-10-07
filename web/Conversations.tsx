@@ -204,13 +204,13 @@ function WorktreeHead({ project, branch, path, info }: { project: Project; branc
 
 const REASONS: Record<Reason, string> = { approval: 'Approval', question: 'Question', failed: 'Failed', new: 'New result', result: 'Result' }
 // Markdown of a result as one plain line.
-const plain = (md: string) => md.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1').replace(/[*_`#>|]+/g, '').replace(/\s+/g, ' ').trim()
+export const plain = (md: string) => md.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1').replace(/[*_`#>|]+/g, '').replace(/\s+/g, ' ').trim()
 const short = (ms: number) => {
   const s = Math.max(0, Math.floor(ms / 1000))
   return s < 60 ? `${s}s` : s < 3600 ? `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s` : `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`
 }
 
-function Elapsed({ since }: { since: string }) {
+export function Elapsed({ since }: { since: string }) {
   const [now, setNow] = useState(Date.now())
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000)

@@ -706,12 +706,18 @@ route('POST', '/projects/:pid/workflows/:id/run', (params, _, ctx) => runWorkflo
 
 // ---- all projects ----
 
+// A pending approval and the open questions, so the overview can answer them in place.
+function asks(p: store.Project, t: store.Thread) {
+  const pending = store.readMessages(p, t.id).filter((m) => m.approval?.status === 'pending').at(-1)
+  return { approval: pending ? { messageId: pending.id, options: pending.approval!.options } : null, decisions: store.listDecisions(p, t.id).filter((d) => !d.resolved) }
+}
+
 // Every project's conversations and workflows in one list, each with the project it belongs to.
 route('GET', '/overview', () => {
   const threads = [], workflows = []
   for (const p of store.listProjects()) {
     const list = store.listThreads(p)
-    threads.push(...list.map((t) => ({ ...listed(p, t), projectId: p.id })))
+    threads.push(...list.map((t) => ({ ...listed(p, t), ...(t.needsYou && asks(p, t)), projectId: p.id })))
     workflows.push(...listWorkflows(p, list).map((wf) => ({ ...wf, projectId: p.id })))
   }
   return { threads, workflows }

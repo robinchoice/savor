@@ -1,7 +1,7 @@
 import './monitoring'
 import { render } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
-import { Coffee, Download, Folder, FolderOpen, Monitor, Pin, PinOff, Search, Files as FilesIcon, MessageSquare, Moon, Plus, Server, SlidersHorizontal, Sun, Workflow as WorkflowIcon, ChevronDown, Layers, Smartphone, X } from 'lucide-preact'
+import { Coffee, Download, Folder, FolderOpen, Monitor, Pin, PinOff, Search, Files as FilesIcon, MessageSquare, Moon, Plus, Server, SlidersHorizontal, Sun, Workflow as WorkflowIcon, ChevronDown, Layers, LayoutList, Smartphone, X } from 'lucide-preact'
 import { api, avatarStyle, connectEvents, desktop, go, initial, Unauthorized, useApi, useEvent, type Me, type Project } from './api'
 import { Conversations } from './Conversations'
 import { FilesView } from './Files'
@@ -472,13 +472,13 @@ function SubBar({ project, section }: { project: Project; section?: string }) {
 
 function AllBar({ section }: { section?: string }) {
   const tab = (id: string, label: string, Icon: any) => (
-    <a href={`#/all/${id}`} class={`subtab ${(section ?? 'conversations') === id ? 'active' : ''}`}>
+    <a href={`#/all${id && `/${id}`}`} class={`subtab ${(section ?? '') === id ? 'active' : ''}`}>
       <Icon size={15} /> {label}
     </a>
   )
   return (
     <div class="subbar">
-      {tab('conversations', 'Conversations', MessageSquare)}
+      {tab('', 'Overview', LayoutList)}
       {tab('workflows', 'Workflows', WorkflowIcon)}
     </div>
   )
