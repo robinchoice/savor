@@ -1,6 +1,24 @@
-# Agent notes
+# Savor
 
-Setup, architecture and the development commands are in README.md.
+## Purpose & links
+
+- Local workspace for coding agents: Node server, web UI, Electron desktop app (`desktop/`), relay for paired remote devices (`relay/`). Setup, architecture and the development commands are in README.md.
+- Landing page: https://savor.pleasance.org from `site/`, Coolify on VPS 1, project `pleasance-savor`.
+- Relay: https://savor.diespaetzles.lol, Coolify on VPS 3, project `privat-savor`, application `savor-relay`.
+- Robin's own instance runs as the systemd user service `savor.service` on `127.0.0.1:4317`, from the AppImage of the last release.
+
+## Checks
+
+`npm run typecheck && npm test`
+
+## Deploy
+
+- A push to `main` runs `ci.yml`. If it touches `site/`, Coolify deploys the landing page through a repo webhook. Verify: `curl -sI https://savor.pleasance.org`.
+- The app and the relay ship only with a release, see below. `release.yml` builds the desktop app, publishes the GitHub release and deploys the relay image `ghcr.io/robinchoice/savor-relay:<version>`.
+
+## Pitfalls
+
+- Robin works in Savor while you change it. Changes reach `savor.service` only through a release and an update. Test against a dev server and don't restart `savor.service`: your own session may run inside it.
 
 ## Releases
 
