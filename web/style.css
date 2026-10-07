@@ -139,8 +139,7 @@ main { flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
 .subtab.active { color: var(--text); }
 .subtab.active::after { content: ''; position: absolute; left: 8px; right: 8px; bottom: -8px; height: 2px; border-radius: 2px; background: var(--grad); }
 .subbar-right { margin-left: auto; display: flex; gap: 4px; }
-.pill-count { font-style: normal; display: inline-grid; place-items: center; min-width: 17px; height: 17px; padding: 0 5px; border-radius: 9px; font-size: 10.5px; font-weight: 600; background: var(--text); color: var(--bg); }
-.pill-count.blocked { background: var(--attn-bg); color: var(--attn-ink); }
+.pill-count { font-style: normal; display: inline-grid; place-items: center; min-width: 17px; height: 17px; padding: 0 5px; border-radius: 9px; font-size: 10.5px; font-weight: 600; background: var(--attn-bg); color: var(--attn-ink); }
 .badge.blocked { color: var(--attn); }
 .dot-count { font-style: normal; color: var(--attn); font-size: 12px; font-weight: 600; }
 .icon-btn .dot-count { position: absolute; top: -2px; right: -3px; background: var(--attn-bg); color: var(--attn-ink); font-size: 10px; min-width: 15px; height: 15px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; padding: 0 4px; }
@@ -208,7 +207,7 @@ main { flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
 .card.compact::before { top: 8px; bottom: 8px; }
 .card.blocked::before { background: var(--attn); }
 .card.failed::before { background: var(--red); }
-.card.new::before { background: var(--text); }
+.card.new::before { background: var(--attn); }
 .card.seen::before { background: var(--line-strong); }
 .card.blocked .card-title, .card.failed .card-title, .card.new .card-title { font-weight: 600; }
 .card.seen .card-title, .card.idle .card-title, .card.done .card-title { color: var(--muted); }
@@ -233,7 +232,7 @@ main { flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
 .ring.needs::after { content: ''; position: absolute; inset: 2px; border-radius: 50%; background: var(--attn); }
 /* Work in progress spins in the gradient */
 .ring.busy, .spinner { border: 0; background: conic-gradient(transparent 0 25%, #6aa9ec 45%, #8c93f7 70%, #a696f5); -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 1.8px), #000 calc(100% - 1.5px)); mask: radial-gradient(farthest-side, transparent calc(100% - 1.8px), #000 calc(100% - 1.5px)); animation: spin 1s linear infinite; }
-.ring.unread { border-color: var(--text); background: var(--text); }
+.ring.unread { border-color: var(--attn); background: var(--attn); }
 .ring.done { background: var(--faint); }
 .ring.error { border-color: var(--red); }
 .badge .ring, .filter .ring, .thread-sub .ring { --s: 10px; }
