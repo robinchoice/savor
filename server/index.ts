@@ -186,18 +186,28 @@ route('POST', '/push/visible', (_, b, ctx) => {
 
 // ---- voice input ----
 
-route('POST', '/voice/prepare', async () => {
-  try {
-    return await voice.prepare()
-  } catch (e) {
-    throw new BadRequest((e as Error).message)
-  }
-})
+route('POST', '/voice/prepare', () => voice.prepare())
 route('POST', '/voice/transcribe', async (_, b) => {
   if (typeof b.audio !== 'string') throw new BadRequest('Audio is required.')
   const pcm = Buffer.from(b.audio, 'base64')
   if (!pcm.length || pcm.length % 2) throw new BadRequest('Audio must be 16-bit PCM.')
-  return { text: await voice.transcribe(pcm, String(b.language ?? '')) }
+  return { text: await voice.transcribe(pcm) }
+})
+route('GET', '/voice/models', () => voice.models())
+route('PUT', '/voice/model', (_, b, ctx) => {
+  localOnly(ctx)
+  voice.select(String(b.id))
+  return voice.models()
+})
+// Devices may start a download too: the composer offers it when the model is missing.
+route('POST', '/voice/models/:id/download', (params) => {
+  voice.download(params.id)
+  return voice.models()
+})
+route('DELETE', '/voice/models/:id', (params, _, ctx) => {
+  localOnly(ctx)
+  voice.remove(params.id)
+  return voice.models()
 })
 
 // ---- projects ----

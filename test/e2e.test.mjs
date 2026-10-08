@@ -1,6 +1,6 @@
 // End-to-end tests: real daemon, real UI in headless Chromium, fake agents (test/fake-claude.mjs,
 // test/fake-codex.mjs speaking the app-server protocol, test/fake-acp.mjs speaking ACP for OpenCode),
-// a fake whisper.cpp (test/fake-whisper.mjs) behind Chromium's fake microphone and a fake GitHub CLI
+// a fake speech engine (test/fake-transcribe.mjs) behind Chromium's fake microphone and a fake GitHub CLI
 // (test/fake-gh.mjs).
 import { test, before, after } from 'node:test'
 import assert from 'node:assert/strict'
@@ -20,7 +20,6 @@ const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'savor-e2e-'))
 const HOME = path.join(TMP, 'home')
 const PROJECT = path.join(TMP, 'project')
 const AGENT_LOG = path.join(TMP, 'agents.jsonl') // the fake agents log their command lines here
-const WHISPER_MODEL = path.join(TMP, 'ggml-test.bin')
 let server, browser, page, port, token, base
 
 const freePort = () =>
@@ -81,9 +80,8 @@ async function startDaemon() {
       SAVOR_GEMINI_BIN: path.join(ROOT, 'test/fake-acp.mjs'),
       SAVOR_ANTIGRAVITY_BIN: path.join(ROOT, 'test/fake-agy.mjs'),
       SAVOR_ANTIGRAVITY_HOME: path.join(TMP, 'agy'),
-      SAVOR_WHISPER_BIN: path.join(ROOT, 'test/fake-whisper.mjs'),
+      SAVOR_TRANSCRIBE_MODULE: path.join(ROOT, 'test/fake-transcribe.mjs'),
       SAVOR_GH_BIN: path.join(ROOT, 'test/fake-gh.mjs'),
-      SAVOR_WHISPER_MODEL: WHISPER_MODEL,
       FAKE_AGENT_LOG: AGENT_LOG,
       CLAUDE_CONFIG_DIR: path.join(TMP, 'claude'),
       CODEX_HOME: path.join(TMP, 'codex'),
@@ -97,7 +95,9 @@ before(async () => {
   port = await freePort()
   base = `http://127.0.0.1:${port}`
   fs.mkdirSync(PROJECT)
-  fs.writeFileSync(WHISPER_MODEL, '')
+  // The default speech model counts as downloaded.
+  fs.mkdirSync(path.join(HOME, 'models'), { recursive: true })
+  fs.writeFileSync(path.join(HOME, 'models', 'parakeet-tdt-0.6b-v3-Q8_0.gguf'), '')
   await startDaemon()
   token = JSON.parse(fs.readFileSync(path.join(HOME, 'state.json'), 'utf8')).token
   browser = await chromium.launch({ executablePath: process.env.SAVOR_CHROMIUM, args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'] })
@@ -591,12 +591,28 @@ test('voice input turns a recording into text in the composer', async () => {
   await page.waitForTimeout(1500)
   await page.click('.voice button.recording')
   await page.waitForFunction(() => document.querySelector('.composer textarea').value.includes('Heard'))
-  // The browser sent 16 kHz mono 16-bit PCM in its own language, and the daemon cut the audio context to the length.
+  // The browser sent 16 kHz PCM, and the engine got it as float samples for the default model.
   const text = await page.inputValue('.composer textarea')
-  const [, seconds, context] = text.match(/^Heard (\d+\.\d) seconds, 16000 Hz, 1 channel, 16 bit, language en, audio context (\d+)\. $/) ?? []
+  const [, seconds] = text.match(/^Heard (\d+\.\d) seconds of Float32Array with parakeet-tdt-0\.6b-v3-Q8_0\.gguf\. $/) ?? []
   assert.ok(seconds >= 1.4 && seconds < 3, text)
-  assert.ok(Math.abs(context - (seconds * 50 + 50)) < 5, text)
   await page.fill('.composer textarea', '')
+})
+
+test('voice input offers to download a speech model that is missing', async () => {
+  const { models } = (await api('PUT', '/voice/model', { id: 'whisper-small' })).body
+  assert.deepEqual(models.map((m) => [m.id, m.installed]), [['parakeet-v3', true], ['whisper-small', false], ['whisper-turbo', false]])
+  assert.equal((await api('PUT', '/voice/model', { id: 'no-such-model' })).status, 404)
+  await newConversation()
+  await page.click('.voice button[title="Voice input"]')
+  await page.waitForSelector('.voice-setup >> text=Download Whisper Small')
+  assert.equal(await page.locator('.voice-time').count(), 0)
+  // Back on a downloaded model, the microphone records again.
+  await api('PUT', '/voice/model', { id: 'parakeet-v3' })
+  await page.waitForSelector('.voice-setup >> text=Parakeet V3 is ready')
+  await page.click('.voice button[title="Voice input"]')
+  await page.waitForSelector('.voice-time')
+  await page.waitForSelector('.voice-setup', { state: 'detached' })
+  await page.click('.voice button[title="Discard the recording"]')
 })
 
 test('voice input discards recordings and releases a microphone granted after navigation', async () => {

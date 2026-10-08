@@ -47,6 +47,28 @@
       {
         "from": "../node_modules/playwright-core",
         "to": "savor/node_modules/playwright-core"
+      },
+      {
+        "from": "../node_modules/transcribe-cpp",
+        "to": "savor/node_modules/transcribe-cpp"
+      },
+      {
+        "from": "../node_modules/@transcribe-cpp",
+        "to": "savor/node_modules/@transcribe-cpp",
+        "filter": [
+          "${platform}-${arch}-*/**"
+        ]
+      },
+      {
+        "from": "../node_modules/koffi",
+        "to": "savor/node_modules/koffi"
+      },
+      {
+        "from": "../node_modules/@koromix",
+        "to": "savor/node_modules/@koromix",
+        "filter": [
+          "koffi-${platform}-${arch}/**"
+        ]
       }
     ],
     "linux": {

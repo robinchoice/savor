@@ -1,8 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
-import { ArrowUp, AtSign, CornerDownRight, Bookmark, Check, ChevronDown, FileText, FolderGit2, GitBranch, ListPlus, MessageSquare, Mic, Paperclip, Plus, ShieldAlert, Split, Square, Workflow as WorkflowIcon, X, Zap, Crosshair } from 'lucide-preact'
+import { ArrowUp, AtSign, CornerDownRight, Bookmark, Check, ChevronDown, Download, FileText, FolderGit2, GitBranch, ListPlus, MessageSquare, Mic, Paperclip, Plus, ShieldAlert, Split, Square, Workflow as WorkflowIcon, X, Zap, Crosshair } from 'lucide-preact'
 import { api, agentSummary, describeModel, effortLabel, modelName, PROVIDER_NAMES, readFileAsDataUrl, useAgents, useApi, type AgentConfig, type Attachment, type Doc, type Project, type ProviderInfo, type Preset, type Skill, type Workflow } from './api'
 import { ProviderIcon } from './Conversations'
-import { record, type Recording } from './voice'
+import { megabytes, ModelMissing, record, type Recording, type VoiceModels } from './voice'
 import { useUsage } from './Usage'
 import { reviewMessage, type ReviewComment } from './Changes'
 import { fanoutBranches } from '../shared/fanout'
@@ -69,6 +69,7 @@ export function Composer(props: Props) {
   useLayoutEffect(() => (text ? localStorage.setItem(draftKey, text) : localStorage.removeItem(draftKey)), [text])
   const [files, setFiles] = useState<(Attachment & { image: boolean })[]>([])
   const [error, setError] = useState('')
+  const [voiceSetup, setVoiceSetup] = useState(false)
   // 'fan-add' adds an agent to a fan-out, `fan-<i>` changes its i-th agent.
   const [popover, setPopover] = useState<string | null>(null)
   const ref = useRef<HTMLTextAreaElement>(null)
@@ -265,6 +266,7 @@ export function Composer(props: Props) {
         </div>
       )}
       {error && <div class="error-text pad">{error}</div>}
+      {voiceSetup && <VoiceSetup close={() => setVoiceSetup(false)} />}
       {slash !== null && (!skills || matches.length > 0) && (
         <div class="menu up slash">
           {!skills && <div class="menu-label">Loading commands…</div>}
@@ -428,7 +430,7 @@ export function Composer(props: Props) {
           )}
           {!fanout && <BranchPicker project={props.project} threadId={props.threadId} worktree={props.worktree} setWorktree={props.setWorktree} open={popover === 'branch'} toggle={() => setPopover(popover === 'branch' ? null : 'branch')} />}
           <div class="spacer" />
-          <VoiceButton onText={insert} onError={setError} />
+          <VoiceButton onText={insert} onError={setError} onSetup={setVoiceSetup} />
           {sendButtons}
         </div>
       )}
@@ -436,7 +438,7 @@ export function Composer(props: Props) {
   )
 }
 
-function VoiceButton({ onText, onError }: { onText: (s: string) => void; onError: (e: string) => void }) {
+function VoiceButton({ onText, onError, onSetup }: { onText: (s: string) => void; onError: (e: string) => void; onSetup: (open: boolean) => void }) {
   const [state, setState] = useState<'idle' | 'starting' | 'recording' | 'transcribing'>('idle')
   const [seconds, setSeconds] = useState(0)
   const rec = useRef<Recording | null>(null)
@@ -462,10 +464,12 @@ function VoiceButton({ onText, onError }: { onText: (s: string) => void; onError
       }
       rec.current = recording
       onError('')
+      onSetup(false)
       setState('recording')
     } catch (e) {
       if (!mounted.current) return
-      onError((e as Error).message)
+      if (e instanceof ModelMissing) onSetup(true)
+      else onError((e as Error).message)
       setState('idle')
     }
   }
@@ -498,11 +502,48 @@ function VoiceButton({ onText, onError }: { onText: (s: string) => void; onError
           </button>
         </>
       )}
-      {state === 'transcribing' && <small>{rec.current?.downloading ? 'Downloading the speech model…' : 'Transcribing…'}</small>}
+      {state === 'transcribing' && <small>Transcribing…</small>}
       <button class={`icon-btn${state === 'recording' ? ' recording' : ''}`} title={state === 'recording' ? 'Stop and insert the text' : 'Voice input'} disabled={state === 'starting' || state === 'transcribing'} onClick={state === 'recording' ? stop : start}>
         {state === 'transcribing' ? <span class="spinner small" /> : <Mic size={17} />}
       </button>
     </span>
+  )
+}
+
+// The speech model voice input runs on this computer is downloaded once, here or in the settings.
+function VoiceSetup({ close }: { close: () => void }) {
+  const [voice] = useApi<VoiceModels>('/voice/models', (e) => e.type === 'voice')
+  const model = voice?.models.find((m) => m.id === voice.selected)
+  if (!model) return null
+  return (
+    <div class="voice-setup pad">
+      <button class="icon-btn" title="Close" onClick={close}>
+        <X size={14} />
+      </button>
+      {model.installed ? (
+        <p>{model.name} is ready: click the microphone and speak.</p>
+      ) : (
+        <>
+          <p>
+            Voice input turns speech into text on this computer, with the speech model {model.name} ({megabytes(model.size)}). Savor downloads it once. Other models are in the
+            settings of this computer under Voice input.
+          </p>
+          {model.downloaded !== null ? (
+            <div class="voice-progress">
+              <progress max={model.size} value={model.downloaded} />
+              <small class="muted">
+                {megabytes(model.downloaded)} of {megabytes(model.size)}
+              </small>
+            </div>
+          ) : (
+            <button class="primary small" onClick={() => api('POST', `/voice/models/${model.id}/download`)}>
+              <Download size={13} /> Download {model.name}
+            </button>
+          )}
+          {model.error && <p class="error-text">{model.error}</p>}
+        </>
+      )}
+    </div>
   )
 }
 

@@ -36,6 +36,17 @@ jobs:
       - run: npm ci
       - run: npm ci
         working-directory: desktop
+      # Voice input's native modules come as one npm package per platform, and npm installs only the
+      # runner's. The macOS runner is arm64, so the x64 app gets its packages here.
+      - name: Add the x64 voice input modules
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          for pkg in @transcribe-cpp/darwin-x64-cpu @koromix/koffi-darwin-x64; do
+            version=$(node -p "require('./package-lock.json').packages['node_modules/$pkg'].version")
+            mkdir -p "node_modules/$pkg"
+            curl -fsSL "$(npm view "$pkg@$version" dist.tarball)" | tar -xz -C "node_modules/$pkg" --strip-components=1
+          done
       # The terminal runs on node-pty, a native module. electron-builder ships its prebuilt binaries for
       # each platform (see extraResources in desktop/package.json); this checks they run in Electron's Node.
       - name: Check the terminal's native module
@@ -50,6 +61,17 @@ jobs:
             let out = ''
             p.onData((d) => (out += d).includes('pty ok') && process.exit(0))
             setTimeout(() => process.exit(1), 10000)"
+      - name: Check voice input's native modules
+        shell: bash
+        working-directory: desktop
+        env:
+          ELECTRON_RUN_AS_NODE: '1'
+        run: |
+          npx electron -e "
+            import('../node_modules/transcribe-cpp/dist/index.js').then((t) => {
+              console.log(t.version(), t.getAvailableBackends().map((b) => b.name))
+              process.exit(t.backendAvailable('cpu') ? 0 : 1)
+            }, (e) => (console.error(e), process.exit(1)))"
       - name: Use the tag as app version
         shell: bash
         working-directory: desktop

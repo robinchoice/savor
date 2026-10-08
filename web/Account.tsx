@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'preact/hooks'
-import { ArrowUpRight, Bot, Check, ChevronDown, ChevronRight, Laptop, MessageSquare, Plus, SlidersHorizontal, Smartphone, X } from 'lucide-preact'
+import { ArrowUpRight, Bot, Check, ChevronDown, ChevronRight, Laptop, MessageSquare, Mic, Plus, SlidersHorizontal, Smartphone, X } from 'lucide-preact'
 import { api, cap, desktop, useAgents, useApi, type Me } from './api'
 import { useNotificationToggle } from './notify'
 import { PleasanceFooter } from './PleasanceFooter'
 import { setPrefs, usePrefs, type Density, type Prefs, type Theme } from './prefs'
 import { qr, RELAY_LABEL, type DeviceRow, type RelayState } from './Settings'
 import { forgetProfile, loadProfile } from './transport'
+import { megabytes, type VoiceModels } from './voice'
 
 const REPO = 'https://github.com/robinchoice/savor'
 
@@ -215,6 +216,46 @@ function Agents() {
   )
 }
 
+// The speech models voice input can use on this computer: which one it uses, and which are downloaded.
+function VoiceInput() {
+  const [voice] = useApi<VoiceModels>('/voice/models', (e) => e.type === 'voice')
+  return (
+    <details class="box">
+      <summary>
+        <span class="tile">
+          <Mic size={16} />
+        </span>
+        Voice input <ChevronDown size={16} class="chev" />
+      </summary>
+      <div class="box-body">
+        {voice?.models.map((m) => (
+          <label key={m.id} class="setting voice-model">
+            <input type="radio" name="voice-model" checked={voice.selected === m.id} onChange={() => api('PUT', '/voice/model', { id: m.id })} />
+            <span>
+              <b>{m.name}</b>
+              <small class="muted">
+                {m.detail} {megabytes(m.size)} · {m.license}
+              </small>
+              {m.error && <small class="error-text">{m.error}</small>}
+            </span>
+            {m.downloaded !== null ? (
+              <small class="muted">{Math.floor((m.downloaded / m.size) * 100)} %</small>
+            ) : m.installed ? (
+              <button class="ghost small" onClick={() => api('DELETE', `/voice/models/${m.id}`)}>
+                Remove
+              </button>
+            ) : (
+              <button class="ghost small" onClick={() => api('POST', `/voice/models/${m.id}/download`)}>
+                Download
+              </button>
+            )}
+          </label>
+        ))}
+      </div>
+    </details>
+  )
+}
+
 function RelayRow({ onClose }: { onClose: () => void }) {
   const [relay] = useApi<RelayState>('/relay', (e) => e.type === 'devices')
   return (
@@ -321,6 +362,7 @@ export function AccountDialog({ me, projects, toggleAwake, open, onClose }: { me
           )}
           {local && <MyDevices me={me} projects={projects} />}
           {local && <Agents />}
+          {local && <VoiceInput />}
           <details class="box">
             <summary>
               <span class="tile">

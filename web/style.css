@@ -444,6 +444,11 @@ main { flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
 .send.stop { background: var(--raised); color: var(--red); }
 .voice { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--muted); white-space: nowrap; }
 .voice .icon-btn.recording { color: var(--red); background: color-mix(in srgb, var(--red) 14%, transparent); }
+.voice-setup { position: relative; display: grid; gap: 8px; justify-items: start; padding-right: 36px; font-size: 13px; }
+.voice-setup p { margin: 0; }
+.voice-setup > .icon-btn { position: absolute; top: 4px; right: 4px; }
+.voice-progress { display: flex; align-items: center; gap: 8px; width: 100%; }
+.voice-progress progress { flex: 1; max-width: 320px; accent-color: var(--accent); }
 .voice-time { display: inline-flex; align-items: center; gap: 6px; font-variant-numeric: tabular-nums; }
 .voice-time::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--red); animation: pulse 1.2s infinite; }
 .attachments { display: flex; gap: 8px; flex-wrap: wrap; padding: 10px 12px 0; }
@@ -922,6 +927,9 @@ details.box[open] > summary .chev { transform: rotate(180deg); }
 .box-body .check { display: flex; }
 .setting { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; }
 .setting > span:first-child { flex: 1; min-width: 0; }
+.voice-model { align-items: flex-start; }
+.voice-model > span { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.voice-model > input { margin-top: 3px; }
 .ok { color: var(--green); }
 
 @media (max-width: 860px) {

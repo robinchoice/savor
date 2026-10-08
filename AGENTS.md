@@ -21,6 +21,7 @@
 - Robin works in Savor while you change it. Changes reach `savor.service` only through a release and an update. Test against a dev server and don't restart `savor.service`: your own session may run inside it.
 - The e2e tests start `dist/server/index.mjs` when it exists, not `server/`. Without a fresh `npm run build` they test an old server and fail on new features.
 - `npm test` holds `flock /tmp/savor-test.lock`, so test runs from parallel sessions and worktrees queue instead of overloading the CPU. A run that seems stuck before its first test is waiting for another one.
+- Voice input runs transcribe.cpp (npm `transcribe-cpp` with `koffi`) in `dist/server/voice-worker.mjs`, a process of its own. Its native builds are one npm package per platform, and npm installs only the current machine's: `desktop/package.json` copies the one matching each build, and `release.yml` adds the x64 macOS packages on the arm64 runner. When you bump `transcribe-cpp`, also check the speech model revisions in `server/voice.ts`.
 
 ## Releases
 

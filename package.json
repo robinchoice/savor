@@ -17,7 +17,7 @@
   },
   "scripts": {
     "build": "vite build && npm run build:server && npm run build:relay",
-    "build:server": "esbuild server/index.ts --bundle --platform=node --target=node22 --format=esm --outfile=dist/server/index.mjs --external:playwright-core --external:node-pty --banner:js=\"import { createRequire as __cjsRequire } from 'node:module'; const require = __cjsRequire(import.meta.url);\"",
+    "build:server": "esbuild server/index.ts --bundle --platform=node --target=node22 --format=esm --outfile=dist/server/index.mjs --external:playwright-core --external:node-pty --banner:js=\"import { createRequire as __cjsRequire } from 'node:module'; const require = __cjsRequire(import.meta.url);\" && esbuild server/voice-worker.ts --bundle --platform=node --target=node22 --format=esm --outfile=dist/server/voice-worker.mjs --external:transcribe-cpp",
     "build:relay": "esbuild relay/server.ts --bundle --platform=node --target=node22 --format=esm --outfile=dist/relay/server.mjs --external:bufferutil --external:utf-8-validate --banner:js=\"import { createRequire as __cjsRequire } from 'node:module'; const require = __cjsRequire(import.meta.url);\"",
     "prepare": "npm run build",
     "start": "node bin/savor.js",
@@ -41,6 +41,7 @@
     "croner": "^10.0.1",
     "node-pty": "1.2.0-beta.15",
     "playwright-core": "^1.63.0",
+    "transcribe-cpp": "0.3.1",
     "tsx": "^4.23.15",
     "ws": "^8.22.0",
     "zod": "^4.6.5"
