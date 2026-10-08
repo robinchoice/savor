@@ -397,6 +397,121 @@ function CardMenu({ project, thread: t, active, href, at, close }: { project: Pr
   )
 }
 
+// Text sent from the context menu to another project: to a new conversation there, or to one of its open ones.
+// A line naming the conversation it comes from lets that agent read up on it with read_conversation.
+export function RunElsewhereDialog({ projects, from, threadId, text: selected, onClose }: { projects: Project[]; from: Project; threadId?: string; text: string; onClose: () => void }) {
+  const others = projects.filter((p) => p.id !== from.id)
+  const [pid, setPid] = useState(others[0]?.id ?? '')
+  const [tid, setTid] = useState('')
+  const [text, setText] = useState(selected)
+  const [withSource, setWithSource] = useState(true)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [sent, setSent] = useState<string | null>(null)
+  const [threads] = useApi<Thread[]>(pid ? `/projects/${pid}/threads` : null, () => false)
+  const [source] = useApi<Thread[]>(threadId ? `/projects/${from.id}/threads` : null, () => false)
+  const origin = source?.find((t) => t.id === threadId)
+  const target = others.find((p) => p.id === pid)
+  const send = async () => {
+    setBusy(true)
+    const body = origin && withSource ? `${text.trim()}\n\n---\nFrom “${origin.summary ?? origin.title}” in ${from.name} (read_conversation id ${origin.id}, project ${from.id})` : text.trim()
+    try {
+      const id = tid ? (await api('POST', `/projects/${pid}/threads/${tid}/messages`, { text: body }), tid) : (await api<Thread>('POST', `/projects/${pid}/threads`, { text: body })).id
+      setSent(`/p/${pid}/t/${id}`)
+    } catch (e) {
+      setError((e as Error).message)
+      setBusy(false)
+    }
+  }
+  return (
+    <div class="overlay" onClick={onClose}>
+      <div class="dialog elsewhere-dialog" onClick={(e) => e.stopPropagation()}>
+        <header class="dialog-head">
+          <SquareArrowOutUpRight size={18} />
+          <div class="dialog-title">
+            <b>Run in another project</b>
+          </div>
+          <button class="icon-btn" title="Close" onClick={onClose}>
+            <X size={16} />
+          </button>
+        </header>
+        {sent ? (
+          <p class="dialog-body">{tid ? `Sent to “${threads?.find((t) => t.id === tid)?.title}” in ${target?.name}.` : `Started a new conversation in ${target?.name}.`}</p>
+        ) : !others.length ? (
+          <p class="dialog-body">There is no other project yet.</p>
+        ) : (
+          <form
+            class="dialog-body form"
+            onSubmit={(e) => {
+              e.preventDefault()
+              send()
+            }}
+          >
+            <label>
+              Project
+              <select value={pid} onChange={(e) => (setPid(e.currentTarget.value), setTid(''))}>
+                {others.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Conversation
+              <select value={tid} onChange={(e) => setTid(e.currentTarget.value)}>
+                <option value="">New conversation</option>
+                {threads
+                  ?.filter((t) => !t.completed)
+                  .map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.summary ?? t.title}
+                    </option>
+                  ))}
+              </select>
+            </label>
+            <label>
+              Message
+              <textarea
+                rows={6}
+                autoFocus
+                value={text}
+                onInput={(e) => setText(e.currentTarget.value)}
+                onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && !e.isComposing && (e.preventDefault(), e.currentTarget.form!.requestSubmit())}
+              />
+            </label>
+            {origin && (
+              <label class="check">
+                <input type="checkbox" checked={withSource} onChange={(e) => setWithSource(e.currentTarget.checked)} /> Say where it comes from, so the agent can read this conversation
+              </label>
+            )}
+            {error && <div class="error-text">{error}</div>}
+          </form>
+        )}
+        <footer class="dialog-foot">
+          <span />
+          {sent ? (
+            <div class="pick-actions">
+              <button class="ghost" onClick={onClose}>
+                Done
+              </button>
+              <button class="primary" onClick={() => (onClose(), go(sent))}>
+                Open conversation <ArrowRight size={15} />
+              </button>
+            </div>
+          ) : (
+            others.length > 0 && (
+              <button class="primary" disabled={busy || !text.trim() || !pid} onClick={send}>
+                <ArrowUp size={15} /> {busy ? 'Sending…' : tid ? 'Send' : 'Start'}
+              </button>
+            )
+          )}
+        </footer>
+      </div>
+    </div>
+  )
+}
+
 function NewConversation({ project }: { project: Project }) {
   const [agent, setAgent] = useState<AgentConfig>(project.agent)
   const [worktree, setWorktree] = useState<string | null>(null)

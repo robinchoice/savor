@@ -1304,6 +1304,47 @@ test('a shell command in a message runs in the terminal with one click', async (
   await api('PATCH', `/projects/${project.id}/threads/${thread.id}`, { completed: true })
 })
 
+test('text from the context menu runs in a new or an open conversation of another project', async (t) => {
+  const [project] = (await api('GET', '/projects')).body
+  const other = (await api('POST', '/projects', { path: path.join(TMP, 'elsewhere-target'), name: 'Elsewhere Target', create: true })).body
+  const source = (await api('POST', `/projects/${project.id}/threads`, { text: 'plan both sides' })).body
+  await until(async () => (await api('GET', `/projects/${project.id}/threads/${source.id}`)).body.messages.some((m) => m.text === 'Echo: plan both sides'))
+  // The desktop shell's bridge, faked: the test plays the clicks of its context menu.
+  const context = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: 'en-US' })
+  t.after(() => context.close())
+  await context.addCookies(await page.context().cookies())
+  await context.addInitScript(() => {
+    window.savorDesktop = { pickFolder: async () => null, checkForUpdates: async () => null, installUpdate: async () => {}, onUpdateReady: () => {}, setContextActions: (_root, cb) => (window.contextAction = cb) }
+  })
+  const tab = await context.newPage()
+  await tab.goto(`${base}/#/p/${project.id}/t/${source.id}`)
+  await tab.waitForFunction(() => window.contextAction)
+  const user = async (pid, tid, text) => (await api('GET', `/projects/${pid}/threads/${tid}`)).body.messages.find((m) => m.kind === 'user' && m.text.startsWith(text))?.text
+
+  await tab.evaluate(() => window.contextAction('elsewhere', 'Add the same endpoint here'))
+  await tab.selectOption('.elsewhere-dialog select >> nth=0', other.id)
+  await tab.click('.elsewhere-dialog button:has-text("Start")')
+  await tab.waitForSelector('.elsewhere-dialog >> text=Started a new conversation in Elsewhere Target.')
+  const [started] = (await api('GET', `/projects/${other.id}/threads`)).body
+  let sent
+  await until(async () => (sent = await user(other.id, started.id, 'Add the same endpoint here')))
+  assert.match(sent, new RegExp(`\\n\\n---\\nFrom “.+” in ${project.name} \\(read_conversation id ${source.id}, project ${project.id}\\)$`))
+  await tab.click('.elsewhere-dialog button:has-text("Done")')
+
+  // Into the open conversation, edited and without the line naming its source.
+  await tab.evaluate(() => window.contextAction('elsewhere', 'And a test'))
+  await tab.selectOption('.elsewhere-dialog select >> nth=0', other.id)
+  await tab.waitForSelector(`.elsewhere-dialog option[value="${started.id}"]`, { state: 'attached' })
+  await tab.selectOption('.elsewhere-dialog select >> nth=1', started.id)
+  await tab.fill('.elsewhere-dialog textarea', 'And a test for it')
+  await tab.uncheck('.elsewhere-dialog input[type=checkbox]')
+  await tab.press('.elsewhere-dialog textarea', 'Enter')
+  await tab.click('.elsewhere-dialog button:has-text("Open conversation")')
+  await tab.waitForURL(`**/#/p/${other.id}/t/${started.id}`)
+  await until(async () => (await user(other.id, started.id, 'And a test')) === 'And a test for it')
+  await api('DELETE', `/projects/${other.id}`)
+})
+
 test('a prompt fans out to several agents in worktrees of their own, and the picked one merges', async () => {
   const [project] = (await api('GET', '/projects')).body
   assert.equal((await api('POST', `/projects/${project.id}/fanout`, { text: 'x', agents: [{ provider: 'claude' }] })).status, 400)

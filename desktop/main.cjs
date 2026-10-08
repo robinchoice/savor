@@ -76,6 +76,7 @@ async function contextMenu(contents, params) {
   else if (params.selectionText.trim()) groups.push([{ role: 'copy' }])
   // The selection, or else the clipboard, goes to the open project: run in its terminal (several lines
   // are only pasted), quoted in its conversation, or opened in Files when it names one of its files.
+  // Or it goes to a conversation in another project, picked in a dialog of the UI.
   const text = projectRoot && (params.selectionText.trim() || (await clipboard.readText()).trim())
   if (text) {
     const first = text.split('\n')[0]
@@ -85,6 +86,7 @@ async function contextMenu(contents, params) {
     groups.push([
       ...(file ? [{ label: `Open “${shown}” in Files`, click: send('open', file) }] : []),
       { label: `Quote “${shown}” in Conversation`, click: send('quote', text) },
+      { label: `Run “${shown}” in Another Project…`, click: send('elsewhere', text) },
       { label: text.includes('\n') ? `Paste “${shown}” into Terminal` : `Run “${shown}” in Terminal`, click: send('terminal', text) },
     ])
   }

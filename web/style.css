@@ -877,8 +877,8 @@ mark { background: color-mix(in srgb, var(--attn) 50%, transparent); color: inhe
 [data-messages='compact'] .messages { gap: 8px; }
 [data-messages='compact'] .msg-head { margin-bottom: 3px; }
 
-.feedback-dialog { width: min(100%, 460px); }
-.feedback-dialog .dialog-body { padding-top: 14px; max-width: none; }
+.feedback-dialog, .elsewhere-dialog { width: min(100%, 460px); }
+.feedback-dialog .dialog-body, .elsewhere-dialog .dialog-body { padding-top: 14px; max-width: none; }
 .account-dialog { width: min(100%, 560px); }
 .account-dialog .dialog-body { display: flex; flex-direction: column; gap: 12px; padding-top: 14px; }
 .account-dialog h2 { font-family: inherit; font-size: 13px; font-weight: 500; line-height: 1.5; font-stretch: normal; letter-spacing: 0; margin: 0 2px 6px; }
