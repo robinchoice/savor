@@ -26,6 +26,8 @@ function useRoute() {
   useEffect(() => {
     const on = () => setRoute(read())
     addEventListener('hashchange', on)
+    // The hash can change between the first render and this effect, e.g. right after a reload.
+    on()
     return () => removeEventListener('hashchange', on)
   }, [])
   return route
