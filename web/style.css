@@ -28,6 +28,10 @@
   --attn: #8c93f7;
   --attn-bg: #8c93f7;
   --attn-ink: #17171a;
+  --needs: #f0b350;
+  --needs-bg: #f0b350;
+  --new: #6ccf8e;
+  --new-bg: #6ccf8e;
   --green: #6ccf8e;
   --red: #f2545b;
   --code-bg: #17161d;
@@ -54,6 +58,10 @@
   --attn: #3a3fa7;
   --attn-bg: #8c93f7;
   --attn-ink: #17171a;
+  --needs: #9a5a00;
+  --needs-bg: #f0b350;
+  --new: #1d6a44;
+  --new-bg: #6ccf8e;
   --green: #1d6a44;
   --red: #b3262d;
   --code-bg: #f4f4f1;
@@ -139,8 +147,10 @@ main { flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
 .subtab.active { color: var(--text); }
 .subtab.active::after { content: ''; position: absolute; left: 8px; right: 8px; bottom: -8px; height: 2px; border-radius: 2px; background: var(--grad); }
 .subbar-right { margin-left: auto; display: flex; gap: 4px; }
-.pill-count { font-style: normal; display: inline-grid; place-items: center; min-width: 17px; height: 17px; padding: 0 5px; border-radius: 9px; font-size: 10.5px; font-weight: 600; background: var(--attn-bg); color: var(--attn-ink); }
-.badge.blocked { color: var(--attn); }
+.pill-count { font-style: normal; display: inline-grid; place-items: center; min-width: 17px; height: 17px; padding: 0 5px; border-radius: 9px; font-size: 10.5px; font-weight: 600; background: var(--new-bg); color: var(--attn-ink); }
+.pill-count.blocked { background: var(--needs-bg); }
+.badge.blocked { color: var(--needs); }
+.badge.unread { color: var(--new); }
 .dot-count { font-style: normal; color: var(--attn); font-size: 12px; font-weight: 600; }
 .icon-btn .dot-count { position: absolute; top: -2px; right: -3px; background: var(--attn-bg); color: var(--attn-ink); font-size: 10px; min-width: 15px; height: 15px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; padding: 0 4px; }
 
@@ -192,7 +202,7 @@ main { flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
 .card-meta > span:first-child { display: inline-flex; align-items: center; gap: 4px; }
 .on-badge, .off-badge { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--muted); }
 .on-badge { color: var(--green); }
-.respond { color: var(--attn); font-weight: 500; white-space: nowrap; }
+.respond { color: var(--needs); font-weight: 500; white-space: nowrap; }
 /* The list's sections: what waits for the user, what works, the rest. */
 .next-btn { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 7px; font-size: 12.5px; font-weight: 600; background: var(--attn-bg); color: var(--attn-ink); }
 .next-btn kbd { font: 10.5px 'Geist Mono Variable', ui-monospace, monospace; opacity: 0.7; }
@@ -205,16 +215,16 @@ main { flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
 .sec.for-you > .sec-head { color: var(--attn); }
 .card::before { content: ''; position: absolute; left: 3px; top: 11px; bottom: 11px; width: 3px; border-radius: 2px; }
 .card.compact::before { top: 8px; bottom: 8px; }
-.card.blocked::before { background: var(--attn); }
+.card.blocked::before { background: var(--needs); }
 .card.failed::before { background: var(--red); }
-.card.new::before { background: var(--attn); }
+.card.new::before { background: var(--new); }
 .card.seen::before { background: var(--line-strong); }
 .card.blocked .card-title, .card.failed .card-title, .card.new .card-title { font-weight: 600; }
 .card.seen .card-title, .card.idle .card-title, .card.done .card-title { color: var(--muted); }
 .chip { font-size: 10.5px; font-weight: 600; padding: 1px 6px; border-radius: 5px; white-space: nowrap; flex: none; }
-.chip.blocked { background: color-mix(in srgb, var(--attn-bg) 22%, transparent); color: var(--attn); }
+.chip.blocked { background: color-mix(in srgb, var(--needs-bg) 22%, transparent); color: var(--needs); }
 .chip.failed { background: color-mix(in srgb, var(--red) 18%, transparent); color: var(--red); }
-.chip.new { background: color-mix(in srgb, var(--text) 12%, transparent); color: var(--text); }
+.chip.new { background: color-mix(in srgb, var(--new-bg) 22%, transparent); color: var(--new); }
 .chip.seen { background: var(--raised); color: var(--muted); font-weight: 500; }
 .card-top .label-pill, .card-meta .label-pill { min-width: 0; }
 .card-when { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; color: var(--faint); font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; }
@@ -228,11 +238,11 @@ main { flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
 .card-text { font-size: 12.5px; color: var(--muted); line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .card-actions { display: flex; justify-content: flex-end; }
 .ring { --s: 12px; display: inline-block; width: var(--s); height: var(--s); border-radius: 50%; border: 1.5px solid var(--faint); flex: none; position: relative; }
-.ring.needs { border-color: var(--attn); }
-.ring.needs::after { content: ''; position: absolute; inset: 2px; border-radius: 50%; background: var(--attn); }
+.ring.needs { border-color: var(--needs); }
+.ring.needs::after { content: ''; position: absolute; inset: 2px; border-radius: 50%; background: var(--needs); }
 /* Work in progress spins in the gradient */
 .ring.busy, .spinner { border: 0; background: conic-gradient(transparent 0 25%, #6aa9ec 45%, #8c93f7 70%, #a696f5); -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 1.8px), #000 calc(100% - 1.5px)); mask: radial-gradient(farthest-side, transparent calc(100% - 1.8px), #000 calc(100% - 1.5px)); animation: spin 1s linear infinite; }
-.ring.unread { border-color: var(--attn); background: var(--attn); }
+.ring.unread { border-color: var(--new); background: var(--new); }
 .ring.done { background: var(--faint); }
 .ring.error { border-color: var(--red); }
 .badge .ring, .filter .ring, .thread-sub .ring { --s: 10px; }
@@ -253,7 +263,7 @@ main { flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
 .thread-sub { display: flex; align-items: center; gap: 12px; font-size: 12px; color: var(--faint); margin-top: 5px; }
 .thread-sub span, .thread-sub a { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
 .status.working { color: var(--text); }
-.status.needs { color: var(--attn); }
+.status.needs { color: var(--needs); }
 .status.error { color: var(--red); }
 .status.done { color: var(--muted); }
 .status.context.full { color: var(--attn); }
@@ -739,7 +749,7 @@ mark { background: color-mix(in srgb, var(--attn) 50%, transparent); color: inhe
 .recipe > span { color: var(--muted); flex: 1; }
 .recipe small { display: inline-flex; align-items: center; gap: 4px; margin-top: 4px; }
 .last-run { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
-.last-run.needs { color: var(--attn); }
+.last-run.needs { color: var(--needs); }
 .last-run.failed { color: var(--red); }
 .last-run .ring, .run .ring { margin: 0; }
 .ring.skipped { border-style: dashed; }
