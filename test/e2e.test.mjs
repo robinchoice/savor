@@ -1452,7 +1452,7 @@ test('typing / lists the skills of the agent and runs the one picked', async () 
   // Each agent reports its own skills and commands. Claude Code's commands for the terminal UI stay out,
   // as do the skills Codex has switched off; Codex's own commands come last.
   assert.deepEqual(await skills('claude'), ['greet', 'tools:lint', 'code-review', 'compact', 'btw'])
-  assert.deepEqual(await skills('codex'), ['greet', 'review', 'compact', 'goal', 'btw'])
+  assert.deepEqual(await skills('codex'), ['greet', 'review', 'compact', 'goal', 'mcp', 'btw'])
   assert.deepEqual(await skills('grok'), [])
 
   await page.goto(`${base}/#/p/${project.id}/new`)
@@ -1561,6 +1561,15 @@ test("Codex's own commands run through the app-server methods behind them", asyn
   await said('Goal (complete): ship it')
   await send('/goal clear')
   await said('Goal cleared.')
+  await send('/mcp')
+  await said('- docs: connected, oAuth\n- tracker: authenticationRequired, notLoggedIn')
+  // Signing in to an MCP server opens its page and ends once Codex reports the sign-in.
+  await send('/mcp login tracker')
+  let approval
+  await until(async () => (approval = (await api('GET', `/projects/${project.id}/threads/${thread.id}`)).body.messages.find((m) => m.approval?.status === 'pending')))
+  assert.equal(approval.approval.url, 'https://auth.example/tracker')
+  await api('POST', `/projects/${project.id}/threads/${thread.id}/approvals/${approval.id}`, { choice: 'accept' })
+  await said('Signed in to tracker.')
   await api('PATCH', `/projects/${project.id}/threads/${thread.id}`, { completed: true })
   await api('PATCH', `/projects/${project.id}`, { agent: project.agent })
 })

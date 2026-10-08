@@ -9,6 +9,8 @@
 // - a skill item in the input → "Codex skill: <name> from <path>"
 // - review/start, thread/compact/start and thread/shellCommand → a turn with the item Codex reports for each
 // - thread/goal/set → two turns, the second one meets the goal; goal edits without the origin "user" fail
+// - mcpServerStatus/list → the servers docs (signed in) and tracker (not signed in)
+// - mcpServer/oauth/login → a sign-in page on auth.example, then a successful mcpServer/oauthLogin/completed
 // - anything else → "Codex echo: <input>"
 import fs from 'node:fs'
 import readline from 'node:readline'
@@ -180,6 +182,17 @@ rl.on('line', (line) => {
       goal = null
       reply({})
       return notify('thread/goal/cleared', { threadId })
+    case 'mcpServerStatus/list':
+      return reply({
+        data: [
+          { name: 'docs', authStatus: 'oAuth', runtimeStatus: 'connected', tools: {}, resources: [], resourceTemplates: [] },
+          { name: 'tracker', authStatus: 'notLoggedIn', runtimeStatus: 'authenticationRequired', tools: {}, resources: [], resourceTemplates: [] },
+        ],
+        nextCursor: null,
+      })
+    case 'mcpServer/oauth/login':
+      reply({ authorizationUrl: `https://auth.example/${msg.params.name}`, loginId: 'login-1' })
+      return setTimeout(() => notify('mcpServer/oauthLogin/completed', { name: msg.params.name, threadId: msg.params.threadId, loginId: 'login-1', success: true }), 20)
     case 'turn/steer':
       if (msg.params.expectedTurnId !== turnId) return out({ jsonrpc: '2.0', id: msg.id, error: { code: -32600, message: 'no active turn' } })
       added.push(msg.params.input[0].text.split('\n')[1])

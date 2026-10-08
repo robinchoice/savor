@@ -33,6 +33,7 @@ const COMMANDS: SkillInfo[] = [
   { name: 'review', description: 'Review the uncommitted changes, or what the text after the command asks for' },
   { name: 'compact', description: 'Summarize the conversation so far to free up context' },
   { name: 'goal', description: 'Work on a goal across turns until it is met; /goal alone shows it, /goal clear drops it' },
+  { name: 'mcp', description: 'List the MCP servers and whether they are signed in; /mcp login <name> signs in to one' },
 ]
 
 const ALLOW_SESSION_DENY: ApprovalOption[] = [
@@ -55,6 +56,8 @@ export class CodexSession implements Session {
   private stopping = false
   // Codex works on an active goal turn after turn by itself; the request ends once the goal does.
   private goal = false
+  // The MCP sign-in /mcp login waits for.
+  private mcpLogin: { name: string; done: (r: { success: boolean; error?: string | null }) => void } | null = null
 
   constructor(private host: Host, private thread: Thread) {
     const { p } = host
@@ -94,6 +97,7 @@ export class CodexSession implements Session {
         if (name === 'review') return void (await this.rpc.request('review/start', { threadId: this.threadId, target: arg.trim() ? { type: 'custom', instructions: arg.trim() } : { type: 'uncommittedChanges' } }))
         if (name === 'compact') return void (await this.rpc.request('thread/compact/start', { threadId: this.threadId }))
         if (name === 'goal') return this.goalCommand(arg.trim())
+        if (name === 'mcp') return this.mcpCommand(arg.trim())
         // A slash command that names a skill hands Codex the skill itself, as a $mention does in its own UI.
         const skill = name && (await skillsIn(this.rpc, this.host.cwd)).find((s) => s.name === name)
         if (skill) items.push({ type: 'skill', name: skill.name, path: skill.path })
@@ -125,7 +129,28 @@ export class CodexSession implements Session {
     this.host.ended({ text: goal ? `Goal (${goal.status}): ${goal.objective}` : 'No goal set.' })
   }
 
+  // "/mcp" lists the MCP servers Codex knows and how they are signed in; "/mcp login <name>" signs in to
+  // one through its OAuth page and ends once Codex has the token.
+  private async mcpCommand(arg: string) {
+    const [, server] = arg.match(/^login\s+(\S+)/) ?? []
+    if (!server) {
+      const { data } = await this.rpc.request('mcpServerStatus/list', { threadId: this.threadId, detail: 'toolsAndAuthOnly' })
+      const lines = (data as { name: string; authStatus: string; runtimeStatus?: string | null }[]).map((s) => `- ${s.name}: ${[s.runtimeStatus, s.authStatus].filter(Boolean).join(', ')}`)
+      return this.host.ended({ text: lines.length ? lines.join('\n') : 'No MCP servers configured.' })
+    }
+    const done = new Promise<{ success: boolean; error?: string | null }>((resolve) => (this.mcpLogin = { name: server, done: resolve }))
+    const r = await this.rpc.request('mcpServer/oauth/login', { name: server, threadId: this.threadId })
+    const url = webUrl(r.authorizationUrl)
+    if (!url) throw new Error('Savor opens only http and https pages.')
+    const choice = await this.host.approve({ title: `Sign in to ${server}`, detail: 'Sign in on the page, then continue.', url, options: OPEN_PAGE })
+    if (choice === 'decline') return this.host.ended({ text: `Sign-in to ${server} cancelled.` })
+    const result = await done
+    this.host.ended(result.success ? { text: `Signed in to ${server}.` } : { error: result.error || `Sign-in to ${server} failed.` })
+  }
+
   interrupt() {
+    this.mcpLogin?.done({ success: false, error: 'Sign-in stopped.' })
+    this.mcpLogin = null
     if (this.goal) this.rpc.request('thread/goal/set', { threadId: this.threadId, status: 'paused', origin: 'user' }).catch(() => {})
     if (this.turnId) this.rpc.request('turn/interrupt', { threadId: this.threadId, turnId: this.turnId }).catch(() => {})
   }
@@ -152,7 +177,12 @@ export class CodexSession implements Session {
       this.goal = params.goal?.status === 'active'
       if (was && !this.goal && !this.turnId) this.host.ended({ text: this.lastText })
     }
-    else if (method === 'thread/tokenUsage/updated') this.host.context(params.tokenUsage.last.totalTokens, params.tokenUsage.modelContextWindow)
+    else if (method === 'mcpServer/oauthLogin/completed') {
+      const login = this.mcpLogin
+      if (login?.name !== params.name) return
+      this.mcpLogin = null
+      login!.done(params)
+    } else if (method === 'thread/tokenUsage/updated') this.host.context(params.tokenUsage.last.totalTokens, params.tokenUsage.modelContextWindow)
     else if (method === 'item/started') {
       const item = params.item
       if (item.type === 'commandExecution') activity.start(item.id, 'command', item.command)
