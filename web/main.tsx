@@ -1,7 +1,7 @@
 import './monitoring'
 import { render } from 'preact'
-import { useEffect, useRef, useState } from 'preact/hooks'
-import { Coffee, Download, Folder, FolderOpen, Monitor, Pin, PinOff, Search, Files as FilesIcon, MessageSquare, Moon, Plus, Server, SlidersHorizontal, SquareKanban, Sun, Workflow as WorkflowIcon, ChevronDown, Inbox, Layers, LayoutList, Smartphone, X } from 'lucide-preact'
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
+import { Coffee, Download, Folder, FolderOpen, Monitor, Pin, PinOff, RefreshCw, Search, Files as FilesIcon, MessageSquare, Moon, Plus, Server, SlidersHorizontal, SquareKanban, Sun, Workflow as WorkflowIcon, ChevronDown, Inbox, Layers, LayoutList, Smartphone, X } from 'lucide-preact'
 import { api, avatarStyle, connectEvents, desktop, go, initial, Unauthorized, useApi, useEvent, type Me, type Project } from './api'
 import { Conversations, RunElsewhereDialog } from './Conversations'
 import { FilesView } from './Files'
@@ -124,6 +124,7 @@ function App() {
     <div class={`app ${project && terminalOpen && terminalMax ? 'terminal-max' : ''}`}>
       {mode === 'relay' && !link.connected && <div class="link-banner">Reconnecting to your computer…</div>}
       <UpdateBanner />
+      <RestartBanner />
       <TopBar projects={projects ?? []} active={project} all={route[0] === 'all'} me={me} setMe={setMe} />
       {project && <SubBar project={project} projects={projects ?? []} section={section} threadId={section === 't' ? rest[0] : undefined} />}
       {route[0] === 'all' && <AllBar section={route[1]} />}
@@ -157,6 +158,38 @@ function UpdateBanner() {
             <X size={14} />
           </button>
         </>
+      )}
+    </div>
+  )
+}
+
+// The daemon restarts into an update it found installed: the UI counts down to it, so the short
+// moment without Savor doesn't come out of nowhere. With automatic restarts off it only offers one.
+function RestartBanner() {
+  const [restart] = useApi<{ updated: boolean; left: number | null }>('/restart', (e) => e.type === 'restart')
+  const [requested, setRequested] = useState(false)
+  const [now, setNow] = useState(Date.now())
+  const deadline = useMemo(() => (restart?.left != null ? Date.now() + restart.left : null), [restart])
+  useEffect(() => {
+    if (!deadline) return
+    const tick = setInterval(() => setNow(Date.now()), 250)
+    return () => clearInterval(tick)
+  }, [deadline])
+  if (!restart?.updated) return null
+  const left = deadline && Math.max(0, Math.ceil((deadline - now) / 1000))
+  const restarting = requested || left === 0
+  const restartNow = () => {
+    setRequested(true)
+    api('POST', '/restart').catch(() => setRequested(false))
+  }
+  return (
+    <div class="update-banner">
+      {restarting ? <span class="spinner" /> : <RefreshCw size={15} />}
+      <span>{restarting ? 'Savor is restarting…' : left ? `Savor restarts in ${left} s to finish an update` : 'Savor was updated'}</span>
+      {!restarting && (
+        <button class="ghost small" onClick={restartNow}>
+          Restart now
+        </button>
       )}
     </div>
   )

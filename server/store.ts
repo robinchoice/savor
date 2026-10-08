@@ -159,6 +159,10 @@ interface State {
   projectsDir?: string
   // Whether paired devices may open the terminal, a shell on this computer.
   terminalRemote?: boolean
+  // Whether the desktop app downloads and installs new releases by itself (desktop/main.cjs reads it).
+  autoUpdate?: boolean
+  // Whether the daemon, run as a service, restarts by itself once an update was installed.
+  autoRestart?: boolean
   // The daemon's long-term X25519 key for the relay tunnel (base64url secret key).
   identity: string
   relayToken: string

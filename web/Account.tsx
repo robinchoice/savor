@@ -224,6 +224,36 @@ function RelayRow({ onClose }: { onClose: () => void }) {
   )
 }
 
+// Updates of the desktop app, and the restart of the daemon (as a service) into an installed update.
+function UpdateSettings() {
+  const [settings] = useApi<{ autoUpdate: boolean; autoRestart: boolean; service: boolean }>('/settings', (e) => e.type === 'settings')
+  if (!settings) return null
+  const toggle = (key: 'autoUpdate' | 'autoRestart') => api('PATCH', '/settings', { [key]: !settings[key] })
+  return (
+    <>
+      {desktop && (
+        <div class="setting">
+          <span>Download and install updates automatically</span>
+          <button class={`switch ${settings.autoUpdate ? 'on' : ''}`} role="switch" aria-checked={settings.autoUpdate} onClick={() => toggle('autoUpdate')}>
+            <i />
+          </button>
+        </div>
+      )}
+      {settings.service && (
+        <div class="setting">
+          <span>
+            Restart automatically after updates
+            <small class="muted">Otherwise Savor asks before it restarts</small>
+          </span>
+          <button class={`switch ${settings.autoRestart ? 'on' : ''}`} role="switch" aria-checked={settings.autoRestart} onClick={() => toggle('autoRestart')}>
+            <i />
+          </button>
+        </div>
+      )}
+    </>
+  )
+}
+
 // Savor has no accounts: this is the computer it runs on, or on a paired device, that device.
 export function AccountDialog({ me, projects, toggleAwake, open, onClose }: { me: Me; projects: number; toggleAwake: () => void; open: (what: 'feedback' | 'appearance') => void; onClose: () => void }) {
   const local = me.origin === 'local'
@@ -303,6 +333,7 @@ export function AccountDialog({ me, projects, toggleAwake, open, onClose }: { me
                   </button>
                 </div>
               )}
+              {local && <UpdateSettings />}
               {canNotify && (
                 <div class="setting">
                   <span>Notifications</span>

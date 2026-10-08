@@ -868,15 +868,32 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
 }
 
 // Run as a service from an AppImage (desktop/main.cjs --daemon): once an update has replaced the
-// AppImage, exit so the service manager starts the new version. Working agents get five minutes to
-// finish; after that their turns are cut off and continue in the new version.
+// AppImage, restart so the service manager starts the new version. Working agents get five minutes to
+// finish; after that their turns are cut off and continue in the new version. The UI counts down to
+// the restart, and with automatic restarts switched off it only offers one.
 const UPDATE_GRACE = 5 * 60_000
+const RESTART_COUNTDOWN = 30_000
+const restart = { updated: false, at: null as number | null, timer: undefined as NodeJS.Timeout | undefined }
+
+function scheduleRestart() {
+  clearTimeout(restart.timer)
+  restart.at = store.state().autoRestart === false ? null : Date.now() + RESTART_COUNTDOWN
+  if (restart.at) restart.timer = setTimeout(restartNow, RESTART_COUNTDOWN)
+  emit({ type: 'restart' })
+}
+
+function restartNow() {
+  console.log('Savor was updated, exiting so the new version starts')
+  // The same way out as a stop of the service: agents and preview browsers are shut down first.
+  process.kill(process.pid, 'SIGTERM')
+}
+
 function exitOnUpdate(file: string) {
   const id = (s?: fs.Stats) => s && `${s.ino}:${s.mtimeMs}:${s.size}`
   const installed = id(fs.statSync(file))
   let last = installed
   let updatedAt = 0
-  setInterval(() => {
+  const check = setInterval(() => {
     const now = id(fs.statSync(file, { throwIfNoEntry: false }))
     // Wait until the new file stays the same between two checks, in case it is still being written.
     const settled = now && now !== installed && now === last
@@ -884,11 +901,31 @@ function exitOnUpdate(file: string) {
     if (!settled) return
     updatedAt ||= Date.now()
     if (agents.anyBusy() && Date.now() - updatedAt < UPDATE_GRACE) return
-    console.log('Savor was updated, exiting so the new version starts')
-    // The same way out as a stop of the service: agents and preview browsers are shut down first.
-    process.kill(process.pid, 'SIGTERM')
+    clearInterval(check)
+    restart.updated = true
+    scheduleRestart()
   }, 10_000)
 }
+
+// `left` instead of a time of day, so a device whose clock is off still counts down correctly.
+route('GET', '/restart', () => ({ updated: restart.updated, left: restart.at && Math.max(0, restart.at - Date.now()) }))
+route('POST', '/restart', () => {
+  if (!restart.updated) throw new BadRequest('No update is waiting for a restart.')
+  restartNow()
+})
+// `service`: the daemon restarts itself after updates, so the setting for that applies.
+const settings = () => ({ autoUpdate: store.state().autoUpdate !== false, autoRestart: store.state().autoRestart !== false, service: !!process.env.SAVOR_EXIT_ON_UPDATE })
+route('GET', '/settings', () => settings())
+route('PATCH', '/settings', (_, b, ctx) => {
+  localOnly(ctx)
+  const s = store.state()
+  if (typeof b.autoUpdate === 'boolean') s.autoUpdate = b.autoUpdate
+  if (typeof b.autoRestart === 'boolean') s.autoRestart = b.autoRestart
+  store.saveState(s)
+  emit({ type: 'settings' })
+  if (restart.updated && typeof b.autoRestart === 'boolean') scheduleRestart()
+  return settings()
+})
 
 http
   .createServer((req, res) =>

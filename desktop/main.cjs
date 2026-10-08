@@ -179,7 +179,15 @@ ipcMain.handle('install-update', async (e) => {
 })
 
 // Checks for a new release on start and every ten minutes. It downloads in the background, then the UI
-// offers to install it; otherwise it installs on the next quit.
+// offers to install it; otherwise it installs on the next quit. Switched off in the settings, only a
+// check from the UI downloads, and only its "Install and restart" installs.
+const autoUpdate = () => {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(HOME, 'state.json'), 'utf8')).autoUpdate !== false
+  } catch {
+    return true
+  }
+}
 function watchUpdates() {
   const autoUpdater = updater()
   if (!autoUpdater) return
@@ -188,7 +196,8 @@ function watchUpdates() {
     ready = info.version
     win?.webContents.send('update-ready', ready)
   })
-  const check = () => autoUpdater.checkForUpdates().catch(() => {})
+  app.on('before-quit', () => (autoUpdater.autoInstallOnAppQuit = autoUpdate()))
+  const check = () => autoUpdate() && autoUpdater.checkForUpdates().catch(() => {})
   check()
   setInterval(check, 10 * 60_000)
 }
