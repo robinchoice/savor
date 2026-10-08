@@ -553,6 +553,17 @@ test('the agent list reports what is installed, signed in and offered', async ()
   assert.ok(by.claude.modes.find((m) => m.id === 'bypassPermissions').unsafe)
 })
 
+test('new projects start with the default agent set on this computer', async () => {
+  assert.equal((await api('GET', '/agent')).body.permissionMode, 'acceptEdits')
+  assert.equal((await api('PUT', '/agent', { permissionMode: 'nope' })).status, 400)
+  const agent = (await api('PUT', '/agent', { permissionMode: 'auto', reasoning: 'max' })).body
+  assert.equal(agent.permissionMode, 'auto')
+  const project = (await api('POST', '/projects', { path: path.join(TMP, 'default-agent'), create: true })).body
+  assert.deepEqual(project.agent, agent)
+  await api('DELETE', `/projects/${project.id}`)
+  await api('PUT', '/agent', { permissionMode: 'acceptEdits', reasoning: 'high' })
+})
+
 test('presets are saved globally and only from this computer', async () => {
   const agent = { provider: 'codex', model: 'fake-model', reasoning: 'high', fast: false, permissionMode: 'read-only' }
   const preset = (await api('POST', '/presets', { name: 'Careful Codex', agent })).body

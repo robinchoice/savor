@@ -166,6 +166,8 @@ interface State {
   autoUpdate?: boolean
   // Whether the daemon, run as a service, restarts by itself once an update was installed.
   autoRestart?: boolean
+  // The agent new projects start with, else defaultAgent().
+  agent?: AgentConfig
   // The daemon's long-term X25519 key for the relay tunnel (base64url secret key).
   identity: string
   relayToken: string
@@ -287,7 +289,7 @@ export function addProject(dir: string, name?: string): Project {
     name: name || path.basename(abs),
     path: abs,
     tint: TINTS[s.projects.length % TINTS.length],
-    agent: defaultAgent(),
+    agent: s.agent ?? defaultAgent(),
     verbosity: 'medium' as const,
     paused: false,
     pinned: true,

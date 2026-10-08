@@ -609,7 +609,7 @@ function EffortMeter({ effort, efforts }: { effort: string; efforts: string[] })
   )
 }
 
-function AgentButton({ agent, info, open, toggle }: { agent: AgentConfig; info?: ProviderInfo; open: boolean; toggle: () => void }) {
+export function AgentButton({ agent, info, open, toggle }: { agent: AgentConfig; info?: ProviderInfo; open: boolean; toggle: () => void }) {
   const efforts = effortsOf(agent, info)
   const mode = info?.modes.find((m) => m.id === agent.permissionMode)
   return (
@@ -629,7 +629,7 @@ function AgentButton({ agent, info, open, toggle }: { agent: AgentConfig; info?:
 }
 
 // Agents on the left, the chosen agent's model, effort and permissions on the right. Changes apply right away.
-function AgentMenu({ agent, agents, setAgent, close }: { agent: AgentConfig; agents: ProviderInfo[]; setAgent: (a: AgentConfig) => void; close: () => void }) {
+export function AgentMenu({ agent, agents, setAgent, close }: { agent: AgentConfig; agents: ProviderInfo[]; setAgent: (a: AgentConfig) => void; close: () => void }) {
   const ref = useRef<HTMLDivElement>(null)
   useLayoutEffect(() => {
     // As wide as the composer above or below it. Narrow screens get a bottom sheet from the stylesheet.

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks'
 import { ArrowUpRight, Bot, Check, ChevronDown, ChevronRight, Laptop, MessageSquare, Mic, Plus, SlidersHorizontal, Smartphone, X } from 'lucide-preact'
-import { api, cap, desktop, useAgents, useApi, type Me } from './api'
+import { api, cap, desktop, useAgents, useApi, type AgentConfig, type Me } from './api'
+import { AgentButton, AgentMenu } from './Composer'
 import { useNotificationToggle } from './notify'
 import { PleasanceFooter } from './PleasanceFooter'
 import { setPrefs, usePrefs, type Density, type Prefs, type Theme } from './prefs'
@@ -190,9 +191,25 @@ function MyDevices({ me, projects }: { me: Me; projects: number }) {
   )
 }
 
-// Which agent CLIs are installed on this computer and signed in.
+// Which agent CLIs are installed on this computer and signed in, and the agent new projects start with.
 function Agents() {
   const agents = useAgents()
+  const [agent, reload] = useApi<AgentConfig>('/agent', () => false)
+  const [menu, setMenu] = useState(false)
+  const [error, setError] = useState('')
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!menu) return
+    const outside = (e: PointerEvent) => !ref.current?.contains(e.target as Node) && setMenu(false)
+    document.addEventListener('pointerdown', outside)
+    return () => document.removeEventListener('pointerdown', outside)
+  }, [menu])
+  const info = agent && agents?.find((a) => a.id === agent.provider)
+  const setAgent = (next: AgentConfig) =>
+    api('PUT', '/agent', next).then(
+      () => (setError(''), reload()),
+      (e) => setError((e as Error).message),
+    )
   return (
     <details class="box">
       <summary>
@@ -201,7 +218,17 @@ function Agents() {
         </span>
         Agents <ChevronDown size={16} class="chev" />
       </summary>
-      <div class="box-body">
+      <div class="box-body" ref={ref}>
+        {agent && info && (
+          <div class="setting">
+            <span>
+              New projects start with
+              <small class={error ? 'error-text' : 'muted'}>{error || `${info.modes.find((m) => m.id === agent.permissionMode)?.label} · then each project keeps the agent it last used`}</small>
+            </span>
+            <AgentButton agent={agent} info={info} open={menu} toggle={() => setMenu(!menu)} />
+          </div>
+        )}
+        {menu && agent && info && <AgentMenu agent={agent} agents={agents ?? []} setAgent={setAgent} close={() => setMenu(false)} />}
         {agents?.map((a) => (
           <div key={a.id} class="setting">
             <span>

@@ -120,6 +120,15 @@ route('PUT', '/devices/address', (_, b, ctx) => {
 })
 route('GET', '/agents', (_, __, ctx) => listAgents(ctx.query.has('refresh')))
 route('GET', '/usage', () => listUsage())
+// The agent new projects start with.
+route('GET', '/agent', () => store.state().agent ?? store.defaultAgent())
+route('PUT', '/agent', (_, b, ctx) => {
+  localOnly(ctx)
+  const s = store.state()
+  s.agent = agentFrom(ctx, s.agent ?? store.defaultAgent(), b)
+  store.saveState(s)
+  return s.agent
+})
 route('GET', '/presets', () => store.listPresets())
 route('POST', '/presets', (_, b, ctx) => {
   localOnly(ctx)
