@@ -1090,6 +1090,42 @@ test('agents can start conversations in other projects, and input from a paired 
   await api('DELETE', `/projects/${other.id}`)
 })
 
+test('agents add projects: a new folder gets a git repository, an existing project stays the same, paired devices cannot', async () => {
+  const [project] = (await api('GET', '/projects')).body
+  const { mcpToken } = JSON.parse(fs.readFileSync(path.join(HOME, 'state.json'), 'utf8'))
+  const connect = async (thread) => {
+    const client = new Client({ name: 'e2e', version: '1' })
+    await client.connect(new StreamableHTTPClientTransport(new URL(`${base}/mcp?project=${project.id}&thread=${thread.id}`), { requestInit: { headers: { authorization: `Bearer ${mcpToken}` } } }))
+    return client
+  }
+  const call = async (client, name, args) => {
+    const r = await client.callTool({ name, arguments: args })
+    return { isError: !!r.isError, text: r.content[0].text }
+  }
+  const thread = (await api('POST', `/projects/${project.id}/threads`, { text: 'add a project' })).body
+  await until(async () => (await api('GET', `/projects/${project.id}/threads/${thread.id}`)).body.messages.some((m) => m.text === 'Echo: add a project'))
+  const client = await connect(thread)
+  const folder = path.join(TMP, 'agent-made')
+  const made = JSON.parse((await call(client, 'create_project', { path: folder, name: 'Agent Made' })).text)
+  assert.deepEqual([made.name, made.path], ['Agent Made', folder])
+  assert.ok(fs.existsSync(path.join(folder, '.git')))
+  assert.ok((await api('GET', '/projects')).body.some((p) => p.id === made.id))
+  assert.equal(JSON.parse((await call(client, 'create_project', { path: folder })).text).id, made.id)
+  assert.ok((await call(client, 'create_project', { path: 'relative/dir' })).isError)
+  await client.close()
+
+  const device = await pairDevice('CI project phone')
+  const remote = (await api('POST', `/projects/${project.id}/threads`, { text: 'make a project' }, device)).body
+  await until(async () => (await api('GET', `/projects/${project.id}/threads/${remote.id}`)).body.messages.some((m) => m.text === 'Echo: make a project'))
+  const remoteClient = await connect(remote)
+  const refused = await call(remoteClient, 'create_project', { path: path.join(TMP, 'phone-made') })
+  await remoteClient.close()
+  assert.ok(refused.isError && !fs.existsSync(path.join(TMP, 'phone-made')), refused.text)
+
+  await api('DELETE', `/devices/${(await api('GET', '/devices')).body.find((d) => d.name === 'CI project phone').id}`)
+  await api('DELETE', `/projects/${made.id}`)
+})
+
 test('agents send messages to conversations in other projects, marked as theirs, and a message they set off sends none on', async () => {
   const [project] = (await api('GET', '/projects')).body
   const other = (await api('POST', '/projects', { path: path.join(TMP, 'message-target'), name: 'Message Target', create: true })).body

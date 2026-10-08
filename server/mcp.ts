@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import fs from 'node:fs'
 import path from 'node:path'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
@@ -12,7 +13,7 @@ import * as browser from './browser.js'
 import * as processes from './processes.js'
 import { runWorkflow, syncSchedules, validateCron } from './scheduler.js'
 import { listAgents, mergeAgent, STATIC } from './providers.js'
-import { addWorktree, git } from './git.js'
+import { addWorktree, git, openProject } from './git.js'
 import * as ci from './ci.js'
 
 const SUMMARY = z.string().min(1).max(120).describe('One short sentence on what the user\'s latest input asks for, in their language. The conversation list shows it.')
@@ -244,6 +245,21 @@ function buildServer(p: Project, tid: string) {
 
   server.registerTool('list_projects', { description: 'The Savor projects on this computer, for start_conversation, send_to_conversation and the `project` of the other conversation tools.' }, async () =>
     ok(store.listProjects().map(({ id, name, path }) => ({ id, name, path }))),
+  )
+
+  server.registerTool(
+    'create_project',
+    {
+      description:
+        'Add a Savor project for a folder, e.g. after cloning a new repository. A missing folder is created with an empty git repository; an existing one is opened as it is, and one that already is a project returns that project. Use the id for start_conversation and the other tools.',
+      inputSchema: { path: z.string().min(1).describe('Absolute path or ~/…'), name: z.string().min(1).optional().describe('Display name; defaults to the folder name') },
+    },
+    async ({ path: dir, name }) => {
+      if (agents.originOf(p, tid) === 'remote') throw new Error('Projects can only be added from input on this computer.')
+      if (!/^(~\/|\/)/.test(dir)) throw new Error('Give an absolute path or one starting with ~/.')
+      const project = openProject(dir, name, !fs.existsSync(store.expand(dir)))
+      return ok({ id: project.id, name: project.name, path: project.path })
+    },
   )
 
   server.registerTool(

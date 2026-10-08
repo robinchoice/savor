@@ -4,6 +4,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import * as store from './store.js'
 import type { Project } from './store.js'
+import { emit } from './events.js'
 
 export class GitError extends Error {}
 
@@ -35,6 +36,24 @@ export function keepOutOfGit(dir: string) {
     fs.mkdirSync(path.dirname(file), { recursive: true })
     fs.appendFileSync(file, '\n.savor/\n.savor-logs/\n')
   } catch {} // not a git repository
+}
+
+// A new project is a new folder with a git repository; an existing folder is opened as it is.
+export function openProject(dir: string, name: string | undefined, create: boolean) {
+  const p = store.addProject(dir, name)
+  if (create) {
+    try {
+      git(p.path, 'init')
+    } catch {
+      // Without git the project works, only worktrees don't.
+    }
+    const s = store.state()
+    s.projectsDir = path.dirname(p.path)
+    store.saveState(s)
+  }
+  keepOutOfGit(p.path)
+  emit({ type: 'projects' })
+  return p
 }
 
 // ---- worktrees ----

@@ -216,22 +216,8 @@ route('GET', '/projects', () =>
 )
 route('POST', '/projects', (_, b, ctx) => {
   localOnly(ctx)
-  // A new project is a new folder with a git repository; an existing folder is opened as it is.
   if (b.create && fs.existsSync(store.expand(String(b.path)))) throw new BadRequest('That folder already exists. Open it with “Open any folder”.')
-  const p = store.addProject(b.path, b.name)
-  if (b.create) {
-    try {
-      git.git(p.path, 'init')
-    } catch {
-      // Without git the project works, only worktrees don't.
-    }
-    const s = store.state()
-    s.projectsDir = path.dirname(p.path)
-    store.saveState(s)
-  }
-  git.keepOutOfGit(p.path)
-  emit({ type: 'projects' })
-  return p
+  return git.openProject(b.path, b.name, !!b.create)
 })
 route('PUT', '/projects/order', (_, b) => {
   store.reorderProjects((b.ids ?? []).map(String))
