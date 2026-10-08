@@ -72,6 +72,7 @@
     "esbuild": "^0.28.2",
     "lucide-preact": "^1.48.0",
     "marked": "^18.0.14",
+    "modern-screenshot": "^4.7.0",
     "preact": "^10.29.8",
     "qrcode-generator": "^2.0.4",
     "typescript": "^7.0.2",

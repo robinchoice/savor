@@ -8,6 +8,12 @@ import { qr, RELAY_LABEL, type DeviceRow, type RelayState } from './Settings'
 import { forgetProfile, loadProfile } from './transport'
 
 const REPO = 'https://github.com/robinchoice/savor'
+
+// Savor has no server of its own that could take feedback, so it becomes an issue on GitHub.
+export function openIssue(text: string, details: string) {
+  window.open(`${REPO}/issues/new?${new URLSearchParams({ title: text.trim().split('\n')[0].slice(0, 80), body: `${text.trim()}\n\n---\n${details}` })}`, '_blank', 'noreferrer')
+}
+
 const THEMES: [Theme, string][] = [['system', 'System'], ['light', 'Light'], ['dark', 'Dark']]
 const SHOWN: [keyof Prefs['show'], string][] = [['label', 'Label'], ['agent', 'Agent'], ['date', 'Date'], ['count', 'Message count']]
 
@@ -69,13 +75,11 @@ export function AppearanceMenu({ close }: { close: () => void }) {
   )
 }
 
-// Savor has no server of its own that could take feedback, so it becomes an issue on GitHub.
 export function FeedbackDialog({ me, onClose }: { me: Me; onClose: () => void }) {
   const [text, setText] = useState('')
   const [opened, setOpened] = useState(false)
   const open = () => {
-    const body = `${text.trim()}\n\n---\nSavor ${me.version} · ${me.system}`
-    window.open(`${REPO}/issues/new?${new URLSearchParams({ title: text.trim().split('\n')[0].slice(0, 80), body })}`, '_blank', 'noreferrer')
+    openIssue(text, `Savor ${me.version} · ${me.system}`)
     setOpened(true)
   }
   return (
@@ -342,6 +346,15 @@ export function AccountDialog({ me, projects, toggleAwake, open, onClose }: { me
                   </button>
                 </div>
               )}
+              <div class="setting">
+                <span>
+                  Bug button
+                  <small class="muted">Reports a bug with a screenshot of the screen</small>
+                </span>
+                <button class={`switch ${prefs.bugButton ? 'on' : ''}`} role="switch" aria-checked={prefs.bugButton} onClick={() => setPrefs({ bugButton: !prefs.bugButton })}>
+                  <i />
+                </button>
+              </div>
               <button class="setting" onClick={() => open('appearance')}>
                 <span>Appearance</span>
                 <span class="muted">{cap(prefs.theme)}</span>

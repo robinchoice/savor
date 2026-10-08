@@ -11,6 +11,9 @@ export interface Prefs {
   // What a conversation in the list shows besides its title.
   show: { label: boolean; agent: boolean; date: boolean; count: boolean }
   feedbackButton: boolean
+  // The floating bug button and where it was dragged to, null for its default spot.
+  bugButton: boolean
+  bugAt: { x: number; y: number } | null
   // Browser mode: how wide the chat beside the page is, and the size the page is drawn in.
   chatWidth: number
   previewDevice: Device
@@ -30,6 +33,8 @@ let prefs: Prefs = {
   messages: 'normal',
   show: { label: true, agent: true, date: true, count: true },
   feedbackButton: true,
+  bugButton: false,
+  bugAt: null,
   chatWidth: 420,
   previewDevice: 'fit',
   notDuplicates: [],

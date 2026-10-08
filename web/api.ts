@@ -5,8 +5,15 @@ export class Unauthorized extends Error {}
 
 export const go = (path: string) => (location.hash = path)
 
+// The last failed calls, sent along with a bug report.
+export const recentErrors: string[] = []
+
 export async function api<T = any>(method: string, path: string, body?: unknown): Promise<T> {
   const r = await transport.request(method, '/api' + path, body === undefined ? undefined : JSON.stringify(body))
+  if (r.status >= 400) {
+    recentErrors.unshift(`${method} /api${path} → ${r.status}`)
+    recentErrors.length = Math.min(recentErrors.length, 5)
+  }
   if (r.status === 401) throw new Unauthorized()
   let data: any = {}
   try {

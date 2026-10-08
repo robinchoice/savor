@@ -14,6 +14,7 @@ import { runInTerminal, TerminalButton, TerminalPanel } from './Terminal'
 import { quoteInComposer } from './Composer'
 import { useNotifications } from './notify'
 import { AccountDialog, AppearanceMenu, FeedbackDialog } from './Account'
+import { BugButton } from './BugButton'
 import { usePrefs } from './prefs'
 import { recipe } from './recipes'
 import { TEMPLATES, type Template } from './templates'
@@ -206,7 +207,7 @@ function RestartBanner() {
 function TopBar({ projects, active, all, me, setMe }: { projects: Project[]; active?: Project; all: boolean; me: Me; setMe: (m: Me) => void }) {
   const [menu, setMenu] = useState<'projects' | 'appearance' | null>(null)
   const [dialog, setDialog] = useState<'account' | 'feedback' | null>(null)
-  const { theme, feedbackButton } = usePrefs()
+  const { theme, feedbackButton, bugButton } = usePrefs()
   const ThemeIcon = theme === 'system' ? Monitor : theme === 'dark' ? Moon : Sun
   const total = (k: keyof Project['counts']) => projects.reduce((n, p) => n + p.counts[k], 0)
   const toggleAwake = async () => setMe({ ...me, ...(await api('POST', '/awake', { on: !me.awake })) })
@@ -307,6 +308,7 @@ function TopBar({ projects, active, all, me, setMe }: { projects: Project[]; act
         </button>
         {dialog === 'account' && <AccountDialog me={me} projects={projects.length} toggleAwake={toggleAwake} open={open} onClose={() => setDialog(null)} />}
         {dialog === 'feedback' && <FeedbackDialog me={me} onClose={() => setDialog(null)} />}
+        {bugButton && <BugButton me={me} />}
       </div>
     </header>
   )
