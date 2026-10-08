@@ -35,6 +35,8 @@ function useRoute() {
 
 // The conversation that was open when a project was left; its tab opens it again, otherwise a new one.
 const lastThreadKey = (pid: string) => `savor-last-thread:${pid}`
+// The project that was open last, so a restart of the app (also after an update) returns to it.
+const LAST_PROJECT = 'savor-last-project'
 const projectHref = (pid: string) => {
   const tid = localStorage.getItem(lastThreadKey(pid))
   return `#/p/${pid}${tid ? `/t/${tid}` : ''}`
@@ -71,10 +73,14 @@ function App() {
   }, [mode, link.connected])
   useNotifications(route[2] === 't' ? route[3] : undefined, projects, me)
   useEffect(() => {
-    if (projects?.length && route[0] !== 'p' && route[0] !== 'all' && route[0] !== 'devices') go(projectHref((projects.find((p) => p.pinned) ?? projects[0]).id))
+    if (projects?.length && route[0] !== 'p' && route[0] !== 'all' && route[0] !== 'devices') {
+      const last = projects.find((p) => p.id === localStorage.getItem(LAST_PROJECT))
+      go(projectHref((last ?? projects.find((p) => p.pinned) ?? projects[0]).id))
+    }
   }, [projects, route[0]])
   useEffect(() => {
     if (route[0] !== 'p' || !route[1]) return
+    localStorage.setItem(LAST_PROJECT, route[1])
     if (route[2] === 't' && route[3]) localStorage.setItem(lastThreadKey(route[1]), route[3])
     else localStorage.removeItem(lastThreadKey(route[1]))
   }, [route.join('/')])

@@ -1574,6 +1574,18 @@ test('typing / lists the skills of the agent and runs the one picked', async () 
   await page.keyboard.press('Enter')
   assert.equal(await page.inputValue('.composer textarea'), '/tools:lint ')
   assert.equal(await page.locator('.slash').count(), 0)
+test('a restart opens the conversation that was open last', async () => {
+  const projects = (await api('GET', '/projects')).body
+  const project = projects.find((p) => p.path === PROJECT)
+  const thread = (await api('GET', `/projects/${project.id}/threads`)).body.find((t) => !t.completed)
+  await page.goto(`${base}/#/all`)
+  await page.goto(`${base}/#/p/${project.id}/t/${thread.id}`)
+  await page.waitForSelector(`.card.active[href="#/p/${project.id}/t/${thread.id}"]`)
+  // The app starts on the bare URL, as the desktop app does after an update.
+  await page.goto(`${base}/`)
+  await page.waitForSelector(`.card.active[href="#/p/${project.id}/t/${thread.id}"]`)
+})
+
   await page.fill('.composer textarea', '/')
   await page.keyboard.press('ArrowDown')
   await page.waitForSelector('.slash button.selected:has-text("/tools:lint")')
