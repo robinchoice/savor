@@ -1,7 +1,7 @@
 import './monitoring'
 import { render } from 'preact'
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
-import { Coffee, Download, Folder, FolderOpen, Monitor, Pin, PinOff, RefreshCw, Search, Files as FilesIcon, MessageSquare, Moon, Plus, Server, SlidersHorizontal, SquareKanban, Sun, Workflow as WorkflowIcon, ChevronDown, Inbox, Layers, LayoutList, Smartphone, X } from 'lucide-preact'
+import { Archive, Code, Coffee, Download, Folder, GraduationCap, FolderOpen, Monitor, Pin, PinOff, RefreshCw, Search, Files as FilesIcon, MessageSquare, Moon, Plus, Server, SlidersHorizontal, SquareKanban, Sun, Workflow as WorkflowIcon, ChevronDown, Inbox, Layers, LayoutList, Smartphone, X } from 'lucide-preact'
 import { api, avatarStyle, connectEvents, desktop, go, initial, Unauthorized, useApi, useEvent, type Me, type Project } from './api'
 import { Conversations, RunElsewhereDialog } from './Conversations'
 import { FilesView } from './Files'
@@ -15,6 +15,8 @@ import { quoteInComposer } from './Composer'
 import { useNotifications } from './notify'
 import { AccountDialog, AppearanceMenu, FeedbackDialog } from './Account'
 import { usePrefs } from './prefs'
+import { recipe } from './recipes'
+import { TEMPLATES, type Template } from './templates'
 import { UsageMeter } from './Usage'
 import '@fontsource-variable/geist'
 import '@fontsource-variable/geist-mono'
@@ -330,9 +332,12 @@ const Counts = ({ project: p }: { project: Pick<Project, 'counts'> }) => (
   </>
 )
 
+const TYPE_ICONS: Record<string, typeof Folder> = { 'academic-writing': GraduationCap, kontor: Archive }
+
 function ProjectsMenu({ projects, active, me, setMe, close }: { projects: Project[]; active?: Project; me: Me; setMe: (m: Me) => void; close: () => void }) {
   const [query, setQuery] = useState('')
   const [step, setStep] = useState<'new' | 'open' | null>(null)
+  const [template, setTemplate] = useState<Template>()
   const [name, setName] = useState('')
   const [dir, setDir] = useState(me.projectsDir)
   const [editDir, setEditDir] = useState(false)
@@ -349,6 +354,14 @@ function ProjectsMenu({ projects, active, me, setMe, close }: { projects: Projec
     try {
       const p = await api<Project>('POST', '/projects', body)
       if (body.create) setMe({ ...me, projectsDir: dir })
+      // A project type brings its ROLE.md and workflows, and a first conversation that sets the project up.
+      if (body.create && template) {
+        await api('PATCH', `/projects/${p.id}`, { role: template.role })
+        for (const r of template.workflows.map((slug) => recipe(slug)!)) await api('POST', `/projects/${p.id}/workflows`, { name: r.title, prompt: r.prompt, collection: template.title, cron: r.schedule || null })
+        const t = await api<{ id: string }>('POST', `/projects/${p.id}/threads`, { text: template.setup })
+        close()
+        return go(`/p/${p.id}/t/${t.id}`)
+      }
       close()
       go(`/p/${p.id}${body.create ? '/new' : ''}`)
     } catch (err) {
@@ -411,6 +424,19 @@ function ProjectsMenu({ projects, active, me, setMe, close }: { projects: Projec
         <div class="panel-actions">
           {step === 'new' ? (
             <form onSubmit={create}>
+              <div class="project-types">
+                {[undefined, ...TEMPLATES].map((t) => {
+                  const Icon = t ? (TYPE_ICONS[t.slug] ?? Folder) : Code
+                  return (
+                    <button type="button" key={t?.slug ?? ''} class={`project-type ${t === template ? 'active' : ''}`} onClick={() => setTemplate(t)}>
+                      <Icon size={16} />
+                      <b>{t?.title ?? 'Code'}</b>
+                      <small>{t?.blurb ?? 'App, site or tool.'}</small>
+                    </button>
+                  )
+                })}
+              </div>
+              {template && <small class="muted">{template.creates}</small>}
               <input autoFocus placeholder="Name of the new project" value={name} onInput={(e) => setName(e.currentTarget.value)} />
               {editDir ? (
                 <input placeholder="Folder for new projects" value={dir} onInput={(e) => setDir(e.currentTarget.value)} />

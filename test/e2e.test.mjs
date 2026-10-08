@@ -1712,6 +1712,24 @@ test('a new project gets its own folder with a git repository', async () => {
   assert.equal((await api('POST', '/projects', { path: folder, name: 'Bakery Site', create: true })).status, 400)
 })
 
+test('a project type brings its role, workflows and a conversation that sets it up', async () => {
+  await page.click('text=Projects')
+  await page.click('text=Start new project')
+  await page.click('.project-type:has-text("Kontor")')
+  await page.fill('input[placeholder="Name of the new project"]', 'Household')
+  await page.keyboard.press('Enter')
+  await page.waitForSelector('.project-tab.active:has-text("Household")')
+  await page.waitForURL(/#\/p\/[^/]+\/t\//)
+  const project = (await api('GET', '/projects')).body.find((p) => p.name === 'Household')
+  assert.match((await api('GET', `/projects/${project.id}/role`)).body.role, /This project is a Kontor/)
+  const workflows = (await api('GET', `/projects/${project.id}/workflows`)).body
+  assert.deepEqual(workflows.map((w) => w.name).sort(), ['Inbox triage', 'Kontor briefing', 'Kontor weekly review'])
+  assert.ok(workflows.every((w) => w.collection === 'Kontor' && w.cron))
+  const [thread] = (await api('GET', `/projects/${project.id}/threads`)).body
+  assert.match((await api('GET', `/projects/${project.id}/threads/${thread.id}`)).body.messages[0].text, /^Set up this project as a Kontor\./)
+  await api('PATCH', `/projects/${project.id}/threads/${thread.id}`, { completed: true })
+})
+
 test('appearance: theme, density and what a conversation shows stay on the device', async () => {
   const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
   await page.goto(`${base}/#/p/${project.id}`)
