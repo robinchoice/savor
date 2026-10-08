@@ -3,11 +3,12 @@ import qrcode from 'qrcode-generator'
 import { Download, Smartphone, Trash2, X } from 'lucide-preact'
 import { api, formatDay, go, PROVIDER_NAMES, useApi, useAgents, type ImportableSession, type Project, type Thread } from './api'
 import { pairThroughRelay } from './transport'
+import { TEMPLATES } from './templates'
 
 const TINTS = ['#b5654a', '#8b6bc7', '#3f9a78', '#c59a3d', '#c8577a', '#4a9bb8', '#7a8794']
 
 export function Settings({ project }: { project: Project }) {
-  const [draft, setDraft] = useState({ name: project.name, tint: project.tint, verbosity: project.verbosity, paused: project.paused, agent: project.agent, worktreeSetup: project.worktreeSetup })
+  const [draft, setDraft] = useState({ name: project.name, tint: project.tint, verbosity: project.verbosity, paused: project.paused, agent: project.agent, worktreeSetup: project.worktreeSetup, type: project.type ?? '' })
   const [role, setRole] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
@@ -51,6 +52,17 @@ export function Settings({ project }: { project: Project }) {
             ))}
           </div>
         </div>
+        <label>
+          Type <small class="muted">adds the type's own tab: Export for academic writing, Today for a Kontor</small>
+          <select value={draft.type} onChange={(e) => set({ type: e.currentTarget.value })}>
+            <option value="">Code</option>
+            {TEMPLATES.map((t) => (
+              <option key={t.slug} value={t.slug}>
+                {t.title}
+              </option>
+            ))}
+          </select>
+        </label>
         <label>
           Role & instructions <small class="muted">ROLE.md — every agent in this project gets this</small>
           <textarea rows={8} value={role ?? ''} placeholder="e.g. You are the engineer for a small bakery's ordering app. Keep the UI in German." onInput={(e) => (setSaved(false), setRole(e.currentTarget.value))} />

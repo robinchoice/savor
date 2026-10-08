@@ -19,6 +19,8 @@ export interface Project {
   pinned: boolean
   // A shell command that runs in each new worktree before its first turn, e.g. `npm install`.
   worktreeSetup: string
+  // The project type from templates/ (academic-writing, kontor); none for code.
+  type?: string
 }
 export interface Question { title: string; body: string; options: string[]; recommended?: number }
 export type Origin = 'local' | 'remote'

@@ -1165,3 +1165,38 @@ details.box[open] > summary .chev { transform: rotate(180deg); }
   .fan-col { flex: 0 0 86%; scroll-snap-align: center; }
 }
 .fanout .thread-head { padding-left: max(20px, calc((100% - 1200px) / 2)); padding-right: max(20px, calc((100% - 1200px) / 2)); }
+
+/* Workspaces of the project types: Export and Today */
+.workspace { max-width: 1040px; padding: 24px 32px; display: flex; flex-direction: column; gap: 16px; }
+.workspace-grid { display: grid; grid-template-columns: 1.2fr 1fr; gap: 16px; align-items: start; }
+.ws-col { display: flex; flex-direction: column; gap: 16px; }
+.ws-card { display: flex; flex-direction: column; gap: 8px; padding: 14px 16px; border-radius: 10px; background: var(--card); }
+.ws-card h3 { margin: 0 0 2px; font-size: 14px; font-weight: 600; display: flex; gap: 8px; align-items: baseline; }
+.ws-card h3 small { margin-left: auto; font-weight: 400; font-size: 12px; }
+.ws-card .field-label { margin: 6px 0 0; }
+.ws-card > button { align-self: flex-start; margin-top: 4px; }
+.ws-card.missing { border: 1px solid color-mix(in srgb, var(--red) 45%, transparent); }
+.ws-card.done { border: 1px solid color-mix(in srgb, var(--green) 45%, transparent); }
+.ws-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.ws-chip { padding: 5px 10px; border-radius: 7px; border: 1px solid var(--line-strong); background: none; color: var(--text); font-size: 12.5px; }
+.ws-chip.on { border-color: var(--link); background: var(--raised); }
+.ws-check { display: flex; gap: 8px; font-size: 13px; }
+.ws-check i { font-style: normal; width: 14px; flex: none; color: var(--muted); }
+.ws-check.lvl-ok i { color: var(--green); }
+.ws-check.lvl-error i { color: var(--red); }
+.ws-check.lvl-warn i { color: var(--attn); }
+.ws-file { display: flex; gap: 10px; align-items: center; justify-content: space-between; padding: 3px 0; color: var(--text); }
+.ws-warnings { margin: 0; font-size: 12px; white-space: pre-wrap; color: var(--muted); max-height: 160px; overflow: auto; }
+.ws-task { display: flex !important; flex-direction: row !important; gap: 9px; align-items: center; padding: 5px 0; font-size: 13px; font-weight: 400 !important; cursor: pointer; }
+.ws-task + .ws-task { border-top: 1px solid var(--line); }
+.ws-task.done .ws-task-text { text-decoration: line-through; color: var(--faint); }
+.ws-date { font-family: 'Geist Mono Variable', ui-monospace, monospace; font-size: 11.5px; flex: none; min-width: 56px; }
+.ws-date.late { color: var(--red); }
+.ws-date.soon { color: var(--attn); }
+.ws-add { display: flex; gap: 8px; align-items: center; color: var(--faint); padding-top: 4px; }
+.ws-add input { flex: 1; background: none; border: 0; padding: 4px 0; }
+.ws-text { margin: 0; font-size: 13px; line-height: 1.55; white-space: pre-wrap; }
+@media (max-width: 760px) {
+  .workspace { padding: 16px; }
+  .workspace-grid { grid-template-columns: 1fr; }
+}

@@ -34,4 +34,4 @@ Set up this project for a piece of academic writing.
    - language, target length and deadline
    - whether there is a template from my university
 
-After my answers: write PROJECT.md, fetch the CSL style from the official repository (github.com/citation-style-language/styles) into styles/, write pandoc.yaml (input files, bibliography, csl, output format, reference document or template), link or copy the Zotero export to references.bib, rename and outline the chapters for the kind of work and language, try an export, and commit.
+After my answers: write PROJECT.md with a line `Target length: <number> words`, fetch the CSL style from the official repository (github.com/citation-style-language/styles) into styles/, write pandoc.yaml with the top-level keys `to` (docx, latex or typst), `bibliography`, `csl`, `citeproc: true` and, if there is one, `reference-doc` or `template`, but without `input-files`: Savor's Export tab passes the chapters of manuscript/ in name order, link or copy the Zotero export to references.bib, rename and outline the chapters for the kind of work and language, try an export, and commit.

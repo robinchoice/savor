@@ -1,11 +1,12 @@
 import './monitoring'
 import { render } from 'preact'
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
-import { Coffee, Download, FolderOpen, Monitor, Pin, PinOff, RefreshCw, Search, Files as FilesIcon, MessageSquare, Moon, Server, SlidersHorizontal, SquareKanban, Sun, Workflow as WorkflowIcon, ChevronDown, Inbox, Layers, LayoutList, Smartphone, X } from 'lucide-preact'
+import { Coffee, Download, FolderOpen, Monitor, Pin, PinOff, RefreshCw, Search, Files as FilesIcon, MessageSquare, Moon, Server, SlidersHorizontal, SquareKanban, Sun, Workflow as WorkflowIcon, ChevronDown, Inbox, Layers, LayoutList, Smartphone, X, CalendarCheck, FileDown } from 'lucide-preact'
 import { api, avatarStyle, connectEvents, desktop, go, initial, Unauthorized, useApi, useEvent, type Me, type Project } from './api'
 import { Conversations, RunElsewhereDialog } from './Conversations'
 import { FilesView } from './Files'
 import { WorkflowButtons, Workflows } from './Workflows'
+import { ExportView, TodayView } from './Workspace'
 import { AllProjects } from './Overview'
 import { Settings, Devices, Pair, PairingRequests, RemotePair } from './Settings'
 import { loadProfile, remote, setTransport } from './transport'
@@ -125,6 +126,8 @@ function App() {
     if (section === 'files') main = <FilesView key={project.id} project={project} rest={rest} />
     else if (section === 'workflows') main = <Workflows key={project.id} project={project} rest={rest} />
     else if (section === 'settings') main = <Settings key={project.id} project={project} />
+    else if (section === 'export') main = <ExportView key={project.id} project={project} />
+    else if (section === 'today') main = <TodayView key={project.id} project={project} />
     else main = <Conversations key={project.id} project={project} threadId={section === 't' ? rest[0] : undefined} fanoutId={section === 'fan' ? rest[0] : undefined} isNew={section === 'new'} />
   }
 
@@ -415,9 +418,11 @@ function SubBar({ project, projects, section, threadId }: { project: Project; pr
   )
   return (
     <div class="subbar">
+      {project.type === 'kontor' && tab('today', 'Today', CalendarCheck, `#/p/${project.id}/today`)}
       {tab('t', 'Conversations', MessageSquare, `#/p/${project.id}`, project.counts)}
       {tab('files', 'Files', FilesIcon, `#/p/${project.id}/files`)}
       {tab('workflows', 'Workflows', WorkflowIcon, `#/p/${project.id}/workflows`)}
+      {project.type === 'academic-writing' && tab('export', 'Export', FileDown, `#/p/${project.id}/export`)}
       {elsewhere !== null && <RunElsewhereDialog projects={projects} from={project} threadId={threadId} text={elsewhere} onClose={() => setElsewhere(null)} />}
       <div class="subbar-right">
         <TerminalButton project={project} />

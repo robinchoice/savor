@@ -82,6 +82,7 @@ async function startDaemon() {
       SAVOR_ANTIGRAVITY_HOME: path.join(TMP, 'agy'),
       SAVOR_TRANSCRIBE_MODULE: path.join(ROOT, 'test/fake-transcribe.mjs'),
       SAVOR_GH_BIN: path.join(ROOT, 'test/fake-gh.mjs'),
+      SAVOR_PANDOC_BIN: path.join(ROOT, 'test/fake-pandoc.mjs'),
       FAKE_AGENT_LOG: AGENT_LOG,
       CLAUDE_CONFIG_DIR: path.join(TMP, 'claude'),
       CODEX_HOME: path.join(TMP, 'codex'),
@@ -1821,6 +1822,68 @@ test('a project type brings its role, workflows and a conversation that sets it 
   const [thread] = (await api('GET', `/projects/${project.id}/threads`)).body
   assert.match((await api('GET', `/projects/${project.id}/threads/${thread.id}`)).body.messages[0].text, /^Set up this project as a Kontor\./)
   await api('PATCH', `/projects/${project.id}/threads/${thread.id}`, { completed: true })
+})
+
+test('an academic project checks its citations and exports with pandoc', async () => {
+  const dir = path.join(TMP, 'thesis')
+  fs.mkdirSync(path.join(dir, 'manuscript'), { recursive: true })
+  fs.writeFileSync(path.join(dir, 'manuscript/01-intro.md'), '# Intro\n\nHeat pumps work [@miara2023, p. 4]. Mail a@b.de.\n\nSee @fig:map and [@ghost2021].\n')
+  fs.writeFileSync(path.join(dir, 'manuscript/02-empty.md'), '# Empty\n')
+  fs.writeFileSync(path.join(dir, 'references.bib'), '@article{miara2023,\n  title = {Heat pumps}\n}\n')
+  fs.writeFileSync(path.join(dir, 'PROJECT.md'), 'Target length: 1.000 words\n')
+  fs.writeFileSync(path.join(dir, 'pandoc.yaml'), 'to: docx\nbibliography: references.bib\ncsl: styles/apa.csl\nciteproc: true\n')
+  const project = (await api('POST', '/projects', { path: dir })).body
+  await api('PATCH', `/projects/${project.id}`, { type: 'academic-writing' })
+  await page.goto(`${base}/#/p/${project.id}/export`)
+  await page.waitForSelector('.ws-check.lvl-info:has-text("1 of 2 cited sources are in references.bib")')
+  await page.waitForSelector('.ws-check.lvl-error:has-text("[@ghost2021] has no entry") >> text=manuscript/01-intro.md:5')
+  await page.waitForSelector('.ws-check.lvl-warn:has-text("02-empty.md is empty")')
+  await page.waitForSelector('.ws-check.lvl-info:has-text("of 1,000 words")')
+  await page.waitForSelector('.ws-chip.on:has-text("APA 7")')
+  // The format goes into pandoc.yaml, and the rest of the file stays.
+  await page.click('.ws-chip:has-text("PDF (LaTeX)")')
+  await until(() => fs.readFileSync(path.join(dir, 'pandoc.yaml'), 'utf8').includes('to: latex\n'))
+  assert.match(fs.readFileSync(path.join(dir, 'pandoc.yaml'), 'utf8'), /pdf-engine: xelatex\n/)
+  await page.click('.ws-chip:has-text("DOCX")')
+  await until(() => fs.readFileSync(path.join(dir, 'pandoc.yaml'), 'utf8') === 'to: docx\nbibliography: references.bib\ncsl: styles/apa.csl\nciteproc: true\n')
+  await page.click('button:has-text("Export DOCX")')
+  await page.waitForSelector('.ws-card.done:has-text("Exported") >> text=citation ghost2021 not found')
+  const out = `export/thesis-${new Date().toISOString().slice(0, 10)}.docx`
+  assert.deepEqual(fs.readFileSync(path.join(dir, out), 'utf8').split('\n'), ['--defaults', 'pandoc.yaml', 'manuscript/01-intro.md', 'manuscript/02-empty.md', '-o', out])
+  const download = await fetch(`${base}/api/projects/${project.id}/export/${path.basename(out)}`, { headers: { cookie: `savor_token=${token}` } })
+  assert.equal(download.status, 200)
+  await page.waitForSelector(`.ws-file:has-text("${out}")`)
+  await api('DELETE', `/projects/${project.id}`)
+})
+
+test('Today shows the Kontor’s deadlines and inbox, and ticks tasks in tasks.md', async () => {
+  const day = (n) => new Date(Date.now() + n * 86_400_000).toISOString().slice(0, 10)
+  const dir = path.join(TMP, 'kontor')
+  fs.mkdirSync(path.join(dir, 'inbox'), { recursive: true })
+  fs.writeFileSync(path.join(dir, 'inbox/scan.pdf'), 'scan')
+  const tasks = `# Tasks\n\n- [ ] ${day(-1)} Pay the car tax\n- [ ] ${day(5)} Send papers to the accountant\n- [ ] ${day(60)} Renew the passport\n- [ ] Check the heating bill\n- [x] ${day(-3)} Report the meter\n`
+  fs.writeFileSync(path.join(dir, 'tasks.md'), tasks)
+  const project = (await api('POST', '/projects', { path: dir })).body
+  await api('PATCH', `/projects/${project.id}`, { type: 'kontor' })
+  await page.goto(`${base}/#/p/${project.id}/today`)
+  await page.waitForSelector('.subtab.active:has-text("Today")')
+  assert.equal(await page.locator('.subtab:has-text("Export")').count(), 0)
+  await page.waitForSelector('.ws-task:has-text("Pay the car tax") .ws-date.late')
+  await page.waitForSelector('.ws-task:has-text("Send papers") .ws-date.soon')
+  assert.deepEqual(await page.locator('.ws-card:has-text("Open tasks") .ws-task-text').allTextContents(), ['Renew the passport', 'Check the heating bill'])
+  assert.equal(await page.locator('.ws-task:has-text("Report the meter")').count(), 0)
+  await page.waitForSelector('.ws-file:has-text("scan.pdf") .chip.new')
+  // Ticking writes the line, unticking writes it back.
+  await page.click('.ws-task:has-text("Send papers") input')
+  await until(() => fs.readFileSync(path.join(dir, 'tasks.md'), 'utf8').includes(`- [x] ${day(5)} Send papers`))
+  await page.waitForSelector('.ws-task.done:has-text("Send papers")')
+  await page.click('.ws-task:has-text("Send papers") input')
+  await until(() => fs.readFileSync(path.join(dir, 'tasks.md'), 'utf8') === tasks)
+  await page.fill('.ws-add input', 'Call the landlord')
+  await page.keyboard.press('Enter')
+  await page.waitForSelector('.ws-task:has-text("Call the landlord")')
+  assert.ok(fs.readFileSync(path.join(dir, 'tasks.md'), 'utf8').endsWith('- [ ] Call the landlord\n'))
+  await api('DELETE', `/projects/${project.id}`)
 })
 
 test('appearance: theme, density and what a conversation shows stay on the device', async () => {

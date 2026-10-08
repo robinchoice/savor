@@ -27,6 +27,7 @@ import { nextRun, runEarly, runs, runWorkflow, syncSchedules, validateCron } fro
 import * as git from './git.js'
 import { deleteSessions, importSessions, listSessions } from './import.js'
 import * as voice from './voice.js'
+import * as workspace from './workspace.js'
 import * as push from './push.js'
 
 // dist/web next to the sources in development, ../web next to the bundled dist/server/index.mjs.
@@ -257,7 +258,7 @@ route('PATCH', '/projects/:pid', (params, b, ctx) => {
   const setupChanged = typeof b.worktreeSetup === 'string' && b.worktreeSetup !== p.worktreeSetup
   if (roleChanged || setupChanged || (agent && JSON.stringify(agent) !== JSON.stringify(p.agent))) localOnly(ctx)
   if (roleChanged) store.saveRole(p, b.role)
-  const patch = Object.fromEntries(Object.entries(b).filter(([k]) => ['name', 'tint', 'agent', 'verbosity', 'paused', 'pinned', 'worktreeSetup'].includes(k)))
+  const patch = Object.fromEntries(Object.entries(b).filter(([k]) => ['name', 'tint', 'agent', 'verbosity', 'paused', 'pinned', 'worktreeSetup', 'type'].includes(k)))
   if (agent) patch.agent = agent
   const updated = store.updateProject(p.id, patch)
   emit({ type: 'projects' })
@@ -684,6 +685,40 @@ route('PUT', '/projects/:pid/file', (params, b) => {
   if (files.internal(p, b.path)) throw new Forbidden("Savor's own files (.savor/) can't be edited here.")
   files.write(p, b.path, b.content)
   return {}
+})
+
+// ---- workspaces of the project types ----
+
+const asBadRequest = async <T>(fn: () => T | Promise<T>) => {
+  try {
+    return await fn()
+  } catch (e) {
+    throw new BadRequest((e as Error).message)
+  }
+}
+route('GET', '/projects/:pid/export', (params) => workspace.exportState(project(params)))
+route('PATCH', '/projects/:pid/export', async (params, b) => {
+  await asBadRequest(() => workspace.setExport(project(params), b))
+  return workspace.exportState(project(params))
+})
+// pandoc.yaml can name filters and engines that run as programs, so a paired device exports only
+// where it may use the terminal too.
+route('POST', '/projects/:pid/export', (params, _, ctx) => {
+  if (ctx.auth.origin !== 'local' && !store.state().terminalRemote)
+    throw new Forbidden('Exporting runs pandoc on your computer. Allow the terminal on paired devices at your computer to export from here.')
+  return asBadRequest(() => workspace.runExport(project(params)))
+})
+route('GET', '/projects/:pid/export/:name', (params, _, ctx) => {
+  const file = workspace.exportFile(project(params), params.name)
+  ctx.res.writeHead(200, { 'content-type': 'application/octet-stream', 'content-disposition': `attachment; filename="${encodeURIComponent(path.basename(file))}"` })
+  fs.createReadStream(file).pipe(ctx.res)
+})
+route('GET', '/projects/:pid/today', (params) => workspace.today(project(params)))
+route('PATCH', '/projects/:pid/today/tasks', (params, b) => asBadRequest(() => workspace.setTask(project(params), Number(b.line), String(b.raw), !!b.done)))
+route('POST', '/projects/:pid/today/tasks', (params, b) => {
+  if (!String(b.text ?? '').trim()) throw new BadRequest('A task needs a text.')
+  workspace.addTask(project(params), String(b.text))
+  return workspace.today(project(params))
 })
 
 // ---- import of existing agent sessions ----

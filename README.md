@@ -48,7 +48,7 @@
 
 ## Features
 
-- **Project types**: a new project is code, academic writing or a Kontor for notes and admin. A type brings the agents' instructions, its workflows and a first conversation in which the agent sets up the folders and asks what it needs to know, such as the citation style and the format to hand in.
+- **Project types**: a new project is code, academic writing or a Kontor for notes and admin. A type brings the agents' instructions, its workflows and a first conversation in which the agent sets up the folders and asks what it needs to know, such as the citation style and the format to hand in. Academic writing gets an **Export** tab that checks the citations against the bibliography and exports with pandoc in the chosen format and style; a Kontor gets **Today** with its deadlines, open tasks, inbox and the morning briefing.
 - **Projects as tabs**, each with its own color. Badges show which agents are working and which conversations need you.
 - **Conversations**: every task gets its own agent session. You can send new messages while an agent is working; Claude Code picks them up in the running turn. Turns the agent starts on its own, for example when a background task finishes, show up as working too. You get search, filters (All / Your turn / Working / Unread), colored labels, "Finish" and a "Show finished" toggle.
 - **Message protocol over MCP**: one acknowledgement and one conclusion per input, idempotent updates. Agents send acknowledgements, results, blocking questions, "next steps" and commit hashes. Their raw output goes to an activity log (thinking, commands, edits, tool calls, with durations).

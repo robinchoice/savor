@@ -171,6 +171,7 @@ export interface Project {
   paused: boolean
   pinned: boolean
   worktreeSetup: string
+  type?: string
   counts: { working: number; blocked: number; unread: number }
 }
 export interface Doc { id: string; title: string; content: string; updatedAt: string }

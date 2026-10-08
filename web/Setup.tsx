@@ -70,7 +70,7 @@ export function AddProject({ me, setMe, onAdded }: { me: Me; setMe: (m: Me) => v
       if (body.create) setMe({ ...me, projectsDir: dir })
       // A project type brings its ROLE.md and workflows, and a first conversation that sets the project up.
       if (body.create && template) {
-        await api('PATCH', `/projects/${p.id}`, { role: template.role })
+        await api('PATCH', `/projects/${p.id}`, { role: template.role, type: template.slug })
         for (const r of template.workflows.map((slug) => recipe(slug)!)) await api('POST', `/projects/${p.id}/workflows`, { name: r.title, prompt: r.prompt, collection: template.title, cron: r.schedule || null })
         const t = await api<{ id: string }>('POST', `/projects/${p.id}/threads`, { text: template.setup })
         onAdded()
