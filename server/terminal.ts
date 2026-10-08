@@ -1,25 +1,34 @@
 import os from 'node:os'
 import type { ServerResponse } from 'node:http'
 import type { IPty } from 'node-pty'
+import headless from '@xterm/headless'
+import serialize from '@xterm/addon-serialize'
+import unicode11 from '@xterm/addon-unicode11'
 import { emit, openStream } from './events.js'
 import { newId } from './store.js'
 
 // Terminals of a project, each a shell in the project folder or a worktree, shared by every window
 // that shows it. Every folder starts with one, more can be added and any closed. They live as long as
-// the daemon does; their recent output is kept so a window that opens later sees it.
+// the daemon does. A headless terminal keeps their screen, so a window that opens later sees it as it
+// is, with the modes the program set (alternate screen, cursor keys, bracketed paste, mouse).
 
-const SCROLLBACK = 200_000
+const { Terminal } = headless
+const { SerializeAddon } = serialize
+const { Unicode11Addon } = unicode11
 
+interface Screen { term: InstanceType<typeof Terminal>; state: InstanceType<typeof SerializeAddon> }
 // `command` runs in the shell once it starts, e.g. an agent's terminal UI.
-interface Term { id: string; projectId: string; cwd: string; pty: IPty | null; output: string; command?: string }
-interface Viewer { res: ServerResponse; remote: boolean }
+interface Term { id: string; projectId: string; cwd: string; pty: IPty | null; screen: Screen | null; command?: string }
+// A viewer that just opened holds back output until it got the screen.
+interface Viewer { res: ServerResponse; remote: boolean; held?: object[] }
 
 const terms = new Map<string, Term>()
 const viewers = new Map<string, Set<Viewer>>()
 // Folders that got their first terminal, so one closed there stays closed.
 const seeded = new Set<string>()
 
-const send = (id: string, data: object) => viewers.get(id)?.forEach((v) => v.res.write(`data: ${JSON.stringify(data)}\n\n`))
+const write = (v: Viewer, data: object) => v.res.write(`data: ${JSON.stringify(data)}\n\n`)
+const send = (id: string, data: object) => viewers.get(id)?.forEach((v) => (v.held ? v.held.push(data) : write(v, data)))
 const within = (n: unknown, min: number, max: number) => Math.round(Math.min(max, Math.max(min, Number(n) || min)))
 
 function shell() {
@@ -27,8 +36,31 @@ function shell() {
   return process.env.SHELL || os.userInfo().shell || '/bin/sh'
 }
 
+// The daemon's environment without what Electron and an AppImage put there: programs started in the
+// shell must not run as Node, nor load schemas and data from the app's mount.
+function environment() {
+  const { ELECTRON_RUN_AS_NODE, APPDIR, APPIMAGE, ARGV0, OWD, CHROME_DESKTOP, ...env } = process.env
+  if (APPDIR)
+    for (const [key, value] of Object.entries(env)) {
+      if (!value?.includes(APPDIR)) continue
+      const rest = value.split(':').filter((p) => !p.startsWith(APPDIR)).join(':')
+      if (rest) env[key] = rest
+      else delete env[key]
+    }
+  return env
+}
+
+function screen(cols: number, rows: number): Screen {
+  const term = new Terminal({ cols, rows, scrollback: 5000, allowProposedApi: true })
+  const state = new SerializeAddon()
+  term.loadAddon(state)
+  term.loadAddon(new Unicode11Addon())
+  term.unicode.activeVersion = '11'
+  return { term, state }
+}
+
 export function add(projectId: string, cwd: string, command?: string) {
-  const t: Term = { id: newId(), projectId, cwd, pty: null, output: '', command }
+  const t: Term = { id: newId(), projectId, cwd, pty: null, screen: null, command }
   terms.set(t.id, t)
   emit({ type: 'terminal', projectId })
   return { id: t.id, path: cwd, running: false }
@@ -53,13 +85,13 @@ export async function start(t: Term, cols: number, rows: number) {
   // check keeps two calls at once from starting two shells.
   const pty = await import('node-pty')
   if (t.pty) return resize(t, cols, rows)
-  // The desktop app runs the daemon as Node inside Electron; programs started in the shell must not.
-  const { ELECTRON_RUN_AS_NODE, ...env } = process.env
-  const p = pty.spawn(shell(), [], { name: 'xterm-256color', cwd: t.cwd, cols: within(cols, 10, 500), rows: within(rows, 2, 200), env: { ...env, TERM: 'xterm-256color', COLORTERM: 'truecolor' } })
+  cols = within(cols, 10, 500)
+  rows = within(rows, 2, 200)
+  const p = pty.spawn(shell(), [], { name: 'xterm-256color', cwd: t.cwd, cols, rows, env: { ...environment(), TERM: 'xterm-256color', COLORTERM: 'truecolor' } })
   t.pty = p
-  t.output = ''
+  const s = (t.screen = screen(cols, rows))
   p.onData((o) => {
-    t.output = (t.output + o).slice(-SCROLLBACK)
+    s.term.write(o)
     send(t.id, { o })
   })
   // A shell ended by stop() is already detached, and its viewers were told.
@@ -79,7 +111,9 @@ export async function start(t: Term, cols: number, rows: number) {
 export const input = (t: Term, data: string) => t.pty?.write(data)
 
 export function resize(t: Term, cols: number, rows: number) {
-  t.pty?.resize(within(cols, 10, 500), within(rows, 2, 200))
+  if (!t.pty) return
+  t.pty.resize(within(cols, 10, 500), within(rows, 2, 200))
+  t.screen?.term.resize(t.pty.cols, t.pty.rows)
 }
 
 export function stop(t: Term) {
@@ -93,6 +127,7 @@ export function stop(t: Term) {
 
 export function close(t: Term) {
   stop(t)
+  t.screen?.term.dispose()
   terms.delete(t.id)
   viewers.delete(t.id)
   emit({ type: 'terminal', projectId: t.projectId })
@@ -112,10 +147,18 @@ export function watch(t: Term, res: ServerResponse, remote: boolean) {
   openStream(res)
   const open = viewers.get(t.id) ?? new Set()
   viewers.set(t.id, open)
-  const v = { res, remote }
+  const v: Viewer = { res, remote, held: [] }
   open.add(v)
   res.on('close', () => open.delete(v))
-  res.write(`data: ${JSON.stringify({ reset: true, o: t.output, running: !!t.pty })}\n\n`)
+  // The screen once the output so far is parsed, then what came meanwhile.
+  const s = t.screen
+  const show = () => {
+    write(v, { reset: true, o: s ? s.state.serialize() : '', running: !!t.pty })
+    v.held?.forEach((data) => write(v, data))
+    v.held = undefined
+  }
+  if (s) s.term.write('', show)
+  else show()
 }
 
 // When the terminal is switched off for paired devices, the ones watching lose it right away.
