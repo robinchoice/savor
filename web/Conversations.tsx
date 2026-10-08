@@ -1073,7 +1073,16 @@ function Questions({ decisions, active, answers, setAnswer }: { decisions: Decis
   const n = decisions.length
 
   return (
-    <div class="questions">
+    <div
+      class="questions"
+      // A click on an option leaves the focus there, so Enter sends from the options like from the comment box.
+      onKeyDown={(e) => {
+        if (open && e.key === 'Enter' && !e.shiftKey && !e.isComposing && (e.target as HTMLElement).tagName === 'INPUT') {
+          e.preventDefault()
+          document.querySelector<HTMLButtonElement>('.composer.answering button.send')?.click()
+        }
+      }}
+    >
       {decisions.map((d, i) => {
         const a = answers[d.id] ?? {}
         const other = a.selected === undefined && !!a.answer?.trim()

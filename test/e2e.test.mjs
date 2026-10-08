@@ -251,6 +251,14 @@ test('questions are answered in one reply', async () => {
   await page.waitForSelector('text=Comment: Tag the release too.')
 })
 
+test('Enter sends the answers from a picked option', async () => {
+  await newConversation()
+  await send('ask: Ship it?')
+  await page.click('.option:has-text("Yes")')
+  await page.keyboard.press('Enter')
+  await page.waitForSelector('text=Selected: Yes')
+})
+
 test('a comment can be sent before every question is answered', async () => {
   await newConversation()
   await send('ask: Ship it?')
