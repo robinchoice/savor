@@ -39,8 +39,9 @@ export const nextRun = (wf: Workflow) => {
 }
 
 // The scheduled time that is due: the latest one that has come, unless it is settled.
+// croner leaves a time out of previousRuns until a full second after it, also when its job fires right on time.
 function dueSlot(wf: Workflow) {
-  const [slot] = new Cron(wf.cron!, { timezone: wf.timezone, paused: true }).previousRuns(1, new Date(Date.now() + 1))
+  const [slot] = new Cron(wf.cron!, { timezone: wf.timezone, paused: true }).previousRuns(1, new Date(Date.now() + 1000))
   return slot && slot.toISOString() > wf.settledAt ? slot : null
 }
 

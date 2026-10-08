@@ -598,6 +598,16 @@ test('workflows run in a new conversation', async () => {
   assert.deepEqual([saved.prompt, saved.cron], ['nightly check, thoroughly', '0 4 * * *'])
 })
 
+test('a workflow runs at the first scheduled time after it was saved', async () => {
+  const [project] = (await api('GET', '/projects')).body
+  const wf = (await api('POST', `/projects/${project.id}/workflows`, { name: 'Every five', prompt: 'every five', cron: '*/5 * * * * *' })).body
+  const first = Math.floor(Date.parse(wf.settledAt) / 5000) * 5000 + 5000
+  let run
+  await until(async () => (run = (await api('GET', `/projects/${project.id}/threads`)).body.find((t) => t.title === 'Every five')), 15_000)
+  await api('PUT', `/projects/${project.id}/workflows/${wf.id}`, { enabled: false })
+  assert.ok(Date.parse(run.createdAt) < first + 1000, `ran at ${run.createdAt}, due at ${new Date(first).toISOString()}`)
+})
+
 test('a workflow lists its runs, catches up a missed time and skips one while a run is open', async () => {
   const [project] = (await api('GET', '/projects')).body
   const list = `/projects/${project.id}/workflows`
