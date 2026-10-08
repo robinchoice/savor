@@ -1,10 +1,10 @@
-import { Fragment } from 'preact'
+import { Fragment, render } from 'preact'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import {
   Asterisk, Hexagon, Code2, Sparkles, Orbit, Plus, Search, MessageSquare, Check, MoreHorizontal, PanelLeft, PanelRight, FileText, Globe,
-  CircleAlert, ArrowUp, ArrowLeft, Pencil, MessageSquarePlus, Brain, Terminal, Wrench, ArrowRight, Smartphone, Monitor, Bot, ShieldQuestion, X, ChevronUp, ChevronDown, ChevronRight, Paperclip, GitBranch, GitFork, GitMerge, Trash2, Copy, FileDiff, Split, SquareArrowOutUpRight, Workflow as WorkflowIcon, Mail, MailOpen,
+  CircleAlert, ArrowUp, ArrowLeft, Pencil, MessageSquarePlus, Brain, Terminal, Wrench, ArrowRight, Smartphone, Monitor, Bot, ShieldQuestion, X, ChevronUp, ChevronDown, ChevronRight, Paperclip, GitBranch, GitFork, GitMerge, Trash2, Copy, FileDiff, Split, SquareArrowOutUpRight, Workflow as WorkflowIcon, Mail, MailOpen, SquareTerminal,
 } from 'lucide-preact'
 import {
   api, avatarStyle, cap, duration, formatStamp, formatTime, go, initial, PROVIDER_NAMES, runTrigger, useApi, kindOf, RINGS, type ActivityEvent, type AgentConfig, type Attachment, type Decision, type Message, type Proc, type Project, type Reason, type Thread, type Worktree,
@@ -16,11 +16,35 @@ import { PleasanceFooter } from './PleasanceFooter'
 import { Changes, type ReviewComment, type Source } from './Changes'
 import { Fanout } from './Fanout'
 import { setPrefs, usePrefs } from './prefs'
-import { showTerminal } from './Terminal'
+import { runInTerminal, showTerminal } from './Terminal'
+
+const SHELL = /\blanguage-(bash|sh|shell|zsh)\b/
 
 export function Markdown({ text }: { text: string }) {
   const html = useMemo(() => DOMPurify.sanitize(marked.parse(text, { async: false }) as string), [text])
-  return <div class="md" dangerouslySetInnerHTML={{ __html: html }} />
+  const ref = useRef<HTMLDivElement>(null)
+  // Shell code blocks get a button beside them that runs the command in the project's terminal.
+  useLayoutEffect(() => {
+    const slots: HTMLElement[] = []
+    for (const code of ref.current!.querySelectorAll<HTMLElement>('pre > code')) {
+      if (!SHELL.test(code.className)) continue
+      const pre = code.parentElement!
+      const row = document.createElement('div')
+      row.className = 'md-command'
+      pre.replaceWith(row)
+      const slot = document.createElement('span')
+      row.append(pre, slot)
+      slots.push(slot)
+      render(
+        <button class="ghost small" title="Run in the terminal below" onClick={() => runInTerminal(code.textContent!.trimEnd())}>
+          <SquareTerminal size={13} /> Run in terminal
+        </button>,
+        slot,
+      )
+    }
+    return () => slots.forEach((slot) => render(null, slot))
+  }, [html])
+  return <div class="md" ref={ref} dangerouslySetInnerHTML={{ __html: html }} />
 }
 
 const PROVIDER_ICONS: Record<string, [any, string]> = {
@@ -1072,6 +1096,11 @@ function AttachmentImage({ path }: { path: string }) {
 
 type Pick = { selected?: number; answer?: string }
 const hasAnswer = (a?: Pick) => a?.selected !== undefined || !!a?.answer?.trim()
+const growToFit = (el: HTMLTextAreaElement | null) => {
+  if (!el) return
+  el.style.height = 'auto'
+  el.style.height = el.scrollHeight + 'px'
+}
 
 // The answers are picked here and sent from the composer, together with an optional comment.
 function Questions({ decisions, active, answers, setAnswer }: { decisions: Decision[]; active: boolean; answers: Record<string, Pick>; setAnswer: (id: string, a: Pick) => void }) {
@@ -1083,7 +1112,7 @@ function Questions({ decisions, active, answers, setAnswer }: { decisions: Decis
       class="questions"
       // A click on an option leaves the focus there, so Enter sends from the options like from the comment box.
       onKeyDown={(e) => {
-        if (open && e.key === 'Enter' && !e.shiftKey && !e.isComposing && (e.target as HTMLElement).tagName === 'INPUT') {
+        if (open && e.key === 'Enter' && !e.shiftKey && !e.isComposing && ['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement).tagName)) {
           e.preventDefault()
           document.querySelector<HTMLButtonElement>('.composer.answering button.send')?.click()
         }
@@ -1111,13 +1140,18 @@ function Questions({ decisions, active, answers, setAnswer }: { decisions: Decis
                     </label>
                   ))}
                 <label class={`option other ${other ? 'selected' : ''}`}>
-                  <input type="radio" name={d.id} checked={other} onChange={(e) => (e.currentTarget.nextElementSibling as HTMLInputElement).focus()} />
-                  <input
+                  <input type="radio" name={d.id} checked={other} onChange={(e) => (e.currentTarget.nextElementSibling as HTMLElement).focus()} />
+                  <textarea
                     class="other-answer"
+                    rows={1}
+                    ref={growToFit}
                     placeholder={d.options.length ? 'Something else…' : 'Your answer…'}
                     value={a.answer ?? ''}
                     onFocus={() => a.answer?.trim() && setAnswer(d.id, { answer: a.answer })}
-                    onInput={(e) => setAnswer(d.id, { answer: e.currentTarget.value })}
+                    onInput={(e) => {
+                      growToFit(e.currentTarget)
+                      setAnswer(d.id, { answer: e.currentTarget.value })
+                    }}
                   />
                 </label>
               </div>

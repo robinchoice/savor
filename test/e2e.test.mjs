@@ -333,7 +333,12 @@ test('an MCP server can ask to open a page, as a link with Done and Decline', as
 test("an agent's own clarifying questions become decisions", async () => {
   await newConversation()
   await send('native-ask: Which color?')
-  await page.fill('.option.other input.other-answer', 'Purple')
+  const other = page.locator('.option.other textarea.other-answer')
+  await other.fill('Purple')
+  const oneLine = (await other.boundingBox()).height
+  await other.fill('A long answer that wraps onto more lines. '.repeat(10))
+  assert.ok((await other.boundingBox()).height > oneLine * 2)
+  await other.fill('Purple')
   await page.click('.composer button:has-text("Send answers")')
   await page.waitForSelector('text=Answered: Purple')
 })

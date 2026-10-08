@@ -299,6 +299,9 @@ main { flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
 .md code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; font-size: 0.88em; }
 .md pre { background: var(--code-bg); padding: 10px 12px; border-radius: 8px; overflow-x: auto; margin: 8px 0; }
 .md pre code { background: none; padding: 0; }
+.md-command { display: flex; align-items: flex-start; gap: 8px; margin: 8px 0; }
+.md-command pre { flex: 1; min-width: 0; margin: 0; }
+.md-command button { margin-top: 5px; white-space: nowrap; }
 .md ul, .md ol { padding-left: 22px; margin: 6px 0 10px; }
 .md table { border-collapse: collapse; margin: 8px 0; }
 .md th, .md td { border: 1px solid var(--line-strong); padding: 5px 9px; }
@@ -316,7 +319,7 @@ main { flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
 .option.selected { border-color: var(--attn); background: color-mix(in srgb, var(--attn) 8%, transparent); }
 .recommended-pill { padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 500; color: var(--attn); background: color-mix(in srgb, var(--attn) 14%, transparent); white-space: nowrap; }
 .option input:checked { border-color: var(--attn); background: radial-gradient(circle, var(--attn) 0 38%, transparent 44%); }
-.option .other-answer { flex: 1; min-width: 0; border: 0; background: none; padding: 0; border-radius: 0; }
+.option .other-answer { flex: 1; min-width: 0; border: 0; background: none; padding: 0; border-radius: 0; resize: none; overflow: hidden; }
 .option .other-answer::placeholder { color: var(--muted); }
 .q-hint { font-size: 12.5px; color: var(--faint); }
 .answered { display: flex; align-items: center; gap: 6px; color: var(--muted); }
