@@ -20,6 +20,8 @@ import { fanoutBranches } from '../shared/fanout.js'
 import { handleMcp } from './mcp.js'
 import { claudeAside } from './claude.js'
 import { codexAside } from './codex.js'
+import { acpAside } from './acp.js'
+import { antigravityAside } from './antigravity.js'
 import { isUnsafe, listAgents, listSkills, listUsage, mergeAgent } from './providers.js'
 import { nextRun, runs, runWorkflow, syncSchedules, validateCron } from './scheduler.js'
 import * as git from './git.js'
@@ -383,7 +385,7 @@ route('POST', '/projects/:pid/threads/:tid/fork', (params) => {
   const parent = store.getThread(p, params.tid)
   if (agents.isBusy(parent.id)) throw new BadRequest('The agent is still working. Fork the conversation when it has finished.')
   const provider = parent.agent.provider
-  const sessionId = (['claude', 'codex'].includes(provider) && parent.agentSessions.find((s) => s.provider === provider)?.sessionId) || null
+  const sessionId = (['claude', 'codex', 'opencode'].includes(provider) && parent.agentSessions.find((s) => s.provider === provider)?.sessionId) || null
   const fork = { provider, sessionId, messages: store.readMessages(p, parent.id).length }
   const t = store.createThread(p, { title: `Fork of ${parent.title}`, agent: parent.agent, parentId: parent.id, fork, worktree: parent.worktree })
   emit({ type: 'thread', projectId: p.id, threadId: t.id })
@@ -593,7 +595,15 @@ route('POST', '/projects/:pid/threads/:tid/btw', async (params, b) => {
   const prompt = `The user asks a quick side question while you work on this conversation. Answer it briefly from what you already know. Don't use tools; this answer does not become part of the conversation.\n\nQuestion: ${question}`
   if (provider === 'claude') return { text: await claudeAside(store.cwdOf(p, t), sid, model, prompt) }
   if (provider === 'codex') return { text: await codexAside(store.cwdOf(p, t), sid, model, prompt) }
-  throw new BadRequest('Side questions work with Claude Code and Codex.')
+  if (provider === 'antigravity') {
+    const history = store
+      .readMessages(p, t.id)
+      .filter((m) => m.text && m.kind !== 'error')
+      .slice(-30)
+      .map((m) => `[${m.kind === 'user' ? 'user' : 'agent'}] ${m.text!.slice(0, 2000)}`)
+    return { text: await antigravityAside(store.cwdOf(p, t), model, history.length ? `The conversation so far:\n${history.join('\n\n')}\n\n` : '', prompt) }
+  }
+  return { text: await acpAside(provider, store.cwdOf(p, t), sid, model, prompt) }
 })
 // A conversation continues in the agent's own terminal UI, resuming its session there. Savor's process
 // for it goes first, so the two don't write to one session; the next input here resumes what happened there.
@@ -603,10 +613,11 @@ route('POST', '/projects/:pid/threads/:tid/terminal', (params, _, ctx) => {
   const t = store.getThread(p, params.tid)
   const provider = t.agent.provider
   const sid = t.agentSessions.find((s) => s.provider === provider)?.sessionId
-  if (!sid || (provider !== 'claude' && provider !== 'codex')) throw new BadRequest('Only a Claude Code or Codex conversation that has started can continue in the terminal.')
+  const resume = { claude: `${BIN.claude} --resume`, codex: `${BIN.codex} resume`, opencode: `${BIN.opencode} --session`, antigravity: `${BIN.antigravity} --conversation` }[provider as string]
+  if (!sid || !resume) throw new BadRequest('Only a Claude Code, Codex, OpenCode or Antigravity conversation that has started can continue in the terminal.')
   if (agents.isBusy(t.id)) throw new BadRequest('The agent is still working. Open it in the terminal when it has finished.')
   agents.stopAgent(p, t.id)
-  return terminal.add(p.id, store.cwdOf(p, t), provider === 'claude' ? `${BIN.claude} --resume ${sid}` : `${BIN.codex} resume ${sid}`)
+  return terminal.add(p.id, store.cwdOf(p, t), `${resume} ${sid}`)
 })
 route('DELETE', '/projects/:pid/terminal/:tid', (params, _, ctx) => {
   terminalAllowed(ctx)

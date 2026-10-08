@@ -728,7 +728,7 @@ export function ThreadView({ project, threadId, back, next }: { project: Project
     go(`/p/${project.id}/t/${t.id}`)
   }
   // Claude Code's and Codex's own terminal UI resume the conversation's session.
-  const inTerminal = ['claude', 'codex'].includes(thread.agent.provider) && thread.agentSessions.some((s) => s.provider === thread.agent.provider)
+  const inTerminal = ['claude', 'codex', 'opencode', 'antigravity'].includes(thread.agent.provider) && thread.agentSessions.some((s) => s.provider === thread.agent.provider)
   const openInTerminal = async () => showTerminal((await api<{ id: string }>('POST', `${base}/terminal`)).id)
   const remove = async () => {
     if (!confirm('Delete this conversation and its history?')) return

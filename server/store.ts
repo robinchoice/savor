@@ -151,7 +151,6 @@ interface State {
   projects: { id: string; path: string }[]
   devices: Device[]
   presets: Preset[]
-  providers: Record<string, { command: string[] }>
   relay: { url: string | null; enabled: boolean }
   // Where paired devices reach this computer directly (LAN or VPN), when that is not PUBLIC_URL.
   publicUrl?: string | null
@@ -214,7 +213,6 @@ export function state(): State {
     projects: [],
     devices: [],
     presets: [],
-    providers: {},
     relay: { url: null, enabled: false },
     identity: Buffer.from(crypto.randomBytes(32)).toString('base64url'),
     relayToken: crypto.randomBytes(24).toString('hex'),

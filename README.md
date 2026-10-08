@@ -166,8 +166,9 @@ Without a connected relay, the pairing QR code points at `SAVOR_PUBLIC_URL`.
 | `RELAY_MAX_DAEMONS` | `5000` | Relay only: computers that can be connected at once |
 | `SAVOR_CHROMIUM` | Playwright Chromium, then system Chrome/Chromium | Browser for the preview |
 | `SAVOR_CLAUDE_BIN`, `SAVOR_CODEX_BIN`, `SAVOR_OPENCODE_BIN`, `SAVOR_GROK_BIN`, `SAVOR_GEMINI_BIN`, `SAVOR_ANTIGRAVITY_BIN` | `claude`, `codex`, `opencode`, `grok`, `gemini`, `agy` | Agent binaries |
+| `SAVOR_ANTIGRAVITY_HOME` | `~/.gemini` | Where agy keeps its settings |
 
-Antigravity has no stable headless protocol yet, so it runs a configurable command. Set it in `~/.savor/state.json` with `"providers": { "antigravity": { "command": ["agy", "-p", "{prompt}"] } }`. Its stdout becomes the result, and `SAVOR_MCP_URL` with the bearer token `SAVOR_MCP_TOKEN` points it at Savor's MCP server.
+Antigravity runs `agy --print` once per turn and continues the conversation with `--conversation`. agy reads MCP servers only from its own settings, so Savor adds a `savor` stdio server to `~/.gemini/config/mcp_config.json` that forwards to the conversation it runs for, and allows its tools with `mcp(savor/*)` in `~/.gemini/antigravity-cli/settings.json`. Headless agy cannot ask for approval: whatever the chosen mode doesn't allow is denied, and the activity log names it.
 
 ## How it works
 
@@ -179,6 +180,7 @@ server/
   claude.ts     Claude Code over stream-json with stdio permission prompts
   codex.ts      Codex over the app-server protocol (JSON-RPC)
   acp.ts        OpenCode, Grok Build and Gemini CLI over the Agent Client Protocol
+  antigravity.ts  Antigravity: one `agy --print` run per turn, stream-json, MCP through a stdio bridge
   jsonrpc.ts    newline-delimited JSON-RPC over stdio
   providers.ts  what each agent offers, and whether it is installed and signed in
   mcp.ts        MCP tools the agents call
@@ -237,7 +239,7 @@ CI runs typecheck and the end-to-end tests on every push. Pushing a tag like `v0
 Early. Known gaps:
 - There is no public relay instance yet: run your own (see above) or use a direct connection.
 - A browser remembers one paired computer at a time.
-- The OpenCode, Grok Build, Gemini CLI and Antigravity adapters haven't been tested against the real CLIs.
+- The Grok Build and Gemini CLI adapters haven't been tested against the real CLIs.
 
 ## License
 

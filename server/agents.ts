@@ -1,15 +1,15 @@
 // Turns, queues and sessions: one agent session per conversation, one turn at a time, input that
 // arrives during a turn waits in the queue.
-import { spawn, type ChildProcess } from 'node:child_process'
 import path from 'node:path'
 import * as store from './store.js'
 import type { AgentConfig, Message, Origin, Project, Provider, Question, Thread } from './store.js'
 import { emit } from './events.js'
-import { appUrl, BIN, command, mcpUrl } from './config.js'
-import { Activity, configKey, forkOf, sessionIdOf, systemPrompt, type Answer, type ApprovalRequest, type Host, type Session, type TurnInput } from './session.js'
+import { appUrl } from './config.js'
+import { Activity, configKey, forkOf, sessionIdOf, type Answer, type ApprovalRequest, type Host, type Session, type TurnInput } from './session.js'
 import { ClaudeSession } from './claude.js'
 import { CodexSession } from './codex.js'
 import { AcpSession } from './acp.js'
+import { AntigravitySession } from './antigravity.js'
 import * as push from './push.js'
 import { setupOf } from './git.js'
 import * as ci from './ci.js'
@@ -348,7 +348,7 @@ function sessionFor(p: Project, thread: Thread): Session {
     provider === 'claude' ? new ClaudeSession(host, thread)
     : provider === 'codex' ? new CodexSession(host, thread)
     : provider === 'opencode' || provider === 'grok' || provider === 'gemini' ? new AcpSession(host, thread)
-    : new CommandSession(host, thread)
+    : new AntigravitySession(host, thread)
   holder.session = session
   sessions.set(tid, { session })
   return session
@@ -585,62 +585,4 @@ export function shutdown() {
   const all = [...sessions.values()]
   sessions.clear()
   for (const { session } of all) session.kill()
-}
-
-// ---- agents without a stable headless protocol (Antigravity) ----
-
-// They run a configurable command once per turn (state.json → providers.<name>.command, "{prompt}" is
-// replaced), and their stdout becomes the conclusion. SAVOR_MCP_URL and the bearer token
-// SAVOR_MCP_TOKEN point them at Savor's MCP server.
-const DEFAULT_COMMANDS: Record<string, string[]> = { antigravity: [BIN.antigravity, '-p', '{prompt}'] }
-
-class CommandSession implements Session {
-  readonly config: string
-  private child?: ChildProcess
-  private provider: Provider
-
-  constructor(private host: Host, thread: Thread) {
-    this.config = configKey(thread.agent)
-    this.provider = thread.agent.provider
-  }
-
-  start({ context, input }: TurnInput) {
-    const { p, tid, activity } = this.host
-    const [bin, ...args] = store.state().providers[this.provider]?.command ?? DEFAULT_COMMANDS[this.provider] ?? [BIN.antigravity, '-p', '{prompt}']
-    const thread = store.getThread(p, tid)
-    const first = !thread.agentSessions.length
-    const full = first ? `${systemPrompt(p, thread)}\n\n${context}${input}` : context + input
-    const out: string[] = []
-    let stderr = ''
-    activity.start('run', 'command', `${bin} (${this.provider})`)
-    const child = spawn(...command(bin, args.map((a) => a.replace('{prompt}', full))), {
-      cwd: this.host.cwd,
-      env: { ...process.env, SAVOR_MCP_URL: mcpUrl(p.id, tid), SAVOR_MCP_TOKEN: store.state().mcpToken },
-      stdio: ['ignore', 'pipe', 'pipe'],
-    })
-    this.child = child
-    child.stdout!.on('data', (d) => out.push(String(d)))
-    child.stderr!.on('data', (d) => (stderr = (stderr + d).slice(-4000)))
-    child.on('error', (e) => this.host.ended({ error: e.message }))
-    child.on('exit', (code, signal) => {
-      activity.finish('run')
-      this.child = undefined
-      if (code === 0) this.host.ended({ text: out.join('') })
-      else this.host.ended({ error: signal === 'SIGTERM' ? 'Turn stopped.' : `${bin} exited with ${code}: ${stderr.trim()}` })
-    })
-    if (first) store.updateThread(p, tid, { agentSessions: [{ provider: this.provider, sessionId: 'command' }] })
-  }
-
-  interrupt() {
-    this.child?.kill('SIGTERM')
-  }
-
-  end() {
-    this.child?.kill('SIGTERM')
-    sessions.delete(this.host.tid)
-  }
-
-  kill() {
-    this.end()
-  }
 }

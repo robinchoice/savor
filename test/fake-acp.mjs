@@ -15,10 +15,13 @@ if (args[0] === '--version') {
   process.exit(0)
 }
 if (args[0] === 'models') {
-  console.log('fake/model\nfake/other')
+  console.log(`fake/model\n${JSON.stringify({ name: 'Fake model', variants: { low: {}, high: {} } }, null, 2)}\nfake/other\n${JSON.stringify({ name: 'Other' }, null, 2)}`)
   process.exit(0)
 }
-if (process.env.FAKE_AGENT_LOG) fs.appendFileSync(process.env.FAKE_AGENT_LOG, JSON.stringify({ agent: args[0] === '--acp' ? 'gemini' : 'opencode', argv: process.argv }) + '\n')
+if (args[0] === 'session') process.exit(0)
+const agent = args[0] === '--acp' ? 'gemini' : 'opencode'
+const log = (entry) => process.env.FAKE_AGENT_LOG && fs.appendFileSync(process.env.FAKE_AGENT_LOG, JSON.stringify({ agent, ...entry }) + '\n')
+log({ argv: process.argv })
 
 const out = (m) => process.stdout.write(JSON.stringify(m) + '\n')
 const notify = (method, params) => out({ jsonrpc: '2.0', method, params })
@@ -48,11 +51,17 @@ let cancelled = false
 async function prompt(params, reply) {
   cancelled = false
   const text = params.prompt.find((p) => p.type === 'text')?.text ?? ''
-  const input = text.slice(text.indexOf('New input:\n') + 'New input:\n'.length).trim()
+  const at = text.indexOf('New input:\n')
+  const input = at < 0 ? '' : text.slice(at + 'New input:\n'.length).trim()
   notify('session/update', { sessionId, update: { sessionUpdate: 'tool_call', toolCallId: 'call1', title: 'Reading files', kind: 'read', status: 'in_progress' } })
   notify('session/update', { sessionId, update: { sessionUpdate: 'tool_call_update', toolCallId: 'call1', status: 'completed' } })
   let answer
-  if (input.startsWith('approve:')) {
+  if (!input) {
+    // A side question carries no Savor envelope.
+    answer = `ACP aside: ${text.slice(text.lastIndexOf('Question: ') + 'Question: '.length)}`
+    notify('session/update', { sessionId: params.sessionId, update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: answer } } })
+    return reply({ stopReason: 'end_turn' })
+  } else if (input.startsWith('approve:')) {
     const r = await agentRequest('session/request_permission', {
       sessionId,
       toolCall: { toolCallId: 'call2', title: 'Run rm -rf build', kind: 'execute', status: 'pending', rawInput: { command: 'rm -rf build' } },
@@ -67,6 +76,7 @@ async function prompt(params, reply) {
   }
   if (cancelled) return reply({ stopReason: 'cancelled' })
   notify('session/update', { sessionId, update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: answer } } })
+  notify('session/update', { sessionId, update: { sessionUpdate: 'usage_update', used: 4200, size: 100000 } })
   await conclude(answer)
   reply({ stopReason: 'end_turn' })
 }
@@ -78,15 +88,21 @@ rl.on('line', (line) => {
   const reply = (result) => out({ jsonrpc: '2.0', id: msg.id, result })
   switch (msg.method) {
     case 'initialize':
-      return reply({ protocolVersion: 1, agentCapabilities: { loadSession: true, promptCapabilities: { image: true } }, authMethods: [] })
+      return reply({ protocolVersion: 1, agentCapabilities: { loadSession: true, promptCapabilities: { image: true }, sessionCapabilities: { fork: {} } }, authMethods: [] })
     case 'session/new':
       mcp = msg.params.mcpServers.find((s) => s.name === 'savor')
-      return reply({ sessionId, modes: { currentModeId: 'build', availableModes: [{ id: 'build', name: 'Build' }, { id: 'plan', name: 'Plan' }] } })
+      reply({ sessionId, modes: { currentModeId: 'build', availableModes: [{ id: 'build', name: 'Build' }, { id: 'plan', name: 'Plan' }] } })
+      return notify('session/update', { sessionId, update: { sessionUpdate: 'available_commands_update', availableCommands: [{ name: 'review', description: 'review changes' }] } })
+    case 'session/fork':
+      log({ fork: msg.params.sessionId })
+      mcp = msg.params.mcpServers.find((s) => s.name === 'savor')
+      return reply({ sessionId: `fork-of-${msg.params.sessionId}`, modes: { currentModeId: 'build', availableModes: [{ id: 'build', name: 'Build' }, { id: 'plan', name: 'Plan' }] } })
     case 'session/load':
       mcp = msg.params.mcpServers.find((s) => s.name === 'savor')
       return reply({ modes: { currentModeId: 'build', availableModes: [{ id: 'build', name: 'Build' }, { id: 'plan', name: 'Plan' }] } })
     case 'session/set_mode':
     case 'session/set_model':
+      log({ [msg.method]: msg.params.modeId ?? msg.params.modelId })
       return reply({})
     case 'session/prompt':
       return void prompt(msg.params, reply)

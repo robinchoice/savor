@@ -7,6 +7,8 @@ import type { AgentConfig, Provider } from './store.js'
 import { BIN, command } from './config.js'
 import { codexSkills, codexUsage, probeCodex } from './codex.js'
 import { probeClaude } from './claude.js'
+import { antigravitySkills, antigravityUsage, probeAntigravity } from './antigravity.js'
+import { acpSkills } from './acp.js'
 
 export interface ModeInfo { id: string; label: string; detail: string; unsafe?: boolean }
 export interface ModelInfo { id: string; label: string; detail?: string; efforts?: string[] }
@@ -116,9 +118,15 @@ export const STATIC: Record<Provider, Static> = {
     id: 'antigravity',
     name: 'Antigravity',
     models: [],
-    efforts: [],
+    efforts: ['low', 'medium', 'high', 'xhigh', 'max'],
     defaultEffort: '',
-    modes: [{ id: 'default', label: 'Configured permissions', detail: 'Runs the configured command; permissions come from your CLI settings.' }],
+    // Headless agy cannot ask for approval: what a mode does not allow is denied.
+    modes: [
+      { id: 'default', label: 'Default', detail: "Commands and edits run as agy's settings allow; Antigravity cannot ask here, so the rest is denied." },
+      { id: 'accept-edits', label: 'Accept edits', detail: "File edits run without asking. Commands run only with an allow rule in agy's settings." },
+      { id: 'plan', label: 'Plan', detail: 'Explore and plan without changing files.' },
+      { id: 'bypass', label: 'Bypass permissions', detail: 'Run every action without asking, commands included. Use only in an isolated environment you trust.', unsafe: true },
+    ],
     defaultMode: 'default',
     fast: false,
     signIn: 'agy',
@@ -176,9 +184,18 @@ const probes: Record<Provider, () => Promise<Probe>> = {
   async opencode() {
     const v = await run(BIN.opencode, ['--version'])
     if (v.missing) return { installed: false, version: null, signedIn: null, account: null }
-    const models = await run(BIN.opencode, ['models'])
-    const ids = models.ok ? models.out.split('\n').map((l) => l.trim()).filter((l) => /^[\w.-]+\/\S+$/.test(l)) : []
-    return { installed: true, version: version(v.out), signedIn: ids.length > 0, account: null, models: ids.map((id) => ({ id, label: id })) }
+    // Each model's id on a line of its own, then its details as JSON; the variants are its effort levels.
+    const out = await run(BIN.opencode, ['models', '--verbose'], 30_000)
+    const parts = out.ok ? out.out.split(/^([\w.-]+\/\S+)$/m) : []
+    const models: ModelInfo[] = []
+    for (let i = 1; i < parts.length; i += 2) {
+      let info: any = {}
+      try {
+        info = JSON.parse(parts[i + 1])
+      } catch {}
+      models.push({ id: parts[i], label: info.name ? `${info.name} · ${parts[i].split('/')[0]}` : parts[i], efforts: Object.keys(info.variants ?? {}) })
+    }
+    return { installed: true, version: version(v.out), signedIn: models.length > 0, account: null, models }
   },
   async grok() {
     const v = await run(BIN.grok, ['--version'])
@@ -201,7 +218,8 @@ const probes: Record<Provider, () => Promise<Probe>> = {
   },
   async antigravity() {
     const v = await run(BIN.antigravity, ['--version'])
-    return { installed: !v.missing, version: v.missing ? null : version(v.out), signedIn: null, account: null }
+    if (v.missing) return { installed: false, version: null, signedIn: null, account: null }
+    return { installed: true, version: version(v.out), ...(await probeAntigravity()) }
   },
 }
 
@@ -226,10 +244,12 @@ export function listAgents(refresh = false): Promise<ProviderInfo[]> {
 const skillProbes: Record<string, (cwd: string) => Promise<SkillInfo[]>> = {
   claude: (cwd) => probeClaude(cwd).then((r) => r.skills),
   codex: (cwd) => codexSkills(cwd).catch(() => []),
+  opencode: (cwd) => acpSkills('opencode', cwd).catch(() => []),
+  antigravity: (cwd) => antigravitySkills(cwd).catch(() => []),
 }
 const skillCache = new Map<string, { at: number; list: Promise<SkillInfo[]> }>()
 
-// Savor answers /btw itself, for both agents.
+// Savor answers /btw itself, for every agent.
 const BTW: SkillInfo = { name: 'btw', description: 'Ask a side question, also while the agent works; the answer stays out of the conversation' }
 
 export async function listSkills(provider: string, cwd: string): Promise<SkillInfo[]> {
@@ -243,8 +263,9 @@ export async function listSkills(provider: string, cwd: string): Promise<SkillIn
   return list
 }
 
-// How much of each subscription limit is used, as the agents report it: Claude Code's /usage and
-// Codex's rate limits. An agent without a subscription, or one that does not answer, is left out.
+// How much of each subscription limit is used, as the agents report it: Claude Code's /usage, Codex's
+// rate limits and Antigravity's /usage. OpenCode has no subscription of its own. An agent without a
+// subscription, or one that does not answer, is left out.
 export interface UsageWindow { label: string; percent: number; resets: string | null }
 export interface Usage { provider: Provider; name: string; windows: UsageWindow[] }
 
@@ -274,6 +295,9 @@ const usageProbes: Partial<Record<Provider, () => Promise<UsageWindow[]>>> = {
     return [limits?.primary, limits?.secondary]
       .filter((w): w is { usedPercent: number; windowDurationMins: number; resetsAt: number | null } => !!w)
       .map((w) => ({ label: windowLabel(w.windowDurationMins), percent: w.usedPercent, resets: w.resetsAt ? resetTime(w.resetsAt) : null }))
+  },
+  async antigravity() {
+    return (await antigravityUsage()).map((w) => ({ label: w.label, percent: w.percent, resets: w.resetsAt ? resetTime(w.resetsAt / 1000) : null }))
   },
 }
 

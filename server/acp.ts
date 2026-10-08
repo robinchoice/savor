@@ -1,14 +1,15 @@
 // Agents that speak the Agent Client Protocol (OpenCode, Grok Build, Gemini CLI): one agent process per
 // conversation, prompts via session/prompt, progress via session/update, approvals via
 // session/request_permission.
-import { spawn } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import * as store from './store.js'
 import type { Provider, Thread } from './store.js'
 import { BIN, command, mcpUrl, VERSION } from './config.js'
 import { Rpc, RpcError } from './jsonrpc.js'
-import { configKey, rememberSession, sessionIdOf, summarize, systemPrompt, type Host, type Session, type TurnInput } from './session.js'
+import { configKey, forkOf, rememberSession, sessionIdOf, summarize, systemPrompt, type Host, type Session, type TurnInput } from './session.js'
+import type { SkillInfo } from './providers.js'
 
 const MIME: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp' }
 
@@ -30,6 +31,8 @@ export class AcpSession implements Session {
   private rpc: Rpc
   private ready: Promise<void>
   private sessionId = ''
+  // Whether the session is new, so the first prompt carries Savor's protocol.
+  private fresh = true
   private loading = false
   private text = ''
   private thinking = false
@@ -54,32 +57,37 @@ export class AcpSession implements Session {
       clientInfo: { name: 'savor', version: VERSION },
     })
     const mcpServers = [{ type: 'http', name: 'savor', url: mcpUrl(p.id, tid), headers: [{ name: 'Authorization', value: `Bearer ${store.state().mcpToken}` }] }]
-    const sid = sessionIdOf(this.thread, a.provider)
+    const sid = sessionIdOf(store.getThread(p, tid), a.provider)
+    const fork = forkOf(p, store.getThread(p, tid), a.provider)
     let session: any = null
     if (sid && init.agentCapabilities?.loadSession) {
       this.loading = true
       session = await this.rpc.request('session/load', { sessionId: sid, cwd: this.host.cwd, mcpServers }).catch(() => null)
       this.loading = false
       if (session) session.sessionId = sid
+    } else if (fork && init.agentCapabilities?.sessionCapabilities?.fork) {
+      session = await this.rpc.request('session/fork', { sessionId: fork, cwd: this.host.cwd, mcpServers }).catch(() => null)
     }
+    this.fresh = !session
     if (!session) session = await this.rpc.request('session/new', { cwd: this.host.cwd, mcpServers })
     this.sessionId = session.sessionId
     rememberSession(p, tid, a.provider, this.sessionId)
     if (a.permissionMode && session.modes?.availableModes?.some((m: any) => m.id === a.permissionMode) && session.modes.currentModeId !== a.permissionMode)
       await this.rpc.request('session/set_mode', { sessionId: this.sessionId, modeId: a.permissionMode }).catch(() => {})
-    if (a.model) await this.rpc.request('session/set_model', { sessionId: this.sessionId, modelId: a.model }).catch(() => {})
+    const model = withEffort(a.provider, a.model || (a.reasoning ? session.models?.currentModelId : ''), a.reasoning)
+    if (model) await this.rpc.request('session/set_model', { sessionId: this.sessionId, modelId: model }).catch(() => {})
   }
 
   start({ context, input, images }: TurnInput) {
     this.text = ''
-    // ACP has no system prompt: the protocol goes in front of the first prompt of a session.
-    const first = !sessionIdOf(this.thread, this.thread.agent.provider)
-    const content = [
-      { type: 'text', text: first ? `${systemPrompt(this.host.p, this.thread)}\n\n${context}${input}` : context + input },
-      ...images.map((file) => ({ type: 'image', data: fs.readFileSync(file).toString('base64'), mimeType: MIME[path.extname(file).slice(1).toLowerCase()] ?? 'image/png' })),
-    ]
+    const images64 = images.map((file) => ({ type: 'image', data: fs.readFileSync(file).toString('base64'), mimeType: MIME[path.extname(file).slice(1).toLowerCase()] ?? 'image/png' }))
     this.ready
-      .then(() => this.rpc.request('session/prompt', { sessionId: this.sessionId, prompt: content }))
+      .then(() => {
+        // ACP has no system prompt: the protocol goes in front of the first prompt of a session.
+        const text = this.fresh ? `${systemPrompt(this.host.p, store.getThread(this.host.p, this.host.tid))}\n\n${context}${input}` : context + input
+        this.fresh = false
+        return this.rpc.request('session/prompt', { sessionId: this.sessionId, prompt: [{ type: 'text', text }, ...images64] })
+      })
       .then((r) => this.host.ended(r.stopReason === 'refusal' ? { error: 'The agent refused this request.' } : { text: r.stopReason === 'cancelled' ? '' : this.text }))
       .catch((e: Error) => this.host.ended({ error: e instanceof RpcError && e.code === -32000 && /auth/i.test(e.message) ? `${e.message} Sign in with the agent's CLI first.` : e.message }))
   }
@@ -115,6 +123,8 @@ export class AcpSession implements Session {
       if (['completed', 'failed', 'cancelled'].includes(u.status)) activity.finish(u.toolCallId)
     } else if (kind === 'tool_call_update') {
       if (['completed', 'failed', 'cancelled'].includes(u.status)) activity.finish(u.toolCallId)
+    } else if (kind === 'usage_update') {
+      if (u.used) this.host.context(u.used, u.size)
     } else if (kind === 'plan') {
       activity.instant('note', `Plan · ${(u.entries ?? []).map((e: any) => e.content).join(' · ')}`)
     }
@@ -129,4 +139,67 @@ export class AcpSession implements Session {
     }
     throw new RpcError(`Savor does not provide ${method}.`, -32601)
   }
+}
+
+// OpenCode names a model's reasoning effort as a variant of it: "opencode/big-pickle/high".
+const withEffort = (provider: Provider, model: string, effort: string) => (model && effort && provider === 'opencode' ? `${model}/${effort}` : model)
+
+// A short agent process for a question outside a conversation. `ask` passes `onUpdate` a handler for its session/update notifications.
+async function oneShot<T>(provider: Provider, cwd: string, ask: (rpc: Rpc, init: any, onUpdate: (fn: (u: any) => void) => void) => Promise<T>, timeout = 180_000) {
+  const cmd = acpCommand(provider, '', '')
+  const child = spawn(...command(cmd.bin, cmd.args), { cwd, env: process.env, stdio: ['pipe', 'pipe', 'pipe'] })
+  let update = (_: any) => {}
+  const rpc = new Rpc(child, { notification: (m, params) => m === 'session/update' && update(params.update), request: async () => ({ outcome: { outcome: 'cancelled' } }) })
+  let timer: NodeJS.Timeout | undefined
+  const late = new Promise<never>((_, reject) => (timer = setTimeout(() => reject(new Error(`${cmd.bin} did not answer in time.`)), timeout)))
+  try {
+    const init = rpc.request('initialize', { protocolVersion: 1, clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false }, clientInfo: { name: 'savor', version: VERSION } })
+    return await Promise.race([init.then((r) => ask(rpc, r, (fn) => (update = fn))), late])
+  } finally {
+    clearTimeout(timer)
+    rpc.end()
+  }
+}
+
+// Sessions Savor only opened to ask something are removed again, so they don't show up in OpenCode's list.
+const discard = (provider: Provider, sessionId: string) => provider === 'opencode' && execFile(...command(BIN.opencode, ['session', 'delete', sessionId]), () => {})
+
+// The commands and skills an agent offers in a folder, as it announces them to a new session.
+export function acpSkills(provider: Provider, cwd: string) {
+  return oneShot<SkillInfo[]>(
+    provider,
+    cwd,
+    async (rpc, _, onUpdate) => {
+      const announced = new Promise<any[]>((resolve) => {
+        onUpdate((u) => u.sessionUpdate === 'available_commands_update' && resolve(u.availableCommands ?? []))
+        setTimeout(() => resolve([]), 5000)
+      })
+      const { sessionId } = await rpc.request('session/new', { cwd, mcpServers: [] })
+      const commands = await announced
+      discard(provider, sessionId)
+      return commands.map((c) => ({ name: c.name, description: c.description ?? '' }))
+    },
+    30_000,
+  )
+}
+
+// A side question (/btw) goes to a fork of the conversation's session in plan mode, which is removed afterwards.
+export function acpAside(provider: Provider, cwd: string, sid: string | undefined, model: string, prompt: string) {
+  return oneShot(provider, cwd, async (rpc, init, onUpdate) => {
+    let text = ''
+    onUpdate((u) => u.sessionUpdate === 'agent_message_chunk' && u.content?.type === 'text' && (text += u.content.text))
+    const forked = sid && init.agentCapabilities?.sessionCapabilities?.fork
+    const session = forked ? await rpc.request('session/fork', { sessionId: sid, cwd, mcpServers: [] }) : await rpc.request('session/new', { cwd, mcpServers: [] })
+    try {
+      if (session.modes?.availableModes?.some((m: any) => m.id === 'plan')) await rpc.request('session/set_mode', { sessionId: session.sessionId, modeId: 'plan' }).catch(() => {})
+      if (model) await rpc.request('session/set_model', { sessionId: session.sessionId, modelId: model }).catch(() => {})
+      // A fork replays the history it copied; only the answer counts.
+      text = ''
+      await rpc.request('session/prompt', { sessionId: session.sessionId, prompt: [{ type: 'text', text: prompt }] })
+      if (!text.trim()) throw new Error('The agent gave no answer.')
+      return text.trim()
+    } finally {
+      discard(provider, session.sessionId)
+    }
+  })
 }

@@ -79,7 +79,8 @@ async function startDaemon() {
       SAVOR_OPENCODE_BIN: path.join(ROOT, 'test/fake-acp.mjs'),
       SAVOR_GROK_BIN: path.join(TMP, 'no-such-grok'),
       SAVOR_GEMINI_BIN: path.join(ROOT, 'test/fake-acp.mjs'),
-      SAVOR_ANTIGRAVITY_BIN: path.join(TMP, 'no-such-agy'),
+      SAVOR_ANTIGRAVITY_BIN: path.join(ROOT, 'test/fake-agy.mjs'),
+      SAVOR_ANTIGRAVITY_HOME: path.join(TMP, 'agy'),
       SAVOR_WHISPER_BIN: path.join(ROOT, 'test/fake-whisper.mjs'),
       SAVOR_GH_BIN: path.join(ROOT, 'test/fake-gh.mjs'),
       SAVOR_WHISPER_MODEL: WHISPER_MODEL,
@@ -472,9 +473,16 @@ test('Codex runs through the app-server protocol with approvals and questions', 
 
 test('OpenCode runs through the Agent Client Protocol', async () => {
   const [project] = (await api('GET', '/projects')).body
-  const thread = (await api('POST', `/projects/${project.id}/threads`, { text: 'hello acp', agent: { provider: 'opencode', permissionMode: 'plan' } })).body
+  const thread = (await api('POST', `/projects/${project.id}/threads`, { text: 'hello acp', agent: { provider: 'opencode', model: 'fake/model', reasoning: 'high', permissionMode: 'plan' } })).body
   const t = `/projects/${project.id}/threads/${thread.id}`
   await until(async () => (await api('GET', t)).body.messages.some((m) => m.text === 'ACP echo: hello acp'))
+  // The effort is a variant of the model, and the context the agent reports is shown.
+  assert.ok(agentRuns().some((r) => r.agent === 'opencode' && r['session/set_model'] === 'fake/model/high'))
+  await until(async () => (await api('GET', t)).body.thread.context?.tokens === 4200)
+  assert.equal((await api('GET', t)).body.thread.context.window, 100000)
+  // A side question goes to a fork of the session.
+  assert.equal((await api('POST', `${t}/btw`, { text: 'which file?' })).body.text, 'ACP aside: which file?')
+  assert.ok(agentRuns().some((r) => r.agent === 'opencode' && r.fork === 'fake-acp-session'))
   await api('POST', `${t}/messages`, { text: 'approve: this' })
   let approval
   await until(async () => (approval = (await api('GET', t)).body.messages.find((m) => m.approval?.status === 'pending')))
@@ -482,7 +490,7 @@ test('OpenCode runs through the Agent Client Protocol', async () => {
   await api('POST', `${t}/approvals/${approval.id}`, { choice: 'allow_once' })
   await until(async () => (await api('GET', t)).body.messages.some((m) => m.text === 'ACP permission: allow_once'))
   // The MCP token travelled inside the protocol, not on the command line.
-  const run = fs.readFileSync(AGENT_LOG, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).find((r) => r.agent === 'opencode')
+  const run = fs.readFileSync(AGENT_LOG, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).find((r) => r.agent === 'opencode' && r.argv)
   assert.deepEqual(run.argv.slice(2), ['acp'])
   await api('PATCH', `/projects/${project.id}`, { agent: project.agent })
 })
@@ -492,8 +500,36 @@ test('Gemini CLI runs through the Agent Client Protocol', async () => {
   const thread = (await api('POST', `/projects/${project.id}/threads`, { text: 'hello gemini', agent: { provider: 'gemini', permissionMode: 'autoEdit' } })).body
   const t = `/projects/${project.id}/threads/${thread.id}`
   await until(async () => (await api('GET', t)).body.messages.some((m) => m.text === 'ACP echo: hello gemini'))
-  const run = fs.readFileSync(AGENT_LOG, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).find((r) => r.agent === 'gemini')
+  const run = fs.readFileSync(AGENT_LOG, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).find((r) => r.agent === 'gemini' && r.argv)
   assert.deepEqual(run.argv.slice(2), ['--acp'])
+  await api('PATCH', `/projects/${project.id}`, { agent: project.agent })
+})
+
+test('Antigravity continues its conversation with the chosen model, effort and mode, and reaches Savor through MCP', async () => {
+  const [project] = (await api('GET', '/projects')).body
+  const thread = (await api('POST', `/projects/${project.id}/threads`, { text: 'hello agy', agent: { provider: 'antigravity', model: 'fake-claude', reasoning: 'high', permissionMode: 'plan' } })).body
+  const t = `/projects/${project.id}/threads/${thread.id}`
+  await until(async () => (await api('GET', t)).body.messages.some((m) => m.text === 'Antigravity echo: hello agy'))
+  await until(async () => !(await api('GET', t)).body.busy)
+  await api('POST', `${t}/messages`, { text: 'again' })
+  await until(async () => (await api('GET', t)).body.messages.some((m) => m.text === 'Antigravity echo: again'))
+  const runs = agentRuns().filter((r) => r.agent === 'antigravity')
+  const flag = (r, name) => r.argv[r.argv.indexOf(name) + 1]
+  assert.deepEqual([flag(runs[0], '--model'), flag(runs[0], '--effort'), flag(runs[0], '--mode')], ['fake-claude', 'high', 'plan'])
+  assert.ok(!runs[0].argv.includes('--conversation'))
+  assert.equal(flag(runs[1], '--conversation'), 'fake-agy-conversation')
+  // Savor's MCP server is a stdio bridge in agy's config, and the token stays off every command line.
+  const config = JSON.parse(fs.readFileSync(path.join(TMP, 'agy', 'config', 'mcp_config.json'), 'utf8'))
+  assert.equal(config.mcpServers.savor.command, 'sh')
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(TMP, 'agy', 'antigravity-cli', 'settings.json'), 'utf8')).permissions.allow, ['mcp(savor/*)'])
+  const { mcpToken } = JSON.parse(fs.readFileSync(path.join(HOME, 'state.json'), 'utf8'))
+  assert.ok(!JSON.stringify([runs, config]).includes(mcpToken))
+  const { body } = await api('GET', t)
+  assert.equal(body.thread.context.tokens, 12000)
+  assert.ok((await api('GET', `${t}/activity`)).body.some((a) => a.type === 'command' && a.label === 'ls'))
+  assert.equal((await api('POST', `${t}/btw`, { text: 'which file?' })).body.text, 'Antigravity aside: which file?')
+  await until(async () => (await api('GET', '/usage')).body.some((u) => u.provider === 'antigravity'))
+  assert.deepEqual((await api('GET', '/usage')).body.find((u) => u.provider === 'antigravity').windows.map((w) => [w.label, w.percent]), [['Weekly · Gemini Models', 25]])
   await api('PATCH', `/projects/${project.id}`, { agent: project.agent })
 })
 
@@ -508,7 +544,9 @@ test('the agent list reports what is installed, signed in and offered', async ()
   assert.deepEqual(by.claude.models[2].efforts, [])
   assert.ok(by.codex.models.some((m) => m.id === 'fake-model' && m.efforts.includes('high')))
   assert.equal(by.codex.account, 'fake@codex.test')
-  assert.ok(by.opencode.models.some((m) => m.id === 'fake/model'))
+  assert.deepEqual(by.opencode.models.map((m) => [m.id, m.efforts]), [['fake/model', ['low', 'high']], ['fake/other', []]])
+  assert.equal(by.antigravity.signedIn, true)
+  assert.deepEqual(by.antigravity.models.map((m) => m.id), ['', 'fake-gemini-high', 'fake-claude'])
   assert.equal(by.grok.installed, false)
   assert.equal(by.gemini.version, '9.9.9')
   assert.ok(by.gemini.modes.find((m) => m.id === 'yolo').unsafe)
@@ -781,7 +819,7 @@ test('the MCP token stays off agent command lines, which every user on the machi
   const runs = fs.readFileSync(AGENT_LOG, 'utf8').trim().split('\n').map((l) => JSON.parse(l))
   assert.ok(runs.some((r) => r.agent === 'claude') && runs.some((r) => r.agent === 'codex'))
   assert.ok(runs.filter((r) => r.agent === 'codex').every((r) => r.argv[2] === 'app-server'))
-  for (const r of runs) assert.ok(!r.argv.some((a) => a.includes(mcpToken)), `${r.agent} got the MCP token on its command line`)
+  for (const r of runs.filter((r) => r.argv)) assert.ok(!r.argv.some((a) => a.includes(mcpToken)), `${r.agent} got the MCP token on its command line`)
   for (const r of runs.filter((r) => r.agent === 'claude')) assert.equal(r.configMode, 0o600)
   // The user's hooks run as in the terminal.
   for (const r of runs.filter((r) => r.agent === 'claude')) assert.ok(!JSON.parse(r.argv[r.argv.indexOf('--settings') + 1]).disableAllHooks)
@@ -1562,6 +1600,8 @@ test('typing / lists the skills of the agent and runs the one picked', async () 
   assert.deepEqual(await skills('claude'), ['greet', 'tools:lint', 'code-review', 'compact', 'btw'])
   assert.deepEqual(await skills('codex'), ['greet', 'review', 'compact', 'goal', 'mcp', 'btw'])
   assert.deepEqual(await skills('grok'), [])
+  assert.deepEqual(await skills('opencode'), ['review', 'btw'])
+  assert.deepEqual(await skills('antigravity'), ['fake-skill', 'btw'])
 
   await page.goto(`${base}/#/p/${project.id}/new`)
   await page.waitForSelector('text=What do you want to build?')
@@ -2075,8 +2115,8 @@ test('a fork continues in a conversation of its own, as a copy of the agent sess
   await page.waitForSelector('text="Echo: first approach"')
   assert.ok(page.url().endsWith(`/t/${parentId}`))
 
-  // Codex forks its thread.
-  for (const provider of ['codex']) {
+  // Codex and OpenCode fork their sessions.
+  for (const provider of ['codex', 'opencode']) {
     const parent = (await api('POST', threads, { text: `${provider} original`, agent: { provider } })).body
     await idle(parent.id)
     const session = sessionOf((await read(parent.id)).thread, provider)
