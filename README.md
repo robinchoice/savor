@@ -164,7 +164,7 @@ Without a connected relay, the pairing QR code points at `SAVOR_PUBLIC_URL`.
 | `RELAY_TRUST_PROXY` | off | Relay only: set to `1` behind a reverse proxy, so rate limits use `X-Forwarded-For` |
 | `RELAY_MAX_DAEMONS` | `5000` | Relay only: computers that can be connected at once |
 | `SAVOR_CHROMIUM` | Playwright Chromium, then system Chrome/Chromium | Browser for the preview |
-| `SAVOR_CLAUDE_BIN`, `SAVOR_CODEX_BIN`, `SAVOR_OPENCODE_BIN`, `SAVOR_GROK_BIN`, `SAVOR_ANTIGRAVITY_BIN` | `claude`, `codex`, `opencode`, `grok`, `agy` | Agent binaries |
+| `SAVOR_CLAUDE_BIN`, `SAVOR_CODEX_BIN`, `SAVOR_OPENCODE_BIN`, `SAVOR_GROK_BIN`, `SAVOR_GEMINI_BIN`, `SAVOR_ANTIGRAVITY_BIN` | `claude`, `codex`, `opencode`, `grok`, `gemini`, `agy` | Agent binaries |
 
 Antigravity has no stable headless protocol yet, so it runs a configurable command. Set it in `~/.savor/state.json` with `"providers": { "antigravity": { "command": ["agy", "-p", "{prompt}"] } }`. Its stdout becomes the result, and `SAVOR_MCP_URL` with the bearer token `SAVOR_MCP_TOKEN` points it at Savor's MCP server.
 
@@ -177,7 +177,7 @@ server/
   session.ts    what every agent adapter gets (Host) and provides (Session), protocol prompt, activity log
   claude.ts     Claude Code over stream-json with stdio permission prompts
   codex.ts      Codex over the app-server protocol (JSON-RPC)
-  acp.ts        OpenCode and Grok Build over the Agent Client Protocol
+  acp.ts        OpenCode, Grok Build and Gemini CLI over the Agent Client Protocol
   jsonrpc.ts    newline-delimited JSON-RPC over stdio
   providers.ts  what each agent offers, and whether it is installed and signed in
   mcp.ts        MCP tools the agents call
@@ -204,7 +204,7 @@ test/           end-to-end tests with a fake agent
 - Every conversation gets one long-lived agent process. It stays alive while the conversation owns background processes and closes 5 minutes after the last activity. A change of agent, model, effort, fast mode or permissions restarts it and resumes the agent's own session.
 - **Claude Code** runs as `claude -p --input-format stream-json` with `--permission-prompts host --permission-prompt-tool stdio`: permission prompts and `AskUserQuestion` arrive as control requests on stdout and are answered on stdin. "Always allow" writes the rule Claude suggests to `.claude/settings.local.json`.
 - **Codex** runs as `codex app-server` (JSON-RPC over stdio): `thread/start`, `turn/start`, `turn/interrupt`, approvals through `item/commandExecution/requestApproval` and `item/fileChange/requestApproval`, questions through `item/tool/requestUserInput`. The permission modes map to Codex's sandbox and approval policy; models and effort levels come from `model/list`.
-- **OpenCode** (`opencode acp`) and **Grok Build** (`grok agent stdio`) speak the [Agent Client Protocol](https://agentclientprotocol.com): `session/new`, `session/prompt`, progress through `session/update`, approvals through `session/request_permission`, interrupts through `session/cancel`.
+- **OpenCode** (`opencode acp`), **Grok Build** (`grok agent stdio`) and **Gemini CLI** (`gemini --acp`) speak the [Agent Client Protocol](https://agentclientprotocol.com): `session/new`, `session/prompt`, progress through `session/update`, approvals through `session/request_permission`, interrupts through `session/cancel`.
 
 Project layout:
 
@@ -236,7 +236,7 @@ CI runs typecheck and the end-to-end tests on every push. Pushing a tag like `v0
 Early. Known gaps:
 - There is no public relay instance yet: run your own (see above) or use a direct connection.
 - A browser remembers one paired computer at a time.
-- The OpenCode, Grok Build and Antigravity adapters haven't been tested against the real CLIs.
+- The OpenCode, Grok Build, Gemini CLI and Antigravity adapters haven't been tested against the real CLIs.
 
 ## License
 

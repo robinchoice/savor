@@ -78,6 +78,7 @@ async function startDaemon() {
       SAVOR_CODEX_BIN: path.join(ROOT, 'test/fake-codex.mjs'),
       SAVOR_OPENCODE_BIN: path.join(ROOT, 'test/fake-acp.mjs'),
       SAVOR_GROK_BIN: path.join(TMP, 'no-such-grok'),
+      SAVOR_GEMINI_BIN: path.join(ROOT, 'test/fake-acp.mjs'),
       SAVOR_ANTIGRAVITY_BIN: path.join(TMP, 'no-such-agy'),
       SAVOR_WHISPER_BIN: path.join(ROOT, 'test/fake-whisper.mjs'),
       SAVOR_GH_BIN: path.join(ROOT, 'test/fake-gh.mjs'),
@@ -486,6 +487,16 @@ test('OpenCode runs through the Agent Client Protocol', async () => {
   await api('PATCH', `/projects/${project.id}`, { agent: project.agent })
 })
 
+test('Gemini CLI runs through the Agent Client Protocol', async () => {
+  const [project] = (await api('GET', '/projects')).body
+  const thread = (await api('POST', `/projects/${project.id}/threads`, { text: 'hello gemini', agent: { provider: 'gemini', permissionMode: 'autoEdit' } })).body
+  const t = `/projects/${project.id}/threads/${thread.id}`
+  await until(async () => (await api('GET', t)).body.messages.some((m) => m.text === 'ACP echo: hello gemini'))
+  const run = fs.readFileSync(AGENT_LOG, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).find((r) => r.agent === 'gemini')
+  assert.deepEqual(run.argv.slice(2), ['--acp'])
+  await api('PATCH', `/projects/${project.id}`, { agent: project.agent })
+})
+
 test('the agent list reports what is installed, signed in and offered', async () => {
   const agents = (await api('GET', '/agents')).body
   const by = Object.fromEntries(agents.map((a) => [a.id, a]))
@@ -499,6 +510,8 @@ test('the agent list reports what is installed, signed in and offered', async ()
   assert.equal(by.codex.account, 'fake@codex.test')
   assert.ok(by.opencode.models.some((m) => m.id === 'fake/model'))
   assert.equal(by.grok.installed, false)
+  assert.equal(by.gemini.version, '9.9.9')
+  assert.ok(by.gemini.modes.find((m) => m.id === 'yolo').unsafe)
   assert.ok(by.claude.modes.find((m) => m.id === 'bypassPermissions').unsafe)
 })
 

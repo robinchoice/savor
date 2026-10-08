@@ -177,7 +177,7 @@ export interface Me { origin: 'local' | 'remote'; device: string | null; awake: 
 // The desktop shell's bridge (desktop/preload.cjs). A browser has none.
 export const desktop = (window as { savorDesktop?: { pickFolder(): Promise<string | null>; checkForUpdates(): Promise<string | null>; installUpdate(): Promise<void>; onUpdateReady(cb: (version: string) => void): void; setContextActions?(root: string | null, cb: ((action: string, value: any) => void) | null): void; notify?(options: { title: string; body: string; hash: string; tag: string }): void; onOpen?(cb: (hash: string) => void): void } }).savorDesktop
 
-export const PROVIDER_NAMES: Record<string, string> = { claude: 'Claude Code', codex: 'Codex', opencode: 'OpenCode', grok: 'Grok Build', antigravity: 'Antigravity' }
+export const PROVIDER_NAMES: Record<string, string> = { claude: 'Claude Code', codex: 'Codex', opencode: 'OpenCode', grok: 'Grok Build', gemini: 'Gemini CLI', antigravity: 'Antigravity' }
 
 // Installed agents, their models and modes: fetched once and shared by every picker.
 let agentsCache: Promise<ProviderInfo[]> | null = null

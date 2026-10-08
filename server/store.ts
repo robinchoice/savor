@@ -5,7 +5,7 @@ import crypto from 'node:crypto'
 
 export const HOME = process.env.SAVOR_HOME ?? path.join(os.homedir(), '.savor')
 
-export type Provider = 'claude' | 'codex' | 'opencode' | 'grok' | 'antigravity'
+export type Provider = 'claude' | 'codex' | 'opencode' | 'grok' | 'gemini' | 'antigravity'
 export interface AgentConfig { provider: Provider; model: string; reasoning: string; fast: boolean; permissionMode: string }
 export interface Project {
   id: string
