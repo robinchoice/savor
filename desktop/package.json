@@ -88,6 +88,11 @@
       ],
       "category": "public.app-category.developer-tools",
       "artifactName": "${productName}-${arch}.${ext}",
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "Savor uses the microphone for voice input."
+      },
       "extraResources": [
         {
           "from": "../node_modules/node-pty",
