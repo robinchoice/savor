@@ -8,7 +8,7 @@
 // - "open-page: <url>" → an MCP server asks through a URL elicitation to open that page, then "Codex page: <action>"
 // - a skill item in the input → "Codex skill: <name> from <path>"
 // - review/start, thread/compact/start and thread/shellCommand → a turn with the item Codex reports for each
-// - thread/goal/set → two turns, the second one meets the goal
+// - thread/goal/set → two turns, the second one meets the goal; goal edits without the origin "user" fail
 // - anything else → "Codex echo: <input>"
 import fs from 'node:fs'
 import readline from 'node:readline'
@@ -132,6 +132,7 @@ rl.on('line', (line) => {
   const msg = JSON.parse(line)
   if (msg.id !== undefined && waiting.has(msg.id)) return waiting.get(msg.id)(msg.result)
   const reply = (result) => out({ jsonrpc: '2.0', id: msg.id, result })
+  if (/^thread\/goal\/(set|clear)$/.test(msg.method) && msg.params.origin !== 'user') return out({ jsonrpc: '2.0', id: msg.id, error: { code: -32600, message: 'goal edit without user origin' } })
   switch (msg.method) {
     case 'initialize':
       return reply({ userAgent: 'fake-codex', codexHome: '/tmp', platformFamily: 'unix', platformOs: 'linux' })

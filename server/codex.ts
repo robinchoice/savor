@@ -114,11 +114,11 @@ export class CodexSession implements Session {
   }
 
   // "/goal <objective>" sets a goal Codex starts on by itself; "/goal" shows it and "/goal clear" drops it,
-  // which take no turn.
+  // which take no turn. Codex passes goal edits on to the model as the user's only with the origin "user".
   private async goalCommand(arg: string) {
-    if (arg && arg !== 'clear') return void (await this.rpc.request('thread/goal/set', { threadId: this.threadId, objective: arg, status: 'active' }))
+    if (arg && arg !== 'clear') return void (await this.rpc.request('thread/goal/set', { threadId: this.threadId, objective: arg, status: 'active', origin: 'user' }))
     if (arg === 'clear') {
-      await this.rpc.request('thread/goal/clear', { threadId: this.threadId })
+      await this.rpc.request('thread/goal/clear', { threadId: this.threadId, origin: 'user' })
       return this.host.ended({ text: 'Goal cleared.' })
     }
     const { goal } = await this.rpc.request('thread/goal/get', { threadId: this.threadId })
@@ -126,7 +126,7 @@ export class CodexSession implements Session {
   }
 
   interrupt() {
-    if (this.goal) this.rpc.request('thread/goal/set', { threadId: this.threadId, status: 'paused' }).catch(() => {})
+    if (this.goal) this.rpc.request('thread/goal/set', { threadId: this.threadId, status: 'paused', origin: 'user' }).catch(() => {})
     if (this.turnId) this.rpc.request('turn/interrupt', { threadId: this.threadId, turnId: this.turnId }).catch(() => {})
   }
 
