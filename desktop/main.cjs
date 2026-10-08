@@ -119,6 +119,12 @@ async function createWindow() {
     shell.openExternal(url)
     return { action: 'deny' }
   })
+  // A link to another site opens in the browser; the window itself never leaves Savor, it has no way back.
+  win.webContents.on('will-navigate', (e) => {
+    if (new URL(e.url).origin === `http://localhost:${PORT}`) return
+    e.preventDefault()
+    shell.openExternal(e.url)
+  })
   win.webContents.on('context-menu', async (_e, params) => {
     const menu = await contextMenu(win.webContents, params)
     if (menu.items.length) menu.popup({ window: win })

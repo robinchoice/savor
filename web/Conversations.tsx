@@ -20,6 +20,15 @@ import { runInTerminal, showTerminal } from './Terminal'
 
 const SHELL = /\blanguage-(bash|sh|shell|zsh)\b/
 
+// Links in messages open in a new tab, so the click doesn't replace Savor itself.
+DOMPurify.addHook('afterSanitizeAttributes', (node) => {
+  const href = node.tagName === 'A' && node.getAttribute('href')
+  if (href && !href.startsWith('#')) {
+    node.setAttribute('target', '_blank')
+    node.setAttribute('rel', 'noreferrer')
+  }
+})
+
 export function Markdown({ text }: { text: string }) {
   const html = useMemo(() => DOMPurify.sanitize(marked.parse(text, { async: false }) as string), [text])
   const ref = useRef<HTMLDivElement>(null)
