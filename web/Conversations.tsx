@@ -1,5 +1,5 @@
 import { Fragment } from 'preact'
-import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import {
@@ -456,7 +456,10 @@ export function ThreadView({ project, threadId, back }: { project: Project; thre
   const [review] = useApi<ReviewComment[]>(`${base}/review`, (e) => e.threadId === threadId && e.type === 'review')
   const saveReview = (comments: ReviewComment[]) => api('PUT', `${base}/review`, { comments })
   const [titleOpen, setTitleOpen] = useState<string | null>(null)
-  const [answers, setAnswers] = useState<Record<string, Pick>>({})
+  // Picked answers stay with their conversation like the composer's draft, until they are sent.
+  const answersKey = `savor-answers:${threadId}`
+  const [answers, setAnswers] = useState<Record<string, Pick>>(() => JSON.parse(localStorage.getItem(answersKey) ?? '{}'))
+  useLayoutEffect(() => (Object.keys(answers).length ? localStorage.setItem(answersKey, JSON.stringify(answers)) : localStorage.removeItem(answersKey)), [answers])
   const listRef = useRef<HTMLDivElement>(null)
   const findRef = useRef<HTMLInputElement>(null)
   const [clock, setClock] = useState(Date.now())
@@ -540,7 +543,10 @@ export function ThreadView({ project, threadId, back }: { project: Project; thre
     ? {
         picked: asked.filter((d) => hasAnswer(answers[d.id])).length,
         total: asked.length,
-        send: (comment: string, attachments: Attachment[]) => api('POST', `${base}/decisions`, { answers: asked.map((d) => ({ id: d.id, ...answers[d.id] })), comment, attachments }),
+        send: async (comment: string, attachments: Attachment[]) => {
+          await api('POST', `${base}/decisions`, { answers: asked.map((d) => ({ id: d.id, ...answers[d.id] })), comment, attachments })
+          setAnswers((all) => Object.fromEntries(Object.entries(all).filter(([id]) => !asked.some((d) => d.id === id))))
+        },
       }
     : undefined
   const lastConclusion = [...messages].reverse().find((m) => m.kind === 'conclusion')

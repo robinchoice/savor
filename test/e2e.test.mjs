@@ -251,6 +251,30 @@ test('questions are answered in one reply', async () => {
   await page.waitForSelector('text=Comment: Tag the release too.')
 })
 
+test('picked answers stay with their conversation until they are sent', async () => {
+  await newConversation()
+  await send('ask: Ship it?')
+  await page.waitForSelector('.option')
+  const asked = await page.evaluate(() => location.hash)
+  const back = async () => {
+    await page.goto(`${base}/${asked}`)
+    await page.waitForSelector('.option')
+  }
+  await page.click('.option:has-text("Yes")')
+  await newConversation()
+  await back()
+  await page.waitForSelector('.option.selected:has-text("Yes")')
+  // A free answer survives switching conversations and reloading the page.
+  await page.fill('.option.other .other-answer', 'On Friday')
+  await page.goto(`${base}/#/all/inbox`)
+  await page.reload()
+  await back()
+  assert.equal(await page.inputValue('.option.other .other-answer'), 'On Friday')
+  await page.click('.composer button:has-text("Send answers")')
+  await page.waitForSelector('text=Answer: On Friday')
+  assert.equal(await page.evaluate((id) => localStorage.getItem(`savor-answers:${id}`), asked.split('/').at(-1)), null)
+})
+
 test('Enter sends the answers from a picked option', async () => {
   await newConversation()
   await send('ask: Ship it?')
