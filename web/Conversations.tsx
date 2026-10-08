@@ -132,6 +132,7 @@ export function Conversations({ project, threadId, fanoutId, isNew }: { project:
   const rest = open.filter((t) => !t.waitsFor && !t.busy && !t.waiting)
   const finished = visible.filter((t) => t.completed)
   const next = forYou.find((t) => t.id !== threadId)
+  const nextPaths = forYou.map((t) => `/p/${project.id}/t/${t.id}`)
 
   // Worktrees and fan-outs keep their actions below the conversations; their conversations carry the branch.
   const fanouts = new Map<string, Thread[]>()
@@ -155,7 +156,7 @@ export function Conversations({ project, threadId, fanoutId, isNew }: { project:
       <aside class="conv-list">
         <div class="conv-head">
           <h2>Conversations</h2>
-          {next && <NextButton paths={forYou.map((t) => `/p/${project.id}/t/${t.id}`)} />}
+          {next && <NextButton paths={nextPaths} />}
           <a class="new-btn" href={`#/p/${project.id}/new`} title="New conversation">
             <Plus size={18} />
           </a>
@@ -197,7 +198,7 @@ export function Conversations({ project, threadId, fanoutId, isNew }: { project:
           <PleasanceFooter />
         </footer>
       </aside>
-      {threadId ? <ThreadView key={threadId} project={project} threadId={threadId} /> : fanoutId ? <Fanout key={fanoutId} project={project} id={fanoutId} /> : <NewConversation project={project} />}
+      {threadId ? <ThreadView key={threadId} project={project} threadId={threadId} next={nextPaths} /> : fanoutId ? <Fanout key={fanoutId} project={project} id={fanoutId} /> : <NewConversation project={project} />}
     </div>
   )
 }
@@ -570,7 +571,8 @@ function useNarrow() {
 }
 
 // `back` is where the arrow leads; set outside the project, a second button opens the conversation there.
-export function ThreadView({ project, threadId, back }: { project: Project; threadId: string; back?: string }) {
+// `next` lists the conversations that need you, so Finish & next can open the first other one.
+export function ThreadView({ project, threadId, back, next }: { project: Project; threadId: string; back?: string; next?: string[] }) {
   const base = `/projects/${project.id}/threads/${threadId}`
   const [data, reload, loadError] = useApi<ThreadData>(base, (e) => (e.threadId === threadId && ['message', 'thread', 'status'].includes(e.type)) || (e.projectId === project.id && e.type === 'processes'))
   const [activity] = useApi<ActivityEvent[]>(`${base}/activity`, (e) => e.threadId === threadId && (e.type === 'activity' || e.type === 'status'))
@@ -701,6 +703,7 @@ export function ThreadView({ project, threadId, back }: { project: Project; thre
   const lastConclusion = [...messages].reverse().find((m) => m.kind === 'conclusion')
   const showNext = !busy && last?.kind === 'conclusion' && !openDecisions && last.suggestions?.length
   const canComplete = !busy && !thread.completed && last?.kind === 'conclusion' && !openDecisions
+  const nextPath = next?.find((p) => `#${p}` !== location.hash)
   const queued = messages.filter((m) => m.kind === 'user' && m.delivered === false).length
   const status = busy || waiting
     ? { icon: <span class="ring busy" />, text: busy ? 'Working' : waitingFor(thread), cls: 'working' }
@@ -979,12 +982,22 @@ export function ThreadView({ project, threadId, back }: { project: Project; thre
               </div>
 
               {canComplete && (
-                <button class="mark-complete" onClick={() => patch({ completed: true })}>
-                  <span>
-                    <Check size={16} />
-                  </span>
-                  Finish
-                </button>
+                <div class="complete-actions">
+                  <button class="mark-complete" onClick={() => patch({ completed: true })}>
+                    <span>
+                      <Check size={16} />
+                    </span>
+                    Finish
+                  </button>
+                  {nextPath && (
+                    <button class="mark-complete" onClick={() => patch({ completed: true }).then(() => go(nextPath))}>
+                      <span>
+                        <ArrowRight size={16} />
+                      </span>
+                      Finish & next
+                    </button>
+                  )}
+                </div>
               )}
 
               {composer}

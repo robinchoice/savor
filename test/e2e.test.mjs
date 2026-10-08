@@ -2122,6 +2122,14 @@ test('the All tab answers questions in place and starts what waits in the backlo
   await page.keyboard.press('Alt+j')
   await page.waitForFunction((first) => location.hash !== first, first)
 
+  // Finish & next closes a settled conversation and opens the next one that needs you.
+  const settled = (await api('POST', threads, { text: 'plan the header', agent: { provider: 'claude' } })).body
+  await until(async () => (await read(settled.id)).messages.some((m) => m.kind === 'conclusion') && !(await read(settled.id)).busy)
+  await page.goto(`${base}/#/all/inbox/${project.id}/${settled.id}`)
+  await page.click('.mark-complete:has-text("Finish & next")')
+  await page.waitForFunction((id) => /^#\/all\/inbox\/[^/]+\/[^/]+$/.test(location.hash) && !location.hash.endsWith(id), settled.id)
+  assert.ok((await read(settled.id)).thread.completed)
+
   // The overview brings the open question along and answers it right there.
   const listed = (await api('GET', '/overview')).body.threads.find((t) => t.id === asked.id)
   assert.deepEqual(listed.decisions.map((d) => d.options), [['Yes', 'No']])
