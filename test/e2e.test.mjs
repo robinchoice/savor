@@ -103,6 +103,9 @@ before(async () => {
   browser = await chromium.launch({ executablePath: process.env.SAVOR_CHROMIUM, args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'] })
   page = await browser.newPage({ viewport: { width: 1400, height: 900 }, locale: 'en-US' })
   await page.goto(`${base}/?token=${token}`)
+  // A fresh computer opens the setup; skipping it keeps the default agent.
+  await page.click('text=Skip setup')
+  await page.waitForSelector('.setup-dialog', { state: 'detached' })
 })
 
 after(async () => {
@@ -555,6 +558,7 @@ test('the agent list reports what is installed, signed in and offered', async ()
 
 test('new projects start with the default agent set on this computer', async () => {
   assert.equal((await api('GET', '/agent')).body.permissionMode, 'acceptEdits')
+  assert.equal((await api('GET', '/me')).body.setup, false, 'this computer already has projects')
   assert.equal((await api('PUT', '/agent', { permissionMode: 'nope' })).status, 400)
   const agent = (await api('PUT', '/agent', { permissionMode: 'auto', reasoning: 'max' })).body
   assert.equal(agent.permissionMode, 'auto')

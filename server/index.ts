@@ -95,6 +95,8 @@ route('GET', '/me', (_, __, ctx) => ({
   version: VERSION,
   system: SYSTEM,
   projectsDir: store.projectsDir(),
+  // First start on this computer: no projects yet and no default agent chosen, so the UI offers the setup.
+  setup: ctx.auth.origin === 'local' && !store.state().agent && !store.state().projects.length,
 }))
 route('POST', '/awake', (_, b, ctx) => {
   localOnly(ctx)

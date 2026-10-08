@@ -595,7 +595,7 @@ const EFFORT_DETAIL: Record<string, string> = {
   ultra: 'The deepest reasoning Codex offers',
 }
 
-const effortsOf = (agent: AgentConfig, info?: ProviderInfo) => info?.models.find((m) => m.id === agent.model)?.efforts ?? info?.efforts ?? []
+export const effortsOf = (agent: AgentConfig, info?: ProviderInfo) => info?.models.find((m) => m.id === agent.model)?.efforts ?? info?.efforts ?? []
 
 // Rising bars, filled up to the chosen effort.
 function EffortMeter({ effort, efforts }: { effort: string; efforts: string[] }) {

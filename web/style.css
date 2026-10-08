@@ -931,6 +931,34 @@ details.box[open] > summary .chev { transform: rotate(180deg); }
 .voice-model > span { flex: 1; min-width: 0; display: grid; gap: 2px; }
 .voice-model > input { margin-top: 3px; }
 .ok { color: var(--green); }
+.warn { color: var(--needs); }
+.agent-status > span:nth-child(2) { flex: 1; min-width: 0; }
+.agent-status > span:last-child { flex: none; font-size: 12px; font-weight: 600; }
+.agent-status small, .mode-card small { display: block; }
+.mode-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+.mode-card { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 10px 12px; border-radius: 10px; border: 1.5px solid var(--line); background: var(--card); text-align: left; font-size: 13px; }
+.mode-card small { color: var(--muted); font-size: 12px; }
+.mode-card:hover { border-color: var(--line-strong); }
+.box .mode-card { background: var(--panel); }
+.mode-card.selected { border-color: var(--link); background: var(--raised); }
+.ap-tag.unsafe { background: color-mix(in srgb, var(--needs) 22%, transparent); color: var(--text); }
+
+/* First start: the setup wizard over the empty start page */
+.setup-dialog { width: min(100%, 640px); text-align: left; }
+.setup-dialog .dialog-body { display: flex; flex-direction: column; gap: 12px; padding: 22px 24px; }
+.setup-dialog h2 { font-size: 26px; }
+.setup-dialog p { margin: 0; }
+.setup-steps { display: flex; gap: 6px; }
+.setup-steps i { flex: 1; height: 4px; border-radius: 4px; background: var(--line-strong); }
+.setup-steps i.on { background: var(--link); }
+.setup-eyebrow { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.setup-list { display: flex; flex-direction: column; gap: 6px; }
+.setup-list .setting { padding: 10px 12px; border-radius: 10px; background: var(--card); border: 1.5px solid transparent; }
+.setup-list .setting.pick.selected { border-color: var(--link); background: var(--raised); }
+.setup-project { display: flex; flex-direction: column; gap: 8px; }
+.setup-project form { display: flex; flex-direction: column; gap: 8px; }
+.setup-dialog .setting select { width: auto; max-width: 60%; }
+.setup-summary { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; }
 
 @media (max-width: 860px) {
   .topbar-right .wide-only, .account-dialog .wide-only { display: none; }

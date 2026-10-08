@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'preact/hooks'
 import { ArrowUpRight, Bot, Check, ChevronDown, ChevronRight, Laptop, MessageSquare, Mic, Plus, SlidersHorizontal, Smartphone, X } from 'lucide-preact'
 import { api, cap, desktop, useAgents, useApi, type AgentConfig, type Me } from './api'
 import { AgentButton, AgentMenu } from './Composer'
+import { AgentStatusRow, ModeCards } from './Setup'
 import { useNotificationToggle } from './notify'
 import { PleasanceFooter } from './PleasanceFooter'
 import { setPrefs, usePrefs, type Density, type Prefs, type Theme } from './prefs'
@@ -220,23 +221,20 @@ function Agents() {
       </summary>
       <div class="box-body" ref={ref}>
         {agent && info && (
-          <div class="setting">
-            <span>
-              New projects start with
-              <small class={error ? 'error-text' : 'muted'}>{error || `${info.modes.find((m) => m.id === agent.permissionMode)?.label} · then each project keeps the agent it last used`}</small>
-            </span>
-            <AgentButton agent={agent} info={info} open={menu} toggle={() => setMenu(!menu)} />
-          </div>
+          <>
+            <div class="setting">
+              <span>
+                New projects start with
+                <small class={error ? 'error-text' : 'muted'}>{error || 'Then each project keeps the agent it last used'}</small>
+              </span>
+              <AgentButton agent={agent} info={info} open={menu} toggle={() => setMenu(!menu)} />
+            </div>
+            <ModeCards agent={agent} info={info} onPick={(permissionMode) => setAgent({ ...agent, permissionMode })} />
+          </>
         )}
         {menu && agent && info && <AgentMenu agent={agent} agents={agents ?? []} setAgent={setAgent} close={() => setMenu(false)} />}
         {agents?.map((a) => (
-          <div key={a.id} class="setting">
-            <span>
-              <b>{a.name}</b>
-              <small class="muted">{[a.version, a.account].filter(Boolean).join(' · ')}</small>
-            </span>
-            <span class={a.signedIn ? 'ok' : 'muted'}>{!a.installed ? 'Not installed' : a.signedIn ? 'Signed in' : a.signedIn === false ? 'Signed out' : 'Installed'}</span>
-          </div>
+          <AgentStatusRow key={a.id} agent={a} />
         ))}
       </div>
     </details>

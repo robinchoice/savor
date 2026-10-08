@@ -179,7 +179,7 @@ export interface Workflow { id: string; name: string; prompt: string; collection
 export interface Run { at: string; trigger: 'scheduled' | 'manual' | 'caught' | 'early'; due?: string; status: 'working' | 'needs' | 'stopped' | 'failed' | 'finished' | 'skipped'; threadId: string; summary: string; workedMs: number }
 export interface Proc { pid: number; name: string; cwd: string; command: string; url: string | null; log: string | null; threadId: string; startedAt: string }
 export interface Usage { provider: string; name: string; windows: { label: string; percent: number; resets: string | null }[]; stale: boolean }
-export interface Me { origin: 'local' | 'remote'; device: string | null; awake: boolean; host: string; version: string; system: string; projectsDir: string }
+export interface Me { origin: 'local' | 'remote'; device: string | null; awake: boolean; host: string; version: string; system: string; projectsDir: string; setup: boolean }
 
 // The desktop shell's bridge (desktop/preload.cjs). A browser has none.
 export const desktop = (window as { savorDesktop?: { pickFolder(): Promise<string | null>; checkForUpdates(): Promise<string | null>; installUpdate(): Promise<void>; onUpdateReady(cb: (version: string) => void): void; setContextActions?(root: string | null, cb: ((action: string, value: any) => void) | null): void; notify?(options: { title: string; body: string; hash: string; tag: string }): void; onOpen?(cb: (hash: string) => void): void } }).savorDesktop
