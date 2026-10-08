@@ -764,6 +764,28 @@ test('a workflow lists its runs, catches up a missed time and skips one while a 
   await page.waitForSelector('.wf-over')
 })
 
+test('a workflow button runs it early, in place of its next scheduled time', async () => {
+  const [project] = (await api('GET', '/projects')).body
+  const list = `/projects/${project.id}/workflows`
+  const wf = (await api('POST', list, { name: 'Wrap-up', prompt: 'wrap up', cron: '*/10 * * * * *', button: true })).body
+  const w = `${list}/${wf.id}`
+  await page.goto(`${base}/#/p/${project.id}/workflows`)
+  // The first click only asks.
+  await page.click('.wf-button:has-text("Wrap-up")')
+  await page.waitForSelector('.wf-button.armed:has-text("Run Wrap-up now?")')
+  const due = (await api('GET', '/workflows/buttons')).body.find((b) => b.id === wf.id).nextRunAt
+  await page.click('.wf-button.armed')
+  await page.waitForSelector('.wf-chip:has-text("Wrap-up") >> text=Early, in place of')
+  let runs = (await api('GET', `${w}/runs`)).body
+  assert.deepEqual([runs.length, runs[0].trigger, runs[0].due], [1, 'early', due])
+  // The time it took the place of passes without a run of its own, the next one counts again.
+  assert.equal((await api('GET', list)).body.find((x) => x.id === wf.id).nextRunAt, new Date(Date.parse(due) + 10_000).toISOString())
+  await new Promise((r) => setTimeout(r, Date.parse(due) + 1500 - Date.now()))
+  runs = (await api('GET', `${w}/runs`)).body
+  await api('DELETE', w)
+  assert.equal(runs.length, 1)
+})
+
 test('auth: tokens, pairing and remote limits', async () => {
   assert.equal((await api('GET', '/projects', undefined, '')).status, 401)
   const pair = (body) => fetch(`${base}/api/pair`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })

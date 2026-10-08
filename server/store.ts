@@ -90,8 +90,8 @@ export interface Thread {
   // fan-out they belong to and the commit their worktrees started from.
   fanout?: { id: string; base: string }
   // Set for a run of a workflow: which one started the conversation and what set it off. A run that was
-  // caught up carries the scheduled time it was due.
-  workflow?: { id: string; name: string; trigger: 'scheduled' | 'manual' | 'caught'; due?: string }
+  // caught up carries the scheduled time it was due, one started early the scheduled time it took the place of.
+  workflow?: { id: string; name: string; trigger: 'scheduled' | 'manual' | 'caught' | 'early'; due?: string }
 }
 export interface ActivityEvent { id: number; type: 'thinking' | 'command' | 'edit' | 'note'; label: string; time: string; finishedAt?: string }
 export interface Decision {
@@ -120,6 +120,8 @@ export interface Workflow {
   enabled: boolean
   // Whether a scheduled time that passed while Savor was not running is run once at the next start.
   catchUp: boolean
+  // Whether the top bar shows a button that runs it early.
+  button: boolean
   next: string[]
   lastRunAt: string | null
   updatedAt: string
@@ -512,7 +514,7 @@ export function addBacklogItem(p: Project, title: string): BacklogItem {
 
 const wfDir = (p: Project) => path.join(dataDir(p), 'workflows')
 // What workflows saved by earlier versions don't have yet.
-const wfDefaults = { next: [], collection: '', scheduleLabel: null, updatedAt: '', catchUp: true, settledAt: '', skipped: [] }
+const wfDefaults = { next: [], collection: '', scheduleLabel: null, updatedAt: '', catchUp: true, button: false, settledAt: '', skipped: [] }
 
 export function listWorkflows(p: Project): Workflow[] {
   if (!fs.existsSync(wfDir(p))) return []
@@ -540,6 +542,7 @@ export function saveWorkflow(p: Project, wf: Partial<Workflow> & { name: string;
     scheduleLabel: null,
     enabled: true,
     catchUp: true,
+    button: false,
     next: [],
     lastRunAt: null,
     updatedAt: now(),
@@ -553,7 +556,7 @@ export function saveWorkflow(p: Project, wf: Partial<Workflow> & { name: string;
   // A label describes one schedule, so it goes when the schedule changes without it.
   if (prev && next.cron !== prev.cron && next.scheduleLabel === prev.scheduleLabel) next.scheduleLabel = null
   // A run only records its time; anything else is an edit.
-  const edited = (['name', 'prompt', 'collection', 'cron', 'timezone', 'scheduleLabel', 'enabled', 'catchUp'] as const).some((k) => next[k] !== prev?.[k])
+  const edited = (['name', 'prompt', 'collection', 'cron', 'timezone', 'scheduleLabel', 'enabled', 'catchUp', 'button'] as const).some((k) => next[k] !== prev?.[k])
   if (prev && (edited || String(next.next) !== String(prev.next))) next.updatedAt = now()
   // A changed or re-enabled schedule counts from now: what it would have run before is not caught up.
   if (prev && (next.cron !== prev.cron || next.timezone !== prev.timezone || next.enabled !== prev.enabled)) next.settledAt = now()

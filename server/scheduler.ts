@@ -7,6 +7,8 @@ import * as agents from './agents.js'
 let jobs: Cron[] = []
 // A run that starts this long after its scheduled time was caught up.
 const LATE = 60_000
+// A run started early takes the place of the next scheduled time when that comes within this time.
+const EARLY = 12 * 3600_000
 
 export function validateCron(expr: string, timezone?: string) {
   new Cron(expr, { timezone, paused: true }).stop()
@@ -29,10 +31,12 @@ export function syncSchedules() {
   }
 }
 
+// The next scheduled time that is not settled yet: a run started early settles the one it took the place of.
 export const nextRun = (wf: Workflow) => {
   if (!wf.enabled || !wf.cron) return null
   try {
-    return new Cron(wf.cron, { timezone: wf.timezone, paused: true }).nextRun()?.toISOString() ?? null
+    const from = Date.parse(wf.settledAt) > Date.now() ? new Date(wf.settledAt) : undefined
+    return new Cron(wf.cron, { timezone: wf.timezone, paused: true }).nextRun(from)?.toISOString() ?? null
   } catch {
     return null
   }
@@ -104,9 +108,20 @@ export function runWorkflow(projectId: string, workflowId: string, by: Origin, s
   return thread
 }
 
+// Runs the workflow now instead of at its next scheduled time, when that comes soon. Without one it is a manual run.
+export function runEarly(projectId: string, workflowId: string, by: Origin) {
+  const p = store.getProject(projectId)
+  const next = nextRun(store.getWorkflow(p, workflowId))
+  if (!next || Date.parse(next) - Date.now() > EARLY) return runWorkflow(projectId, workflowId, by)
+  const thread = runWorkflow(projectId, workflowId, by, { trigger: 'early', due: next })
+  store.saveWorkflow(p, { ...store.getWorkflow(p, workflowId), settledAt: next })
+  emit({ type: 'workflows', projectId })
+  return thread
+}
+
 export interface Run {
   at: string
-  trigger: 'scheduled' | 'manual' | 'caught'
+  trigger: 'scheduled' | 'manual' | 'caught' | 'early'
   due?: string
   status: 'working' | 'needs' | 'stopped' | 'failed' | 'finished' | 'skipped'
   // The run's conversation; for a skipped time, the conversation that was in its way.

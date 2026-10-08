@@ -5,7 +5,7 @@ import { Archive, Code, Coffee, Download, Folder, GraduationCap, FolderOpen, Mon
 import { api, avatarStyle, connectEvents, desktop, go, initial, Unauthorized, useApi, useEvent, type Me, type Project } from './api'
 import { Conversations, RunElsewhereDialog } from './Conversations'
 import { FilesView } from './Files'
-import { Workflows } from './Workflows'
+import { WorkflowButtons, Workflows } from './Workflows'
 import { AllProjects } from './Overview'
 import { Settings, Devices, Pair, PairingRequests, RemotePair } from './Settings'
 import { loadProfile, remote, setTransport } from './transport'
@@ -279,6 +279,7 @@ function TopBar({ projects, active, all, me, setMe }: { projects: Project[]; act
         ))}
       </nav>
       <div class="topbar-right">
+        <WorkflowButtons />
         <UsageMeter />
         <div class="menu-anchor">
           <button class="pill" onClick={() => setMenu(menu === 'projects' ? null : 'projects')}>

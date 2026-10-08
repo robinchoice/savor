@@ -23,7 +23,7 @@ import { codexAside } from './codex.js'
 import { acpAside } from './acp.js'
 import { antigravityAside } from './antigravity.js'
 import { isUnsafe, listAgents, listSkills, listUsage, mergeAgent } from './providers.js'
-import { nextRun, runs, runWorkflow, syncSchedules, validateCron } from './scheduler.js'
+import { nextRun, runEarly, runs, runWorkflow, syncSchedules, validateCron } from './scheduler.js'
 import * as git from './git.js'
 import { deleteSessions, importSessions, listSessions } from './import.js'
 import * as voice from './voice.js'
@@ -702,8 +702,8 @@ const saveWorkflowRoute = (params: Params, b: any, ctx: Ctx, id?: string) => {
   } catch (e) {
     throw new BadRequest(`Invalid schedule: ${(e as Error).message}`)
   }
-  const { name, prompt, collection, cron, timezone, scheduleLabel, enabled, catchUp, next } = b
-  const fields = Object.fromEntries(Object.entries({ name, prompt, collection, cron, timezone, scheduleLabel, enabled, catchUp, next }).filter(([, v]) => v !== undefined))
+  const { name, prompt, collection, cron, timezone, scheduleLabel, enabled, catchUp, button, next } = b
+  const fields = Object.fromEntries(Object.entries({ name, prompt, collection, cron, timezone, scheduleLabel, enabled, catchUp, button, next }).filter(([, v]) => v !== undefined))
   const wf = store.saveWorkflow(project(params), { ...(fields as { name: string; prompt: string }), ...(id && { id }) }, ctx.auth.origin)
   syncSchedules()
   emit({ type: 'workflows', projectId: params.pid })
@@ -722,7 +722,11 @@ route('DELETE', '/projects/:pid/workflows/:id', (params) => {
   emit({ type: 'workflows', projectId: params.pid })
   return {}
 })
-route('POST', '/projects/:pid/workflows/:id/run', (params, _, ctx) => runWorkflow(params.pid, params.id, ctx.auth.origin))
+route('POST', '/projects/:pid/workflows/:id/run', (params, b, ctx) => (b?.early ? runEarly : runWorkflow)(params.pid, params.id, ctx.auth.origin))
+// The workflows of all projects that have a button in the top bar.
+route('GET', '/workflows/buttons', () =>
+  store.listProjects().flatMap((p) => store.listWorkflows(p).filter((wf) => wf.button).map((wf) => ({ id: wf.id, name: wf.name, projectId: p.id, nextRunAt: nextRun(wf) }))),
+)
 
 // ---- all projects ----
 

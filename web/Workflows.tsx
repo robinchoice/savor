@@ -1,4 +1,4 @@
-import { useState } from 'preact/hooks'
+import { useEffect, useState } from 'preact/hooks'
 import { ArrowLeft, Play, Plus, Clock, Link2, Pencil, Trash2, LayoutGrid, Sparkles } from 'lucide-preact'
 import { api, duration, go, runTrigger, useApi, type Project, type Run, type SavorEvent, type Thread, type Workflow } from './api'
 import { CATEGORIES, RECIPES, recipe, type Recipe } from './recipes'
@@ -17,6 +17,33 @@ export const when = (iso: string) => new Date(iso).toLocaleString(undefined, { w
 export const schedule = (w: Workflow) => (w.cron ? w.scheduleLabel || describeCron(w.cron) : 'Manual')
 // A run changes with its conversation, so the runs follow the project's conversations too.
 const runsChanged = (project: Project) => (e: SavorEvent) => (e.type === 'workflows' || e.type === 'thread' || e.type === 'status') && e.projectId === project.id
+
+// The workflows of all projects with a button in the top bar. A run can do a lot, so the first click only asks.
+export function WorkflowButtons() {
+  const [buttons] = useApi<{ id: string; name: string; projectId: string; nextRunAt: string | null }[]>('/workflows/buttons', (e) => e.type === 'workflows' || e.type === 'projects')
+  const [armed, setArmed] = useState<string | null>(null)
+  useEffect(() => {
+    if (!armed) return
+    const t = setTimeout(() => setArmed(null), 4000)
+    return () => clearTimeout(t)
+  }, [armed])
+  const run = async (b: NonNullable<typeof buttons>[number]) => {
+    if (armed !== b.id) return setArmed(b.id)
+    setArmed(null)
+    const t = await api<Thread>('POST', `/projects/${b.projectId}/workflows/${b.id}/run`, { early: true })
+    go(`/p/${b.projectId}/t/${t.id}`)
+  }
+  const replaces = (b: NonNullable<typeof buttons>[number]) => b.nextRunAt && Date.parse(b.nextRunAt) - Date.now() < 12 * 3600_000
+  return (
+    <>
+      {buttons?.map((b) => (
+        <button key={b.id} class={`pill wf-button ${armed === b.id ? 'armed' : ''}`} title={replaces(b) ? `Run “${b.name}” now, in place of the run at ${when(b.nextRunAt!)}` : `Run “${b.name}” now`} onClick={() => run(b)}>
+          <Play size={14} /> {armed === b.id ? `Run ${b.name} now?` : b.name}
+        </button>
+      ))}
+    </>
+  )
+}
 
 // Routes: workflows | workflows/gallery | workflows/new[/:recipe] | workflows/:id[/edit]
 export function Workflows({ project, rest }: { project: Project; rest: string[] }) {
@@ -193,6 +220,7 @@ function WorkflowForm({ base, projectId, workflow, recipe, all }: { base: string
     timezone: tz,
     enabled: true,
     catchUp: true,
+    button: false,
     next: [] as string[],
     ...workflow,
     cron: workflow?.cron ?? recipe?.schedule ?? '',
@@ -284,6 +312,13 @@ function WorkflowForm({ base, projectId, workflow, recipe, all }: { base: string
           </span>
         </label>
       )}
+      <label class="check with-hint">
+        <input type="checkbox" checked={draft.button} onChange={(e) => setDraft({ ...draft, button: e.currentTarget.checked })} />
+        <span>
+          Show a button in the top bar
+          <small class="muted">One click runs the workflow now. When it is scheduled within the next 12 hours, this run takes the place of that one.</small>
+        </span>
+      </label>
       {others.length > 0 && (
         <fieldset class="chain">
           <legend>
