@@ -1293,12 +1293,12 @@ test("a conversation continues in the agent's own terminal UI", async () => {
 
 test('a shell command in a message runs in the terminal with one click', async () => {
   const [project] = (await api('GET', '/projects')).body
-  const thread = (await api('POST', `/projects/${project.id}/threads`, { text: 'Run this:\n\n```bash\necho $((6*7))-clicked\n```\n\n```js\nconsole.log(1)\n```' })).body
+  const thread = (await api('POST', `/projects/${project.id}/threads`, { text: 'Run this:\n\n```bash\necho $((6*7))-clicked\n```\n\n```js\nconsole.log(1)\n```\n\n```\nnpm test\n```' })).body
   await page.goto(`${base}/#/p/${project.id}/t/${thread.id}`)
   await page.waitForSelector('.msg .md-command')
-  // Only the shell block gets the button.
-  assert.equal(await page.locator('.msg .md-command').count(), 1)
-  await page.click('.msg .md-command button:has-text("Run in terminal")')
+  // The shell block and the one without a language get the button, the js block doesn't.
+  assert.equal(await page.locator('.msg .md-command').count(), 2)
+  await page.click('.msg .md-command >> nth=0 >> button:has-text("Run in terminal")')
   await page.waitForSelector('.terminal-screen >> text=42-clicked')
   await page.click('.terminal-bar button[title^="Close ("]')
   await api('PATCH', `/projects/${project.id}/threads/${thread.id}`, { completed: true })
