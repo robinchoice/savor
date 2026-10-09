@@ -7,16 +7,16 @@ import {
   CircleAlert, ArrowUp, ArrowLeft, Pencil, MessageSquarePlus, Brain, Terminal, Wrench, ArrowRight, Smartphone, Monitor, Bot, ShieldQuestion, X, ChevronUp, ChevronDown, ChevronRight, Paperclip, GitBranch, GitFork, GitMerge, Trash2, Copy, FileDiff, Split, SquareArrowOutUpRight, Workflow as WorkflowIcon, Mail, MailOpen, SquareTerminal,
 } from 'lucide-preact'
 import {
-  api, avatarStyle, cap, duration, formatStamp, formatTime, go, initial, PROVIDER_NAMES, runTrigger, useApi, kindOf, RINGS, type ActivityEvent, type AgentConfig, type Attachment, type Decision, type Message, type Proc, type Project, type Reason, type Thread, type Worktree,
+  api, avatarStyle, cap, desktop, duration, formatStamp, formatTime, go, initial, PROVIDER_NAMES, runTrigger, useApi, kindOf, RINGS, type ActivityEvent, type AgentConfig, type Attachment, type Decision, type Message, type Proc, type Project, type Reason, type Thread, type Worktree,
 } from './api'
-import { Composer, type Picked } from './Composer'
+import { Composer, quoteInComposer, type Picked } from './Composer'
 import { transport } from './transport'
 import { Preview } from './Preview'
 import { PleasanceFooter } from './PleasanceFooter'
 import { Changes, type ReviewComment, type Source } from './Changes'
 import { Fanout } from './Fanout'
 import { setPrefs, usePrefs } from './prefs'
-import { runInTerminal, showTerminal } from './Terminal'
+import { runInTerminal, setTerminalHome, showTerminal } from './Terminal'
 
 const SHELL = /\blanguage-(bash|sh|shell|zsh)\b/
 
@@ -396,6 +396,28 @@ function CardMenu({ project, thread: t, active, href, at, close }: { project: Pr
       )}
     </div>
   )
+}
+
+// What the desktop context menu offers for the selected or copied text while a project is shown: open it
+// in Files, quote it, send it to another project or run it in the terminal. The inbox shows no terminal,
+// so there running a command opens the conversation in its project first.
+export function ContextActions({ project, projects, threadId, inbox }: { project: Project; projects: Project[]; threadId?: string; inbox?: boolean }) {
+  const [elsewhere, setElsewhere] = useState<string | null>(null)
+  useEffect(() => {
+    const own = `/p/${project.id}${threadId ? `/t/${threadId}` : ''}`
+    if (inbox) setTerminalHome(() => go(own))
+    desktop?.setContextActions?.(project.path, (action, value) => {
+      if (action === 'terminal') runInTerminal(value)
+      if (action === 'quote') quoteInComposer(value, () => go(own))
+      if (action === 'elsewhere') setElsewhere(value)
+      if (action === 'open') go(`/p/${project.id}/files/f/${encodeURIComponent(value.path)}${value.line ? `/${value.line}` : ''}`)
+    })
+    return () => {
+      if (inbox) setTerminalHome(null)
+      desktop?.setContextActions?.(null, null)
+    }
+  }, [project.id, project.path, threadId, inbox])
+  return elsewhere !== null ? <RunElsewhereDialog projects={projects} from={project} threadId={threadId} text={elsewhere} onClose={() => setElsewhere(null)} /> : null
 }
 
 // Text sent from the context menu to another project: to a new conversation there, or to one of its open ones.

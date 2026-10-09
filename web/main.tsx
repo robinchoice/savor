@@ -3,7 +3,7 @@ import { render } from 'preact'
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { Coffee, Download, FolderOpen, Monitor, Pin, PinOff, RefreshCw, Search, Files as FilesIcon, MessageSquare, Moon, Server, SlidersHorizontal, SquareKanban, Sun, Workflow as WorkflowIcon, ChevronDown, Inbox, Layers, LayoutList, Smartphone, X, CalendarCheck, FileDown } from 'lucide-preact'
 import { api, avatarStyle, connectEvents, desktop, go, initial, Unauthorized, useApi, useEvent, type Me, type Project } from './api'
-import { Conversations, RunElsewhereDialog } from './Conversations'
+import { ContextActions, Conversations } from './Conversations'
 import { FilesView } from './Files'
 import { WorkflowButtons, Workflows } from './Workflows'
 import { ExportView, TodayView } from './Workspace'
@@ -11,8 +11,7 @@ import { AllProjects } from './Overview'
 import { Settings, Devices, Pair, PairingRequests, RemotePair } from './Settings'
 import { loadProfile, remote, setTransport } from './transport'
 import { ProcessesPopover } from './Processes'
-import { runInTerminal, TerminalButton, TerminalPanel } from './Terminal'
-import { quoteInComposer } from './Composer'
+import { TerminalButton, TerminalPanel } from './Terminal'
 import { useNotifications } from './notify'
 import { AccountDialog, AppearanceMenu, FeedbackDialog } from './Account'
 import { BugButton } from './BugButton'
@@ -394,19 +393,8 @@ function ProjectsMenu({ projects, active, me, setMe, close }: { projects: Projec
 
 function SubBar({ project, projects, section, threadId }: { project: Project; projects: Project[]; section?: string; threadId?: string }) {
   const [procsOpen, setProcsOpen] = useState(false)
-  const [elsewhere, setElsewhere] = useState<string | null>(null)
   const [procCount, setProcCount] = useState(0)
   const load = () => api<unknown[]>('GET', `/projects/${project.id}/processes`).then((l) => setProcCount(l.length))
-  // What the desktop context menu offers for the selected or copied text in this project.
-  useEffect(() => {
-    desktop?.setContextActions?.(project.path, (action, value) => {
-      if (action === 'terminal') runInTerminal(value)
-      if (action === 'quote') quoteInComposer(value, () => go(projectHref(project.id)))
-      if (action === 'elsewhere') setElsewhere(value)
-      if (action === 'open') go(`/p/${project.id}/files/f/${encodeURIComponent(value.path)}${value.line ? `/${value.line}` : ''}`)
-    })
-    return () => desktop?.setContextActions?.(null, null)
-  }, [project.id, project.path])
   useEffect(() => void load(), [project.id])
   useEvent((e) => e.type === 'processes' && e.projectId === project.id && load(), [project.id])
   const tab = (id: string, label: string, Icon: any, href: string, counts?: Project['counts']) => (
@@ -423,7 +411,7 @@ function SubBar({ project, projects, section, threadId }: { project: Project; pr
       {tab('files', 'Files', FilesIcon, `#/p/${project.id}/files`)}
       {tab('workflows', 'Workflows', WorkflowIcon, `#/p/${project.id}/workflows`)}
       {project.type === 'academic-writing' && tab('export', 'Export', FileDown, `#/p/${project.id}/export`)}
-      {elsewhere !== null && <RunElsewhereDialog projects={projects} from={project} threadId={threadId} text={elsewhere} onClose={() => setElsewhere(null)} />}
+      <ContextActions project={project} projects={projects} threadId={threadId} />
       <div class="subbar-right">
         <TerminalButton project={project} />
         <div class="menu-anchor">

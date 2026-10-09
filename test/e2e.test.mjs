@@ -1396,6 +1396,27 @@ test('a shell command in a message runs in the terminal with one click', async (
   await api('PATCH', `/projects/${project.id}/threads/${thread.id}`, { completed: true })
 })
 
+test('in the inbox, the context menu and the run button reach the project of the conversation', async (t) => {
+  const [project] = (await api('GET', '/projects')).body
+  const thread = (await api('POST', `/projects/${project.id}/threads`, { text: 'Inbox run:\n\n```bash\necho $((6*8))-inbox\n```' })).body
+  const context = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: 'en-US' })
+  t.after(() => context.close())
+  await context.addCookies(await page.context().cookies())
+  await context.addInitScript(() => {
+    window.savorDesktop = { pickFolder: async () => null, checkForUpdates: async () => null, installUpdate: async () => {}, onUpdateReady: () => {}, setContextActions: (root, cb) => ((window.contextRoot = root), (window.contextAction = cb)) }
+  })
+  const tab = await context.newPage()
+  await tab.goto(`${base}/#/all/inbox/${project.id}/${thread.id}`)
+  // The inbox offers the context menu's actions for the project of the open conversation.
+  await tab.waitForFunction((root) => window.contextRoot === root, project.path)
+  // It has no terminal, so running a command opens the conversation in its project.
+  await tab.click('.msg .md-command button:has-text("Run in terminal")')
+  await tab.waitForURL(`${base}/#/p/${project.id}/t/${thread.id}`)
+  await tab.waitForSelector('.terminal-screen >> text=48-inbox')
+  await tab.click('.terminal-bar button[title^="Close ("]')
+  await api('PATCH', `/projects/${project.id}/threads/${thread.id}`, { completed: true })
+})
+
 test('text from the context menu runs in a new or an open conversation of another project', async (t) => {
   const [project] = (await api('GET', '/projects')).body
   const other = (await api('POST', '/projects', { path: path.join(TMP, 'elsewhere-target'), name: 'Elsewhere Target', create: true })).body

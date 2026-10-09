@@ -3,7 +3,7 @@ import { useState } from 'preact/hooks'
 import { ArrowRight, ChevronDown, Plus, Clock, Pause, Play, SquareArrowOutUpRight, Trash2, TriangleAlert, X } from 'lucide-preact'
 import { api, avatarStyle, formatStamp, go, initial, kindOf, RINGS, useApi, type AgentConfig, type ApprovalOption, type Attachment, type Decision, type Project, type Thread, type Workflow } from './api'
 import { Composer } from './Composer'
-import { byUrgency, Elapsed, NextButton, plain, ThreadCard, ThreadView } from './Conversations'
+import { byUrgency, ContextActions, Elapsed, NextButton, plain, ThreadCard, ThreadView } from './Conversations'
 import { STATUS, schedule, when } from './Workflows'
 import { setPrefs, usePrefs } from './prefs'
 
@@ -298,7 +298,10 @@ function AllInbox({ threads, projects, byId, rest }: { threads?: Listed[]; proje
         </div>
       </aside>
       {project && tid ? (
-        <ThreadView key={tid} project={project} threadId={tid} back="/all/inbox" next={nextPaths} />
+        <>
+          <ThreadView key={tid} project={project} threadId={tid} back="/all/inbox" next={nextPaths} />
+          <ContextActions project={project} projects={projects} threadId={tid} inbox />
+        </>
       ) : (
         <section class="thread new-thread">
           <div class="new-hero">

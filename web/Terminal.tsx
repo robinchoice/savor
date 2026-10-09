@@ -166,12 +166,16 @@ export function TerminalPanel({ project, threadId }: { project: Project; threadI
 }
 
 // A command from the context menu goes to the shell on screen, or waits until the opened panel shows one.
+// Where no panel can open, as in the inbox, `home` goes to the project that has one.
 let runner: ((command: string) => void) | null = null
 let queued: string | null = null
+let home: (() => void) | null = null
+export const setTerminalHome = (show: (() => void) | null) => void (home = show)
 export function runInTerminal(command: string) {
   if (runner) return runner(command)
   queued = command
   setPrefs({ terminalOpen: true })
+  home?.()
 }
 
 // A terminal made elsewhere (e.g. a conversation opened in the agent's terminal UI) is shown, also when
