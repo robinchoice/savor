@@ -730,6 +730,17 @@ test('workflows run in a new conversation', async () => {
   assert.ok(!(await client.callTool({ name: 'delete_workflow', arguments: { id: wf.id, revision: saved.revision } })).isError)
   await client.close()
   assert.equal((await api('GET', w + '/runs')).status, 404)
+
+  // Deleting from the workflow's page also takes it out of the chains that continued with it.
+  const last = (await api('POST', `/projects/${project.id}/workflows`, { name: 'Last step', prompt: 'last' })).body
+  const first = (await api('POST', `/projects/${project.id}/workflows`, { name: 'First step', prompt: 'first', next: [last.id] })).body
+  await page.goto(`${base}/#/p/${project.id}/workflows/${last.id}`)
+  page.once('dialog', (d) => d.accept())
+  await page.click('.wf-actions button:has-text("Delete")')
+  await page.waitForURL(`${base}/#/p/${project.id}/workflows`)
+  assert.equal((await api('GET', `/projects/${project.id}/workflows/${last.id}/runs`)).status, 404)
+  assert.deepEqual((await api('GET', `/projects/${project.id}/workflows`)).body.find((x) => x.id === first.id).next, [])
+  await api('DELETE', `/projects/${project.id}/workflows/${first.id}`)
 })
 
 test('a workflow runs at the first scheduled time after it was saved', async () => {

@@ -137,6 +137,11 @@ export function Workflows({ project, rest }: { project: Project; rest: string[] 
 function Overview({ base, project, workflow: w, onRun }: { base: string; project: Project; workflow: Workflow; onRun: () => void }) {
   const [runs] = useApi<Run[]>(`${base}/${w.id}/runs`, runsChanged(project))
   const blocker = (r: Run) => runs?.find((x) => x.threadId === r.threadId && x.status !== 'skipped')
+  const remove = async () => {
+    if (!confirm(`Delete “${w.name}”?`)) return
+    await api('DELETE', `${base}/${w.id}`)
+    go(`/p/${project.id}/workflows`)
+  }
   return (
     <div class="wf-over">
       <div class="wf-head">
@@ -158,6 +163,9 @@ function Overview({ base, project, workflow: w, onRun }: { base: string; project
           <a class="ghost" href={`#/p/${project.id}/workflows/${w.id}/edit`}>
             <Pencil size={14} /> Edit
           </a>
+          <button class="ghost danger" onClick={remove}>
+            <Trash2 size={14} /> Delete
+          </button>
         </div>
       </div>
       <div class="runs">

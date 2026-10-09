@@ -577,6 +577,8 @@ export function saveWorkflow(p: Project, wf: Partial<Workflow> & { name: string;
 
 export function deleteWorkflow(p: Project, id: string) {
   fs.rmSync(path.join(wfDir(p), `${path.basename(id)}.json`), { force: true })
+  // Chains drop the link to it.
+  for (const wf of listWorkflows(p)) if (wf.next.includes(id)) saveWorkflow(p, { ...wf, next: wf.next.filter((n) => n !== id) })
 }
 
 // ---- background processes ----
