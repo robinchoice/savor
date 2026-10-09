@@ -181,7 +181,7 @@ function buildServer(p: Project, tid: string) {
     ok(store.listWorkflows(p).map((wf) => ({ ...wf, url: wfUrl(wf.id) }))),
   )
 
-  server.registerTool('read_workflow', { description: 'Read a workflow, including the workflows it links to and the revision update_workflow asks for.', inputSchema: { id: z.string() } }, async ({ id }) => {
+  server.registerTool('read_workflow', { description: 'Read a workflow, including the workflows it links to and the revision update_workflow and delete_workflow ask for.', inputSchema: { id: z.string() } }, async ({ id }) => {
     const wf = store.getWorkflow(p, id)
     return ok({ ...wf, revision: revisionOf(wf) })
   })
@@ -213,6 +213,18 @@ function buildServer(p: Project, tid: string) {
       syncSchedules()
       emit({ type: 'workflows', projectId: p.id })
       return ok({ id, url: wfUrl(id) })
+    },
+  )
+
+  server.registerTool(
+    'delete_workflow',
+    { description: 'Delete a workflow, with the revision read_workflow returned for it.', inputSchema: { id: z.string(), revision: z.string() } },
+    async ({ id, revision }) => {
+      if (revision !== revisionOf(store.getWorkflow(p, id))) throw new Error('The workflow changed since you read it. Read it again before deleting it.')
+      store.deleteWorkflow(p, id)
+      syncSchedules()
+      emit({ type: 'workflows', projectId: p.id })
+      return ok({ id })
     },
   )
 

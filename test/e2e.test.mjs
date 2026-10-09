@@ -715,8 +715,12 @@ test('workflows run in a new conversation', async () => {
   assert.equal((await client.callTool({ name: 'update_workflow', arguments: { id: wf.id, revision, prompt: 'stale' } })).isError, true)
   assert.ok(!(await client.callTool({ name: 'update_workflow', arguments: { id: wf.id, revision: (await read()).revision, prompt: 'nightly check, thoroughly' } })).isError)
   const saved = await read()
-  await client.close()
   assert.deepEqual([saved.prompt, saved.cron], ['nightly check, thoroughly', '0 4 * * *'])
+  // Deleting asks for the revision the same way.
+  assert.equal((await client.callTool({ name: 'delete_workflow', arguments: { id: wf.id, revision } })).isError, true)
+  assert.ok(!(await client.callTool({ name: 'delete_workflow', arguments: { id: wf.id, revision: saved.revision } })).isError)
+  await client.close()
+  assert.equal((await api('GET', w + '/runs')).status, 404)
 })
 
 test('a workflow runs at the first scheduled time after it was saved', async () => {
