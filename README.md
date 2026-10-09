@@ -241,6 +241,16 @@ Early. Known gaps:
 - A browser remembers one paired computer at a time.
 - The Grok Build and Gemini CLI adapters haven't been tested against the real CLIs.
 
+## How Savor is maintained
+
+Savor is built by coding agents working inside Savor, with one person at [Pleasance](https://pleasance.org) setting the direction. Every change goes through CI, which runs the end-to-end tests against a real daemon and UI. Releases ship several times a week, and installed apps update themselves.
+
+If Savor ever stops, you lose nothing:
+- Your code is in your own git repository.
+- Conversations, documents and the backlog are plain files in `.savor/` inside your project.
+- Claude Code and Codex sessions stay regular sessions of those CLIs, so `claude --resume` or `codex resume` pick them up without Savor.
+- AGPL-3.0 lets anyone fork and continue it, and [`AGENTS.md`](AGENTS.md) gives their agents what they need to start.
+
 ## License
 
 AGPL-3.0-or-later
