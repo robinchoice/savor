@@ -660,7 +660,6 @@ export function ThreadView({ project, threadId, back, next }: { project: Project
   const [source, setSource] = useState<Source | null>(null)
   const [review] = useApi<ReviewComment[]>(`${base}/review`, (e) => e.threadId === threadId && e.type === 'review')
   const saveReview = (comments: ReviewComment[]) => api('PUT', `${base}/review`, { comments })
-  const [titleOpen, setTitleOpen] = useState<string | null>(null)
   // Picked answers stay with their conversation like the composer's draft, until they are sent.
   const answersKey = `savor-answers:${threadId}`
   const [answers, setAnswers] = useState<Record<string, Pick>>(() => JSON.parse(localStorage.getItem(answersKey) ?? '{}'))
@@ -879,9 +878,7 @@ export function ThreadView({ project, threadId, back, next }: { project: Project
               </button>
             )}
             <div class="thread-head-text">
-              <h1 class={titleOpen === threadId ? 'open' : ''} title={titleOpen === threadId ? 'Collapse' : 'Show the whole prompt'} onClick={() => setTitleOpen(titleOpen === threadId ? null : threadId)}>
-                {thread.title}
-              </h1>
+              <h1>{thread.summary ?? thread.title}</h1>
               <div class="thread-sub">
                 <Label label={thread.label} />
                 <span class={`status ${status.cls}`}>
