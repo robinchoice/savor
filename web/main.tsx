@@ -2,7 +2,7 @@ import './monitoring'
 import { render } from 'preact'
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { Coffee, Download, FolderOpen, Monitor, Pin, PinOff, RefreshCw, Search, Files as FilesIcon, MessageSquare, Moon, Server, SlidersHorizontal, SquareKanban, Sun, Workflow as WorkflowIcon, ChevronDown, Inbox, Layers, LayoutList, Smartphone, X, CalendarCheck, FileDown } from 'lucide-preact'
-import { api, avatarStyle, connectEvents, desktop, go, initial, Unauthorized, useApi, useEvent, type Me, type Project } from './api'
+import { api, avatarStyle, connectEvents, desktop, go, initial, lastThreadKey, Unauthorized, useApi, useEvent, type Me, type Project } from './api'
 import { ContextActions, Conversations } from './Conversations'
 import { FilesView } from './Files'
 import { WorkflowButtons, Workflows } from './Workflows'
@@ -35,8 +35,6 @@ function useRoute() {
   return route
 }
 
-// The conversation that was open when a project was left; its tab opens it again, otherwise a new one.
-const lastThreadKey = (pid: string) => `savor-last-thread:${pid}`
 // The project that was open last, so a restart of the app (also after an update) returns to it.
 const LAST_PROJECT = 'savor-last-project'
 const projectHref = (pid: string) => {

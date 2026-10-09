@@ -7,7 +7,7 @@ import {
   CircleAlert, ArrowUp, ArrowLeft, Pencil, MessageSquarePlus, Brain, Terminal, Wrench, ArrowRight, Smartphone, Monitor, Bot, ShieldQuestion, X, ChevronUp, ChevronDown, ChevronRight, Paperclip, GitBranch, GitFork, GitMerge, Trash2, Copy, FileDiff, Split, SquareArrowOutUpRight, Workflow as WorkflowIcon, Mail, MailOpen, SquareTerminal,
 } from 'lucide-preact'
 import {
-  api, avatarStyle, cap, desktop, duration, formatStamp, formatTime, go, initial, PROVIDER_NAMES, runTrigger, useApi, kindOf, RINGS, type ActivityEvent, type AgentConfig, type Attachment, type Decision, type Message, type Proc, type Project, type Reason, type Thread, type Worktree,
+  api, avatarStyle, cap, desktop, duration, formatStamp, formatTime, go, initial, lastThreadKey, PROVIDER_NAMES, runTrigger, useApi, kindOf, RINGS, type ActivityEvent, type AgentConfig, type Attachment, type Decision, type Message, type Proc, type Project, type Reason, type Thread, type Worktree,
 } from './api'
 import { Composer, quoteInComposer, type Picked } from './Composer'
 import { transport } from './transport'
@@ -642,6 +642,15 @@ export function ThreadView({ project, threadId, back, next }: { project: Project
     const timer = setInterval(() => setClock(Date.now()), 1000)
     return () => clearInterval(timer)
   }, [data?.busy])
+
+  // A finished conversation is not what the project's tab opens again; reopened, it is.
+  useEffect(() => {
+    if (!data) return
+    const key = lastThreadKey(project.id)
+    if (data.thread.completed) {
+      if (localStorage.getItem(key) === threadId) localStorage.removeItem(key)
+    } else if (location.hash === `#/p/${project.id}/t/${threadId}`) localStorage.setItem(key, threadId)
+  }, [data?.thread.completed])
 
   const mode = view ?? (data?.thread.preview ? 'browser' : 'chat')
   // Browser and changes both sit beside the chat.

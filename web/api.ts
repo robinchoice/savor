@@ -5,6 +5,9 @@ export class Unauthorized extends Error {}
 
 export const go = (path: string) => (location.hash = path)
 
+// The conversation that was open when a project was left; its tab opens it again, otherwise a new one.
+export const lastThreadKey = (pid: string) => `savor-last-thread:${pid}`
+
 // The last failed calls, sent along with a bug report.
 export const recentErrors: string[] = []
 
