@@ -113,9 +113,9 @@ export function Composer(props: Props) {
     }
   }, [popover])
 
-  // Ready to type on arrival, except on touch screens where the keyboard would cover the conversation.
+  // Ready to type on arrival, except in a conversation on touch screens, where the keyboard would cover it.
   useEffect(() => {
-    if (props.autoFocus && matchMedia('(pointer: fine)').matches) ref.current?.focus()
+    if (props.autoFocus && (!props.threadId || matchMedia('(pointer: fine)').matches)) ref.current?.focus()
   }, [])
   useEffect(() => {
     const into = (quote: string) => {
