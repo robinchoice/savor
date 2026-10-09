@@ -2392,6 +2392,9 @@ test('the All tab answers questions in place and starts what waits in the backlo
   // The composer has the focus now, so it takes Alt+J.
   await page.keyboard.press('Alt+j')
   await page.waitForFunction((first) => location.hash !== first, first)
+  // Previous leads back to where Next came from.
+  await page.click('.all-inbox .prev-btn')
+  await page.waitForFunction((first) => location.hash === first, first)
 
   // Finish & next closes a settled conversation and opens the next one that needs you.
   const settled = (await api('POST', threads, { text: 'plan the header', agent: { provider: 'claude' } })).body

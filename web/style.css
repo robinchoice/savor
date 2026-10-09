@@ -186,6 +186,7 @@ main { flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
 .band i { position: absolute; top: -3px; left: 75%; width: 15.83%; min-width: 9px; height: 9px; border-radius: 5px; background: var(--grad); box-shadow: 0 0 0 2px var(--panel); }
 .conv-head { display: flex; align-items: center; gap: 12px; padding: 18px 18px 12px; }
 .conv-head h2 { font-size: 22px; flex: 1; }
+.conv-head .prev-btn { margin-right: -6px; }
 .new-btn { width: 30px; height: 30px; border-radius: 8px; color: var(--muted); display: flex; align-items: center; justify-content: center; transition: background 0.18s ease, color 0.18s ease; }
 .new-btn:hover { background: var(--card); color: var(--text); }
 .search { display: flex; align-items: center; gap: 8px; margin: 0 14px; padding: 0 10px; background: var(--card); border-radius: 9px; color: var(--faint); }
@@ -208,7 +209,9 @@ main { flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
 .respond { color: var(--needs); font-weight: 500; white-space: nowrap; }
 /* The list's sections: what waits for the user, what works, the rest. */
 .next-btn { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 7px; font-size: 12.5px; font-weight: 600; background: var(--attn-bg); color: var(--attn-ink); }
-.next-btn kbd { font: 10.5px 'Geist Mono Variable', ui-monospace, monospace; opacity: 0.7; }
+.prev-btn { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border-radius: 7px; font-size: 12.5px; font-weight: 600; border: 1px solid var(--line-strong); color: var(--muted); }
+.next-btn kbd, .prev-btn kbd { font: 10.5px 'Geist Mono Variable', ui-monospace, monospace; opacity: 0.7; }
+.next-btn svg, .prev-btn svg { display: none; }
 .sec { display: flex; flex-direction: column; gap: 2px; }
 .sec + .sec { margin-top: 8px; }
 .sec-head { display: flex; align-items: center; gap: 7px; padding: 6px 8px 4px; font-size: 12px; font-weight: 600; color: var(--muted); }
@@ -613,6 +616,10 @@ main { flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
   .pill span, .pill { font-size: 0; gap: 0; padding: 6px 8px; }
   .pill svg:first-child { width: 16px; height: 16px; }
   .conversations { grid-template-columns: 1fr; }
+  /* Arrows instead of words and keys: no keyboard, little room. */
+  .next-btn, .prev-btn { padding: 5px 10px; }
+  .next-btn svg, .prev-btn svg { display: block; }
+  .next-btn span, .next-btn kbd, .prev-btn span, .prev-btn kbd { display: none; }
   .conversations.has-detail .conv-list { display: none; }
   .conversations:not(.has-detail) > :not(.conv-list) { display: none; }
   .files, .split-page { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }

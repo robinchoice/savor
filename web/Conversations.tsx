@@ -86,30 +86,56 @@ export const byUrgency = <T extends Thread>(list: T[]) =>
     return RANK[x.reason] - RANK[y.reason] || (RANK[x.reason] < 2 ? x.since.localeCompare(y.since) : y.since.localeCompare(x.since))
   })
 
-// Opens the next conversation that needs you, also with J, and with Alt+J while typing.
-// It skips the open one by the address, not by the last render: hashchange comes later, so J right after J
+// Where Next came from, so Previous leads back. It lives in the module, the button remounts with every view.
+const trail: string[] = []
+
+// Opens the next conversation that needs you, also with J, and with Alt+J while typing. Previous goes back
+// along the conversations Next left, also with K and Alt+K.
+// Next skips the open one by the address, not by the last render: hashchange comes later, so J right after J
 // would otherwise open the same conversation again.
 export function NextButton({ paths }: { paths: string[] }) {
   const latest = useRef(paths)
   latest.current = paths
+  const [, setDepth] = useState(trail.length)
   const open = () => {
     const path = latest.current.find((p) => `#${p}` !== location.hash)
-    if (path) go(path)
+    if (!path) return
+    trail.push(location.hash.slice(1))
+    setDepth(trail.length)
+    go(path)
+  }
+  const back = () => {
+    let path = trail.pop()
+    while (path !== undefined && `#${path}` === location.hash) path = trail.pop()
+    setDepth(trail.length)
+    if (path !== undefined) go(path)
   }
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const typing = (e.target as HTMLElement).closest?.('input, textarea, select, [contenteditable]')
-      if (e.code !== 'KeyJ' || e.ctrlKey || e.metaKey || e.shiftKey || (typing && !e.altKey)) return
+      if (!['KeyJ', 'KeyK'].includes(e.code) || e.ctrlKey || e.metaKey || e.shiftKey || (typing && !e.altKey)) return
       e.preventDefault()
-      open()
+      if (e.code === 'KeyJ') open()
+      else back()
     }
     addEventListener('keydown', onKey)
     return () => removeEventListener('keydown', onKey)
   }, [])
   return (
-    <button class="next-btn" title="Open the next conversation that needs you (J)" onClick={open}>
-      Next <kbd>J</kbd>
-    </button>
+    <>
+      {trail.length > 0 && (
+        <button class="prev-btn" title="Back to the conversation before the last Next (K)" onClick={back}>
+          <ArrowLeft size={15} />
+          <span>Previous</span> <kbd>K</kbd>
+        </button>
+      )}
+      {paths.some((p) => `#${p}` !== location.hash) && (
+        <button class="next-btn" title="Open the next conversation that needs you (J)" onClick={open}>
+          <ArrowRight size={15} />
+          <span>Next</span> <kbd>J</kbd>
+        </button>
+      )}
+    </>
   )
 }
 
@@ -131,7 +157,6 @@ export function Conversations({ project, threadId, fanoutId, isNew }: { project:
   const working = open.filter((t) => !t.waitsFor && (t.busy || t.waiting))
   const rest = open.filter((t) => !t.waitsFor && !t.busy && !t.waiting)
   const finished = visible.filter((t) => t.completed)
-  const next = forYou.find((t) => t.id !== threadId)
   const nextPaths = forYou.map((t) => `/p/${project.id}/t/${t.id}`)
   // Without a conversation to return to, the project opens its topmost open one; with none open, a new one.
   // On a phone the list itself is that view.
@@ -163,7 +188,7 @@ export function Conversations({ project, threadId, fanoutId, isNew }: { project:
       <aside class="conv-list">
         <div class="conv-head">
           <h2>Conversations</h2>
-          {next && <NextButton paths={nextPaths} />}
+          <NextButton paths={nextPaths} />
           <a class="new-btn" href={`#/p/${project.id}/new`} title="New conversation">
             <Plus size={18} />
           </a>
