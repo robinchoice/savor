@@ -1648,15 +1648,15 @@ test('files open in the code editor, markdown and documents in the rich editor',
 
 test('unpinned projects leave the tab bar and stay in the Projects menu', async () => {
   const other = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
-  const row = `.menu a[href="#/p/${other.id}"]`
+  const row = `.menu a[href^="#/p/${other.id}"]`
   await page.goto(`${base}/#/all`)
   await page.click('text=Projects')
   await page.click(`${row} .pin`)
-  await page.waitForSelector(`.project-tab[href="#/p/${other.id}"]`, { state: 'detached' })
+  await page.waitForSelector(`.project-tab[href^="#/p/${other.id}"]`, { state: 'detached' })
   assert.equal((await api('GET', '/projects')).body.find((p) => p.id === other.id).pinned, false)
   // Opened from the menu, it has a tab for as long as it is the project on screen.
   await page.click(row)
-  await page.waitForSelector(`.project-tab.active[href="#/p/${other.id}"]`)
+  await page.waitForSelector(`.project-tab.active[href^="#/p/${other.id}"]`)
   await page.click('text=Projects')
   await page.click(`${row} .pin`)
   await until(async () => (await api('GET', '/projects')).body.find((p) => p.id === other.id).pinned)
@@ -1746,7 +1746,7 @@ test('a project tab opens its topmost open conversation instead of a finished on
   await page.goto(`${base}/#/p/${quiet.id}`)
   await page.waitForSelector('text=What do you want to build?')
   await typing()
-  await page.click(`.project-tab[href="#/p/${project.id}"]`)
+  await page.click(`.project-tab[href^="#/p/${project.id}"]`)
   const top = await page.locator('.cards .card').first().getAttribute('href')
   assert.notEqual(top, `#/p/${project.id}/t/${finished.id}`)
   await page.waitForSelector(`.card.active[href="${top}"]`)
