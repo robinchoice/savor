@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Stand-in for an Agent Client Protocol agent (`opencode acp`, `gemini --acp`) used by the end-to-end tests. It
+// Stand-in for an Agent Client Protocol agent (`opencode acp`) used by the end-to-end tests. It
 // finds Savor's MCP server in OPENCODE_CONFIG_CONTENT and in the session's mcpServers.
 // - "approve: <anything>" → session/request_permission with Allow once / Reject, then "ACP permission: <optionId>"
 // - anything else → "ACP echo: <input>"
@@ -19,8 +19,7 @@ if (args[0] === 'models') {
   process.exit(0)
 }
 if (args[0] === 'session') process.exit(0)
-const agent = args[0] === '--acp' ? 'gemini' : 'opencode'
-const log = (entry) => process.env.FAKE_AGENT_LOG && fs.appendFileSync(process.env.FAKE_AGENT_LOG, JSON.stringify({ agent, ...entry }) + '\n')
+const log = (entry) => process.env.FAKE_AGENT_LOG && fs.appendFileSync(process.env.FAKE_AGENT_LOG, JSON.stringify({ agent: 'opencode', ...entry }) + '\n')
 log({ argv: process.argv })
 
 const out = (m) => process.stdout.write(JSON.stringify(m) + '\n')

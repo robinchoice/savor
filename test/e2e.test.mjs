@@ -77,7 +77,6 @@ async function startDaemon() {
       SAVOR_CODEX_BIN: path.join(ROOT, 'test/fake-codex.mjs'),
       SAVOR_OPENCODE_BIN: path.join(ROOT, 'test/fake-acp.mjs'),
       SAVOR_GROK_BIN: path.join(TMP, 'no-such-grok'),
-      SAVOR_GEMINI_BIN: path.join(ROOT, 'test/fake-acp.mjs'),
       SAVOR_ANTIGRAVITY_BIN: path.join(ROOT, 'test/fake-agy.mjs'),
       SAVOR_ANTIGRAVITY_HOME: path.join(TMP, 'agy'),
       SAVOR_TRANSCRIBE_MODULE: path.join(ROOT, 'test/fake-transcribe.mjs'),
@@ -500,16 +499,6 @@ test('OpenCode runs through the Agent Client Protocol', async () => {
   await api('PATCH', `/projects/${project.id}`, { agent: project.agent })
 })
 
-test('Gemini CLI runs through the Agent Client Protocol', async () => {
-  const [project] = (await api('GET', '/projects')).body
-  const thread = (await api('POST', `/projects/${project.id}/threads`, { text: 'hello gemini', agent: { provider: 'gemini', permissionMode: 'autoEdit' } })).body
-  const t = `/projects/${project.id}/threads/${thread.id}`
-  await until(async () => (await api('GET', t)).body.messages.some((m) => m.text === 'ACP echo: hello gemini'))
-  const run = fs.readFileSync(AGENT_LOG, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).find((r) => r.agent === 'gemini' && r.argv)
-  assert.deepEqual(run.argv.slice(2), ['--acp'])
-  await api('PATCH', `/projects/${project.id}`, { agent: project.agent })
-})
-
 test('Antigravity continues its conversation with the chosen model, effort and mode, and reaches Savor through MCP', async () => {
   const [project] = (await api('GET', '/projects')).body
   const thread = (await api('POST', `/projects/${project.id}/threads`, { text: 'hello agy', agent: { provider: 'antigravity', model: 'fake-claude', reasoning: 'high', permissionMode: 'plan' } })).body
@@ -552,8 +541,6 @@ test('the agent list reports what is installed, signed in and offered', async ()
   assert.equal(by.antigravity.signedIn, true)
   assert.deepEqual(by.antigravity.models.map((m) => m.id), ['', 'fake-gemini-high', 'fake-claude'])
   assert.equal(by.grok.installed, false)
-  assert.equal(by.gemini.version, '9.9.9')
-  assert.ok(by.gemini.modes.find((m) => m.id === 'yolo').unsafe)
   assert.ok(by.claude.modes.find((m) => m.id === 'bypassPermissions').unsafe)
 })
 

@@ -12,7 +12,6 @@ export const BIN = {
   codex: process.env.SAVOR_CODEX_BIN ?? 'codex',
   opencode: process.env.SAVOR_OPENCODE_BIN ?? 'opencode',
   grok: process.env.SAVOR_GROK_BIN ?? 'grok',
-  gemini: process.env.SAVOR_GEMINI_BIN ?? 'gemini',
   antigravity: process.env.SAVOR_ANTIGRAVITY_BIN ?? 'agy',
   gh: process.env.SAVOR_GH_BIN ?? 'gh',
 }
