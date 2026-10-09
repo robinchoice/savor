@@ -245,6 +245,8 @@ Early. Known gaps:
 
 Savor is built by coding agents working inside Savor, with one person at [Pleasance](https://pleasance.org) setting the direction. Every change goes through CI, which runs the end-to-end tests against a real daemon and UI. Releases ship several times a week, and installed apps update themselves.
 
+Every night, a check installs the newest Claude Code, Codex and OpenCode and runs a real conversation with each through Savor (a prompt, a permission request, an interrupt). A change in their protocols that breaks Savor lands in the backlog the next morning, ready for an agent to fix.
+
 If Savor ever stops, you lose nothing:
 - Your code is in your own git repository.
 - Conversations, documents and the backlog are plain files in `.savor/` inside your project.

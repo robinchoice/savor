@@ -11,6 +11,8 @@
 
 `npm run build && npm run typecheck && npm test`
 
+`node scripts/upstream-check.mjs` runs Savor against the newest Claude Code, Codex and OpenCode with this computer's logins, nightly as the Savor workflow "Upstream check". It is not part of the checks above: each run costs a few real agent turns.
+
 ## Deploy
 
 - A push to `main` runs `ci.yml`. If it touches `site/`, Coolify deploys the landing page through a repo webhook. Verify: `curl -sI https://savor.pleasance.org`.
