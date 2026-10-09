@@ -368,6 +368,7 @@ test('input during a turn waits in the queue; "send now" interrupts', async () =
   await page.click('.queued-row >> text=Stop work and send now')
   await page.waitForSelector('text=Echo: fourth')
   assert.equal(await page.locator('text=Echo: third').count(), 0, 'the interrupted turn did not conclude')
+  assert.equal(await page.locator('text=error_during_execution').count(), 0, 'the interrupted turn shows no error')
 })
 
 test('stop ends a running turn, and the next input starts the agent again', async () => {

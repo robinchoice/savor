@@ -44,6 +44,8 @@ export class ClaudeSession implements Session {
   private tasks = 0
   private stderr = ''
   private stopping = false
+  // Claude Code ends an interrupted turn with an error result ("error_during_execution").
+  private interrupted = false
   private tokens = 0
   private model = ''
   // When the usage limit Claude ran into resets (ms), while it holds.
@@ -96,6 +98,7 @@ export class ClaudeSession implements Session {
   }
 
   start({ context, input, images }: TurnInput) {
+    this.interrupted = false
     const pics = pictures(images)
     // Claude Code runs a slash command only when the last text block starts with it. What stands in
     // front of that block still reaches the model.
@@ -110,6 +113,7 @@ export class ClaudeSession implements Session {
   }
 
   interrupt() {
+    this.interrupted = true
     this.write({ type: 'control_request', request_id: crypto.randomUUID(), request: { subtype: 'interrupt' } })
   }
 
@@ -167,7 +171,9 @@ export class ClaudeSession implements Session {
     } else if (ev.type === 'result') {
       const window = ev.modelUsage?.[this.model]?.contextWindow
       if (window) this.host.context(this.tokens, window)
-      this.host.ended(ev.is_error && !/interrupt/i.test(ev.subtype ?? '') ? { error: ev.result || ev.subtype, resetsAt: this.limit } : { text: ev.is_error ? '' : ev.result ?? '' })
+      const interrupted = this.interrupted
+      this.interrupted = false
+      this.host.ended(ev.is_error && !interrupted ? { error: ev.result || ev.subtype, resetsAt: this.limit } : { text: ev.is_error ? '' : ev.result ?? '' })
     }
   }
 

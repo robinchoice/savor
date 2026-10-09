@@ -200,7 +200,9 @@ async function turn(text, command) {
     await call('send_acknowledgement_message', { text: 'On it.', summary: 'Work on the request.' })
     await call('send_conclusion_message', { text: `Echo: ${input}`, suggestions: ['Do it again'] })
   }
-  out({ type: 'result', subtype: interrupted ? 'success' : 'success', is_error: false, result: 'done', modelUsage: { 'fake-fable': { contextWindow: 200000 } } })
+  // Claude Code ends an interrupted turn with an error result.
+  if (interrupted) out({ type: 'result', subtype: 'error_during_execution', is_error: true, terminal_reason: 'aborted_streaming', result: null })
+  else out({ type: 'result', subtype: 'success', is_error: false, result: 'done', modelUsage: { 'fake-fable': { contextWindow: 200000 } } })
 }
 
 const rl = readline.createInterface({ input: process.stdin })
