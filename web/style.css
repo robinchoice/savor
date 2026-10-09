@@ -458,7 +458,7 @@ main { flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
 .voice-time::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--red); animation: pulse 1.2s infinite; }
 .attachments { display: flex; gap: 8px; flex-wrap: wrap; padding: 10px 12px 0; }
 .thumb { position: relative; }
-.thumb img { height: 56px; border-radius: 6px; display: block; }
+.thumb img { height: 56px; max-width: 160px; object-fit: cover; object-position: left top; border-radius: 6px; display: block; }
 .thumb button, .chip-ctx button { position: absolute; top: -6px; right: -6px; width: 18px; height: 18px; border-radius: 50%; background: var(--raised); border: 1px solid var(--line-strong); display: flex; align-items: center; justify-content: center; }
 .chip-ctx { position: relative; display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 6px; background: var(--raised); font-size: 12px; font-family: 'Geist Mono Variable', ui-monospace, monospace; }
 .copy-message { width: 24px; height: 24px; margin-left: auto; }
