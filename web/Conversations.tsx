@@ -143,6 +143,7 @@ export function Conversations({ project, threadId, fanoutId, isNew }: { project:
   const [threads] = useApi<Thread[]>(`/projects/${project.id}/threads`, (e) => e.projectId === project.id && ['thread', 'status', 'message', 'processes', 'activity'].includes(e.type))
   const [worktrees] = useApi<Worktree[]>(`/projects/${project.id}/worktrees`, (e) => e.projectId === project.id && e.type === 'thread')
   const [query, setQuery] = useState('')
+  const [filter, setFilter] = useState<'all' | 'you' | 'working'>('all')
   const [closed, setClosed] = useState<string[]>(() => JSON.parse(localStorage.getItem('savor-closed-sections') ?? '["finished"]'))
   const toggle = (id: string) => {
     const next = closed.includes(id) ? closed.filter((c) => c !== id) : [...closed, id]
@@ -172,6 +173,13 @@ export function Conversations({ project, threadId, fanoutId, isNew }: { project:
   const fanoutPaths = new Set((threads ?? []).flatMap((t) => (t.fanout && t.worktree ? [t.worktree.path] : [])))
   const plainWorktrees = (worktrees ?? []).filter((w) => !fanoutPaths.has(w.path))
 
+  const filtered = { all: open, you: forYou, working }
+  const tab = (id: keyof typeof filtered, label: string) => (
+    <button class={`filter ${filter === id ? 'active' : ''} ${id === 'you' && forYou.length ? 'attention' : ''}`} onClick={() => setFilter(id)}>
+      {label} <b>{filtered[id].length}</b>
+    </button>
+  )
+
   const section = (id: string, title: string, list: Thread[]) =>
     list.length > 0 && (
       <div class={`sec ${id} ${closed.includes(id) ? 'closed' : ''}`}>
@@ -197,35 +205,47 @@ export function Conversations({ project, threadId, fanoutId, isNew }: { project:
           <Search size={15} />
           <input placeholder="Search conversations..." value={query} onInput={(e) => setQuery(e.currentTarget.value)} />
         </label>
-        <div class="cards">
-          {section('for-you', 'For you', forYou)}
-          {section('working', 'Working', working)}
-          {section('open', 'Open', rest)}
-          {(fanouts.size > 0 || plainWorktrees.length > 0) && (
-            <div class={`sec worktrees ${closed.includes('worktrees') ? 'closed' : ''}`}>
-              <button class="sec-head" onClick={() => toggle('worktrees')}>
-                Worktrees <span class="sec-count">{fanouts.size + plainWorktrees.length}</span>
-                <ChevronDown size={13} />
-              </button>
-              {!closed.includes('worktrees') && (
-                <>
-                  {[...fanouts].map(([id, list]) => (
-                    <a key={id} class={`fan-head ${id === fanoutId ? 'active' : ''}`} href={`#/p/${project.id}/fan/${id}`} title="Compare the results">
-                      <Split size={14} />
-                      <span class="fan-title">{list[0].title}</span>
-                      <span class="muted small">{list.some((t) => t.busy || t.waiting) ? `${list.filter((t) => !t.busy && !t.waiting).length} of ${list.length} finished` : 'Compare'}</span>
-                    </a>
-                  ))}
-                  {plainWorktrees.map((w) => (
-                    <WorktreeHead key={w.path} project={project} branch={w.branch} path={w.path} info={w} />
-                  ))}
-                </>
-              )}
-            </div>
-          )}
-          {section('finished', 'Finished', finished)}
-          {threads && !visible.length && <p class="muted center">{q ? 'No matching conversations.' : 'No conversations yet.'}</p>}
+        <div class="filters">
+          {tab('all', 'All')}
+          {tab('you', 'For you')}
+          {tab('working', 'Working')}
         </div>
+        {filter !== 'all' ? (
+          <div class="cards">
+            {filtered[filter].map((t) => <ThreadCard key={t.id} project={project} thread={t} active={t.id === threadId} />)}
+            {threads && !filtered[filter].length && <p class="muted center">{q ? 'No matching conversations.' : 'No conversations in this filter.'}</p>}
+          </div>
+        ) : (
+          <div class="cards">
+            {section('for-you', 'For you', forYou)}
+            {section('working', 'Working', working)}
+            {section('open', 'Open', rest)}
+            {(fanouts.size > 0 || plainWorktrees.length > 0) && (
+              <div class={`sec worktrees ${closed.includes('worktrees') ? 'closed' : ''}`}>
+                <button class="sec-head" onClick={() => toggle('worktrees')}>
+                  Worktrees <span class="sec-count">{fanouts.size + plainWorktrees.length}</span>
+                  <ChevronDown size={13} />
+                </button>
+                {!closed.includes('worktrees') && (
+                  <>
+                    {[...fanouts].map(([id, list]) => (
+                      <a key={id} class={`fan-head ${id === fanoutId ? 'active' : ''}`} href={`#/p/${project.id}/fan/${id}`} title="Compare the results">
+                        <Split size={14} />
+                        <span class="fan-title">{list[0].title}</span>
+                        <span class="muted small">{list.some((t) => t.busy || t.waiting) ? `${list.filter((t) => !t.busy && !t.waiting).length} of ${list.length} finished` : 'Compare'}</span>
+                      </a>
+                    ))}
+                    {plainWorktrees.map((w) => (
+                      <WorktreeHead key={w.path} project={project} branch={w.branch} path={w.path} info={w} />
+                    ))}
+                  </>
+                )}
+              </div>
+            )}
+            {section('finished', 'Finished', finished)}
+            {threads && !visible.length && <p class="muted center">{q ? 'No matching conversations.' : 'No conversations yet.'}</p>}
+          </div>
+        )}
         <footer class="list-foot">
           <PleasanceFooter />
         </footer>

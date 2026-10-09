@@ -248,6 +248,12 @@ test('questions are answered in one reply', async () => {
   await send('ask: Ship it?')
   await page.waitForSelector('.option')
   await page.waitForSelector('.sec.for-you .card.active .chip.blocked >> text=Question')
+  // The filters show one group as a flat list.
+  await page.click('.conv-list .filter:has-text("For you")')
+  await page.waitForSelector('.conv-list .cards:not(:has(.sec)) .card.active')
+  await page.click('.conv-list .filter:has-text("Working")')
+  assert.equal(await page.locator('.conv-list .card.active').count(), 0, 'a conversation waiting for an answer is not working')
+  await page.click('.conv-list .filter:has-text("All")')
   assert.deepEqual(await page.locator('.option:not(.other)').allTextContents(), ['NoRecommended', 'Yes'], 'the recommended option comes first')
   assert.ok(await page.locator('.composer button:has-text("Send answers")').isDisabled(), 'nothing is sent before every question has an answer')
   await page.click('.option:has-text("Yes")')
@@ -299,7 +305,7 @@ test('a comment can be sent before every question is answered', async () => {
   await page.waitForSelector('text=Not answered')
   await page.waitForSelector('text=Comment: Drop this, try another way.')
   await page.waitForSelector('.answered:has-text("Skipped")')
-  assert.equal(await page.locator('.filter.attention').count(), 0, 'nothing waits for the user anymore')
+  assert.equal(await page.locator('.card.active .chip.blocked').count(), 0, 'nothing waits for the user anymore')
 })
 
 test('approvals are routed to the user, "Always allow" remembers the rule', async () => {
