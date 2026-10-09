@@ -362,7 +362,7 @@ main { flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
 .next-text:hover .next-send, .next-edit:hover, .next-new:hover { color: var(--text); }
 .next-edit, .next-new { color: var(--faint); padding: 6px; border-radius: 8px; display: flex; }
 
-.complete-actions { align-self: flex-end; margin: 0 28px 6px 0; display: flex; gap: 4px; }
+.complete-actions { align-self: flex-start; margin: 0 0 6px 28px; display: flex; gap: 4px; }
 .mark-complete { display: flex; align-items: center; gap: 7px; color: var(--muted); font-weight: 500; padding: 6px 10px; border-radius: 8px; transition: background 0.18s ease, color 0.18s ease; }
 .mark-complete span { display: flex; }
 .mark-complete:hover { background: var(--card); color: var(--text); }
@@ -496,7 +496,7 @@ main { flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
 .thread-layout.browser .modes button { padding: 0 9px; }
 .thread-layout.browser .modes span { display: none; }
 .thread-layout.browser .messages { padding: 14px 14px 16px; }
-.thread-layout.browser .complete-actions { margin-right: 14px; }
+.thread-layout.browser .complete-actions { margin-left: 14px; }
 .thread-layout.browser .thread .composer { width: calc(100% - 20px); margin-bottom: 10px; }
 .split-handle { flex: none; width: 5px; background: var(--line); cursor: col-resize; touch-action: none; position: relative; z-index: 4; transition: background 0.18s ease; }
 .split-handle::after { content: ''; position: absolute; inset: 0 -5px; }
@@ -640,7 +640,7 @@ main { flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
   .messages { padding: 12px 12px 16px; }
   .composer { width: calc(100% - 16px); margin: 0 auto 8px; }
   .voice small { display: none; }
-  .complete-actions { margin-right: 12px; }
+  .complete-actions { margin-left: 12px; }
   .doc, .form { padding: 16px; }
   .menu.wide, .procs, .mention { width: min(92vw, 380px); min-width: 0; }
 }
