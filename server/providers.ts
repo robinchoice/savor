@@ -104,22 +104,6 @@ export const STATIC: Record<Provider, Static> = {
     ultracode: false,
     signIn: 'grok login',
   },
-  gemini: {
-    id: 'gemini',
-    name: 'Gemini CLI',
-    models: [],
-    efforts: [],
-    defaultEffort: '',
-    modes: [
-      { id: 'default', label: 'Default', detail: 'Gemini asks before edits and commands.' },
-      { id: 'autoEdit', label: 'Auto edit', detail: 'File edits run without asking. Commands ask first.' },
-      { id: 'yolo', label: 'YOLO', detail: 'Approve every action without asking.', unsafe: true },
-    ],
-    defaultMode: 'default',
-    fast: false,
-    ultracode: false,
-    signIn: 'gemini',
-  },
   antigravity: {
     id: 'antigravity',
     name: 'Antigravity',
@@ -211,18 +195,6 @@ const probes: Record<Provider, () => Promise<Probe>> = {
     const status = await run(BIN.grok, ['--no-auto-update', 'models'])
     const signedIn = status.ok && /You are (using|logged in|authenticated)|^Model '/m.test(status.out)
     return { installed: true, version: version(v.out), signedIn, account: status.out.match(/logged in with (\S+)/)?.[1] ?? null }
-  },
-  // Gemini CLI has no status command: signed in means a stored Google login or an API key.
-  async gemini() {
-    const v = await run(BIN.gemini, ['--version'])
-    if (v.missing) return { installed: false, version: null, signedIn: null, account: null }
-    const dir = path.join(os.homedir(), '.gemini')
-    let account: string | null = null
-    try {
-      account = JSON.parse(fs.readFileSync(path.join(dir, 'google_accounts.json'), 'utf8')).active ?? null
-    } catch {}
-    const signedIn = !!process.env.GEMINI_API_KEY || fs.existsSync(path.join(dir, 'oauth_creds.json'))
-    return { installed: true, version: version(v.out), signedIn, account }
   },
   async antigravity() {
     const v = await run(BIN.antigravity, ['--version'])

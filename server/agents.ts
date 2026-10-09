@@ -347,7 +347,7 @@ function sessionFor(p: Project, thread: Thread): Session {
   const session =
     provider === 'claude' ? new ClaudeSession(host, thread)
     : provider === 'codex' ? new CodexSession(host, thread)
-    : provider === 'opencode' || provider === 'grok' || provider === 'gemini' ? new AcpSession(host, thread)
+    : provider === 'opencode' || provider === 'grok' ? new AcpSession(host, thread)
     : new AntigravitySession(host, thread)
   holder.session = session
   sessions.set(tid, { session })
