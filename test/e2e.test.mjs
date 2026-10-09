@@ -1760,6 +1760,19 @@ test('a project tab opens its topmost open conversation instead of a finished on
   await typing()
 })
 
+test('the new conversation button opens a composer ready to type, in a project and in the inbox', async () => {
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
+  const thread = (await api('POST', `/projects/${project.id}/threads`, { text: 'hello', agent: { provider: 'claude' } })).body
+  const typing = () => page.waitForFunction(() => document.activeElement?.matches('.composer textarea'))
+  for (const from of [`/p/${project.id}/t/${thread.id}`, `/all/inbox/${project.id}/${thread.id}`]) {
+    await page.goto(`${base}/#${from}`)
+    await page.waitForSelector('.thread-head')
+    await page.click('.conv-head .new-btn')
+    await page.waitForSelector('text=What do you want to build?')
+    await typing()
+  }
+})
+
 test('/btw asks a copy of the agent session, also while it works, and stays out of the conversation', async () => {
   const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
   const thread = (await api('POST', `/projects/${project.id}/threads`, { text: 'slow: long work', agent: { provider: 'claude' } })).body

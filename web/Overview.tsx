@@ -307,7 +307,7 @@ function AllInbox({ threads, projects, byId, rest }: { threads?: Listed[]; proje
             <h1>What do you want to build?</h1>
             <p class="muted">Start a conversation in any project, or pick one from the list.</p>
           </div>
-          <StartAnywhere projects={projects} initial={null} />
+          <StartAnywhere projects={projects} initial={null} autoFocus />
         </section>
       )}
     </div>
@@ -501,7 +501,7 @@ function AddToBacklog({ projects, initial }: { projects: Project[]; initial: str
 }
 
 // A new conversation in any project, without opening it first.
-function StartAnywhere({ projects, initial }: { projects: Project[]; initial: string | null }) {
+function StartAnywhere({ projects, initial, autoFocus }: { projects: Project[]; initial: string | null; autoFocus?: boolean }) {
   const [chosen, setChosen] = useState<string | null>(null)
   const [menu, setMenu] = useState(false)
   const project = projects.find((p) => p.id === (chosen ?? initial)) ?? projects.find((p) => p.pinned) ?? projects[0]
@@ -532,7 +532,7 @@ function StartAnywhere({ projects, initial }: { projects: Project[]; initial: st
           </div>
         )}
       </div>
-      <Composer key={project.id} project={project} agent={agent ?? project.agent} setAgent={setAgent} onSend={send} placeholder={`Start a conversation in ${project.name}…`} />
+      <Composer key={project.id} project={project} agent={agent ?? project.agent} setAgent={setAgent} onSend={send} placeholder={`Start a conversation in ${project.name}…`} autoFocus={autoFocus} />
     </div>
   )
 }
