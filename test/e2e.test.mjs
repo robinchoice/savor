@@ -1741,6 +1741,24 @@ test('a restart opens the conversation that was open last', async () => {
   await page.waitForSelector(`.card.active[href="#/p/${project.id}/t/${thread.id}"]`)
 })
 
+test('a project tab opens its topmost open conversation instead of a finished one, ready to type', async () => {
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
+  const finished = (await api('GET', `/projects/${project.id}/threads`)).body.find((t) => t.completed)
+  const typing = () => page.waitForFunction(() => document.activeElement?.matches('.composer textarea'))
+  await page.goto(`${base}/#/p/${project.id}/t/${finished.id}`)
+  await page.waitForSelector('.thread-head')
+  // Without an open conversation, the project starts a new one.
+  const quiet = (await api('POST', '/projects', { path: path.join(TMP, 'quiet'), name: 'Quiet', create: true })).body
+  await page.goto(`${base}/#/p/${quiet.id}`)
+  await page.waitForSelector('text=What do you want to build?')
+  await typing()
+  await page.click(`.project-tab[href="#/p/${project.id}"]`)
+  const top = await page.locator('.cards .card').first().getAttribute('href')
+  assert.notEqual(top, `#/p/${project.id}/t/${finished.id}`)
+  await page.waitForSelector(`.card.active[href="${top}"]`)
+  await typing()
+})
+
 test('/btw asks a copy of the agent session, also while it works, and stays out of the conversation', async () => {
   const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
   const thread = (await api('POST', `/projects/${project.id}/threads`, { text: 'slow: long work', agent: { provider: 'claude' } })).body

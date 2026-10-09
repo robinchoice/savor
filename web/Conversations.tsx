@@ -133,6 +133,13 @@ export function Conversations({ project, threadId, fanoutId, isNew }: { project:
   const finished = visible.filter((t) => t.completed)
   const next = forYou.find((t) => t.id !== threadId)
   const nextPaths = forYou.map((t) => `/p/${project.id}/t/${t.id}`)
+  // Without a conversation to return to, the project opens its topmost open one; with none open, a new one.
+  // On a phone the list itself is that view.
+  const narrow = useNarrow()
+  const top = [...forYou, ...working, ...rest][0]
+  useEffect(() => {
+    if (!narrow && !threadId && !fanoutId && !isNew && top) location.replace(`#/p/${project.id}/t/${top.id}`)
+  }, [threadId, fanoutId, isNew, top?.id])
 
   // Worktrees and fan-outs keep their actions below the conversations; their conversations carry the branch.
   const fanouts = new Map<string, Thread[]>()
