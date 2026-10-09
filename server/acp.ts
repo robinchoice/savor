@@ -1,4 +1,4 @@
-// Agents that speak the Agent Client Protocol (OpenCode, Grok Build, Gemini CLI): one agent process per
+// Agents that speak the Agent Client Protocol (OpenCode, Grok Build): one agent process per
 // conversation, prompts via session/prompt, progress via session/update, approvals via
 // session/request_permission.
 import { execFile, spawn } from 'node:child_process'
@@ -22,7 +22,6 @@ export function acpCommand(provider: Provider, projectId: string, threadId: stri
       env: { OPENCODE_CONFIG_CONTENT: JSON.stringify({ autoupdate: false, share: 'disabled', mcp: { savor: { type: 'remote', ...savor, enabled: true } } }) },
     }
   }
-  if (provider === 'gemini') return { bin: BIN.gemini, args: ['--acp'], env: {} }
   return { bin: BIN.grok, args: ['--no-auto-update', 'agent', '--no-leader', 'stdio'], env: {} }
 }
 

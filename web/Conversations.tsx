@@ -3,7 +3,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/ho
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import {
-  Asterisk, Hexagon, Code2, Sparkles, Gem, Orbit, Plus, Search, MessageSquare, Check, MoreHorizontal, PanelLeft, PanelRight, FileText, Globe,
+  Asterisk, Hexagon, Code2, Sparkles, Orbit, Plus, Search, MessageSquare, Check, MoreHorizontal, PanelLeft, PanelRight, FileText, Globe,
   CircleAlert, ArrowUp, ArrowLeft, Pencil, MessageSquarePlus, Brain, Terminal, Wrench, ArrowRight, Smartphone, Monitor, Bot, ShieldQuestion, X, ChevronUp, ChevronDown, ChevronRight, Paperclip, GitBranch, GitFork, GitMerge, Trash2, Copy, FileDiff, Split, SquareArrowOutUpRight, Workflow as WorkflowIcon, Mail, MailOpen, SquareTerminal,
 } from 'lucide-preact'
 import {
@@ -61,7 +61,6 @@ const PROVIDER_ICONS: Record<string, [any, string]> = {
   codex: [Hexagon, '#9aa4b2'],
   opencode: [Code2, '#7fb069'],
   grok: [Sparkles, '#c9c9c9'],
-  gemini: [Gem, '#4796e3'],
   antigravity: [Orbit, '#5b8def'],
 }
 

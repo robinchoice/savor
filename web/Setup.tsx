@@ -7,7 +7,7 @@ import { recipe } from './recipes'
 import { TEMPLATES, type Template } from './templates'
 
 // The mode a provider works best in for most people; the others still show.
-const RECOMMENDED: Record<string, string> = { claude: 'auto', codex: 'auto-review', gemini: 'autoEdit' }
+const RECOMMENDED: Record<string, string> = { claude: 'auto', codex: 'auto-review' }
 // Plan modes are chosen per conversation, not as a default.
 const HIDDEN_MODES = ['plan', 'dontAsk']
 

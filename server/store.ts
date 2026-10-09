@@ -5,7 +5,7 @@ import crypto from 'node:crypto'
 
 export const HOME = process.env.SAVOR_HOME ?? path.join(os.homedir(), '.savor')
 
-export type Provider = 'claude' | 'codex' | 'opencode' | 'grok' | 'gemini' | 'antigravity'
+export type Provider = 'claude' | 'codex' | 'opencode' | 'grok' | 'antigravity'
 export interface AgentConfig { provider: Provider; model: string; reasoning: string; fast: boolean; ultracode: boolean; permissionMode: string }
 export interface Project {
   id: string
@@ -259,7 +259,11 @@ const TINTS = ['#b5654a', '#8b6bc7', '#3f9a78', '#c59a3d', '#c8577a', '#4a9bb8',
 export const dataDir = (p: { path: string }) => path.join(p.path, '.savor')
 export const defaultAgent = (): AgentConfig => ({ provider: 'claude', model: '', reasoning: 'high', fast: false, ultracode: false, permissionMode: 'acceptEdits' })
 // Until Claude Code 2.1.284 Ultracode was an effort level on top of X-High, now it is a switch at any effort.
-export const upgradeAgent = (a: AgentConfig): AgentConfig => (a.reasoning === 'ultracode' ? { ...a, reasoning: 'xhigh', ultracode: true } : { ...a, ultracode: !!a.ultracode })
+// Gemini CLI is no longer offered; Antigravity takes over its conversations.
+export const upgradeAgent = (a: AgentConfig): AgentConfig =>
+  (a.provider as string) === 'gemini' ? { ...a, provider: 'antigravity', model: '', reasoning: '', permissionMode: 'default', ultracode: false }
+  : a.reasoning === 'ultracode' ? { ...a, reasoning: 'xhigh', ultracode: true }
+  : { ...a, ultracode: !!a.ultracode }
 
 function loadProject(ref: { path: string }): Project | null {
   const p = readJson<(Partial<Project> & Pick<Project, 'id' | 'name'>) | null>(path.join(ref.path, '.savor', 'project.json'), null)
