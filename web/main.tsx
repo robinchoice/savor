@@ -36,9 +36,10 @@ function useRoute() {
 }
 
 // The project that was open last, so a restart of the app (also after an update) returns to it.
+// On a phone a project opens with its list of conversations: the chat would fill the whole screen.
 const LAST_PROJECT = 'savor-last-project'
 const projectHref = (pid: string) => {
-  const tid = localStorage.getItem(lastThreadKey(pid))
+  const tid = !matchMedia('(max-width: 860px)').matches && localStorage.getItem(lastThreadKey(pid))
   return `#/p/${pid}${tid ? `/t/${tid}` : ''}`
 }
 
