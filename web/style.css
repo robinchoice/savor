@@ -118,6 +118,7 @@ main { flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
 .app.terminal-max main { display: none; }
 
 .topbar { display: flex; align-items: center; gap: 10px; height: 48px; padding: 0 14px; background: var(--bar); }
+.brand { display: flex; align-items: center; gap: 10px; }
 .logo { width: 26px; height: 26px; flex: none; }
 .brandname { font: 750 19px/1 var(--display); font-stretch: 78%; letter-spacing: -0.01em; margin: 0 6px 0 -2px; }
 .project-tabs { display: flex; gap: 4px; overflow-x: auto; flex: 1; min-width: 0; scrollbar-width: none; }
@@ -599,7 +600,10 @@ main { flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
   .topbar { padding: 0 8px; gap: 8px; }
   .brandname { display: none; }
   .subbar { overflow-x: auto; scrollbar-width: none; }
-  .project-tab .name { max-width: 90px; overflow: hidden; text-overflow: ellipsis; }
+  /* Only the current tab; switching goes through the Projects menu, the logo leads to All. */
+  .project-tab:not(.active), .tab-sep, .tab-pin { display: none; }
+  .project-tab { min-width: 0; }
+  .project-tab .name { overflow: hidden; text-overflow: ellipsis; }
   .pill span, .pill { font-size: 0; gap: 0; padding: 6px 8px; }
   .pill svg:first-child { width: 16px; height: 16px; }
   .conversations { grid-template-columns: 1fr; }

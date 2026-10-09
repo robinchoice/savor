@@ -247,8 +247,10 @@ function TopBar({ projects, active, all, me, setMe }: { projects: Project[]; act
 
   return (
     <header class="topbar">
-      <img class="logo" src="/icon.svg" alt="Savor" />
-      <span class="brandname" aria-hidden="true">Savor</span>
+      <a href="#/all" class="brand" title="All projects">
+        <img class="logo" src="/icon.svg" alt="Savor" />
+        <span class="brandname" aria-hidden="true">Savor</span>
+      </a>
       <nav class="project-tabs">
         <a href="#/all" class={`project-tab all-tab ${all ? 'active' : ''}`} title="Conversations and workflows of all projects">
           <Layers size={16} />
