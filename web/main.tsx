@@ -1,7 +1,7 @@
 import './monitoring'
 import { render } from 'preact'
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
-import { Coffee, Download, FolderOpen, Monitor, Pin, PinOff, RefreshCw, Search, Files as FilesIcon, MessageSquare, Moon, Server, SlidersHorizontal, SquareKanban, Sun, Workflow as WorkflowIcon, ChevronDown, Inbox, Layers, LayoutList, Smartphone, X, CalendarCheck, FileDown } from 'lucide-preact'
+import { Coffee, Download, FolderOpen, Monitor, Pin, PinOff, RefreshCw, Search, Files as FilesIcon, MessageSquare, Moon, Server, SlidersHorizontal, SquareKanban, Sun, Workflow as WorkflowIcon, ChevronDown, Inbox, Layers, LayoutList, Smartphone, X, CalendarCheck, FileDown, MoreHorizontal, SquareTerminal } from 'lucide-preact'
 import { api, avatarStyle, connectEvents, desktop, go, initial, lastThreadKey, Unauthorized, useApi, useEvent, type Me, type Project } from './api'
 import { ContextActions, Conversations } from './Conversations'
 import { FilesView } from './Files'
@@ -16,7 +16,7 @@ import { useNotifications } from './notify'
 import { AccountDialog, AppearanceMenu, FeedbackDialog } from './Account'
 import { BugButton } from './BugButton'
 import { AddProject, SetupWizard } from './Setup'
-import { usePrefs } from './prefs'
+import { setPrefs, usePrefs } from './prefs'
 import { UsageMeter } from './Usage'
 import '@fontsource-variable/geist'
 import '@fontsource-variable/geist-mono'
@@ -392,13 +392,13 @@ function ProjectsMenu({ projects, active, me, setMe, close }: { projects: Projec
 }
 
 function SubBar({ project, projects, section, threadId }: { project: Project; projects: Project[]; section?: string; threadId?: string }) {
-  const [procsOpen, setProcsOpen] = useState(false)
+  const [menu, setMenu] = useState<'more' | 'procs' | null>(null)
   const [procCount, setProcCount] = useState(0)
   const load = () => api<unknown[]>('GET', `/projects/${project.id}/processes`).then((l) => setProcCount(l.length))
   useEffect(() => void load(), [project.id])
   useEvent((e) => e.type === 'processes' && e.projectId === project.id && load(), [project.id])
-  const tab = (id: string, label: string, Icon: any, href: string, counts?: Project['counts']) => (
-    <a href={href} class={`subtab ${(['t', 'new', undefined].includes(section) ? 't' : section) === id ? 'active' : ''}`}>
+  const tab = (id: string, label: string, Icon: any, href: string, counts?: Project['counts'], extra = '') => (
+    <a href={href} class={`subtab ${extra} ${(['t', 'new', undefined].includes(section) ? 't' : section) === id ? 'active' : ''}`}>
       <Icon size={15} /> {label}
       {counts?.blocked ? <i class="pill-count blocked" title="Questions, approvals and errors">{counts.blocked}</i> : null}
       {counts?.unread ? <i class="pill-count" title="New results">{counts.unread}</i> : null}
@@ -406,25 +406,53 @@ function SubBar({ project, projects, section, threadId }: { project: Project; pr
   )
   return (
     <div class="subbar">
-      {project.type === 'kontor' && tab('today', 'Today', CalendarCheck, `#/p/${project.id}/today`)}
+      {project.type === 'kontor' && tab('today', 'Today', CalendarCheck, `#/p/${project.id}/today`, undefined, 'extra')}
       {tab('t', 'Conversations', MessageSquare, `#/p/${project.id}`, project.counts)}
       {tab('files', 'Files', FilesIcon, `#/p/${project.id}/files`)}
       {tab('workflows', 'Workflows', WorkflowIcon, `#/p/${project.id}/workflows`)}
-      {project.type === 'academic-writing' && tab('export', 'Export', FileDown, `#/p/${project.id}/export`)}
+      {project.type === 'academic-writing' && tab('export', 'Export', FileDown, `#/p/${project.id}/export`, undefined, 'extra')}
       <ContextActions project={project} projects={projects} threadId={threadId} />
-      <div class="subbar-right">
+      <div class="subbar-right menu-anchor">
         <TerminalButton project={project} />
-        <div class="menu-anchor">
-          <button class={`icon-btn ${procCount ? 'on' : ''}`} title="Background processes" onClick={() => setProcsOpen(!procsOpen)}>
-            <Server size={16} />
-            {procCount > 0 && <i class="dot-count">{procCount}</i>}
-          </button>
-          {procsOpen && <ProcessesPopover project={project} close={() => setProcsOpen(false)} />}
-        </div>
+        <button class={`icon-btn ${procCount ? 'on' : ''}`} title="Background processes" onClick={() => setMenu(menu === 'procs' ? null : 'procs')}>
+          <Server size={16} />
+          {procCount > 0 && <i class="dot-count">{procCount}</i>}
+        </button>
         <a class={`icon-btn ${section === 'settings' ? 'on' : ''}`} title="Project settings" href={`#/p/${project.id}/settings`}>
           <SlidersHorizontal size={16} />
         </a>
+        <button class={`icon-btn more ${section === 'settings' ? 'on' : ''}`} title="More" onClick={() => setMenu(menu === 'more' ? null : 'more')}>
+          <MoreHorizontal size={16} />
+          {procCount > 0 && <i class="dot-count">{procCount}</i>}
+        </button>
+        {menu === 'procs' && <ProcessesPopover project={project} close={() => setMenu(null)} />}
+        {menu === 'more' && <MoreMenu project={project} procCount={procCount} openProcs={() => setMenu('procs')} close={() => setMenu(null)} />}
       </div>
+    </div>
+  )
+}
+
+// On mobile the subbar keeps Conversations, Files and Workflows; everything else is in this menu.
+function MoreMenu({ project, procCount, openProcs, close }: { project: Project; procCount: number; openProcs: () => void; close: () => void }) {
+  const { terminalOpen } = usePrefs()
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const on = (e: MouseEvent) => !e.composedPath().includes(ref.current!) && close()
+    setTimeout(() => addEventListener('click', on))
+    return () => removeEventListener('click', on)
+  }, [])
+  return (
+    <div class="menu right more" ref={ref}>
+      {project.type === 'kontor' && <a href={`#/p/${project.id}/today`} onClick={close}><CalendarCheck size={16} /> <span>Today</span></a>}
+      {project.type === 'academic-writing' && <a href={`#/p/${project.id}/export`} onClick={close}><FileDown size={16} /> <span>Export</span></a>}
+      <button onClick={() => (setPrefs({ terminalOpen: !terminalOpen }), close())}>
+        <SquareTerminal size={16} /> <span>{terminalOpen ? 'Close terminal' : 'Terminal'}</span>
+      </button>
+      <button onClick={openProcs}>
+        <Server size={16} /> <span>Background processes</span>
+        {procCount > 0 && <small>{procCount}</small>}
+      </button>
+      <a href={`#/p/${project.id}/settings`} onClick={close}><SlidersHorizontal size={16} /> <span>Project settings</span></a>
     </div>
   )
 }

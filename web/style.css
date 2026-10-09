@@ -149,6 +149,7 @@ main { flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
 .subtab.active { color: var(--text); }
 .subtab.active::after { content: ''; position: absolute; left: 8px; right: 8px; bottom: -8px; height: 2px; border-radius: 2px; background: var(--grad); }
 .subbar-right { margin-left: auto; display: flex; gap: 4px; }
+.subbar-right > .more { display: none; }
 .pill-count { font-style: normal; display: inline-grid; place-items: center; min-width: 17px; height: 17px; padding: 0 5px; border-radius: 9px; font-size: 10.5px; font-weight: 600; background: var(--new-bg); color: var(--attn-ink); }
 .pill-count.blocked { background: var(--needs-bg); }
 .badge.blocked { color: var(--needs); }
@@ -600,6 +601,11 @@ main { flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
   .topbar { padding: 0 8px; gap: 8px; }
   .brandname { display: none; }
   .subbar { overflow-x: auto; scrollbar-width: none; }
+  /* Conversations, Files and Workflows stay; the rest moves into the More menu. */
+  .subbar .subtab.extra, .subbar-right > .icon-btn:not(.more) { display: none; }
+  .subbar-right > .more { display: inline-flex; }
+  /* The subbar scrolls sideways and would clip its menus. */
+  .menu.more, .menu.procs { position: fixed; top: 92px; left: auto; right: 8px; }
   /* Only the current tab; switching goes through the Projects menu, the logo leads to All. */
   .project-tab:not(.active), .tab-sep, .tab-pin { display: none; }
   .project-tab { min-width: 0; }
