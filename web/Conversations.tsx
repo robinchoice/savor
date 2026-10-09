@@ -32,7 +32,7 @@ DOMPurify.addHook('afterSanitizeAttributes', (node) => {
 export function Markdown({ text }: { text: string }) {
   const html = useMemo(() => DOMPurify.sanitize(marked.parse(text, { async: false }) as string), [text])
   const ref = useRef<HTMLDivElement>(null)
-  // Shell code blocks, and those without a language, get a button beside them that runs the command in the project's terminal.
+  // Shell code blocks, and those without a language, get a button below them that runs the command in the project's terminal.
   useLayoutEffect(() => {
     const slots: HTMLElement[] = []
     for (const code of ref.current!.querySelectorAll<HTMLElement>('pre > code')) {
