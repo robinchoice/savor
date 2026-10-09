@@ -925,6 +925,13 @@ mark { background: color-mix(in srgb, var(--attn) 50%, transparent); color: inhe
 .bug-mark-canvas img { max-width: 100%; max-height: 100%; border-radius: 6px; }
 .bug-mark-frame { position: absolute; border: 3px solid #f2545b; border-radius: 4px; pointer-events: none; }
 .account-dialog { width: min(100%, 560px); }
+.shortcuts-dialog { width: min(100%, 480px); }
+.shortcuts-dialog .setting { padding: 3px 0; }
+.shortcuts-dialog .key { min-width: 110px; padding: 4px 10px; border-radius: 6px; border: 1px solid var(--line-strong); background: var(--raised); }
+.shortcuts-dialog .key:hover { border-color: var(--line-strong); }
+.shortcuts-dialog .key.recording { border-color: var(--link); }
+.shortcuts-dialog .icon-btn:disabled { visibility: hidden; }
+.shortcuts-dialog kbd { font: 12px 'Geist Mono Variable', ui-monospace, monospace; }
 .account-dialog .dialog-body { display: flex; flex-direction: column; gap: 12px; padding-top: 14px; }
 .account-dialog h2 { font-family: inherit; font-size: 13px; font-weight: 500; line-height: 1.5; font-stretch: normal; letter-spacing: 0; margin: 0 2px 6px; }
 .box { border-radius: 12px; background: var(--card); }

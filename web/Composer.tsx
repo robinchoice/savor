@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
 import { ArrowUp, AtSign, CornerDownRight, Bookmark, Check, ChevronDown, Download, FileText, FolderGit2, GitBranch, ListPlus, MessageSquare, Mic, Paperclip, Plus, ShieldAlert, Sparkles, Split, Square, Workflow as WorkflowIcon, X, Zap, Crosshair } from 'lucide-preact'
 import { api, agentSummary, describeModel, effortLabel, modelName, PROVIDER_NAMES, readFileAsDataUrl, useAgents, useApi, type AgentConfig, type Attachment, type Doc, type Project, type ProviderInfo, type Preset, type Skill, type Workflow } from './api'
 import { ProviderIcon } from './Conversations'
+import { useShortcut } from './Shortcuts'
 import { megabytes, ModelMissing, record, type Recording, type VoiceModels } from './voice'
 import { useUsage } from './Usage'
 import { reviewMessage, type ReviewComment } from './Changes'
@@ -73,6 +74,7 @@ export function Composer(props: Props) {
   // 'fan-add' adds an agent to a fan-out, `fan-<i>` changes its i-th agent.
   const [popover, setPopover] = useState<string | null>(null)
   const ref = useRef<HTMLTextAreaElement>(null)
+  useShortcut('composer', () => ref.current?.focus())
   const fileRef = useRef<HTMLInputElement>(null)
   const composerRef = useRef<HTMLDivElement>(null)
   const agents = useAgents()
@@ -489,6 +491,7 @@ function VoiceButton({ onText, onError, onSetup }: { onText: (s: string) => void
     rec.current = null
     setState('idle')
   }
+  useShortcut('voice', state === 'recording' ? stop : state === 'idle' && start)
 
   return (
     <span class="voice">

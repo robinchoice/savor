@@ -65,11 +65,12 @@
 - **All projects**: an **overview** that starts with what waits for you in any project, with questions and approvals answered in place, then what agents work on, new results and the next workflow runs. An **inbox** with the open conversations of every project beside the chosen one, and a **board** with a backlog of what to start later (your own items and items agents put there with `add_to_backlog`) next to what agents are doing.
 - **Import**: the Claude Code and Codex sessions you ran in a project folder before Savor become conversations, and continue with the same agent session.
 - **Project settings**: `ROLE.md` instructions for every agent, verbosity, pause (skips scheduled runs), color and default agent.
-- **Terminal**: a panel below the project (Ctrl+`) with one shell per project folder and worktree, for a quick `git status` or test run. It follows the open conversation into its worktree, and shells keep running while the panel is closed, until Savor stops. On paired devices it is off unless you turn it on at your computer.
+- **Terminal**: a panel below the project with one shell per project folder and worktree, for a quick `git status` or test run. It follows the open conversation into its worktree, and shells keep running while the panel is closed, until Savor stops. On paired devices it is off unless you turn it on at your computer.
 - **Background processes**: agents register the dev servers they start. Savor watches the PIDs, shows logs and can stop them.
 - **Live preview**: the app the agent built runs in a headless Chromium next to the chat, with a persistent browser profile per project so logins survive restarts. You see exactly the page the agent controls, and your clicks, typing and scrolling are forwarded to it. The picker lets you point at an element ("make this bigger"), and its selector and styles go along with your next message.
 - **Devices**: pair a phone or another computer with a QR code. Each device has its own revocable key. Requests from devices are marked *remote*, and agents treat them with extra care.
 - **Notifications** when an agent finishes, needs an answer or asks for approval, plus an unread count in the tab title and on the app icon.
+- **Keyboard shortcuts** you set per device for new conversation, Next, the composer, voice input, stop, finish, tabs, browser, terminal and project tabs. Savor starts without any; the setup and the settings offer a suggested set.
 - **Keep awake** toggle, dark and light theme.
 
 Everything lives in plain files: `~/.savor/state.json` holds projects, tokens and devices, each project gets a `.savor/` directory, and worktrees live under `~/.savor/worktrees/`.

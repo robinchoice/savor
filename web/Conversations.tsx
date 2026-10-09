@@ -16,6 +16,7 @@ import { PleasanceFooter } from './PleasanceFooter'
 import { Changes, type ReviewComment, type Source } from './Changes'
 import { Fanout } from './Fanout'
 import { setPrefs, usePrefs } from './prefs'
+import { keyLabel, useKey, useShortcut } from './Shortcuts'
 import { runInTerminal, setTerminalHome, showTerminal } from './Terminal'
 
 const SHELL = /\blanguage-(bash|sh|shell|zsh)\b/
@@ -88,9 +89,8 @@ export const byUrgency = <T extends Thread>(list: T[]) =>
 // Where Next came from, so Previous leads back. It lives in the module, the button remounts with every view.
 const trail: string[] = []
 
-// Opens the next conversation that needs you, also with J, and with Alt+J while typing. Previous goes back
-// along the conversations Next left, also with K and Alt+K.
-// Next skips the open one by the address, not by the last render: hashchange comes later, so J right after J
+// Opens the next conversation that needs you. Previous goes back along the conversations Next left.
+// Next skips the open one by the address, not by the last render: hashchange comes later, so a key pressed twice
 // would otherwise open the same conversation again.
 export function NextButton({ paths }: { paths: string[] }) {
   const latest = useRef(paths)
@@ -109,29 +109,22 @@ export function NextButton({ paths }: { paths: string[] }) {
     setDepth(trail.length)
     if (path !== undefined) go(path)
   }
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const typing = (e.target as HTMLElement).closest?.('input, textarea, select, [contenteditable]')
-      if (!['KeyJ', 'KeyK'].includes(e.code) || e.ctrlKey || e.metaKey || e.shiftKey || (typing && !e.altKey)) return
-      e.preventDefault()
-      if (e.code === 'KeyJ') open()
-      else back()
-    }
-    addEventListener('keydown', onKey)
-    return () => removeEventListener('keydown', onKey)
-  }, [])
+  useShortcut('next', open)
+  useShortcut('previous', back)
+  const nextKey = useKey('next')
+  const previousKey = useKey('previous')
   return (
     <>
       {trail.length > 0 && (
-        <button class="prev-btn" title="Back to the conversation before the last Next (K)" onClick={back}>
+        <button class="prev-btn" title="Back to the conversation before the last Next" onClick={back}>
           <ArrowLeft size={15} />
-          <span>Previous</span> <kbd>K</kbd>
+          <span>Previous</span> {previousKey && <kbd>{keyLabel(previousKey)}</kbd>}
         </button>
       )}
       {paths.some((p) => `#${p}` !== location.hash) && (
-        <button class="next-btn" title="Open the next conversation that needs you (J)" onClick={open}>
+        <button class="next-btn" title="Open the next conversation that needs you" onClick={open}>
           <ArrowRight size={15} />
-          <span>Next</span> <kbd>J</kbd>
+          <span>Next</span> {nextKey && <kbd>{keyLabel(nextKey)}</kbd>}
         </button>
       )}
     </>
@@ -733,6 +726,11 @@ export function ThreadView({ project, threadId, back, next }: { project: Project
   useEffect(() => {
     if (currentMatch) document.getElementById(`msg-${currentMatch}`)?.scrollIntoView({ block: 'center' })
   }, [currentMatch])
+  // What stop and finish do is known once the conversation has loaded, below.
+  const keys = useRef<{ stop?: () => void; finish?: () => void }>({})
+  useShortcut('stop', () => keys.current.stop?.())
+  useShortcut('finish', () => keys.current.finish?.())
+  useShortcut('browser', () => setView(mode === 'browser' ? 'chat' : 'browser'))
 
   if (!data) return (
     <section class="thread">
@@ -785,6 +783,7 @@ export function ThreadView({ project, threadId, back, next }: { project: Project
   const showNext = !busy && last?.kind === 'conclusion' && !openDecisions && last.suggestions?.length
   const canComplete = !busy && !thread.completed && last?.kind === 'conclusion' && !openDecisions
   const nextPath = next?.find((p) => `#${p}` !== location.hash)
+  keys.current = { stop: stoppable ? stop : undefined, finish: canComplete ? () => patch({ completed: true }) : undefined }
   const queued = messages.filter((m) => m.kind === 'user' && m.delivered === false).length
   const status = busy || waiting
     ? { icon: <span class="ring busy" />, text: busy ? 'Working' : waitingFor(thread), cls: 'working' }
@@ -1080,7 +1079,7 @@ export function ThreadView({ project, threadId, back, next }: { project: Project
               )}
               {busy && nextPath && (
                 <div class="complete-actions">
-                  <button class="mark-complete" title="Open the next conversation that needs you (J)" onClick={() => {
+                  <button class="mark-complete" title="Open the next conversation that needs you" onClick={() => {
                     trail.push(location.hash.slice(1))
                     go(nextPath)
                   }}>

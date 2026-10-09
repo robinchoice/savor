@@ -10,6 +10,7 @@ import '@xterm/xterm/css/xterm.css'
 import { api, useApi, type Project } from './api'
 import { transport } from './transport'
 import { setPrefs, usePrefs } from './prefs'
+import { useShortcut } from './Shortcuts'
 
 // xterm.js adds <style> elements and has no option for a CSP nonce. Style elements made by script
 // get the page's nonce: script is same-origin only, and the nonce is readable by it anyway.
@@ -140,7 +141,7 @@ export function TerminalPanel({ project, threadId }: { project: Project; threadI
         <button class="icon-btn" title={terminalMax ? 'Restore' : 'Maximize'} onClick={() => setPrefs({ terminalMax: !terminalMax })}>
           {terminalMax ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
         </button>
-        <button class="icon-btn" title="Close (Ctrl+`)" onClick={() => setPrefs({ terminalOpen: false })}>
+        <button class="icon-btn" title="Close" onClick={() => setPrefs({ terminalOpen: false })}>
           <X size={15} />
         </button>
       </div>
@@ -358,22 +359,13 @@ function Shell({ project, id, restart }: { project: Project; id: string; restart
   )
 }
 
-// The button that opens the panel, with a dot while a shell of the project runs. Ctrl+` works too.
+// The button that opens the panel, with a dot while a shell of the project runs.
 export function TerminalButton({ project }: { project: Project }) {
   const { terminalOpen } = usePrefs()
   const [data] = useApi<Terminals>(`/projects/${project.id}/terminal`, (e) => e.type === 'terminal' && (!e.projectId || e.projectId === project.id))
-  useEffect(() => {
-    const on = (e: KeyboardEvent) => {
-      if (!e.ctrlKey || e.key !== '`') return
-      e.preventDefault()
-      e.stopPropagation()
-      setPrefs({ terminalOpen: !terminalOpen })
-    }
-    addEventListener('keydown', on, true)
-    return () => removeEventListener('keydown', on, true)
-  }, [terminalOpen])
+  useShortcut('terminal', () => setPrefs({ terminalOpen: !terminalOpen }))
   return (
-    <button class={`icon-btn ${terminalOpen ? 'on' : ''}`} title="Terminal (Ctrl+`)" onClick={() => setPrefs({ terminalOpen: !terminalOpen })}>
+    <button class={`icon-btn ${terminalOpen ? 'on' : ''}`} title="Terminal" onClick={() => setPrefs({ terminalOpen: !terminalOpen })}>
       <SquareTerminal size={16} />
       {data?.terminals.some((t) => t.running) && <i class="terminal-running" />}
     </button>

@@ -17,6 +17,7 @@ import { AccountDialog, AppearanceMenu, FeedbackDialog } from './Account'
 import { BugButton } from './BugButton'
 import { AddProject, SetupWizard } from './Setup'
 import { setPrefs, usePrefs } from './prefs'
+import { ShortcutsDialog, useShortcut, type Action } from './Shortcuts'
 import { UsageMeter } from './Usage'
 import '@fontsource-variable/geist'
 import '@fontsource-variable/geist-mono'
@@ -206,7 +207,7 @@ function RestartBanner() {
 
 function TopBar({ projects, active, all, me, setMe }: { projects: Project[]; active?: Project; all: boolean; me: Me; setMe: (m: Me) => void }) {
   const [menu, setMenu] = useState<'projects' | 'appearance' | null>(null)
-  const [dialog, setDialog] = useState<'account' | 'feedback' | null>(null)
+  const [dialog, setDialog] = useState<'account' | 'feedback' | 'shortcuts' | null>(null)
   const { theme, feedbackButton, bugButton } = usePrefs()
   const ThemeIcon = theme === 'system' ? Monitor : theme === 'dark' ? Moon : Sun
   const total = (k: keyof Project['counts']) => projects.reduce((n, p) => n + p.counts[k], 0)
@@ -221,6 +222,9 @@ function TopBar({ projects, active, all, me, setMe }: { projects: Project[]; act
   const [order, setOrder] = useState<string[] | null>(null)
   useEffect(() => setOrder(null), [projects])
   const sorted = order ? [...projects].sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id)) : projects
+  const tabs = sorted.filter((p) => p.pinned || p.id === active?.id)
+  for (let i = 0; i < 9; i++) useShortcut(`project${i + 1}` as Action, tabs[i] && (() => (location.hash = projectHref(tabs[i].id))))
+  useShortcut('shortcuts', () => setDialog('shortcuts'))
   const dragOver = (e: DragEvent, p: Project) => {
     if (!drag || drag.id === p.id) return
     e.preventDefault()
@@ -239,7 +243,7 @@ function TopBar({ projects, active, all, me, setMe }: { projects: Project[]; act
   // A click outside a menu closes it, unless that click just opened the other menu.
   const closeMenu = (which: typeof menu) => setMenu((m) => (m === which ? null : m))
   // Where the account dialog leads.
-  const open = (what: 'feedback' | 'appearance') => {
+  const open = (what: 'feedback' | 'appearance' | 'shortcuts') => {
     setDialog(what === 'appearance' ? null : what)
     if (what === 'appearance') setMenu(what)
   }
@@ -257,7 +261,7 @@ function TopBar({ projects, active, all, me, setMe }: { projects: Project[]; act
           <Counts project={{ counts: { working: total('working'), blocked: total('blocked'), unread: total('unread') } }} />
         </a>
         <span class="tab-sep" />
-        {sorted.filter((p) => p.pinned || p.id === active?.id).map((p) => (
+        {tabs.map((p) => (
           <a
             key={p.id}
             href={projectHref(p.id)}
@@ -311,6 +315,7 @@ function TopBar({ projects, active, all, me, setMe }: { projects: Project[]; act
         </button>
         {dialog === 'account' && <AccountDialog me={me} projects={projects.length} toggleAwake={toggleAwake} open={open} onClose={() => setDialog(null)} />}
         {dialog === 'feedback' && <FeedbackDialog me={me} onClose={() => setDialog(null)} />}
+        {dialog === 'shortcuts' && <ShortcutsDialog onClose={() => setDialog(null)} />}
         {bugButton && <BugButton me={me} />}
       </div>
     </header>
@@ -398,6 +403,10 @@ function SubBar({ project, projects, section, threadId }: { project: Project; pr
   const load = () => api<unknown[]>('GET', `/projects/${project.id}/processes`).then((l) => setProcCount(l.length))
   useEffect(() => void load(), [project.id])
   useEvent((e) => e.type === 'processes' && e.projectId === project.id && load(), [project.id])
+  useShortcut('new', () => go(`/p/${project.id}/new`))
+  useShortcut('conversations', () => go(`/p/${project.id}`))
+  useShortcut('files', () => go(`/p/${project.id}/files`))
+  useShortcut('workflows', () => go(`/p/${project.id}/workflows`))
   const tab = (id: string, label: string, Icon: any, href: string, counts?: Project['counts'], extra = '') => (
     <a href={href} class={`subtab ${extra} ${(['t', 'new', undefined].includes(section) ? 't' : section) === id ? 'active' : ''}`}>
       <Icon size={15} /> {label}

@@ -25,6 +25,8 @@ export interface Prefs {
   terminalOpen: boolean
   terminalHeight: number
   terminalMax: boolean
+  // Action → key, see Shortcuts.tsx. Empty until set.
+  shortcuts: Record<string, string>
 }
 
 const KEY = 'savor-prefs'
@@ -42,6 +44,7 @@ let prefs: Prefs = {
   terminalOpen: false,
   terminalHeight: 300,
   terminalMax: false,
+  shortcuts: {},
   ...JSON.parse(localStorage.getItem(KEY) ?? '{}'),
   theme: (localStorage.getItem('savor-theme') as Theme | null) ?? 'system',
 }
@@ -55,6 +58,8 @@ function apply() {
 }
 systemDark.addEventListener('change', apply)
 apply()
+
+export const currentPrefs = () => prefs
 
 export function setPrefs(patch: Partial<Prefs>) {
   prefs = { ...prefs, ...patch }

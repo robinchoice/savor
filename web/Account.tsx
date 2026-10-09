@@ -325,7 +325,7 @@ function UpdateSettings() {
 }
 
 // Savor has no accounts: this is the computer it runs on, or on a paired device, that device.
-export function AccountDialog({ me, projects, toggleAwake, open, onClose }: { me: Me; projects: number; toggleAwake: () => void; open: (what: 'feedback' | 'appearance') => void; onClose: () => void }) {
+export function AccountDialog({ me, projects, toggleAwake, open, onClose }: { me: Me; projects: number; toggleAwake: () => void; open: (what: 'feedback' | 'appearance' | 'shortcuts') => void; onClose: () => void }) {
   const local = me.origin === 'local'
   const prefs = usePrefs()
   const [canNotify, notifyOn, toggleNotify] = useNotificationToggle(!local)
@@ -425,6 +425,11 @@ export function AccountDialog({ me, projects, toggleAwake, open, onClose }: { me
               <button class="setting" onClick={() => open('appearance')}>
                 <span>Appearance</span>
                 <span class="muted">{cap(prefs.theme)}</span>
+                <ChevronRight size={15} />
+              </button>
+              <button class="setting wide-only" onClick={() => open('shortcuts')}>
+                <span>Keyboard shortcuts</span>
+                <span class="muted">{Object.keys(prefs.shortcuts).length || 'None'} set</span>
                 <ChevronRight size={15} />
               </button>
               {local && <RelayRow onClose={onClose} />}

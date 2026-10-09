@@ -4,6 +4,8 @@ import { api, describeModel, desktop, effortLabel, go, modelName, useAgents, typ
 import { ProviderIcon } from './Conversations'
 import { effortsOf } from './Composer'
 import { recipe } from './recipes'
+import { setPrefs, usePrefs } from './prefs'
+import { STANDARD } from './Shortcuts'
 import { TEMPLATES, type Template } from './templates'
 
 // The mode a provider works best in for most people; the others still show.
@@ -163,10 +165,11 @@ export function AddProject({ me, setMe, onAdded }: { me: Me; setMe: (m: Me) => v
   )
 }
 
-const STEPS = ['Agents', 'Default agent', 'Permissions', 'First project']
+const STEPS = ['Agents', 'Default agent', 'Permissions', 'Shortcuts', 'First project']
 
 // First start on this computer: finds the agents, then asks which one new projects start with, how much
-// it may do alone, and where to begin. Skipping keeps Savor's defaults; This computer → Agents changes them later.
+// it may do alone, whether to start with keyboard shortcuts, and where to begin. Skipping keeps Savor's
+// defaults; This computer → Agents changes them later.
 export function SetupWizard({ me, setMe }: { me: Me; setMe: (m: Me) => void }) {
   const agents = useAgents()
   const [step, setStep] = useState(0)
@@ -190,6 +193,7 @@ export function SetupWizard({ me, setMe }: { me: Me; setMe: (m: Me) => void }) {
     setStep(step + 1)
   }
   const efforts = agent ? effortsOf(agent, info) : []
+  const suggested = Object.keys(usePrefs().shortcuts).length > 0
 
   return (
     <div class="overlay">
@@ -273,7 +277,23 @@ export function SetupWizard({ me, setMe }: { me: Me; setMe: (m: Me) => void }) {
               )}
             </>
           )}
-          {step === 3 && agent && info && (
+          {step === 3 && (
+            <>
+              <h2>Keyboard shortcuts?</h2>
+              <p class="muted">Savor starts without any, so you can choose your own. This computer › App settings › Keyboard shortcuts changes them any time.</p>
+              <div class="mode-cards" role="radiogroup" aria-label="Keyboard shortcuts">
+                <button role="radio" aria-checked={!suggested} class={`mode-card ${suggested ? '' : 'selected'}`} onClick={() => setPrefs({ shortcuts: {} })}>
+                  <b>Start without</b>
+                  <small>Set the keys you want yourself.</small>
+                </button>
+                <button role="radio" aria-checked={suggested} class={`mode-card ${suggested ? 'selected' : ''}`} onClick={() => setPrefs({ shortcuts: STANDARD })}>
+                  <b>Use Savor's suggestions</b>
+                  <small>J and K for next and back, C for a new conversation, / for the composer, ? shows them all.</small>
+                </button>
+              </div>
+            </>
+          )}
+          {step === 4 && agent && info && (
             <>
               <h2>Where do you want to start?</h2>
               <p class="muted">
@@ -300,8 +320,8 @@ export function SetupWizard({ me, setMe }: { me: Me; setMe: (m: Me) => void }) {
           {error && <p class="error-text">{error}</p>}
         </div>
         <div class="dialog-foot">
-          <button class="ghost" onClick={step === 3 ? () => setMe({ ...me, setup: false }) : skip}>
-            {step === 3 ? 'Later' : 'Skip setup'}
+          <button class="ghost" onClick={step === 4 ? () => setMe({ ...me, setup: false }) : skip}>
+            {step === 4 ? 'Later' : 'Skip setup'}
           </button>
           <span class="spacer" />
           {step > 0 && (
@@ -309,7 +329,7 @@ export function SetupWizard({ me, setMe }: { me: Me; setMe: (m: Me) => void }) {
               Back
             </button>
           )}
-          {step < 3 && (
+          {step < 4 && (
             <button class="primary" disabled={!agent || !installed.length} onClick={next}>
               Continue
             </button>

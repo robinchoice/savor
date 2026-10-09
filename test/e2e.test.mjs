@@ -1376,7 +1376,7 @@ test('the terminal starts with a shell per folder and worktree, opens and closes
   assert.equal((await api('GET', t, undefined, device)).status, 403)
 
   // Deleting the worktree ends its shell.
-  await page.click('.terminal-bar button[title^="Close ("]')
+  await page.click('.terminal-bar button[title="Close"]')
   await api('DELETE', `/projects/${project.id}/worktrees?path=${encodeURIComponent(wt)}`)
   assert.deepEqual((await api('GET', t)).body.terminals.map((x) => [x.path, x.running]), [[project.path, false]])
 })
@@ -1397,7 +1397,7 @@ test("a conversation continues in the agent's own terminal UI", async () => {
   const { terminals } = (await api('GET', `/projects/${project.id}/terminal`)).body
   assert.equal(terminals.filter((x) => x.path === project.path).length, 2)
   await page.click('.terminal-place.on button[title="Close terminal"]')
-  await page.click('.terminal-bar button[title^="Close ("]')
+  await page.click('.terminal-bar button[title="Close"]')
   await api('PATCH', url, { completed: true })
 })
 
@@ -1410,7 +1410,7 @@ test('a shell command in a message runs in the terminal with one click', async (
   assert.equal(await page.locator('.msg .md-command').count(), 2)
   await page.click('.msg .md-command >> nth=0 >> button:has-text("Run in terminal")')
   await page.waitForSelector('.terminal-screen >> text=42-clicked')
-  await page.click('.terminal-bar button[title^="Close ("]')
+  await page.click('.terminal-bar button[title="Close"]')
   await api('PATCH', `/projects/${project.id}/threads/${thread.id}`, { completed: true })
 })
 
@@ -1431,7 +1431,7 @@ test('in the inbox, the context menu and the run button reach the project of the
   await tab.click('.msg .md-command button:has-text("Run in terminal")')
   await tab.waitForURL(`${base}/#/p/${project.id}/t/${thread.id}`)
   await tab.waitForSelector('.terminal-screen >> text=48-inbox')
-  await tab.click('.terminal-bar button[title^="Close ("]')
+  await tab.click('.terminal-bar button[title="Close"]')
   await api('PATCH', `/projects/${project.id}/threads/${thread.id}`, { completed: true })
 })
 
@@ -2388,14 +2388,23 @@ test('the All tab answers questions in place and starts what waits in the backlo
   const done = (await api('POST', threads, { text: 'plan the footer', agent: { provider: 'claude' } })).body
   await until(async () => (await read(asked.id)).decisions.some((d) => !d.resolved) && (await read(done.id)).messages.some((m) => m.kind === 'conclusion') && !(await read(done.id)).busy)
 
-  // The inbox opens the next conversation that needs you, across projects, as with J in a project.
+  // Savor starts without keys; Next gets J in the shortcuts dialog.
+  await page.click('button.account')
+  await page.click('summary:has-text("App settings")')
+  await page.click('button.setting:has-text("Keyboard shortcuts")')
+  await page.click('.shortcuts-dialog .setting:has-text("Next conversation") button.key')
+  await page.keyboard.press('j')
+  await page.waitForSelector('.shortcuts-dialog kbd:text-is("J")')
+  await page.click('.shortcuts-dialog >> text=Done')
+
+  // The inbox opens the next conversation that needs you, across projects, as in a project.
   await page.goto(`${base}/#/all/inbox`)
   await page.click('.all-inbox .next-btn')
   await page.waitForFunction(() => /^#\/all\/inbox\/[^/]+\/[^/]+$/.test(location.hash))
   const first = await page.evaluate(() => location.hash)
   // The hash changes before Savor renders the conversation; until then J would still lead to it.
   await page.waitForSelector(`.all-inbox .card.active[href="${first}"]`)
-  // The composer has the focus now, so it takes Alt+J.
+  // The composer has the focus now, so J needs Alt.
   await page.keyboard.press('Alt+j')
   await page.waitForFunction((first) => location.hash !== first, first)
   // Previous leads back to where Next came from.
