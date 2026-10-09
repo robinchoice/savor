@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
-import { ArrowUp, AtSign, CornerDownRight, Bookmark, Check, ChevronDown, Download, FileText, FolderGit2, GitBranch, ListPlus, MessageSquare, Mic, Paperclip, Plus, ShieldAlert, Split, Square, Workflow as WorkflowIcon, X, Zap, Crosshair } from 'lucide-preact'
+import { ArrowUp, AtSign, CornerDownRight, Bookmark, Check, ChevronDown, Download, FileText, FolderGit2, GitBranch, ListPlus, MessageSquare, Mic, Paperclip, Plus, ShieldAlert, Sparkles, Split, Square, Workflow as WorkflowIcon, X, Zap, Crosshair } from 'lucide-preact'
 import { api, agentSummary, describeModel, effortLabel, modelName, PROVIDER_NAMES, readFileAsDataUrl, useAgents, useApi, type AgentConfig, type Attachment, type Doc, type Project, type ProviderInfo, type Preset, type Skill, type Workflow } from './api'
 import { ProviderIcon } from './Conversations'
 import { megabytes, ModelMissing, record, type Recording, type VoiceModels } from './voice'
@@ -591,11 +591,11 @@ const EFFORT_DETAIL: Record<string, string> = {
   high: 'Thorough, for most changes',
   xhigh: 'Extra thinking for tricky changes',
   max: 'Longest thinking, uses the limits fastest',
-  ultracode: 'X-High with Claude Code’s ultracode mode',
   ultra: 'The deepest reasoning Codex offers',
 }
 
 export const effortsOf = (agent: AgentConfig, info?: ProviderInfo) => info?.models.find((m) => m.id === agent.model)?.efforts ?? info?.efforts ?? []
+const ultracodeOf = (agent: AgentConfig, info?: ProviderInfo) => info?.models.find((m) => m.id === agent.model)?.ultracode ?? info?.ultracode
 
 // Rising bars, filled up to the chosen effort.
 function EffortMeter({ effort, efforts }: { effort: string; efforts: string[] }) {
@@ -622,6 +622,7 @@ export function AgentButton({ agent, info, open, toggle }: { agent: AgentConfig;
         </span>
       )}
       {agent.fast && <Zap size={13} class="agent-fast" />}
+      {agent.ultracode && <Sparkles size={13} class="agent-fast" />}
       {mode?.unsafe && <ShieldAlert size={14} class="agent-unsafe" />}
       <ChevronDown size={14} class="chevron" />
     </button>
@@ -656,7 +657,7 @@ export function AgentMenu({ agent, agents, setAgent, close }: { agent: AgentConf
   const [presetName, setPresetName] = useState<string | null>(null)
   const [error, setError] = useState('')
   const set = (patch: Partial<AgentConfig>) => setAgent({ ...agent, ...patch })
-  const choose = (p: ProviderInfo) => set({ provider: p.id, model: '', reasoning: p.defaultEffort, fast: false, permissionMode: p.defaultMode })
+  const choose = (p: ProviderInfo) => set({ provider: p.id, model: '', reasoning: p.defaultEffort, fast: false, ultracode: false, permissionMode: p.defaultMode })
   const efforts = effortsOf(agent, info)
   const models = info?.models ?? []
   const listed = [...(models.some((m) => m.id === '') ? [] : [{ id: '', label: 'Default', detail: `${info?.name ?? 'The agent'}’s own default` }]), ...(agent.model && !models.some((m) => m.id === agent.model) ? [{ id: agent.model, label: agent.model }] : []), ...models]
@@ -747,6 +748,18 @@ export function AgentMenu({ agent, agents, setAgent, close }: { agent: AgentConf
               </span>
             </button>
           )}
+          {ultracodeOf(agent, info) && (
+            <button class="ap-row" role="switch" aria-checked={agent.ultracode} onClick={() => set({ ultracode: !agent.ultracode })}>
+              <Sparkles size={15} class="agent-fast" />
+              <span>
+                Ultracode
+                <small>Plans larger tasks as workflows of parallel agents, at any effort</small>
+              </span>
+              <span class={`switch ${agent.ultracode ? 'on' : ''}`}>
+                <i />
+              </span>
+            </button>
+          )}
           {info?.modes.length ? (
             <>
               <div class="menu-label">Permissions</div>
@@ -823,7 +836,7 @@ function AddAgentMenu({ agents, onPick }: { agents: ProviderInfo[]; onPick: (a: 
       {agents
         .filter((a) => a.installed)
         .map((p) => (
-          <button key={p.id} onClick={() => onPick({ provider: p.id, model: '', reasoning: p.defaultEffort, fast: false, permissionMode: p.defaultMode })}>
+          <button key={p.id} onClick={() => onPick({ provider: p.id, model: '', reasoning: p.defaultEffort, fast: false, ultracode: false, permissionMode: p.defaultMode })}>
             <ProviderIcon provider={p.id} /> {p.name}
           </button>
         ))}

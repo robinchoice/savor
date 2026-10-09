@@ -71,13 +71,11 @@ export class ClaudeSession implements Session {
       '--permission-prompts', 'host',
       '--permission-prompt-tool', 'stdio',
       // The user's hooks run as in the terminal, e.g. guards that block a Bash command.
-      '--settings', JSON.stringify({ fastMode: a.fast, ultracode: a.reasoning === 'ultracode' }),
+      '--settings', JSON.stringify({ fastMode: a.fast, ultracode: a.ultracode }),
       '--chrome',
     ]
     if (a.model) args.push('--model', a.model)
-    // Ultracode is a setting on top of the highest regular effort.
-    const effort = a.reasoning === 'ultracode' ? 'xhigh' : a.reasoning
-    if (EFFORTS.includes(effort)) args.push('--effort', effort)
+    if (EFFORTS.includes(a.reasoning)) args.push('--effort', a.reasoning)
     const sid = sessionIdOf(thread, 'claude')
     const fork = forkOf(p, thread, 'claude')
     if (sid) args.push('--resume', sid)
@@ -273,7 +271,9 @@ export function probeClaude(cwd?: string) {
           id: m.value === 'default' ? '' : m.value,
           label: m.displayName ?? m.value,
           detail: m.description,
-          efforts: m.supportedEffortLevels?.length ? [...m.supportedEffortLevels, 'ultracode'] : [],
+          efforts: m.supportedEffortLevels ?? [],
+          // Claude Code offers Ultracode only on models that can run X-High.
+          ultracode: !!m.supportedEffortLevels?.includes('xhigh'),
         })),
         commands.filter((c) => !c.builtin || !(HIDDEN_COMMANDS.has(c.name) || c.name.startsWith('_'))).map((c) => ({ name: c.name, description: c.description ?? '' })),
       )

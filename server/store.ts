@@ -6,7 +6,7 @@ import crypto from 'node:crypto'
 export const HOME = process.env.SAVOR_HOME ?? path.join(os.homedir(), '.savor')
 
 export type Provider = 'claude' | 'codex' | 'opencode' | 'grok' | 'gemini' | 'antigravity'
-export interface AgentConfig { provider: Provider; model: string; reasoning: string; fast: boolean; permissionMode: string }
+export interface AgentConfig { provider: Provider; model: string; reasoning: string; fast: boolean; ultracode: boolean; permissionMode: string }
 export interface Project {
   id: string
   name: string
@@ -226,6 +226,8 @@ export function state(): State {
     relayToken: crypto.randomBytes(24).toString('hex'),
     ...s,
   }
+  if (full.agent) full.agent = upgradeAgent(full.agent)
+  full.presets = full.presets.map((x) => ({ ...x, agent: upgradeAgent(x.agent) }))
   if (!s || !s.identity || !s.relayToken) saveState(full)
   return full
 }
@@ -255,11 +257,13 @@ export function deletePreset(id: string) {
 
 const TINTS = ['#b5654a', '#8b6bc7', '#3f9a78', '#c59a3d', '#c8577a', '#4a9bb8', '#7a8794']
 export const dataDir = (p: { path: string }) => path.join(p.path, '.savor')
-export const defaultAgent = (): AgentConfig => ({ provider: 'claude', model: '', reasoning: 'high', fast: false, permissionMode: 'acceptEdits' })
+export const defaultAgent = (): AgentConfig => ({ provider: 'claude', model: '', reasoning: 'high', fast: false, ultracode: false, permissionMode: 'acceptEdits' })
+// Until Claude Code 2.1.284 Ultracode was an effort level on top of X-High, now it is a switch at any effort.
+export const upgradeAgent = (a: AgentConfig): AgentConfig => (a.reasoning === 'ultracode' ? { ...a, reasoning: 'xhigh', ultracode: true } : { ...a, ultracode: !!a.ultracode })
 
 function loadProject(ref: { path: string }): Project | null {
   const p = readJson<(Partial<Project> & Pick<Project, 'id' | 'name'>) | null>(path.join(ref.path, '.savor', 'project.json'), null)
-  return p && ({ tint: TINTS[0], verbosity: 'medium', paused: false, pinned: true, worktreeSetup: '', ...p, agent: { ...defaultAgent(), ...p.agent }, path: ref.path } as Project)
+  return p && ({ tint: TINTS[0], verbosity: 'medium', paused: false, pinned: true, worktreeSetup: '', ...p, agent: upgradeAgent({ ...defaultAgent(), ...p.agent }), path: ref.path } as Project)
 }
 
 export const listProjects = (): Project[] => state().projects.flatMap((ref) => loadProject(ref) ?? [])
@@ -342,13 +346,14 @@ export function listThreads(p: Project): Thread[] {
     .readdirSync(dir)
     .map((tid) => readJson<Thread | null>(path.join(dir, tid, 'thread.json'), null))
     .filter((t): t is Thread => !!t)
+    .map((t) => ({ ...t, agent: upgradeAgent(t.agent) }))
     .sort((a, b) => (b.inputAt ?? b.createdAt).localeCompare(a.inputAt ?? a.createdAt))
 }
 
 export function getThread(p: Project, tid: string): Thread {
   const t = readJson<Thread | null>(path.join(threadDir(p, tid), 'thread.json'), null)
   if (!t) throw new NotFound(`thread ${tid}`)
-  return t
+  return { ...t, agent: upgradeAgent(t.agent) }
 }
 
 export const cwdOf = (p: Project, t: Thread) => t.worktree?.path ?? p.path

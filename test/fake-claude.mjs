@@ -59,7 +59,7 @@ if (!args.includes('--mcp-config')) {
     if (msg.request?.subtype !== 'initialize') return
     const models = [
       { value: 'default', displayName: 'Default (recommended)', supportedEffortLevels: ['low', 'high'] },
-      { value: 'fake-fable[1m]', displayName: 'Fable', description: 'Fake Fable', supportedEffortLevels: ['low', 'high', 'max'] },
+      { value: 'fake-fable[1m]', displayName: 'Fable', description: 'Fake Fable', supportedEffortLevels: ['low', 'high', 'xhigh', 'max'] },
       { value: 'fake-haiku', displayName: 'Haiku' },
     ]
     const commands = [

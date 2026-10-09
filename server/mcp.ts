@@ -286,7 +286,7 @@ function buildServer(p: Project, tid: string) {
         project: z.string().min(1).optional().describe('Project id or absolute path, see list_projects'),
         worktree: z.string().min(1).optional().describe('Branch name for a separate git worktree'),
         agent: z
-          .object({ provider: z.enum(Object.keys(STATIC) as [string, ...string[]]), model: z.string().optional(), reasoning: z.string().optional(), fast: z.boolean().optional(), permissionMode: z.string().optional() })
+          .object({ provider: z.enum(Object.keys(STATIC) as [string, ...string[]]), model: z.string().optional(), reasoning: z.string().optional(), fast: z.boolean().optional(), ultracode: z.boolean().optional(), permissionMode: z.string().optional() })
           .optional()
           .describe('See list_agents for providers, models, reasoning levels and permission modes'),
       },

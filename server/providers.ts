@@ -3,7 +3,7 @@ import { execFile } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import type { AgentConfig, Provider } from './store.js'
+import { upgradeAgent, type AgentConfig, type Provider } from './store.js'
 import { BIN, command } from './config.js'
 import { codexSkills, codexUsage, probeCodex } from './codex.js'
 import { probeClaude } from './claude.js'
@@ -11,7 +11,7 @@ import { antigravitySkills, antigravityUsage, probeAntigravity } from './antigra
 import { acpSkills } from './acp.js'
 
 export interface ModeInfo { id: string; label: string; detail: string; unsafe?: boolean }
-export interface ModelInfo { id: string; label: string; detail?: string; efforts?: string[] }
+export interface ModelInfo { id: string; label: string; detail?: string; efforts?: string[]; ultracode?: boolean }
 export interface SkillInfo { name: string; description: string }
 export interface ProviderInfo {
   id: Provider
@@ -26,6 +26,7 @@ export interface ProviderInfo {
   modes: ModeInfo[]
   defaultMode: string
   fast: boolean
+  ultracode: boolean
   signIn: string
 }
 
@@ -41,7 +42,7 @@ export const STATIC: Record<Provider, Static> = {
       { id: 'sonnet', label: 'Sonnet' },
       { id: 'haiku', label: 'Haiku' },
     ],
-    efforts: ['low', 'medium', 'high', 'xhigh', 'max', 'ultracode'],
+    efforts: ['low', 'medium', 'high', 'xhigh', 'max'],
     defaultEffort: 'high',
     modes: [
       { id: 'acceptEdits', label: 'Accept edits', detail: 'File edits run without asking. Commands and other actions ask first.' },
@@ -53,6 +54,7 @@ export const STATIC: Record<Provider, Static> = {
     ],
     defaultMode: 'acceptEdits',
     fast: true,
+    ultracode: true,
     signIn: 'claude auth login',
   },
   codex: {
@@ -69,6 +71,7 @@ export const STATIC: Record<Provider, Static> = {
     ],
     defaultMode: 'default',
     fast: false,
+    ultracode: false,
     signIn: 'codex login',
   },
   opencode: {
@@ -83,6 +86,7 @@ export const STATIC: Record<Provider, Static> = {
     ],
     defaultMode: 'build',
     fast: false,
+    ultracode: false,
     signIn: 'opencode auth login',
   },
   grok: {
@@ -97,6 +101,7 @@ export const STATIC: Record<Provider, Static> = {
     ],
     defaultMode: 'default',
     fast: false,
+    ultracode: false,
     signIn: 'grok login',
   },
   gemini: {
@@ -112,6 +117,7 @@ export const STATIC: Record<Provider, Static> = {
     ],
     defaultMode: 'default',
     fast: false,
+    ultracode: false,
     signIn: 'gemini',
   },
   antigravity: {
@@ -129,6 +135,7 @@ export const STATIC: Record<Provider, Static> = {
     ],
     defaultMode: 'default',
     fast: false,
+    ultracode: false,
     signIn: 'agy',
   },
 }
@@ -146,9 +153,10 @@ export function mergeAgent(current: AgentConfig, patch: Partial<AgentConfig>): A
     if (patch.reasoning === undefined) next.reasoning = info.defaultEffort
     if (patch.model === undefined) next.model = ''
     if (patch.fast === undefined) next.fast = false
+    if (patch.ultracode === undefined) next.ultracode = false
   }
   if (!info.modes.some((m) => m.id === next.permissionMode)) throw new Error(`${info.name} has no permission mode ${next.permissionMode}.`)
-  return next
+  return upgradeAgent(next)
 }
 
 function run(bin: string, args: string[], timeout = 10_000) {

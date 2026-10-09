@@ -73,7 +73,7 @@ export const readFileAsDataUrl = (f: Blob) =>
     r.readAsDataURL(f)
   })
 
-export interface AgentConfig { provider: string; model: string; reasoning: string; fast: boolean; permissionMode: string }
+export interface AgentConfig { provider: string; model: string; reasoning: string; fast: boolean; ultracode: boolean; permissionMode: string }
 export interface Question { title: string; body: string; options: string[]; recommended?: number }
 export interface ApprovalOption { id: string; label: string; kind: 'allow' | 'deny' }
 export interface Approval { title: string; detail: string; url?: string; options: ApprovalOption[]; status: 'pending' | 'resolved'; choice?: string }
@@ -98,7 +98,7 @@ export interface Message {
 }
 export interface Attachment { name: string; dataUrl: string }
 export interface ModeInfo { id: string; label: string; detail: string; unsafe?: boolean }
-export interface ModelInfo { id: string; label: string; detail?: string; efforts?: string[] }
+export interface ModelInfo { id: string; label: string; detail?: string; efforts?: string[]; ultracode?: boolean }
 export interface ProviderInfo {
   id: string
   name: string
@@ -112,6 +112,7 @@ export interface ProviderInfo {
   modes: ModeInfo[]
   defaultMode: string
   fast: boolean
+  ultracode: boolean
   signIn: string
 }
 export interface Skill { name: string; description: string }
@@ -212,7 +213,7 @@ export const modelName = (a: AgentConfig, info?: ProviderInfo) => {
 export const effortLabel = (e: string) => (e === 'xhigh' ? 'X-High' : cap(e))
 
 export const agentSummary = (a: AgentConfig, info?: ProviderInfo) =>
-  [modelName(a, info), a.reasoning && effortLabel(a.reasoning), a.fast && 'Fast'].filter(Boolean).join(' · ')
+  [modelName(a, info), a.reasoning && effortLabel(a.reasoning), a.fast && 'Fast', a.ultracode && 'Ultracode'].filter(Boolean).join(' · ')
 
 export const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 

@@ -542,10 +542,9 @@ test('the agent list reports what is installed, signed in and offered', async ()
   const by = Object.fromEntries(agents.map((a) => [a.id, a]))
   assert.equal(by.claude.signedIn, true)
   assert.equal(by.claude.account, 'fake@claude.test')
-  // Claude's models come from the CLI: "default" is Savor's empty model, and Ultracode sits on top of the effort levels.
+  // Claude's models come from the CLI: "default" is Savor's empty model, and Ultracode needs a model that runs X-High.
   assert.deepEqual(by.claude.models.map((m) => m.id), ['', 'fake-fable[1m]', 'fake-haiku'])
-  assert.deepEqual(by.claude.models[1].efforts, ['low', 'high', 'max', 'ultracode'])
-  assert.deepEqual(by.claude.models[2].efforts, [])
+  assert.deepEqual(by.claude.models.map((m) => [m.efforts, m.ultracode]), [[['low', 'high'], false], [['low', 'high', 'xhigh', 'max'], true], [[], false]])
   assert.ok(by.codex.models.some((m) => m.id === 'fake-model' && m.efforts.includes('high')))
   assert.equal(by.codex.account, 'fake@codex.test')
   assert.deepEqual(by.opencode.models.map((m) => [m.id, m.efforts]), [['fake/model', ['low', 'high']], ['fake/other', []]])
@@ -555,6 +554,16 @@ test('the agent list reports what is installed, signed in and offered', async ()
   assert.equal(by.gemini.version, '9.9.9')
   assert.ok(by.gemini.modes.find((m) => m.id === 'yolo').unsafe)
   assert.ok(by.claude.modes.find((m) => m.id === 'bypassPermissions').unsafe)
+})
+
+test('Ultracode is a switch next to the effort, and the old Ultracode effort becomes X-High with it', async () => {
+  const [project] = (await api('GET', '/projects')).body
+  const thread = (await api('POST', `/projects/${project.id}/threads`, { text: 'hello ultracode', agent: { provider: 'claude', reasoning: 'ultracode' } })).body
+  assert.deepEqual([thread.agent.reasoning, thread.agent.ultracode], ['xhigh', true])
+  await until(async () => (await api('GET', `/projects/${project.id}/threads/${thread.id}`)).body.messages.some((m) => m.text === 'Echo: hello ultracode'))
+  const run = agentRuns().findLast((r) => r.agent === 'claude' && r.argv?.includes('--effort'))
+  assert.equal(run.argv[run.argv.indexOf('--effort') + 1], 'xhigh')
+  assert.equal(JSON.parse(run.argv[run.argv.indexOf('--settings') + 1]).ultracode, true)
 })
 
 test('new projects start with the default agent set on this computer', async () => {

@@ -81,7 +81,7 @@ export interface Session {
   background?(): boolean
 }
 
-export const configKey = (a: AgentConfig) => JSON.stringify([a.provider, a.model, a.reasoning, a.fast, a.permissionMode])
+export const configKey = (a: AgentConfig) => JSON.stringify([a.provider, a.model, a.reasoning, a.fast, a.ultracode, a.permissionMode])
 
 export const sessionIdOf = (thread: Thread, provider: Provider) => thread.agentSessions.find((s) => s.provider === provider)?.sessionId
 
