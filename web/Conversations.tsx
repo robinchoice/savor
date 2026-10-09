@@ -1059,6 +1059,19 @@ export function ThreadView({ project, threadId, back, next }: { project: Project
                   )}
                 </div>
               )}
+              {busy && nextPath && (
+                <div class="complete-actions">
+                  <button class="mark-complete" title="Open the next conversation that needs you (J)" onClick={() => {
+                    trail.push(location.hash.slice(1))
+                    go(nextPath)
+                  }}>
+                    <span>
+                      <ArrowRight size={16} />
+                    </span>
+                    Next
+                  </button>
+                </div>
+              )}
 
               {composer}
             </>

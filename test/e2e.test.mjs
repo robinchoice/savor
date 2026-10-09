@@ -2417,6 +2417,14 @@ test('the All tab answers questions in place and starts what waits in the backlo
   await page.waitForFunction((id) => /^#\/all\/inbox\/[^/]+\/[^/]+$/.test(location.hash) && !location.hash.endsWith(id), settled.id)
   assert.ok((await read(settled.id)).thread.completed)
 
+  // While the agent works on your prompt, Next sits where Finish will be.
+  const working = (await api('POST', threads, { text: 'slow: the header' })).body
+  await page.goto(`${base}/#/all/inbox/${project.id}/${working.id}`)
+  await page.click('.complete-actions .mark-complete:has-text("Next")')
+  await page.waitForFunction((id) => /^#\/all\/inbox\/[^/]+\/[^/]+$/.test(location.hash) && !location.hash.endsWith(id), working.id)
+  fs.writeFileSync(AGENT_LOG + '.release', 'slow: the header')
+  await until(async () => !(await read(working.id)).busy)
+
   // The overview brings the open question along and answers it right there.
   const listed = (await api('GET', '/overview')).body.threads.find((t) => t.id === asked.id)
   assert.deepEqual(listed.decisions.map((d) => d.options), [['Yes', 'No']])
