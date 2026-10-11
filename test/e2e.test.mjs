@@ -2519,5 +2519,12 @@ test('the All tab answers questions in place and starts what waits in the backlo
   assert.ok(added.url.endsWith('/#/all/board'))
   assert.deepEqual((await call('list_backlog', {})).map((i) => [i.id, i.title]), [[added.id, 'Translate the footer']])
   await page.waitForSelector('.board-card:has-text("Translate the footer")')
+
+  // They remove items that are done, and an unknown id says so.
+  const unknown = await client.callTool({ name: 'remove_from_backlog', arguments: { id: 'nope' } })
+  assert.ok(unknown.isError && unknown.content[0].text.includes('No backlog item nope'))
+  assert.deepEqual(await call('remove_from_backlog', { id: added.id }), { id: added.id, project: project.id })
+  assert.deepEqual(await call('list_backlog', {}), [])
+  await page.waitForSelector('.board-card:has-text("Translate the footer")', { state: 'detached' })
   await client.close()
 })

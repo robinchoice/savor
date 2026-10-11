@@ -824,8 +824,7 @@ route('POST', '/projects/:pid/backlog', (params, b) => {
 })
 route('DELETE', '/projects/:pid/backlog/:id', (params) => {
   const p = project(params)
-  const backlog = store.readBacklog(p)
-  store.saveBacklog(p, { ...backlog, items: backlog.items.filter((i) => i.id !== params.id) })
+  store.removeBacklogItem(p, params.id)
   emit({ type: 'backlog', projectId: p.id })
   return {}
 })

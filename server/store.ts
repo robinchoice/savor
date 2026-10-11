@@ -530,6 +530,13 @@ export function addBacklogItem(p: Project, title: string): BacklogItem {
   saveBacklog(p, { ...backlog, items: [item, ...backlog.items] })
   return item
 }
+// Whether the item was on the backlog.
+export function removeBacklogItem(p: Project, id: string): boolean {
+  const backlog = readBacklog(p)
+  const items = backlog.items.filter((i) => i.id !== id)
+  saveBacklog(p, { ...backlog, items })
+  return items.length < backlog.items.length
+}
 
 // ---- workflows ----
 

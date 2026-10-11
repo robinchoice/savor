@@ -255,6 +255,21 @@ function buildServer(p: Project, tid: string) {
     ok(store.readBacklog(project ? findProject(project) : p).items),
   )
 
+  server.registerTool(
+    'remove_from_backlog',
+    {
+      description:
+        'Remove an item from the backlog of this project, or of another one named by `project`. Only for items that are already done or that you just started in a conversation; the id comes from list_backlog.',
+      inputSchema: { id: z.string().min(1), project: PROJECT },
+    },
+    async ({ id, project }) => {
+      const target = project ? findProject(project) : p
+      if (!store.removeBacklogItem(target, id)) throw new Error(`No backlog item ${id} in project ${target.id}. list_backlog shows the ids.`)
+      emit({ type: 'backlog', projectId: target.id })
+      return ok({ id, project: target.id })
+    },
+  )
+
   // ---- conversations ----
 
   server.registerTool('list_projects', { description: 'The Savor projects on this computer, for start_conversation, send_to_conversation and the `project` of the other conversation tools.' }, async () =>
