@@ -1753,6 +1753,31 @@ test('a project tab opens its topmost open conversation instead of a finished on
   await typing()
 })
 
+test('a project with only working conversations opens a new chat unless a last chat is remembered', async () => {
+  const project = (await api('POST', '/projects', { path: path.join(TMP, 'working-only'), name: 'Working only', create: true })).body
+  const thread = (await api('POST', `/projects/${project.id}/threads`, { text: 'slow: project opening', agent: { provider: 'claude' } })).body
+  const url = `/projects/${project.id}/threads/${thread.id}`
+  await until(async () => (await api('GET', url)).body.busy)
+  await page.goto(`${base}/#/p/${project.id}`)
+  await page.waitForURL(`${base}/#/p/${project.id}/new`)
+  await page.waitForSelector('text=What do you want to build?')
+  await page.fill('.composer textarea', 'Keep this draft')
+  fs.writeFileSync(AGENT_LOG + '.release', 'slow: project opening')
+  await until(async () => !(await api('GET', url)).body.busy)
+  await page.waitForSelector('.sec.for-you .card')
+  assert.equal(await page.inputValue('.composer textarea'), 'Keep this draft')
+  assert.equal(new URL(page.url()).hash, `#/p/${project.id}/new`)
+  await page.goto(`${base}/#/p/${project.id}`)
+  await page.waitForSelector(`.card.active[href="#/p/${project.id}/t/${thread.id}"]`)
+  await api('POST', `${url}/messages`, { text: 'slow: remembered project opening' })
+  await until(async () => (await api('GET', url)).body.busy)
+  await page.goto(`${base}/#/all`)
+  await page.click(`.project-tab[href^="#/p/${project.id}"]`)
+  await page.waitForSelector(`.card.active[href="#/p/${project.id}/t/${thread.id}"]`)
+  fs.writeFileSync(AGENT_LOG + '.release', 'slow: remembered project opening')
+  await until(async () => !(await api('GET', url)).body.busy)
+})
+
 test('the new conversation button opens a composer ready to type, in a project and in the inbox', async () => {
   const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
   const thread = (await api('POST', `/projects/${project.id}/threads`, { text: 'hello', agent: { provider: 'claude' } })).body
