@@ -373,8 +373,9 @@ function hostFor(p: Project, thread: Thread, holder: { session?: Session }): Hos
     },
     // Only a conversation on the project's default agent tells which model the project runs on.
     model: (id) => {
-      const d = store.getProject(p.id).agent
-      if (mine() && thread.agent.provider === d.provider && thread.agent.model === d.model) modelSeen(p.id, id)
+      if (!mine()) return
+      const d = store.listProjects().find((project) => project.id === p.id)?.agent
+      if (d && thread.agent.provider === d.provider && thread.agent.model === d.model) modelSeen(p.id, id)
     },
     approve: (req) => askApproval(p, tid, req),
     ask: (qs) => askQuestions(p, tid, qs),
