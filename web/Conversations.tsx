@@ -784,7 +784,8 @@ export function ThreadView({ project, threadId, back, next }: { project: Project
     go(`/p/${project.id}/t/${t.id}`)
   }
 
-  const lastUser = messages.map((m) => m.kind).lastIndexOf('user')
+  // Another agent's input leaves earlier questions open; the user's own passes over them.
+  const lastUser = messages.map((m) => m.kind === 'user' && !m.from).lastIndexOf(true)
   const last = messages[messages.length - 1]
   const askedIds = new Set(messages.flatMap((m, i) => (i > lastUser || m.kind === 'question' ? m.decisionIds ?? [] : [])))
   const asked = decisions.filter((d) => !d.resolved && askedIds.has(d.id))

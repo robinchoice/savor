@@ -308,23 +308,34 @@ test('a comment can be sent before every question is answered', async () => {
   assert.equal(await page.locator('.card.active .chip.blocked').count(), 0, 'nothing waits for the user anymore')
 })
 
-test('new input passes over open questions, so answering a later one leaves the conversation finishable', async () => {
+test("the user's input passes over open questions, another agent's leaves them open", async () => {
   const [project] = (await api('GET', '/projects')).body
-  const t = `/projects/${project.id}/threads/${(await api('POST', `/projects/${project.id}/threads`, { text: 'ask: Ship it?', agent: { provider: 'claude' } })).body.id}`
-  await until(async () => (await api('GET', t)).body.decisions.length === 1)
-  // Another agent's input comes in while the first question waits.
-  await api('POST', `${t}/messages`, { text: 'ask: Tag it?' })
-  let later
-  await until(async () => (later = (await api('GET', t)).body.decisions.find((d) => d.title === 'Tag it?')))
-  assert.ok((await api('GET', t)).body.decisions.find((d) => d.title === 'Ship it?').resolved)
-  await api('POST', `${t}/decisions`, { answers: [{ id: later.id, selected: 0 }] })
-  await until(async () => {
-    const { messages, busy, thread } = (await api('GET', t)).body
-    return messages.at(-1).kind === 'conclusion' && !messages.at(-1).decisionIds && !busy && !thread.needsYou
+  const threads = `/projects/${project.id}/threads`
+  const sender = (await api('POST', threads, { text: 'plan the release', agent: { provider: 'claude' } })).body
+  const target = (await api('POST', threads, { text: 'ask: Ship it?', agent: { provider: 'claude' } })).body
+  const t = `${threads}/${target.id}`
+  const settled = (check) => until(async () => {
+    const { messages, busy, thread, decisions } = (await api('GET', t)).body
+    return !busy && messages.at(-1).kind === 'conclusion' && check(decisions, thread)
   })
-  await page.goto(`${base}/#/p/${project.id}/t/${t.split('/').at(-1)}`)
-  await page.waitForSelector('.answered:has-text("Skipped")')
+  await settled((ds) => ds.length === 1)
+  const { mcpToken } = JSON.parse(fs.readFileSync(path.join(HOME, 'state.json'), 'utf8'))
+  const client = new Client({ name: 'e2e', version: '1' })
+  await client.connect(new StreamableHTTPClientTransport(new URL(`${base}/mcp?project=${project.id}&thread=${sender.id}`), { requestInit: { headers: { authorization: `Bearer ${mcpToken}` } } }))
+  await client.callTool({ name: 'send_to_conversation', arguments: { id: target.id, text: 'ask: Tag it?' } })
+  await client.close()
+  await settled((ds) => ds.length === 2)
+  // Both questions wait for the user and can be answered.
+  await settled((ds, thread) => ds.every((d) => !d.resolved) && thread.needsYou)
+  await page.goto(`${base}/#/p/${project.id}/t/${target.id}`)
+  await page.waitForSelector('.question:has-text("Ship it?") .option')
+  await page.waitForSelector('.question:has-text("Tag it?") .option')
+  assert.equal(await page.locator('.complete-actions').count(), 0)
+  // The user's own message passes over them, and the conversation can be finished.
+  await api('POST', `${t}/messages`, { text: 'never mind' })
+  await settled((ds, thread) => ds.every((d) => d.resolved) && !thread.needsYou)
   await page.waitForSelector('.complete-actions button:has-text("Finish")')
+  assert.equal(await page.locator('.answered:has-text("Skipped")').count(), 2)
 })
 
 test('approvals are routed to the user, "Always allow" remembers the rule', async () => {

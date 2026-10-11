@@ -110,15 +110,16 @@ export function send(p: Project, tid: string, input: Input) {
   const thread = store.updateThread(p, tid, { completed: false, inputAt: store.now() })
   const queued = busy.has(tid)
   const msg = post(p, tid, { kind: 'user', text: input.text, images: input.images, files: input.files, modelInfo: thread.agent, origin: input.origin, device: input.device, from: input.from, chained: input.chained || undefined, delivered: !queued })
-  skipAsked(p, tid)
+  if (!input.from) skipAsked(p, tid)
   stopped.delete(tid)
   if (!queued) deliver(p, tid, msg)
   else emit({ type: 'thread', projectId: p.id, threadId: tid })
   return msg
 }
 
-// New input passes over the questions of earlier conclusions: the chat no longer offers them, so they count
-// as skipped and don't keep the conversation waiting. Questions an agent waits for stay open.
+// The user's new input passes over the questions of earlier conclusions: the chat no longer offers them, so they
+// count as skipped and don't keep the conversation waiting. Questions an agent waits for stay open, and so do all
+// when another agent writes: its input must not make the user's questions go unseen.
 function skipAsked(p: Project, tid: string) {
   const waits = new Set(store.readMessages(p, tid).filter((m) => m.kind === 'question').map((m) => m.id))
   for (const d of store.listDecisions(p, tid)) if (!d.resolved && !waits.has(d.groupId)) store.saveDecision(p, { ...d, resolved: true })
