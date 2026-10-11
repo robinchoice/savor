@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
-import { ArrowUp, AtSign, CornerDownRight, Bookmark, Check, ChevronDown, Download, FileText, FolderGit2, GitBranch, ListPlus, MessageSquare, Mic, Paperclip, Plus, ShieldAlert, Sparkles, Split, Square, Workflow as WorkflowIcon, X, Zap, Crosshair } from 'lucide-preact'
+import { ArrowRight, ArrowUp, AtSign, CornerDownRight, Bookmark, Check, ChevronDown, Download, FileText, FolderGit2, GitBranch, ListPlus, MessageSquare, Mic, Paperclip, Plus, ShieldAlert, Sparkles, Split, Square, Workflow as WorkflowIcon, X, Zap, Crosshair } from 'lucide-preact'
 import { api, agentSummary, describeModel, effortLabel, modelName, PROVIDER_NAMES, readFileAsDataUrl, useAgents, useApi, type AgentConfig, type Attachment, type Doc, type Project, type ProviderInfo, type Preset, type Skill, type Workflow } from './api'
 import { ProviderIcon } from './Conversations'
 import { useShortcut } from './Shortcuts'
@@ -41,6 +41,8 @@ interface Props {
   // Open questions in the conversation: the text goes along with the answers as a comment. A comment
   // can also be sent before every question is picked; the rest then count as not answered.
   answering?: { picked: number; total: number; send: (comment: string, attachments: Attachment[]) => Promise<unknown> }
+  // Set while another conversation needs you: a second button sends and opens it.
+  onNext?: () => void
 }
 
 const MAX_FILES = 8
@@ -165,7 +167,7 @@ export function Composer(props: Props) {
       (e: Error) => settle({ error: e.message }),
     )
   }
-  const submit = async (steer = false) => {
+  const submit = async (steer = false, next = false) => {
     if (!canSend) return
     const btw = props.threadId && !answers && text.match(/^\/btw\s+(\S[\s\S]*)$/)?.[1].trim()
     if (btw) return ask(btw)
@@ -179,6 +181,7 @@ export function Composer(props: Props) {
       // Kept until the message is accepted, so a refused one doesn't lose them.
       if (review.length) props.setReview?.([])
       setError('')
+      if (next) props.onNext?.()
     } catch (e) {
       // Give the input back when the server refuses it, e.g. a setting a paired device may not choose.
       setText(text)
@@ -206,6 +209,11 @@ export function Composer(props: Props) {
       {props.onStop && (
         <button class="send stop" title="Stop" onClick={props.onStop}>
           <Square size={13} />
+        </button>
+      )}
+      {props.onNext && (
+        <button class="send" title="Send and open the next conversation that needs you" disabled={!canSend} onClick={() => submit(false, true)}>
+          <ArrowRight size={16} />
         </button>
       )}
       {answers ? (

@@ -898,6 +898,10 @@ export function ThreadView({ project, threadId, back, next }: { project: Project
       setReview={saveReview}
       compact={floating}
       answering={answering}
+      onNext={nextPath ? () => {
+        trail.push(location.hash.slice(1))
+        go(nextPath)
+      } : undefined}
       autoFocus
     />
   )
