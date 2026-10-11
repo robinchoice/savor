@@ -4,7 +4,7 @@ import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import {
   Asterisk, Hexagon, Code2, Sparkles, Orbit, Plus, Search, MessageSquare, Check, MoreHorizontal, PanelLeft, PanelRight, FileText, Globe,
-  CircleAlert, ArrowUp, ArrowLeft, Pencil, MessageSquarePlus, Brain, Terminal, Wrench, ArrowRight, Smartphone, Monitor, Bot, ShieldQuestion, X, ChevronUp, ChevronDown, ChevronRight, Paperclip, GitBranch, GitFork, GitMerge, Trash2, Copy, FileDiff, Split, SquareArrowOutUpRight, Workflow as WorkflowIcon, Mail, MailOpen, SquareTerminal,
+  CircleAlert, ArrowUp, ArrowLeft, Pencil, MessageSquarePlus, Brain, Terminal, Wrench, ArrowRight, Smartphone, Monitor, Bot, ShieldQuestion, X, ChevronUp, ChevronDown, ChevronRight, Paperclip, GitBranch, GitFork, GitMerge, Trash2, Copy, FileDiff, Split, SquareArrowOutUpRight, Workflow as WorkflowIcon, Mail, MailOpen, SquareTerminal, RotateCcw,
 } from 'lucide-preact'
 import {
   api, avatarStyle, cap, desktop, duration, formatStamp, formatTime, go, initial, lastThreadKey, PROVIDER_NAMES, runTrigger, useApi, kindOf, RINGS, type ActivityEvent, type AgentConfig, type Attachment, type Decision, type Message, type Proc, type Project, type Reason, type Thread, type Worktree,
@@ -406,8 +406,8 @@ export function ThreadCard({ project, thread: t, active, href = `#/p/${project.i
   )
 }
 
-// Right-clicking a conversation marks it unread again, or read. Marking the open one unread leaves it,
-// since showing it would mark it read at once.
+// Right-clicking a conversation marks it unread again, or read, and finishes or reopens it. Marking the open
+// one unread leaves it, since showing it would mark it read at once.
 function CardMenu({ project, thread: t, active, href, at, close }: { project: Project; thread: Thread; active: boolean; href: string; at: { x: number; y: number }; close: () => void }) {
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -427,6 +427,10 @@ function CardMenu({ project, thread: t, active, href, at, close }: { project: Pr
     api('PATCH', `/projects/${project.id}/threads/${t.id}`, { unread, ...(unread && t.completed && { completed: false }) })
     if (unread && active) go(href.slice(1).replace(/\/t\/[^/]+$|\/[^/]+\/[^/]+$/, ''))
   }
+  const complete = (completed: boolean) => {
+    close()
+    api('PATCH', `/projects/${project.id}/threads/${t.id}`, { completed })
+  }
   return (
     <div ref={ref} class="menu" style={{ position: 'fixed', left: at.x, top: at.y }}>
       {t.unread ? (
@@ -436,6 +440,15 @@ function CardMenu({ project, thread: t, active, href, at, close }: { project: Pr
       ) : (
         <button onClick={() => mark(true)}>
           <Mail size={14} /> Mark as unread
+        </button>
+      )}
+      {t.completed ? (
+        <button onClick={() => complete(false)}>
+          <RotateCcw size={14} /> Reopen
+        </button>
+      ) : (
+        <button onClick={() => complete(true)}>
+          <Check size={14} /> Finish
         </button>
       )}
     </div>
@@ -766,7 +779,6 @@ export function ThreadView({ project, threadId, back, next }: { project: Project
 
   const lastUser = messages.map((m) => m.kind).lastIndexOf('user')
   const last = messages[messages.length - 1]
-  const openDecisions = decisions.some((d) => !d.resolved)
   const askedIds = new Set(messages.flatMap((m, i) => (i > lastUser || m.kind === 'question' ? m.decisionIds ?? [] : [])))
   const asked = decisions.filter((d) => !d.resolved && askedIds.has(d.id))
   const answering = asked.length
@@ -780,8 +792,8 @@ export function ThreadView({ project, threadId, back, next }: { project: Project
       }
     : undefined
   const lastConclusion = [...messages].reverse().find((m) => m.kind === 'conclusion')
-  const showNext = !busy && last?.kind === 'conclusion' && !openDecisions && last.suggestions?.length
-  const canComplete = !busy && !thread.completed && last?.kind === 'conclusion' && !openDecisions
+  const showNext = !busy && last?.kind === 'conclusion' && !asked.length && last.suggestions?.length
+  const canComplete = !busy && !thread.completed && last?.kind === 'conclusion' && !asked.length
   const nextPath = next?.find((p) => `#${p}` !== location.hash)
   keys.current = { stop: stoppable ? stop : undefined, finish: canComplete ? () => patch({ completed: true }) : undefined }
   const queued = messages.filter((m) => m.kind === 'user' && m.delivered === false).length
