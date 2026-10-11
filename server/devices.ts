@@ -104,6 +104,7 @@ function addDevice(device: Omit<store.Device, 'id' | 'createdAt' | 'lastSeenAt'>
 }
 
 export function addTokenDevice(name: string) {
+  pairings.clear()
   const token = crypto.randomBytes(32).toString('hex')
   addDevice({ name, tokenHash: store.hash(token) })
   return token

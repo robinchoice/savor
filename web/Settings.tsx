@@ -242,6 +242,9 @@ export function Devices() {
   const [pairing, setPairing] = useState<{ code: string; url: string; relayUrl: string | null; expiresAt: string } | null>(null)
   const [address, setAddress] = useState<{ url: string | null; fallback: string } | null>(null)
   const [addressDraft, setAddressDraft] = useState<string | null>(null)
+  const [shortcutName, setShortcutName] = useState('iPhone shortcut')
+  const [shortcutToken, setShortcutToken] = useState<string | null>(null)
+  const [creatingToken, setCreatingToken] = useState(false)
   useEffect(() => void api('GET', '/devices/address').then(setAddress), [])
   // Allowing a device voids every open code, so the QR code goes too.
   useEffect(() => setPairing(null), [devices?.length])
@@ -257,6 +260,17 @@ export function Devices() {
   }
 
   const revoke = (d: DeviceRow) => confirm(`Revoke access for ${d.name}?`) && api('DELETE', `/devices/${d.id}`)
+  const createToken = async () => {
+    setCreatingToken(true)
+    try {
+      setShortcutToken((await api('POST', '/devices/token', { name: shortcutName })).token)
+      setError('')
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setCreatingToken(false)
+    }
+  }
   const saveRelay = async (enabled: boolean) => {
     try {
       await api('PUT', '/relay', { url: relayUrl ?? relay?.url ?? '', enabled })
@@ -342,6 +356,26 @@ export function Devices() {
                 Code: <b class="mono">{pairing.code}</b> · valid until {new Date(pairing.expiresAt).toLocaleTimeString()}
               </p>
             </div>
+          </div>
+        )}
+
+        <h2>Shortcut token</h2>
+        <p class="muted">For iOS Shortcuts or other HTTP clients that reach this computer directly over your network or VPN. The token has the same access as a paired device. Revoke it in the device list below.</p>
+        {shortcutToken ? (
+          <div class="pairing">
+            <div>
+              <p>Copy this Cookie header into your shortcut. It is shown only here, until you dismiss it or leave this page.</p>
+              <input aria-label="Shortcut Cookie header" class="mono" readOnly value={`savor_device=${shortcutToken}`} onFocus={(e) => e.currentTarget.select()} />
+              <button class="ghost" onClick={() => setShortcutToken(null)}>Done</button>
+            </div>
+          </div>
+        ) : (
+          <div class="row wide">
+            <label>
+              Shortcut name
+              <input value={shortcutName} onInput={(e) => setShortcutName(e.currentTarget.value)} />
+            </label>
+            <button class="primary" disabled={creatingToken || !shortcutName.trim()} onClick={createToken}>Create token</button>
           </div>
         )}
 

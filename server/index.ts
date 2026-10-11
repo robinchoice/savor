@@ -105,6 +105,14 @@ route('POST', '/awake', (_, b, ctx) => {
   return { awake: awake.isAwake() }
 })
 route('GET', '/devices', (_, __, ctx) => (localOnly(ctx), devices.listDevices()))
+route('POST', '/devices/token', (_, b, ctx) => {
+  localOnly(ctx)
+  if (typeof b.name !== 'string' || !b.name.trim()) throw new BadRequest('Give the shortcut a name.')
+  const token = devices.addTokenDevice(b.name.trim())
+  ctx.res.setHeader('cache-control', 'no-store')
+  emit({ type: 'devices' })
+  return { token }
+})
 route('POST', '/devices/pairing', (_, __, ctx) => {
   localOnly(ctx)
   const pairing = devices.createPairing()
