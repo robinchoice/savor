@@ -140,7 +140,8 @@ export async function pairThroughRelay(daemonPkText: string, code: string, name:
   localStorage.setItem(PROFILE_KEY, JSON.stringify({ daemonPk: daemonPkText, name }))
 }
 
-type Pending = { resolve: (r: Response) => void; reject: (e: Error) => void; onData?: (data: string) => void; buffer: string; path: string }
+// `on` is the socket a stream was last requested on.
+type Pending = { resolve: (r: Response) => void; reject: (e: Error) => void; onData?: (data: string) => void; buffer: string; path: string; on?: WebSocket }
 type Tunnel = { ws: WebSocket; channel: t.Channel }
 
 // One encrypted tunnel with request multiplexing. Reconnects on its own and resumes open streams.
@@ -191,6 +192,8 @@ export function remote(profile: RemoteProfile, onState: (connected: boolean, err
         setTimeout(resume, 2000)
       }
       onState(true)
+      // Every new socket requests the open streams again, whichever call opened it, so events keep flowing.
+      for (const [id, p] of pending) if (p.onData) subscribe({ ws, channel }, id, p)
       return { ws, channel }
     })()
     ready = attempt
@@ -202,15 +205,15 @@ export function remote(profile: RemoteProfile, onState: (connected: boolean, err
     return attempt
   }
 
-  // After a reconnect, streams are requested again so events keep flowing.
-  async function resume() {
-    if (ready) return
-    const tunnel = await connect().catch(() => null)
-    if (!tunnel) return
-    for (const [id, p] of pending) if (p.onData) tunnel.ws.send(tunnel.channel.seal({ id, method: 'GET', path: p.path }))
+  function subscribe({ ws, channel }: Tunnel, id: number, p: Pending) {
+    if (p.on === ws) return
+    p.on = ws
+    p.buffer = ''
+    ws.send(channel.seal({ id, method: 'GET', path: p.path }))
   }
 
   const tunnel = () => ready ?? connect()
+  const resume = () => void tunnel().catch(() => {})
 
   return {
     async request(method, path, body) {
@@ -223,8 +226,9 @@ export function remote(profile: RemoteProfile, onState: (connected: boolean, err
     },
     stream(path, onData) {
       const id = nextId++
-      pending.set(id, { resolve: () => {}, reject: () => {}, onData, buffer: '', path })
-      tunnel().then(({ ws, channel }) => ws.send(channel.seal({ id, method: 'GET', path })))
+      const p: Pending = { resolve: () => {}, reject: () => {}, onData, buffer: '', path }
+      pending.set(id, p)
+      tunnel().then((t) => pending.has(id) && subscribe(t, id, p), () => {})
       return () => {
         pending.delete(id)
         ready?.then(({ ws, channel }) => ws.readyState === ws.OPEN && ws.send(channel.seal({ id, cancel: true })))

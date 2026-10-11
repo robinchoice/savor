@@ -254,6 +254,25 @@ test('idle sockets cannot lock real devices out', async () => {
   await page.waitForSelector('.msg >> text=Echo: still reachable')
 })
 
+// A phone coming back to the page finds its tunnel closed, and the next request reopens it before the timed reconnect does.
+test('events keep flowing when a request reopens a lost tunnel', async () => {
+  await page.addInitScript(() => {
+    const Native = WebSocket
+    window.WebSocket = class extends Native {
+      constructor(...args) {
+        super(...args)
+        window.lastSocket = this
+      }
+    }
+  })
+  await page.reload()
+  await page.waitForSelector('.composer textarea')
+  await page.evaluate(() => new Promise((resolve) => (window.lastSocket.addEventListener('close', resolve), window.lastSocket.close())))
+  await page.fill('.composer textarea', 'after the tunnel came back')
+  await page.keyboard.press('Enter')
+  await page.waitForSelector('.msg >> text=Echo: after the tunnel came back', { timeout: 10_000 })
+})
+
 test('revoking the device cuts its open tunnel at once', async () => {
   const [device] = await local('GET', '/devices')
   await local('DELETE', `/devices/${device.id}`)
