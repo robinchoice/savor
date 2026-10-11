@@ -104,6 +104,20 @@ route('POST', '/awake', (_, b, ctx) => {
   awake.setAwake(!!b.on)
   return { awake: awake.isAwake() }
 })
+// Bug reports go on to the Pleasance API, which files them as issues in a private repo. Savor keeps nothing.
+const FEEDBACK_URL = process.env.SAVOR_FEEDBACK_URL ?? 'https://api.pleasance.org/savor/feedback'
+route('POST', '/feedback', async (_, b) => {
+  if (typeof b.text !== 'string' || !b.text.trim()) throw new BadRequest('Describe what went wrong.')
+  const r = await fetch(FEEDBACK_URL, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ text: b.text, context: b.context, screenshot: b.screenshot ?? null }),
+    signal: AbortSignal.timeout(60_000),
+  }).catch(() => null)
+  if (r?.status === 429) throw new BadRequest('Too many reports from here. Try again in an hour.')
+  if (!r?.ok) throw new BadRequest('The report could not be sent. Try again later.')
+  return { ok: true }
+})
 route('GET', '/devices', (_, __, ctx) => (localOnly(ctx), devices.listDevices()))
 route('POST', '/devices/token', (_, b, ctx) => {
   localOnly(ctx)

@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks'
-import { domToPng } from 'modern-screenshot'
-import { ArrowUpRight, Bug, X } from 'lucide-preact'
-import { readFileAsDataUrl, recentErrors, type Me } from './api'
-import { openIssue } from './Account'
+import { domToJpeg } from 'modern-screenshot'
+import { Bug, Send, X } from 'lucide-preact'
+import { api, readFileAsDataUrl, recentErrors, type Me } from './api'
 import { setPrefs, usePrefs } from './prefs'
 
 const SIZE = 44
@@ -22,10 +21,11 @@ const embedFonts = () =>
       }),
   ).then((rules) => rules.join('\n')))
 
-// What is on screen right now, without anything marked data-feedback-ignore.
+// What is on screen right now, without anything marked data-feedback-ignore. JPEG keeps the report small.
 const takeScreenshot = async () =>
-  domToPng(document.documentElement, {
+  domToJpeg(document.documentElement, {
     font: { cssText: await embedFonts() },
+    quality: 0.85,
     width: innerWidth,
     height: innerHeight,
     scale: Math.min(devicePixelRatio, 2),
@@ -46,7 +46,7 @@ async function markScreenshot(dataUrl: string, rect: Rect) {
   ctx.strokeStyle = '#F2545B'
   ctx.lineWidth = Math.max(3, canvas.width / 200)
   ctx.strokeRect(rect.x * canvas.width, rect.y * canvas.height, rect.width * canvas.width, rect.height * canvas.height)
-  return canvas.toDataURL('image/png')
+  return canvas.toDataURL('image/jpeg', 0.85)
 }
 
 // Taken when the report opens, as the screen looked. The page without query, which may hold a token.
@@ -58,18 +58,6 @@ const reportContext = (me: Me) => [
   ['Language', navigator.language],
   ['Failed calls', recentErrors.join(', ') || '–'],
 ]
-
-// GitHub takes no image through the issue link, so the screenshot goes to the clipboard, or else into a download.
-async function handOver(shot: string) {
-  const blob = new Blob([Uint8Array.from(atob(shot.split(',')[1]), (c) => c.charCodeAt(0))], { type: 'image/png' })
-  const copied = await navigator.clipboard?.write([new ClipboardItem({ 'image/png': blob })]).then(() => true, () => false)
-  if (copied) return 'copied'
-  const a = document.createElement('a')
-  a.href = shot
-  a.download = 'savor-bug.png'
-  a.click()
-  return 'downloaded'
-}
 
 export function BugButton({ me }: { me: Me }) {
   const { bugAt } = usePrefs()
@@ -134,11 +122,18 @@ export function BugButton({ me }: { me: Me }) {
 function BugReport({ report, setShot, onClose }: { report: { shot: string | null; context: string[][] }; setShot: (shot: string | null) => void; onClose: () => void }) {
   const [text, setText] = useState('')
   const [marking, setMarking] = useState(false)
-  const [sent, setSent] = useState<'copied' | 'downloaded' | 'none' | null>(null)
+  const [state, setState] = useState<'sending' | 'sent' | null>(null)
+  const [error, setError] = useState('')
   const send = async () => {
-    const handed = report.shot ? handOver(report.shot) : Promise.resolve('none' as const)
-    openIssue(text, report.context.map(([label, value]) => `${label}: ${value}`).join('\n'))
-    setSent(await handed)
+    setState('sending')
+    setError('')
+    try {
+      await api('POST', '/feedback', { text: text.trim(), context: report.context, screenshot: report.shot })
+      setState('sent')
+    } catch (e) {
+      setError((e as Error).message)
+      setState(null)
+    }
   }
   useEffect(() => {
     const key = (e: KeyboardEvent) => e.key === 'Escape' && (marking ? setMarking(false) : onClose())
@@ -158,13 +153,8 @@ function BugReport({ report, setShot, onClose }: { report: { shot: string | null
             <X size={16} />
           </button>
         </header>
-        {sent ? (
-          <p class="dialog-body">
-            The issue form is open in your browser with your text filled in.
-            {sent === 'copied' && ' The screenshot is in your clipboard: paste it into the issue with Ctrl+V or ⌘V, then submit.'}
-            {sent === 'downloaded' && ' The screenshot was downloaded as savor-bug.png: drag it into the issue, then submit.'}
-            {sent === 'none' && ' Submit it there.'}
-          </p>
+        {state === 'sent' ? (
+          <p class="dialog-body">Thanks, your report was sent.</p>
         ) : (
           <div class="dialog-body form">
             <label>
@@ -191,18 +181,19 @@ function BugReport({ report, setShot, onClose }: { report: { shot: string | null
                 {report.context.flatMap(([label, value]) => [<dt key={`${label}-t`}>{label}</dt>, <dd key={label}>{value}</dd>])}
               </dl>
             </details>
-            <span class="muted small">Opens a GitHub issue in your browser.{report.shot && ' The screenshot goes to your clipboard to paste it there.'}</span>
+            <span class="muted small">Goes to the Savor developers as a private issue. Only they see it{report.shot && ', screenshot included'}.</span>
+            {error && <div class="error-text">{error}</div>}
           </div>
         )}
         <footer class="dialog-foot">
           <span />
-          {sent ? (
+          {state === 'sent' ? (
             <button class="primary" onClick={onClose}>
               Done
             </button>
           ) : (
-            <button class="primary" disabled={!text.trim()} onClick={send}>
-              Continue on GitHub <ArrowUpRight size={15} />
+            <button class="primary" disabled={!text.trim() || state === 'sending'} onClick={send}>
+              <Send size={15} /> {state === 'sending' ? 'Sending…' : 'Send report'}
             </button>
           )}
         </footer>

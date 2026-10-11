@@ -5,6 +5,7 @@
 - Local workspace for coding agents: Node server, web UI, Electron desktop app (`desktop/`), relay for paired remote devices (`relay/`). Setup, architecture and the development commands are in README.md.
 - Landing page: https://savor.pleasance.org from `site/`, Coolify on VPS 1, project `pleasance-savor`.
 - Relay: https://savor.diespaetzles.lol, Coolify on VPS 3, project `privat-savor`, application `savor-relay`.
+- The bug button sends reports through the daemon's `POST /api/feedback` to `POST https://api.pleasance.org/savor/feedback` (repo `pleasance`, `api/`), which files them as issues in the private repo `robinchoice/savor-feedback`. Tests replace it with `SAVOR_FEEDBACK_URL`.
 - Robin's own instance runs as the systemd user service `savor.service` on `127.0.0.1:4317`, from the AppImage of the last release.
 
 ## Checks

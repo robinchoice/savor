@@ -22,6 +22,15 @@ const PROJECT = path.join(TMP, 'project')
 const AGENT_LOG = path.join(TMP, 'agents.jsonl') // the fake agents log their command lines here
 let server, browser, page, port, token, base
 
+// Stands in for the Pleasance API that files bug reports as issues.
+const reports = []
+const feedbackApi = http.createServer(async (req, res) => {
+  let body = ''
+  for await (const c of req) body += c
+  reports.push(JSON.parse(body))
+  res.writeHead(200, { 'content-type': 'application/json' }).end('{"ok":true}')
+})
+
 const freePort = () =>
   new Promise((resolve) => {
     const s = net.createServer().listen(0, () => {
@@ -82,6 +91,7 @@ async function startDaemon() {
       SAVOR_TRANSCRIBE_MODULE: path.join(ROOT, 'test/fake-transcribe.mjs'),
       SAVOR_GH_BIN: path.join(ROOT, 'test/fake-gh.mjs'),
       SAVOR_PANDOC_BIN: path.join(ROOT, 'test/fake-pandoc.mjs'),
+      SAVOR_FEEDBACK_URL: `http://127.0.0.1:${feedbackApi.address().port}/savor/feedback`,
       FAKE_AGENT_LOG: AGENT_LOG,
       CLAUDE_CONFIG_DIR: path.join(TMP, 'claude'),
       CODEX_HOME: path.join(TMP, 'codex'),
@@ -98,6 +108,7 @@ before(async () => {
   // The default speech model counts as downloaded.
   fs.mkdirSync(path.join(HOME, 'models'), { recursive: true })
   fs.writeFileSync(path.join(HOME, 'models', 'parakeet-tdt-0.6b-v3-Q8_0.gguf'), '')
+  await new Promise((resolve) => feedbackApi.listen(0, '127.0.0.1', resolve))
   await startDaemon()
   token = JSON.parse(fs.readFileSync(path.join(HOME, 'state.json'), 'utf8')).token
   browser = await chromium.launch({ executablePath: process.env.SAVOR_CHROMIUM, args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'] })
@@ -111,6 +122,7 @@ before(async () => {
 after(async () => {
   await browser?.close()
   server?.kill()
+  feedbackApi.close()
   // The daemon's preview browser and agents outlive it for a moment, and the browser keeps writing its profile.
   await until(() => !execFileSync('ps', ['-eo', 'args']).toString().includes(TMP))
   fs.rmSync(TMP, { recursive: true, force: true })
@@ -2063,7 +2075,7 @@ test('feedback opens the issue form on GitHub with the text and the version', as
   await page.waitForSelector('.feedback-dialog', { state: 'detached' })
 })
 
-test('the bug button reports a bug with a marked screenshot on GitHub, once it is switched on', async () => {
+test('the bug button sends a bug report with a marked screenshot, once it is switched on', async () => {
   assert.equal(await page.locator('.bug-button').count(), 0)
   await page.click('.account')
   await page.click('.account-dialog summary:has-text("App settings")')
@@ -2072,7 +2084,7 @@ test('the bug button reports a bug with a marked screenshot on GitHub, once it i
   await page.click('.bug-button')
   // The screenshot leaves out the bug button itself.
   const shot = await page.waitForSelector('.feedback-dialog .bug-shot')
-  assert.match(await shot.getAttribute('src'), /^data:image\/png;base64,/)
+  assert.match(await shot.getAttribute('src'), /^data:image\/jpeg;base64,/)
   await page.click('text=Mark the spot')
   const box = await page.locator('.bug-mark-canvas img').boundingBox()
   await page.mouse.move(box.x + 20, box.y + 20)
@@ -2081,13 +2093,15 @@ test('the bug button reports a bug with a marked screenshot on GitHub, once it i
   await page.mouse.up()
   await page.click('.bug-mark-bar >> text=Done')
   await page.waitForSelector('.bug-mark', { state: 'detached' })
+  const marked = await shot.getAttribute('src')
   await page.fill('.feedback-dialog textarea', 'The pin icon overlaps the name')
-  const [issue] = await Promise.all([page.context().waitForEvent('page'), page.click('text=Continue on GitHub')])
-  await issue.waitForURL(/github\.com/)
-  const body = new URL(issue.url()).searchParams.get('body')
-  assert.match(body, /^The pin icon overlaps the name\n\n---\nPage: .+\nVersion: Savor \d+\.\d+\.\d+ .+\nDevice: .+\nWindow: \d+×\d+ @\d+(\.\d+)?x\nLanguage: .+\nFailed calls: .+$/)
-  await issue.close()
-  await page.waitForSelector('.feedback-dialog >> text=/The screenshot (is in your clipboard|was downloaded)/')
+  await page.click('text=Send report')
+  await page.waitForSelector('.feedback-dialog >> text=Thanks, your report was sent.')
+  const [report] = reports
+  assert.equal(report.text, 'The pin icon overlaps the name')
+  assert.equal(report.screenshot, marked)
+  assert.deepEqual(report.context.map(([label]) => label), ['Page', 'Version', 'Device', 'Window', 'Language', 'Failed calls'])
+  assert.match(report.context[1][1], /^Savor \d+\.\d+\.\d+ · \w+ \w+$/)
   await page.click('.feedback-dialog >> text=Done')
   await page.click('.account')
   await page.click('.account-dialog summary:has-text("App settings")')

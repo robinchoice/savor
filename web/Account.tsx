@@ -13,7 +13,7 @@ import { megabytes, type VoiceModels } from './voice'
 const REPO = 'https://github.com/robinchoice/savor'
 
 // Savor has no server of its own that could take feedback, so it becomes an issue on GitHub.
-export function openIssue(text: string, details: string) {
+function openIssue(text: string, details: string) {
   window.open(`${REPO}/issues/new?${new URLSearchParams({ title: text.trim().split('\n')[0].slice(0, 80), body: `${text.trim()}\n\n---\n${details}` })}`, '_blank', 'noreferrer')
 }
 
