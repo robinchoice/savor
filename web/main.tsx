@@ -291,7 +291,7 @@ function TopBar({ projects, active, all, me, setMe }: { projects: Project[]; act
           <button class="pill" onClick={() => setMenu(menu === 'projects' ? null : 'projects')}>
             <FolderOpen size={15} /> Projects <ChevronDown size={14} />
           </button>
-          {menu === 'projects' && <ProjectsMenu projects={projects} active={active} me={me} setMe={setMe} close={() => closeMenu('projects')} />}
+          {menu === 'projects' && <ProjectsMenu projects={sorted} active={active} me={me} setMe={setMe} close={() => closeMenu('projects')} />}
         </div>
         {feedbackButton && (
           <button class="icon-btn wide-only" title="Send feedback" onClick={() => setDialog('feedback')}>
@@ -353,7 +353,9 @@ function ProjectsMenu({ projects, active, me, setMe, close }: { projects: Projec
     return () => removeEventListener('click', on)
   }, [])
   const q = query.trim().toLowerCase()
-  const shown = projects.filter((p) => !q || p.name.toLowerCase().includes(q) || p.path.toLowerCase().includes(q))
+  const shown = projects
+    .filter((p) => !q || p.name.toLowerCase().includes(q) || p.path.toLowerCase().includes(q))
+    .sort((a, b) => Number(b.pinned) - Number(a.pinned) || (a.pinned ? 0 : a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })))
   const pin = (e: Event, p: Project) => {
     e.preventDefault()
     e.stopPropagation()
