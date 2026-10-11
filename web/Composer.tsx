@@ -685,6 +685,12 @@ export function AgentMenu({ agent, agents, setAgent, close }: { agent: AgentConf
     <>
       <div class="sheet-scrim" onClick={close} />
       <div class="menu agent-menu" ref={ref}>
+        <div class="panel-head sheet-head">
+          <b>Agent</b>
+          <button class="icon-btn" title="Close" onClick={close}>
+            <X size={16} />
+          </button>
+        </div>
         <div class="ap-rail">
           {(agents.length ? agents : Object.entries(PROVIDER_NAMES).map(([id, name]) => ({ id, name }) as ProviderInfo)).map((p) => {
             const l = limit(p.id)

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks'
-import { ExternalLink, ScrollText, Square } from 'lucide-preact'
+import { ExternalLink, ScrollText, Square, X } from 'lucide-preact'
 import { api, useApi, type Proc, type Project } from './api'
 import { transport } from './transport'
 
@@ -19,7 +19,12 @@ export function ProcessesPopover({ project, close }: { project: Project; close: 
 
   return (
     <div class="menu right procs" ref={ref}>
-      <div class="menu-label">Background processes</div>
+      <div class="panel-head">
+        <b>Background processes</b>
+        <button class="icon-btn" title="Close" onClick={close}>
+          <X size={16} />
+        </button>
+      </div>
       {procs && !procs.length && <p class="muted small pad">Nothing running. Agents register dev servers and watchers here.</p>}
       {procs?.map((p) => (
         <div key={p.pid} class="proc">
