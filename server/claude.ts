@@ -145,8 +145,9 @@ export class ClaudeSession implements Session {
     }
     const { p, tid, activity } = this.host
     // Claude names the background tasks that still run (shell commands, subagents) whenever that list changes.
+    // Ambient ones (watchers it starts by itself) are no work the user could want to stop.
     if (ev.type === 'system' && ev.subtype === 'background_tasks_changed') {
-      this.tasks = ev.tasks?.length ?? 0
+      this.tasks = ev.tasks?.filter((t: { ambient?: boolean }) => !t.ambient).length ?? 0
       return this.host.backgroundChanged()
     }
     if (ev.type === 'assistant' || ev.type === 'user' || (ev.type === 'system' && ['init', 'task_notification'].includes(ev.subtype))) this.host.working()

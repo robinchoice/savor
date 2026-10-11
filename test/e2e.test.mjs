@@ -476,6 +476,14 @@ test('background work an agent leaves running after its conclusion can be stoppe
   assert.equal(await page.locator('.msg-card.error').count(), 0, 'no request was cut off, so nothing is reported')
 })
 
+test("tasks Claude marks as ambient are no background work and can't be stopped", async () => {
+  await newConversation()
+  await send('ambient: watcher')
+  await page.waitForSelector('text=Echo: ambient: watcher')
+  assert.equal(await page.locator('.thread-sub .status:has-text("Background work running")').count(), 0)
+  assert.equal(await page.locator('.composer .send.stop').count(), 0)
+})
+
 test('queued messages can be removed before they are sent', async () => {
   const [project] = (await api('GET', '/projects')).body
   const thread = (await api('POST', `/projects/${project.id}/threads`, { text: 'slow: busy' })).body

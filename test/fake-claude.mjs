@@ -147,6 +147,9 @@ async function turn(text, command) {
         await call('send_conclusion_message', { text: `Echo: ${input}` })
         out({ type: 'result', subtype: 'success', is_error: false, result: 'done' })
       })
+  } else if (input.startsWith('ambient:')) {
+    out({ type: 'system', subtype: 'background_tasks_changed', tasks: [{ task_id: 'w1', task_type: 'monitor', description: input, ambient: true }] })
+    await call('send_conclusion_message', { text: `Echo: ${input}` })
   } else if (input.startsWith('native-ask:')) {
     const question = input.slice('native-ask:'.length).trim()
     const verdict = await control({
