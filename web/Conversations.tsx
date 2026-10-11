@@ -153,10 +153,12 @@ export function Conversations({ project, threadId, fanoutId, isNew }: { project:
   const nextPaths = forYou.map((t) => `/p/${project.id}/t/${t.id}`)
   // Without a conversation to return to, open one that needs you or is idle; otherwise start a new one.
   // On a phone the list itself is that view.
+  // The effect runs after paint and hashchange comes later still, so the props can be stale: a click on New or on
+  // another tab may already have left the project's bare address. Only that address is replaced.
   const narrow = useNarrow()
   const top = [...forYou, ...rest][0]
   useEffect(() => {
-    if (!narrow && !threadId && !fanoutId && !isNew && threads) location.replace(`#/p/${project.id}/${top ? `t/${top.id}` : 'new'}`)
+    if (!narrow && threads && location.hash === `#/p/${project.id}`) location.replace(`#/p/${project.id}/${top ? `t/${top.id}` : 'new'}`)
   }, [narrow, threadId, fanoutId, isNew, !!threads, top?.id])
 
   // Worktrees and fan-outs keep their actions below the conversations; their conversations carry the branch.
