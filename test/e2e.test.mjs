@@ -140,6 +140,7 @@ test('only new input moves a conversation up, finishing hides it right away', as
   const older = await start('older one')
   const newer = await start('newer one')
   const order = () => page.locator('.cards a.card').evaluateAll((cards) => cards.map((c) => c.getAttribute('href')))
+  await until(async () => (await order())[0] === newer)
   assert.deepEqual((await order()).slice(0, 2), [newer, older])
   await page.click(`a.card[href="${older}"]`)
   await page.waitForSelector(`a.card.active[href="${older}"]`)
