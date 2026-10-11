@@ -281,7 +281,8 @@ const usageProbes: Partial<Record<Provider, () => Promise<UsageWindow[]>>> = {
   },
 }
 
-export function listUsage(): Promise<(Usage & { stale: boolean })[]> {
+// `fresh` waits for values asked for within the last minute.
+export function listUsage(fresh = false): Promise<(Usage & { stale: boolean })[]> {
   if (!usageRefresh && Date.now() - usageAt >= USAGE_MS) {
     usageAt = Date.now()
     usageRefresh = listAgents()
@@ -301,7 +302,7 @@ export function listUsage(): Promise<(Usage & { stale: boolean })[]> {
       .then((list) => (usage = list), () => usage)
       .finally(() => ((usageRefresh = null), (usageDone = Date.now())))
   }
-  if (!usage.length && usageRefresh) return usageRefresh.then((list) => list.map((u) => ({ ...u, stale: false })))
+  if ((fresh || !usage.length) && usageRefresh) return usageRefresh.then((list) => list.map((u) => ({ ...u, stale: false })))
   const stale = !!usageRefresh && Date.now() - usageDone > 2 * USAGE_MS
   return Promise.resolve(usage.map((u) => ({ ...u, stale })))
 }

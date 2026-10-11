@@ -11,7 +11,8 @@
 // - thread/goal/set → two turns, the second one meets the goal; goal edits without the origin "user" fail
 // - mcpServerStatus/list → the servers docs (signed in) and tracker (not signed in)
 // - mcpServer/oauth/login → a sign-in page on auth.example, then a successful mcpServer/oauthLogin/completed
-// - anything else → "Codex echo: <input>"
+// - account/rateLimits/read → a five-hour window 20 % used, 100 % while the test's full file exists
+// - anything else → "Codex echo: <input>", with " (took over)" when Savor said it takes over from an agent at its limit
 import fs from 'node:fs'
 import readline from 'node:readline'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
@@ -89,7 +90,7 @@ async function runTurn(params) {
     reply = `Codex page: ${action}`
   } else {
     if (input.startsWith('slow:')) await released(input)
-    reply = input.includes('Question: ') ? `Codex aside in ${threadId}: ${input.slice(input.indexOf('Question: ') + 10)}` : `Codex echo: ${input}`
+    reply = input.includes('Question: ') ? `Codex aside in ${threadId}: ${input.slice(input.indexOf('Question: ') + 10)}` : `Codex echo: ${input}${text.includes('and you take over') ? ' (took over)' : ''}`
   }
   if (turnId !== turn.id) return
   // Like the real app-server, calling an MCP tool first asks the client to approve it.
@@ -142,6 +143,10 @@ rl.on('line', (line) => {
       return
     case 'account/read':
       return reply({ account: { type: 'chatgpt', email: 'fake@codex.test', planType: 'plus' }, requiresOpenaiAuth: true })
+    case 'account/rateLimits/read': {
+      const usedPercent = fs.existsSync(process.env.FAKE_AGENT_LOG + '.full') ? 100 : 20
+      return reply({ rateLimits: { primary: { usedPercent, windowDurationMins: 300, resetsAt: Math.floor(Date.now() / 1000) + 3600 }, secondary: null } })
+    }
     case 'model/list':
       return reply({ data: [{ id: 'fake-model', model: 'fake-model', displayName: 'Fake model', description: 'For tests', hidden: false, supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'high' }], isDefault: true }], nextCursor: null })
     case 'skills/list': {

@@ -97,6 +97,8 @@ export interface Thread {
   // caught up carries the scheduled time it was due, one started early the scheduled time it took the place of,
   // one started by a model change the new model.
   workflow?: { id: string; name: string; trigger: 'scheduled' | 'manual' | 'caught' | 'early' | 'model'; due?: string; model?: string }
+  // Set for a conversation that a workflow run started, directly or through others: like the run, it has no one watching.
+  unattended?: boolean
 }
 export interface ActivityEvent { id: number; type: 'thinking' | 'command' | 'edit' | 'note'; label: string; time: string; finishedAt?: string }
 export interface Decision {
@@ -368,7 +370,7 @@ export function getThread(p: Project, tid: string): Thread {
 
 export const cwdOf = (p: Project, t: Thread) => t.worktree?.path ?? p.path
 
-export function createThread(p: Project, init: { title: string; label?: string | null; agent?: AgentConfig; parentId?: string; fork?: Thread['fork']; worktree?: { branch: string; path: string } | null; workflow?: Thread['workflow']; fanout?: Thread['fanout'] }): Thread {
+export function createThread(p: Project, init: { title: string; label?: string | null; agent?: AgentConfig; parentId?: string; fork?: Thread['fork']; worktree?: { branch: string; path: string } | null; workflow?: Thread['workflow']; fanout?: Thread['fanout']; unattended?: boolean }): Thread {
   const t: Thread = {
     id: newId(),
     title: init.title.slice(0, 300),
@@ -388,6 +390,7 @@ export function createThread(p: Project, init: { title: string; label?: string |
   if (init.worktree) t.worktree = init.worktree
   if (init.workflow) t.workflow = init.workflow
   if (init.fanout) t.fanout = init.fanout
+  if (init.unattended) t.unattended = true
   saveThread(p, t)
   return t
 }

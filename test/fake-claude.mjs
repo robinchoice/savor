@@ -24,7 +24,7 @@
 // - a last text block of its own that starts with "/" → "Skill <name and arguments>", the way Claude Code runs slash commands
 // - anything else → acknowledgement plus a conclusion echoing the input with one suggestion
 // While the test's outdated file exists it refuses to start, like a release that lacks an option.
-// `--version` and `auth status` answer like the real CLI, so Savor lists the fake as installed.
+// `--version`, `auth status` and `-p /usage` answer like the real CLI, so Savor lists the fake as installed.
 // With --no-session-persistence it answers a side question (/btw) on stdin.
 // Started without an MCP config it is Savor's probe and answers the initialize request with its models and
 // commands.
@@ -38,6 +38,10 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 const args = process.argv.slice(2)
 if (args[0] === '--version') {
   console.log('9.9.9 (Fake Claude)')
+  process.exit(0)
+}
+if (args[0] === '-p' && args[1] === '/usage') {
+  console.log('Current session: 10% used · resets 3pm (Europe/Berlin)')
   process.exit(0)
 }
 if (args[0] === 'auth' && args[1] === 'status') {

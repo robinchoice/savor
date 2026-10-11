@@ -14,6 +14,7 @@ import * as push from './push.js'
 import { setupOf } from './git.js'
 import * as ci from './ci.js'
 import { modelSeen } from './scheduler.js'
+import { listAgents, listUsage, mergeAgent, STATIC } from './providers.js'
 
 const IDLE_CLOSE_MS = 5 * 60_000
 // A turn that stopped at a usage limit continues this long after the limit resets.
@@ -30,6 +31,8 @@ export interface RequestState {
   ack?: { text: string; id: string }
   conclusion?: { key: string; id: string }
   updates: Map<string, { text: string; id: string }>
+  // The agents that stopped at a usage limit on this request, with when it resets (ms).
+  limited?: Map<Provider, number>
 }
 
 const requests = new Map<string, RequestState>()
@@ -271,7 +274,8 @@ function endTurn(p: Project, tid: string, result: { text?: string; error?: strin
     setResume(p, tid, resumeAt)
     setCi(p, tid, null)
     post(p, tid, { kind: 'error', text: result.error, modelInfo: agent })
-    if (resumeAt) notify(p, tid, result.error, 'Waits for a usage limit')
+    if (resumeAt && unattended(store.getThread(p, tid))) void fallBack(p, tid, agent.provider, result.resetsAt!, result.error)
+    else if (resumeAt) notify(p, tid, result.error, 'Waits for a usage limit')
     else if (result.error !== 'Turn stopped.') notify(p, tid, result.error, 'Stopped with an error')
   } else {
     store.updateThread(p, tid, { error: null })
@@ -516,6 +520,45 @@ function resumeAfterLimit(p: Project, tid: string) {
   const input = store.readMessages(p, tid).find((m) => m.id === r.inputId)
   if (input && !r.conclusion && !busy.has(tid)) continueRequest(p, thread, input, LIMITED)
   else pump(p, tid)
+}
+
+// Workflow runs and the conversations they start have no one who waits for a usage limit: they go on with
+// the next of these agents. Each runs in a mode that doesn't stop for approvals, or as the project sets it up.
+const FALLBACK: [Provider, string][] = [['claude', 'auto'], ['codex', 'auto-review'], ['antigravity', 'default'], ['opencode', 'build']]
+
+export const unattended = (t: Thread) => !!t.workflow || !!t.unattended
+
+const takeOver = (from: string) => `${from} stopped at a usage limit while working on the input below, and you take over. Check what is already done before you repeat anything, then finish the work. This is still the same request: do not acknowledge it again.\n\n`
+
+// The next agent is installed, signed in, has not stopped at a limit on this request yet and is not at 100 % of
+// any window. With none left, the request waits for the earliest reset; if that is another agent's, the current one
+// stops at its limit again then, and the switch follows.
+async function fallBack(p: Project, tid: string, provider: Provider, resetsAt: number, error: string) {
+  const r = request(p, tid)
+  const limited = (r.limited ??= new Map())
+  limited.set(provider, resetsAt)
+  for (const [id, at] of limited) if (at + LIMIT_MARGIN_MS < Date.now()) limited.delete(id)
+  const waits = store.getThread(p, tid).resumeAt
+  const [installed, usage] = await Promise.all([listAgents(), listUsage(true)])
+  const thread = store.getThread(p, tid)
+  const input = inputOf(p, tid)
+  // New input or a stop while the agents were asked.
+  if (thread.resumeAt !== waits || requests.get(tid) !== r || busy.has(tid) || !input) return
+  const full = (id: Provider) =>
+    limited.has(id) || !installed.some((a) => a.id === id && a.installed && a.signedIn) || usage.some((u) => u.provider === id && u.windows.some((w) => w.percent >= 100))
+  const i = FALLBACK.findIndex(([id]) => id === provider)
+  const next = [...FALLBACK.slice(i + 1), ...FALLBACK.slice(0, i + 1)].find(([id]) => !full(id))
+  if (!next) {
+    setResume(p, tid, new Date(Math.min(...limited.values()) + LIMIT_MARGIN_MS).toISOString())
+    return notify(p, tid, error, 'Waits for a usage limit')
+  }
+  const [to, permissionMode] = next
+  const agent = to === p.agent.provider ? p.agent : mergeAgent(thread.agent, { provider: to, permissionMode })
+  setResume(p, tid, null)
+  store.updateThread(p, tid, { agent })
+  // The switch shows in the conversation, so it is clear which agent did what.
+  post(p, tid, { kind: 'update', text: `${STATIC[provider].name} reached its usage limit. ${STATIC[to].name} takes over.`, modelInfo: agent })
+  continueRequest(p, store.getThread(p, tid), input, takeOver(STATIC[provider].name))
 }
 
 // ---- waiting for CI ----

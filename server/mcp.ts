@@ -322,6 +322,7 @@ function buildServer(p: Project, tid: string) {
         agent: chosen,
         parentId: here ? tid : undefined,
         worktree: worktree ? addWorktree(target, worktree) : here ? store.getThread(p, tid).worktree : null,
+        unattended: agents.unattended(store.getThread(p, tid)),
       })
       emit({ type: 'thread', projectId: target.id, threadId: t.id })
       const origin = agents.originOf(p, tid)

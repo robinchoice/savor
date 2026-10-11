@@ -2,7 +2,8 @@
 // Stand-in for the Antigravity CLI (`agy`) used by the end-to-end tests. A turn (`--print <prompt>` with
 // stream-json output) reaches Savor's MCP server through the "savor" stdio server Savor put into
 // mcp_config.json, answers "Antigravity echo: <input>" there and reports a tool step and the result.
-// `--version`, `models` and the slash commands /skills and /usage answer like the real CLI.
+// `--version`, `models` and the slash commands /skills and /usage answer like the real CLI; /usage says the limit is
+// used up while the test's full file exists.
 import fs from 'node:fs'
 import path from 'node:path'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
@@ -26,7 +27,7 @@ if (prompt === '/skills') {
   process.exit(0)
 }
 if (prompt === '/usage') {
-  const buckets = [{ id: 'gemini-weekly', name: 'Weekly Limit Remaining', window: 'weekly', remaining_fraction: 0.75, reset_time: '2030-01-01T00:00:00Z' }]
+  const buckets = [{ id: 'gemini-weekly', name: 'Weekly Limit Remaining', window: 'weekly', remaining_fraction: fs.existsSync(process.env.FAKE_AGENT_LOG + '.full') ? 0 : 0.75, reset_time: '2030-01-01T00:00:00Z' }]
   out({ status: 'SUCCESS', command: { name: 'usage', data: { groups: [{ name: 'Gemini Models', buckets }] } } })
   process.exit(0)
 }
