@@ -258,7 +258,7 @@ function TopBar({ projects, active, all, me, setMe }: { projects: Project[]; act
         <a href="#/all" class={`project-tab all-tab ${all ? 'active' : ''}`} title="Conversations and workflows of all projects">
           <Layers size={16} />
           <span class="name">All</span>
-          <Counts project={{ counts: { working: total('working'), blocked: total('blocked'), unread: total('unread') } }} />
+          <Counts project={{ counts: { working: total('working'), blocked: total('blocked'), unread: total('unread'), open: total('open') } }} />
         </a>
         <span class="tab-sep" />
         {tabs.map((p) => (
@@ -337,6 +337,11 @@ const Counts = ({ project: p }: { project: Pick<Project, 'counts'> }) => (
     {p.counts.unread > 0 && (
       <span class="badge unread" title="New results">
         <span class="ring unread" /> {p.counts.unread}
+      </span>
+    )}
+    {p.counts.open > 0 && (
+      <span class="badge open" title="Read, not finished">
+        <span class="ring open" /> {p.counts.open}
       </span>
     )}
   </>

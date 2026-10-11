@@ -176,7 +176,7 @@ export interface Project {
   pinned: boolean
   worktreeSetup: string
   type?: string
-  counts: { working: number; blocked: number; unread: number }
+  counts: { working: number; blocked: number; unread: number; open: number }
 }
 export interface Doc { id: string; title: string; content: string; updatedAt: string }
 export interface Workflow { id: string; name: string; prompt: string; collection: string; cron: string | null; timezone: string; scheduleLabel: string | null; enabled: boolean; catchUp: boolean; button: boolean; onModelChange: boolean; model: string | null; next: string[]; lastRunAt: string | null; nextRunAt?: string | null; lastRun?: Run | null }

@@ -235,14 +235,17 @@ route('DELETE', '/voice/models/:id', (params, _, ctx) => {
 route('GET', '/projects', () =>
   store.listProjects().map((p) => {
     const threads = store.listThreads(p)
+    // As in the conversation lists: waiting for background tasks, CI or a usage limit is working too.
+    const working = (t: store.Thread) => !t.completed && !t.needsYou && (agents.isBusy(t.id) || agents.waiting(p, t))
     return {
       ...p,
       counts: {
-        // As in the conversation lists: waiting for background tasks, CI or a usage limit is working too.
-        working: threads.filter((t) => !t.completed && !t.needsYou && (agents.isBusy(t.id) || agents.waiting(p, t))).length,
+        working: threads.filter(working).length,
         // Questions, approvals and errors block the agent; unread results only wait to be read.
         blocked: threads.filter((t) => !t.completed && (t.needsYou || failed(t))).length,
         unread: threads.filter((t) => !t.completed && t.unread && !t.needsYou && !failed(t)).length,
+        // Read but not finished yet.
+        open: threads.filter((t) => !t.completed && !t.unread && !t.needsYou && !failed(t) && !working(t)).length,
       },
     }
   }),
