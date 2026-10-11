@@ -24,7 +24,8 @@ import '@fontsource-variable/geist-mono'
 import './style.css'
 
 function useRoute() {
-  const read = () => location.hash.replace(/^#\/?/, '').split('/').filter(Boolean).map(decodeURIComponent)
+  // A query after the path, as in #/p/<id>/new?voice=1, is for the view and not part of the route.
+  const read = () => location.hash.replace(/^#\/?/, '').split('?')[0].split('/').filter(Boolean).map(decodeURIComponent)
   const [route, setRoute] = useState(read)
   useEffect(() => {
     const on = () => setRoute(read())

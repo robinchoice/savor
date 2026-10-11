@@ -686,6 +686,19 @@ test('voice input turns a recording into text in the composer', async () => {
   await page.fill('.composer textarea', '')
 })
 
+test('a link with voice=1 opens a new conversation that records right away', async () => {
+  const [, projectId] = page.url().match(/#\/p\/([^/]+)/)
+  await page.goto(`${page.url().split('#')[0]}#/p/${projectId}/new?voice=1`)
+  await page.waitForSelector('.voice.big .voice-time')
+  // Back after sending must not record again.
+  assert.equal(new URL(page.url()).hash, `#/p/${projectId}/new`)
+  await page.waitForTimeout(1000)
+  await page.click('.voice.big button.recording')
+  await page.waitForFunction(() => document.querySelector('.composer textarea').value.includes('Heard'))
+  await page.waitForSelector('.voice.big >> text=Tap to record')
+  await page.fill('.composer textarea', '')
+})
+
 test('voice input offers to download a speech model that is missing', async () => {
   const { models } = (await api('PUT', '/voice/model', { id: 'whisper-small' })).body
   assert.deepEqual(models.map((m) => [m.id, m.installed]), [['parakeet-v3', true], ['whisper-small', false], ['whisper-turbo', false]])

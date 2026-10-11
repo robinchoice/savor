@@ -451,6 +451,10 @@ main { flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
 .send.stop { background: var(--raised); color: var(--red); }
 .voice { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--muted); white-space: nowrap; }
 .voice .icon-btn.recording { color: var(--red); background: color-mix(in srgb, var(--red) 14%, transparent); }
+.voice.big { display: flex; flex-direction: column; gap: 10px; padding: 20px 12px 8px; font-size: 13px; }
+.voice.big > .icon-btn { width: 96px; height: 96px; border-radius: 50%; color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.voice.big > .icon-btn.recording { color: var(--red); background: color-mix(in srgb, var(--red) 14%, transparent); }
+.voice.big .spinner { width: 28px; height: 28px; }
 .voice-setup { position: relative; display: grid; gap: 8px; justify-items: start; padding-right: 36px; font-size: 13px; }
 .voice-setup p { margin: 0; }
 .voice-setup > .icon-btn { position: absolute; top: 4px; right: 4px; }

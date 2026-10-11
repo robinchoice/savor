@@ -596,6 +596,19 @@ function NewConversation({ project }: { project: Project }) {
   const [agent, setAgent] = useState<AgentConfig>(project.agent)
   const [worktree, setWorktree] = useState<string | null>(null)
   const [fanout, setFanout] = useState<AgentConfig[] | null>(null)
+  // #/p/<id>/new?voice=1, e.g. from a phone shortcut, starts recording right away, also when this view is open already.
+  // The query leaves the address at once, so Back doesn't record again.
+  const [voice, setVoice] = useState(0)
+  useEffect(() => {
+    const on = () => {
+      if (new URLSearchParams(location.hash.split('?')[1]).get('voice') !== '1') return
+      history.replaceState(null, '', location.hash.split('?')[0])
+      setVoice((n) => n + 1)
+    }
+    on()
+    addEventListener('hashchange', on)
+    return () => removeEventListener('hashchange', on)
+  }, [])
   const send = async (text: string, attachments: Attachment[]) => {
     if (fanout) {
       const [first] = await api<Thread[]>('POST', `/projects/${project.id}/fanout`, { text, attachments, agents: fanout })
@@ -613,7 +626,7 @@ function NewConversation({ project }: { project: Project }) {
           Start a conversation in <b>{project.name}</b>. Each conversation gets its own agent session.
         </p>
       </div>
-      <Composer project={project} agent={agent} setAgent={setAgent} onSend={send} placeholder="Describe what you want…" worktree={worktree} setWorktree={setWorktree} fanout={fanout} setFanout={setFanout} autoFocus />
+      <Composer project={project} agent={agent} setAgent={setAgent} onSend={send} placeholder="Describe what you want…" worktree={worktree} setWorktree={setWorktree} fanout={fanout} setFanout={setFanout} voice={voice} autoFocus />
     </section>
   )
 }

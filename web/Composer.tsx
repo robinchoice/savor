@@ -36,6 +36,8 @@ interface Props {
   // New conversations can send the prompt to several agents at once, each in a new worktree.
   fanout?: AgentConfig[] | null
   setFanout?: (agents: AgentConfig[] | null) => void
+  // Above 0: a large microphone button that records on arrival and again whenever the number goes up.
+  voice?: number
   // Beside the preview with the chat out of sight: just the text, what was picked, and send.
   compact?: boolean
   // Open questions in the conversation: the text goes along with the answers as a comment. A comment
@@ -276,6 +278,7 @@ export function Composer(props: Props) {
         </div>
       )}
       {error && <div class="error-text pad">{error}</div>}
+      {!!props.voice && <VoiceButton key={props.voice} onText={insert} onError={setError} onSetup={setVoiceSetup} big />}
       {voiceSetup && <VoiceSetup close={() => setVoiceSetup(false)} />}
       {slash !== null && (!skills || matches.length > 0) && (
         <div class="menu up slash">
@@ -440,7 +443,7 @@ export function Composer(props: Props) {
           )}
           {!fanout && <BranchPicker project={props.project} threadId={props.threadId} worktree={props.worktree} setWorktree={props.setWorktree} open={popover === 'branch'} toggle={() => setPopover(popover === 'branch' ? null : 'branch')} />}
           <div class="spacer" />
-          <VoiceButton onText={insert} onError={setError} onSetup={setVoiceSetup} />
+          {!props.voice && <VoiceButton onText={insert} onError={setError} onSetup={setVoiceSetup} />}
           {sendButtons}
         </div>
       )}
@@ -448,7 +451,7 @@ export function Composer(props: Props) {
   )
 }
 
-function VoiceButton({ onText, onError, onSetup }: { onText: (s: string) => void; onError: (e: string) => void; onSetup: (open: boolean) => void }) {
+function VoiceButton({ onText, onError, onSetup, big }: { onText: (s: string) => void; onError: (e: string) => void; onSetup: (open: boolean) => void; big?: boolean }) {
   const [state, setState] = useState<'idle' | 'starting' | 'recording' | 'transcribing'>('idle')
   const [seconds, setSeconds] = useState(0)
   const rec = useRef<Recording | null>(null)
@@ -500,7 +503,41 @@ function VoiceButton({ onText, onError, onSetup }: { onText: (s: string) => void
     setState('idle')
   }
   useShortcut('voice', state === 'recording' ? stop : state === 'idle' && start)
+  // The big button starts on arrival, once the page shows: browsers give the microphone only to a visible page.
+  // Where they also want a tap first, as Safari on iOS may, the error shows and the big button takes the tap.
+  useEffect(() => {
+    if (!big) return
+    const go = () => {
+      if (document.hidden) return
+      document.removeEventListener('visibilitychange', go)
+      void start()
+    }
+    document.addEventListener('visibilitychange', go)
+    go()
+    return () => document.removeEventListener('visibilitychange', go)
+  }, [])
 
+  if (big)
+    return (
+      <div class="voice big">
+        <button class={`icon-btn${state === 'recording' ? ' recording' : ''}`} title={state === 'recording' ? 'Stop and insert the text' : 'Voice input'} disabled={state === 'starting' || state === 'transcribing'} onClick={state === 'recording' ? stop : start}>
+          {state === 'transcribing' || state === 'starting' ? <span class="spinner" /> : <Mic size={40} />}
+        </button>
+        {state === 'recording' ? (
+          <span>
+            <span class="voice-time">
+              {Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, '0')}
+            </span>{' '}
+            · Tap to stop ·{' '}
+            <button class="link" title="Discard the recording" onClick={cancel}>
+              Discard
+            </button>
+          </span>
+        ) : (
+          <span>{state === 'transcribing' ? 'Transcribing…' : state === 'starting' ? 'Starting the microphone…' : 'Tap to record'}</span>
+        )}
+      </div>
+    )
   return (
     <span class="voice">
       {state === 'recording' && (
