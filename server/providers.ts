@@ -206,11 +206,38 @@ const probes: Record<Provider, () => Promise<Probe>> = {
 const CACHE_MS = 5 * 60_000
 let cache: { at: number; list: Promise<ProviderInfo[]> } | null = null
 
+// OpenCode leaves a 4 MB library in the temp folder each time it starts (anomalyco/opencode#21427), so
+// its probe runs once per daemon start and again only when its binary changes.
+const ONCE: Partial<Record<Provider, true>> = { opencode: true }
+const probed = new Map<Provider, { stamp: string; probe: Promise<Probe> }>()
+
+// The binary's path and modification time, found on PATH like the shell would; empty if it is missing.
+function stamp(bin: string) {
+  const exts = process.platform === 'win32' ? ['', '.exe', '.cmd'] : ['']
+  const dirs = path.basename(bin) === bin ? (process.env.PATH ?? '').split(path.delimiter).filter(Boolean) : ['']
+  for (const file of dirs.flatMap((dir) => exts.map((ext) => path.join(dir, bin + ext)))) {
+    try {
+      return `${file} ${fs.statSync(file).mtimeMs}`
+    } catch {}
+  }
+  return ''
+}
+
+function runProbe(id: Provider) {
+  if (!ONCE[id]) return probes[id]()
+  const now = stamp(BIN[id])
+  const hit = probed.get(id)
+  if (hit?.stamp === now) return hit.probe
+  const p = probes[id]()
+  probed.set(id, { stamp: now, probe: p })
+  return p
+}
+
 export function listAgents(refresh = false): Promise<ProviderInfo[]> {
   if (!refresh && cache && Date.now() - cache.at < CACHE_MS) return cache.list
   const list = Promise.all(
     (Object.keys(STATIC) as Provider[]).map(async (id) => {
-      const probe = await probes[id]().catch((): Probe => ({ installed: false, version: null, signedIn: null, account: null }))
+      const probe = await runProbe(id).catch((): Probe => ({ installed: false, version: null, signedIn: null, account: null }))
       const { models, ...rest } = probe
       return { ...STATIC[id], ...rest, models: models?.length ? models : STATIC[id].models }
     }),

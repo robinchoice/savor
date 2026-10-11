@@ -601,6 +601,24 @@ test('the agent list reports what is installed, signed in and offered', async ()
   assert.ok(by.claude.modes.find((m) => m.id === 'bypassPermissions').unsafe)
 })
 
+test('OpenCode is probed again only when its binary changes', async () => {
+  const probes = () => agentRuns().filter((r) => r.agent === 'opencode' && r.probe === 'models').length
+  await api('GET', '/agents')
+  const before = probes()
+  assert.ok(before >= 1)
+  await api('GET', '/agents?refresh=1')
+  assert.equal(probes(), before)
+  const bin = path.join(ROOT, 'test/fake-acp.mjs')
+  const { atime, mtime } = fs.statSync(bin)
+  fs.utimesSync(bin, atime, new Date(mtime.getTime() + 1000))
+  try {
+    await api('GET', '/agents?refresh=1')
+  } finally {
+    fs.utimesSync(bin, atime, mtime)
+  }
+  assert.equal(probes(), before + 1)
+})
+
 test('Ultracode is a switch next to the effort, and the old Ultracode effort becomes X-High with it', async () => {
   const [project] = (await api('GET', '/projects')).body
   const thread = (await api('POST', `/projects/${project.id}/threads`, { text: 'hello ultracode', agent: { provider: 'claude', reasoning: 'ultracode' } })).body

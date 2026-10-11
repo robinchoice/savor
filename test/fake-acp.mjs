@@ -10,6 +10,8 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 
 const args = process.argv.slice(2)
+const log = (entry) => process.env.FAKE_AGENT_LOG && fs.appendFileSync(process.env.FAKE_AGENT_LOG, JSON.stringify({ agent: 'opencode', ...entry }) + '\n')
+if (args[0] === '--version' || args[0] === 'models') log({ probe: args[0] })
 if (args[0] === '--version') {
   console.log('9.9.9')
   process.exit(0)
@@ -19,7 +21,6 @@ if (args[0] === 'models') {
   process.exit(0)
 }
 if (args[0] === 'session') process.exit(0)
-const log = (entry) => process.env.FAKE_AGENT_LOG && fs.appendFileSync(process.env.FAKE_AGENT_LOG, JSON.stringify({ agent: 'opencode', ...entry }) + '\n')
 log({ argv: process.argv })
 
 const out = (m) => process.stdout.write(JSON.stringify(m) + '\n')
