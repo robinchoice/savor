@@ -1867,7 +1867,14 @@ test('a new project gets its own folder with a git repository', async () => {
   await page.fill('input[placeholder="Name of the new project"]', 'Bakery Site')
   await page.keyboard.press('Enter')
   await page.waitForSelector('.project-tab.active:has-text("Bakery Site")')
-  await page.waitForSelector('text=What do you want to build?')
+  // Its maintenance workflows start paused, and the first conversation asks whether they should run.
+  await page.waitForURL(/#\/p\/[^/]+\/t\//)
+  const project = (await api('GET', '/projects')).body.find((p) => p.name === 'Bakery Site')
+  const workflows = (await api('GET', `/projects/${project.id}/workflows`)).body.sort((a, b) => a.name.localeCompare(b.name))
+  assert.deepEqual(workflows.map((w) => [w.name, w.enabled, w.onModelChange, w.cron]), [['Leftovers', false, false, '0 18 * * 1-5'], ['Uplift check', false, true, null]])
+  const [thread] = (await api('GET', `/projects/${project.id}/threads`)).body
+  assert.match((await api('GET', `/projects/${project.id}/threads/${thread.id}`)).body.messages[0].text, /^This is a new code project\./)
+  await api('PATCH', `/projects/${project.id}/threads/${thread.id}`, { completed: true })
   const folder = path.join(dir, 'bakery-site')
   assert.ok(fs.existsSync(path.join(folder, '.git')), 'git repository')
   assert.equal(execFileSync('git', ['status', '--porcelain'], { cwd: folder }).toString(), '', '.savor/ stays out of git')

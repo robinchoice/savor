@@ -14,7 +14,8 @@ const SCHEDULES: [string, string][] = [
 
 export const STATUS: Record<Run['status'], [ring: string, label: string]> = { working: ['busy', 'Working'], needs: ['needs', 'Your turn'], stopped: ['', 'Stopped'], failed: ['error', 'Failed'], finished: ['done', 'Finished'], skipped: ['skipped', 'Skipped'] }
 export const when = (iso: string) => new Date(iso).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
-export const schedule = (w: Workflow) => (w.cron ? w.scheduleLabel || describeCron(w.cron) : 'Manual')
+const cronLabel = (w: Workflow) => (w.cron ? w.scheduleLabel || describeCron(w.cron) : '')
+export const schedule = (w: Workflow) => [cronLabel(w), w.onModelChange && 'On a model change'].filter(Boolean).join(' · ') || 'Manual'
 // A run changes with its conversation, so the runs follow the project's conversations too.
 const runsChanged = (project: Project) => (e: SavorEvent) => (e.type === 'workflows' || e.type === 'thread' || e.type === 'status') && e.projectId === project.id
 
@@ -207,7 +208,7 @@ function Gallery({ project }: { project: Project }) {
                 <b>{r.title}</b>
                 <span>{r.blurb}</span>
                 <small class="muted">
-                  <Clock size={11} /> {r.schedule ? describeCron(r.schedule) : 'Manual'}
+                  <Clock size={11} /> {[r.schedule && describeCron(r.schedule), r.onModelChange && 'On a model change'].filter(Boolean).join(' · ') || 'Manual'}
                 </small>
               </a>
             ))}
@@ -229,6 +230,7 @@ function WorkflowForm({ base, projectId, workflow, recipe, all }: { base: string
     enabled: true,
     catchUp: true,
     button: false,
+    onModelChange: recipe?.onModelChange ?? false,
     next: [] as string[],
     ...workflow,
     cron: workflow?.cron ?? recipe?.schedule ?? '',
@@ -320,6 +322,13 @@ function WorkflowForm({ base, projectId, workflow, recipe, all }: { base: string
           </span>
         </label>
       )}
+      <label class="check with-hint">
+        <input type="checkbox" checked={draft.onModelChange} onChange={(e) => setDraft({ ...draft, onModelChange: e.currentTarget.checked })} />
+        <span>
+          Run when the model changes
+          <small class="muted">Runs once each time the project’s agent runs on a new model, then waits for the next one. Setting it only notes the current model.</small>
+        </span>
+      </label>
       <label class="check with-hint">
         <input type="checkbox" checked={draft.button} onChange={(e) => setDraft({ ...draft, button: e.currentTarget.checked })} />
         <span>

@@ -70,6 +70,20 @@ function onSchedule(projectId: string, workflowId: string) {
   else if (runs) runWorkflow(projectId, workflowId, 'local', late ? { trigger: 'caught', due: slot.toISOString() } : { trigger: 'scheduled' })
 }
 
+// The project's default agent ran on `model`. Workflows with the model-change trigger run when it is new to
+// them, and then wait for the next one. One that is off or blocked by an open run only notes the model.
+export function modelSeen(projectId: string, model: string) {
+  const p = store.getProject(projectId)
+  if (p.model === model) return
+  store.updateProject(p.id, { model })
+  for (const wf of store.listWorkflows(p)) {
+    if (!wf.onModelChange || wf.model === model) continue
+    store.saveWorkflow(p, { ...wf, model })
+    if (wf.model && wf.enabled && !p.paused && !openRun(p, wf)) runWorkflow(p.id, wf.id, 'local', { trigger: 'model', model })
+  }
+  emit({ type: 'workflows', projectId })
+}
+
 // The workflow and every workflow its `next` links lead to, each once.
 function reachable(p: Project, wf: Workflow) {
   const all = new Map([[wf.id, wf]])
@@ -84,7 +98,7 @@ function reachable(p: Project, wf: Workflow) {
   return [...all.values()]
 }
 
-type Start = Pick<NonNullable<Thread['workflow']>, 'trigger' | 'due'>
+type Start = Pick<NonNullable<Thread['workflow']>, 'trigger' | 'due' | 'model'>
 
 export function runWorkflow(projectId: string, workflowId: string, by: Origin, start: Start = { trigger: 'manual' }, chained = false) {
   const p = store.getProject(projectId)
@@ -99,7 +113,8 @@ export function runWorkflow(projectId: string, workflowId: string, by: Origin, s
     }
   })
   const chain = linked.length ? `\n\nWhen this is done, continue with the linked workflows in order: ${linked.map((l) => `“${l.name}” (id ${l.id})`).join(', ')}.` : ''
-  const prompt = `Run workflow “${wf.name}”:\n\n${wf.prompt}${chain}`
+  const changed = start.model ? `The project's agent runs on a new model now: ${start.model}.\n\n` : ''
+  const prompt = `${changed}Run workflow “${wf.name}”:\n\n${wf.prompt}${chain}`
   const thread = store.createThread(p, { title: wf.name, label: wf.name, workflow: { id: wf.id, name: wf.name, ...start } })
   store.saveWorkflow(p, { ...wf, lastRunAt: store.now() })
   emit({ type: 'thread', projectId: p.id, threadId: thread.id })
@@ -121,8 +136,9 @@ export function runEarly(projectId: string, workflowId: string, by: Origin) {
 
 export interface Run {
   at: string
-  trigger: 'scheduled' | 'manual' | 'caught' | 'early'
+  trigger: 'scheduled' | 'manual' | 'caught' | 'early' | 'model'
   due?: string
+  model?: string
   status: 'working' | 'needs' | 'stopped' | 'failed' | 'finished' | 'skipped'
   // The run's conversation; for a skipped time, the conversation that was in its way.
   threadId: string
@@ -150,6 +166,7 @@ export function runs(p: Project, wf: Workflow, threads = store.listThreads(p), l
         at,
         trigger: t.workflow!.trigger,
         due: t.workflow!.due,
+        model: t.workflow!.model,
         status: working(p, t) ? 'working' : t.needsYou ? 'needs' : t.error === 'Turn stopped.' ? 'stopped' : t.error || last?.kind === 'error' ? 'failed' : 'finished',
         threadId: t.id,
         summary: plain(t.error ?? last?.text ?? ''),

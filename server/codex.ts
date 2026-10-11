@@ -81,6 +81,7 @@ export class CodexSession implements Session {
       ? await this.rpc.request('thread/resume', { threadId: sid, ...settings }).catch(() => this.rpc.request('thread/start', settings))
       : await this.rpc.request(fork ? 'thread/fork' : 'thread/start', { ...(fork && { threadId: fork }), ...settings })
     this.threadId = r.thread.id
+    if (r.model) this.host.model(r.model)
     rememberSession(p, tid, 'codex', this.threadId)
   }
 

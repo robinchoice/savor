@@ -60,6 +60,8 @@ export interface Host {
   working(): void
   // The agent's last request held this many tokens; `window` is the size of the model's context window when the agent names it.
   context(tokens: number, window?: number | null): void
+  // The model the agent runs on, as it names it.
+  model(id: string): void
   approve(req: ApprovalRequest): Promise<string>
   ask(questions: Question[]): Promise<Answer[]>
   // `resetsAt` (ms) is set when the turn stopped at a usage limit that resets then.

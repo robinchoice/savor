@@ -141,7 +141,7 @@ export interface Thread {
   agentSessions: { provider: string; sessionId: string }[]
   worktree?: { branch: string; path: string } | null
   fanout?: { id: string; base: string }
-  workflow?: { id: string; name: string; trigger: Run['trigger']; due?: string }
+  workflow?: { id: string; name: string; trigger: Run['trigger']; due?: string; model?: string }
   busy?: boolean
   waiting?: boolean
   messageCount?: number
@@ -179,9 +179,9 @@ export interface Project {
   counts: { working: number; blocked: number; unread: number }
 }
 export interface Doc { id: string; title: string; content: string; updatedAt: string }
-export interface Workflow { id: string; name: string; prompt: string; collection: string; cron: string | null; timezone: string; scheduleLabel: string | null; enabled: boolean; catchUp: boolean; button: boolean; next: string[]; lastRunAt: string | null; nextRunAt?: string | null; lastRun?: Run | null }
+export interface Workflow { id: string; name: string; prompt: string; collection: string; cron: string | null; timezone: string; scheduleLabel: string | null; enabled: boolean; catchUp: boolean; button: boolean; onModelChange: boolean; model: string | null; next: string[]; lastRunAt: string | null; nextRunAt?: string | null; lastRun?: Run | null }
 // A run of a workflow. A skipped one has no conversation of its own: threadId is the conversation that was in its way.
-export interface Run { at: string; trigger: 'scheduled' | 'manual' | 'caught' | 'early'; due?: string; status: 'working' | 'needs' | 'stopped' | 'failed' | 'finished' | 'skipped'; threadId: string; summary: string; workedMs: number }
+export interface Run { at: string; trigger: 'scheduled' | 'manual' | 'caught' | 'early' | 'model'; due?: string; model?: string; status: 'working' | 'needs' | 'stopped' | 'failed' | 'finished' | 'skipped'; threadId: string; summary: string; workedMs: number }
 export interface Proc { pid: number; name: string; cwd: string; command: string; url: string | null; log: string | null; threadId: string; startedAt: string }
 export interface Usage { provider: string; name: string; windows: { label: string; percent: number; resets: string | null }[]; stale: boolean }
 export interface Me { origin: 'local' | 'remote'; device: string | null; awake: boolean; host: string; version: string; system: string; projectsDir: string; setup: boolean }
@@ -233,10 +233,10 @@ export const formatDay = (iso: string) => new Date(iso).toLocaleDateString(undef
 export const formatTime = (iso: string) => new Date(iso).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
 // Only the time for today, the day before it otherwise.
 export const formatStamp = (iso: string) => (new Date(iso).toDateString() === new Date().toDateString() ? formatTime(iso) : `${formatDay(iso)}, ${formatTime(iso)}`)
-// What set a workflow run off. A run that was caught up says when it had been due.
+// What set a workflow run off. A run that was caught up says when it had been due, one after a model change the new model.
 const dueAt = (iso: string) => new Date(iso).toLocaleString(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit' })
-export const runTrigger = (r: { trigger: Run['trigger']; due?: string }) =>
-  r.trigger === 'caught' ? `Caught up, was due ${dueAt(r.due!)}` : r.trigger === 'early' ? `Early, in place of ${dueAt(r.due!)}` : r.trigger === 'manual' ? 'Manual' : 'Scheduled'
+export const runTrigger = (r: { trigger: Run['trigger']; due?: string; model?: string }) =>
+  r.trigger === 'model' ? `New model ${r.model}` : r.trigger === 'caught' ? `Caught up, was due ${dueAt(r.due!)}` : r.trigger === 'early' ? `Early, in place of ${dueAt(r.due!)}` : r.trigger === 'manual' ? 'Manual' : 'Scheduled'
 export function duration(ms: number) {
   const s = Math.round(ms / 1000)
   if (s < 60) return `${s} second${s === 1 ? '' : 's'}`

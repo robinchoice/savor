@@ -75,6 +75,7 @@ export class AcpSession implements Session {
       await this.rpc.request('session/set_mode', { sessionId: this.sessionId, modeId: a.permissionMode }).catch(() => {})
     const model = withEffort(a.provider, a.model || (a.reasoning ? session.models?.currentModelId : ''), a.reasoning)
     if (model) await this.rpc.request('session/set_model', { sessionId: this.sessionId, modelId: model }).catch(() => {})
+    if (a.model || session.models?.currentModelId) this.host.model(a.model || session.models.currentModelId)
   }
 
   start({ context, input, images }: TurnInput) {

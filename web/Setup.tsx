@@ -6,7 +6,7 @@ import { effortsOf } from './Composer'
 import { recipe } from './recipes'
 import { setPrefs, usePrefs } from './prefs'
 import { STANDARD } from './Shortcuts'
-import { TEMPLATES, type Template } from './templates'
+import { CODE, TEMPLATES } from './templates'
 
 // The mode a provider works best in for most people; the others still show.
 const RECOMMENDED: Record<string, string> = { claude: 'auto', codex: 'auto-review' }
@@ -55,12 +55,12 @@ export function ModeCards({ agent, info, onPick }: { agent: AgentConfig; info: P
   )
 }
 
-const TYPE_ICONS: Record<string, typeof Folder> = { 'academic-writing': GraduationCap, kontor: Archive }
+const TYPE_ICONS: Record<string, typeof Folder> = { code: Code, 'academic-writing': GraduationCap, kontor: Archive }
 
 // Start a new project or open a folder: in the Projects menu and in the last step of the setup.
 export function AddProject({ me, setMe, onAdded }: { me: Me; setMe: (m: Me) => void; onAdded: () => void }) {
   const [step, setStep] = useState<'new' | 'open' | null>(null)
-  const [template, setTemplate] = useState<Template>()
+  const [template, setTemplate] = useState(CODE)
   const [name, setName] = useState('')
   const [dir, setDir] = useState(me.projectsDir)
   const [editDir, setEditDir] = useState(false)
@@ -71,15 +71,16 @@ export function AddProject({ me, setMe, onAdded }: { me: Me; setMe: (m: Me) => v
       const p = await api<Project>('POST', '/projects', body)
       if (body.create) setMe({ ...me, projectsDir: dir })
       // A project type brings its ROLE.md and workflows, and a first conversation that sets the project up.
-      if (body.create && template) {
-        await api('PATCH', `/projects/${p.id}`, { role: template.role, type: template.slug })
-        for (const r of template.workflows.map((slug) => recipe(slug)!)) await api('POST', `/projects/${p.id}/workflows`, { name: r.title, prompt: r.prompt, collection: template.title, cron: r.schedule || null })
+      if (body.create) {
+        await api('PATCH', `/projects/${p.id}`, { ...(template.role && { role: template.role }), ...(template !== CODE && { type: template.slug }) })
+        for (const r of template.workflows.map((slug) => recipe(slug)!))
+          await api('POST', `/projects/${p.id}/workflows`, { name: r.title, prompt: r.prompt, collection: template.title, cron: r.schedule || null, onModelChange: r.onModelChange, enabled: !template.paused })
         const t = await api<{ id: string }>('POST', `/projects/${p.id}/threads`, { text: template.setup })
         onAdded()
         return go(`/p/${p.id}/t/${t.id}`)
       }
       onAdded()
-      go(`/p/${p.id}${body.create ? '/new' : ''}`)
+      go(`/p/${p.id}`)
     } catch (err) {
       setError((err as Error).message)
     }
@@ -106,18 +107,18 @@ export function AddProject({ me, setMe, onAdded }: { me: Me; setMe: (m: Me) => v
       {step === 'new' ? (
         <form onSubmit={create}>
           <div class="project-types">
-            {[undefined, ...TEMPLATES].map((t) => {
-              const Icon = t ? (TYPE_ICONS[t.slug] ?? Folder) : Code
+            {[CODE, ...TEMPLATES].map((t) => {
+              const Icon = TYPE_ICONS[t.slug] ?? Folder
               return (
-                <button type="button" key={t?.slug ?? ''} class={`project-type ${t === template ? 'active' : ''}`} onClick={() => setTemplate(t)}>
+                <button type="button" key={t.slug} class={`project-type ${t === template ? 'active' : ''}`} onClick={() => setTemplate(t)}>
                   <Icon size={16} />
-                  <b>{t?.title ?? 'Code'}</b>
-                  <small>{t?.blurb ?? 'App, site or tool.'}</small>
+                  <b>{t.title}</b>
+                  <small>{t.blurb}</small>
                 </button>
               )
             })}
           </div>
-          {template && <small class="muted">{template.creates}</small>}
+          <small class="muted">{template.creates}</small>
           <input autoFocus placeholder="Name of the new project" value={name} onInput={(e) => setName(e.currentTarget.value)} />
           {editDir ? (
             <input placeholder="Folder for new projects" value={dir} onInput={(e) => setDir(e.currentTarget.value)} />

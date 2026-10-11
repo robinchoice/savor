@@ -13,6 +13,7 @@ import { AntigravitySession } from './antigravity.js'
 import * as push from './push.js'
 import { setupOf } from './git.js'
 import * as ci from './ci.js'
+import { modelSeen } from './scheduler.js'
 
 const IDLE_CLOSE_MS = 5 * 60_000
 // A turn that stopped at a usage limit continues this long after the limit resets.
@@ -369,6 +370,11 @@ function hostFor(p: Project, thread: Thread, holder: { session?: Session }): Hos
       const t = store.getThread(p, tid)
       // Saved as it is: this is no change to the conversation, so its place in the list stays.
       store.saveThread(p, { ...t, context: { tokens, window: window ?? t.context?.window ?? null } })
+    },
+    // Only a conversation on the project's default agent tells which model the project runs on.
+    model: (id) => {
+      const d = store.getProject(p.id).agent
+      if (mine() && thread.agent.provider === d.provider && thread.agent.model === d.model) modelSeen(p.id, id)
     },
     approve: (req) => askApproval(p, tid, req),
     ask: (qs) => askQuestions(p, tid, qs),

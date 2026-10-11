@@ -21,6 +21,8 @@ export interface Project {
   worktreeSetup: string
   // The project type from templates/ (academic-writing, kontor); none for code.
   type?: string
+  // The model the project's default agent last ran on, as the agent named it.
+  model?: string
 }
 export interface Question { title: string; body: string; options: string[]; recommended?: number }
 export type Origin = 'local' | 'remote'
@@ -92,8 +94,9 @@ export interface Thread {
   // fan-out they belong to and the commit their worktrees started from.
   fanout?: { id: string; base: string }
   // Set for a run of a workflow: which one started the conversation and what set it off. A run that was
-  // caught up carries the scheduled time it was due, one started early the scheduled time it took the place of.
-  workflow?: { id: string; name: string; trigger: 'scheduled' | 'manual' | 'caught' | 'early'; due?: string }
+  // caught up carries the scheduled time it was due, one started early the scheduled time it took the place of,
+  // one started by a model change the new model.
+  workflow?: { id: string; name: string; trigger: 'scheduled' | 'manual' | 'caught' | 'early' | 'model'; due?: string; model?: string }
 }
 export interface ActivityEvent { id: number; type: 'thinking' | 'command' | 'edit' | 'note'; label: string; time: string; finishedAt?: string }
 export interface Decision {
@@ -131,6 +134,9 @@ export interface Workflow {
   settledAt: string
   // Scheduled times that did not run because the run in conversation `blockedBy` was still open.
   skipped: { at: string; blockedBy: string }[]
+  // Whether it also runs when the project's agent runs on a new model, and the model it last saw.
+  onModelChange: boolean
+  model: string | null
   origin: Origin
 }
 export interface Proc {
@@ -529,7 +535,7 @@ export function addBacklogItem(p: Project, title: string): BacklogItem {
 
 const wfDir = (p: Project) => path.join(dataDir(p), 'workflows')
 // What workflows saved by earlier versions don't have yet.
-const wfDefaults = { next: [], collection: '', scheduleLabel: null, updatedAt: '', catchUp: true, button: false, settledAt: '', skipped: [] }
+const wfDefaults = { next: [], collection: '', scheduleLabel: null, updatedAt: '', catchUp: true, button: false, settledAt: '', skipped: [], onModelChange: false, model: null }
 
 export function listWorkflows(p: Project): Workflow[] {
   if (!fs.existsSync(wfDir(p))) return []
@@ -563,6 +569,8 @@ export function saveWorkflow(p: Project, wf: Partial<Workflow> & { name: string;
     updatedAt: now(),
     settledAt: now(),
     skipped: [],
+    onModelChange: false,
+    model: null,
     origin: 'local',
     ...prev,
     ...wf,
@@ -571,10 +579,12 @@ export function saveWorkflow(p: Project, wf: Partial<Workflow> & { name: string;
   // A label describes one schedule, so it goes when the schedule changes without it.
   if (prev && next.cron !== prev.cron && next.scheduleLabel === prev.scheduleLabel) next.scheduleLabel = null
   // A run only records its time; anything else is an edit.
-  const edited = (['name', 'prompt', 'collection', 'cron', 'timezone', 'scheduleLabel', 'enabled', 'catchUp', 'button'] as const).some((k) => next[k] !== prev?.[k])
+  const edited = (['name', 'prompt', 'collection', 'cron', 'timezone', 'scheduleLabel', 'enabled', 'catchUp', 'button', 'onModelChange'] as const).some((k) => next[k] !== prev?.[k])
   if (prev && (edited || String(next.next) !== String(prev.next))) next.updatedAt = now()
   // A changed or re-enabled schedule counts from now: what it would have run before is not caught up.
   if (prev && (next.cron !== prev.cron || next.timezone !== prev.timezone || next.enabled !== prev.enabled)) next.settledAt = now()
+  // Setting the trigger only notes the current model: the next one starts a run.
+  if (next.onModelChange && !prev?.onModelChange) next.model = p.model ?? null
   writeJson(path.join(wfDir(p), `${next.id}.json`), next)
   return next
 }
