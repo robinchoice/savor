@@ -308,6 +308,25 @@ test('a comment can be sent before every question is answered', async () => {
   assert.equal(await page.locator('.card.active .chip.blocked').count(), 0, 'nothing waits for the user anymore')
 })
 
+test('new input passes over open questions, so answering a later one leaves the conversation finishable', async () => {
+  const [project] = (await api('GET', '/projects')).body
+  const t = `/projects/${project.id}/threads/${(await api('POST', `/projects/${project.id}/threads`, { text: 'ask: Ship it?', agent: { provider: 'claude' } })).body.id}`
+  await until(async () => (await api('GET', t)).body.decisions.length === 1)
+  // Another agent's input comes in while the first question waits.
+  await api('POST', `${t}/messages`, { text: 'ask: Tag it?' })
+  let later
+  await until(async () => (later = (await api('GET', t)).body.decisions.find((d) => d.title === 'Tag it?')))
+  assert.ok((await api('GET', t)).body.decisions.find((d) => d.title === 'Ship it?').resolved)
+  await api('POST', `${t}/decisions`, { answers: [{ id: later.id, selected: 0 }] })
+  await until(async () => {
+    const { messages, busy, thread } = (await api('GET', t)).body
+    return messages.at(-1).kind === 'conclusion' && !messages.at(-1).decisionIds && !busy && !thread.needsYou
+  })
+  await page.goto(`${base}/#/p/${project.id}/t/${t.split('/').at(-1)}`)
+  await page.waitForSelector('.answered:has-text("Skipped")')
+  await page.waitForSelector('.complete-actions button:has-text("Finish")')
+})
+
 test('approvals are routed to the user, "Always allow" remembers the rule', async () => {
   await newConversation()
   await send('approve: now')
