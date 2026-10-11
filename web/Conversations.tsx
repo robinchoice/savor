@@ -690,6 +690,7 @@ export function ThreadView({ project, threadId, back, next }: { project: Project
   const [answers, setAnswers] = useState<Record<string, Pick>>(() => JSON.parse(localStorage.getItem(answersKey) ?? '{}'))
   useLayoutEffect(() => (Object.keys(answers).length ? localStorage.setItem(answersKey, JSON.stringify(answers)) : localStorage.removeItem(answersKey)), [answers])
   const listRef = useRef<HTMLDivElement>(null)
+  const opened = useRef(false)
   const findRef = useRef<HTMLInputElement>(null)
   const [clock, setClock] = useState(Date.now())
   useEffect(() => {
@@ -715,7 +716,13 @@ export function ThreadView({ project, threadId, back, next }: { project: Project
   useEffect(() => setSeen(data?.messages.length ?? 0), [floating, !data])
   useEffect(() => {
     const el = listRef.current
-    if (el && !find.open) requestAnimationFrame(() => (el.scrollTop = el.scrollHeight))
+    if (!el || !data || find.open) return
+    const frame = requestAnimationFrame(() => {
+      const answer = !opened.current && !data.thread.completed ? [...el.querySelectorAll<HTMLElement>('.msg.conclusion')].at(-1) : undefined
+      el.scrollTop = answer ? answer.offsetTop - el.offsetTop - 20 : el.scrollHeight
+      opened.current = true
+    })
+    return () => cancelAnimationFrame(frame)
   }, [data?.messages.length, data?.busy, browserMode, floating, activityOpen])
   // Ctrl/⌘F searches the conversation instead of the page.
   useEffect(() => {
