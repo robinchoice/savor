@@ -7,7 +7,7 @@ import {
   CircleAlert, ArrowUp, ArrowLeft, Pencil, MessageSquarePlus, Brain, Terminal, Wrench, ArrowRight, Smartphone, Monitor, Bot, ShieldQuestion, X, ChevronUp, ChevronDown, ChevronRight, Paperclip, GitBranch, GitFork, GitMerge, Trash2, Copy, FileDiff, Split, SquareArrowOutUpRight, Workflow as WorkflowIcon, Mail, MailOpen, SquareTerminal, RotateCcw,
 } from 'lucide-preact'
 import {
-  api, avatarStyle, cap, desktop, duration, formatStamp, formatTime, go, initial, lastThreadKey, PROVIDER_NAMES, runTrigger, useApi, kindOf, RINGS, type ActivityEvent, type AgentConfig, type Attachment, type Decision, type Message, type Proc, type Project, type Reason, type Thread, type Worktree,
+  api, avatarStyle, cap, desktop, duration, formatStamp, formatTime, go, initial, lastThreadKey, PROVIDER_NAMES, runTrigger, useApi, kindOf, RINGS, type ActivityEvent, type AgentConfig, type Approval, type ApprovalOption, type Attachment, type Decision, type Message, type Proc, type Project, type Reason, type Thread, type Worktree,
 } from './api'
 import { Composer, quoteInComposer, type Picked } from './Composer'
 import { transport } from './transport'
@@ -1195,6 +1195,72 @@ function Highlighted({ text, q }: { text: string; q: string }) {
 
 const attachmentLabel = (name: string) => name.replace(/^[0-9a-f]{16}-/, '')
 
+const INPUT_TYPES: Record<string, string> = { email: 'email', uri: 'url', date: 'date' }
+
+// A form an MCP server asks the user to fill in, with the approval's options as its buttons.
+function ApprovalForm({ a, submit }: { a: Approval; submit: (choice: string, content?: Record<string, unknown>) => Promise<unknown> }) {
+  const fields = a.fields!
+  const [values, setValues] = useState<Record<string, unknown>>(() => Object.fromEntries(fields.map((f) => [f.name, f.default ?? (f.type === 'boolean' ? false : '')])))
+  const [error, setError] = useState('')
+  const set = (name: string, v: unknown) => setValues((vs) => ({ ...vs, [name]: v }))
+  const send = (o: ApprovalOption) => {
+    setError('')
+    submit(o.id, o.kind === 'allow' ? values : undefined).catch((e: Error) => setError(e.message))
+  }
+  return (
+    <form class="form approval-form" onSubmit={(e) => (e.preventDefault(), send(a.options.find((o) => o.kind === 'allow')!))}>
+      {fields.map((f) => {
+        const label = (
+          <>
+            {f.label}
+            {f.required && ' *'} {f.description && <small class="muted">{f.description}</small>}
+          </>
+        )
+        if (f.type === 'boolean')
+          return (
+            <label key={f.name} class="check">
+              <input type="checkbox" checked={values[f.name] === true} onChange={(e) => set(f.name, e.currentTarget.checked)} /> {label}
+            </label>
+          )
+        const v = values[f.name] as string | number
+        return (
+          <label key={f.name}>
+            {label}
+            {f.type === 'enum' ? (
+              <select name={f.name} value={v} required={f.required} onChange={(e) => set(f.name, e.currentTarget.value)}>
+                <option value="" />
+                {f.options!.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            ) : f.type === 'string' ? (
+              <input name={f.name} type={INPUT_TYPES[f.format ?? ''] ?? 'text'} value={v} required={f.required} minLength={f.min} maxLength={f.max} onInput={(e) => set(f.name, e.currentTarget.value)} />
+            ) : (
+              <input name={f.name} type="number" step={f.type === 'integer' ? 1 : 'any'} value={v} required={f.required} min={f.min} max={f.max} onInput={(e) => set(f.name, e.currentTarget.value === '' ? '' : e.currentTarget.valueAsNumber)} />
+            )}
+          </label>
+        )
+      })}
+      {error && <div class="banner">{error}</div>}
+      <div class="row">
+        {a.options.map((o) =>
+          o.kind === 'allow' ? (
+            <button key={o.id} type="submit" class="primary">
+              {o.label}
+            </button>
+          ) : (
+            <button key={o.id} type="button" class="ghost" onClick={() => send(o)}>
+              {o.label}
+            </button>
+          ),
+        )}
+      </div>
+    </form>
+  )
+}
+
 function MessageItem({ m, thread, workflow, decisions, active, answers, setAnswer, base, highlight, match, onCommit, preview, onPreview }: { m: Message; thread: Thread; workflow?: NonNullable<Thread['workflow']> & { href: string }; decisions: Decision[]; active: boolean; answers: Record<string, Pick>; setAnswer: (id: string, a: Pick) => void; base: string; highlight: string; match: string; onCommit: (hash: string) => void; preview?: string | false | null; onPreview?: () => void }) {
   const [copyState, setCopyState] = useState('')
   useEffect(() => {
@@ -1255,7 +1321,9 @@ function MessageItem({ m, thread, workflow, decisions, active, answers, setAnswe
               {a.url}
             </a>
           )}
-          {a.status === 'pending' && a.options?.length ? (
+          {a.status === 'pending' && a.fields ? (
+            <ApprovalForm a={a} submit={(choice, content) => api('POST', `${base}/approvals/${m.id}`, { choice, content })} />
+          ) : a.status === 'pending' && a.options?.length ? (
             <div class="row">
               {a.options.map((o) => (
                 <button key={o.id} class={o.kind === 'allow' ? 'primary' : 'ghost'} onClick={() => api('POST', `${base}/approvals/${m.id}`, { choice: o.id })}>

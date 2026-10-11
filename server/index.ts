@@ -18,6 +18,7 @@ import { closeDevice, pairingLink, relayStatus, startRelay } from './relay-clien
 import { newNonce, securityHeaders, withNonce } from '../shared/headers.js'
 import { fanoutBranches } from '../shared/fanout.js'
 import { handleMcp } from './mcp.js'
+import { formContent } from './session.js'
 import { claudeAside } from './claude.js'
 import { codexAside } from './codex.js'
 import { acpAside } from './acp.js'
@@ -483,8 +484,15 @@ route('POST', '/projects/:pid/threads/:tid/approvals/:mid', (params, b) => {
   const p = project(params)
   const approval = store.readMessages(p, params.tid).find((m) => m.id === params.mid)?.approval
   if (!approval || approval.status !== 'pending') throw new store.NotFound(`approval ${params.mid}`)
-  if (!approval.options.some((o) => o.id === b.choice)) throw new BadRequest('Choose one of the offered options.')
-  agents.resolveApproval(p, params.tid, params.mid, b.choice)
+  const option = approval.options.find((o) => o.id === b.choice)
+  if (!option) throw new BadRequest('Choose one of the offered options.')
+  let content
+  try {
+    if (approval.fields && option.kind === 'allow') content = formContent(approval.fields, b.content)
+  } catch (e) {
+    throw new BadRequest((e as Error).message)
+  }
+  agents.resolveApproval(p, params.tid, params.mid, b.choice, content)
   return {}
 })
 route('POST', '/projects/:pid/threads/:tid/decisions', (params, b, ctx) => {
@@ -815,7 +823,8 @@ route('GET', '/workflows/buttons', () =>
 // A pending approval and the open questions, so the overview can answer them in place.
 function asks(p: store.Project, t: store.Thread) {
   const pending = store.readMessages(p, t.id).filter((m) => m.approval?.status === 'pending').at(-1)
-  return { approval: pending ? { messageId: pending.id, options: pending.approval!.options } : null, decisions: store.listDecisions(p, t.id).filter((d) => !d.resolved) }
+  // A form is filled in in the conversation.
+  return { approval: pending && !pending.approval!.fields ? { messageId: pending.id, options: pending.approval!.options } : null, decisions: store.listDecisions(p, t.id).filter((d) => !d.resolved) }
 }
 
 // Every project's conversations and workflows in one list, each with the project it belongs to.

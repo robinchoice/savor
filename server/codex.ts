@@ -5,7 +5,7 @@ import * as store from './store.js'
 import type { ApprovalOption, Thread } from './store.js'
 import { BIN, command, mcpUrl, VERSION } from './config.js'
 import { Rpc } from './jsonrpc.js'
-import { configKey, forkOf, OPEN_PAGE, rememberSession, sessionIdOf, summarize, systemPrompt, webUrl, type Host, type Session, type TurnInput } from './session.js'
+import { configKey, forkOf, formFields, OPEN_PAGE, rememberSession, SUBMIT_FORM, sessionIdOf, summarize, systemPrompt, webUrl, type Host, type Session, type TurnInput } from './session.js'
 import type { ModelInfo, SkillInfo } from './providers.js'
 
 const MODES: Record<string, { sandbox: string; approvalPolicy: string; approvalsReviewer: string }> = {
@@ -248,9 +248,8 @@ export class CodexSession implements Session {
       const choice = await this.host.approve({ title: `${params.serverName} asks you to open a page`, detail: params.message ?? '', url, options: OPEN_PAGE })
       return { action: choice, content: null, _meta: null }
     }
-    if (method === 'mcpServer/elicitation/request') {
-      const meta = params._meta ?? {}
-      if (meta.codex_approval_kind !== 'mcp_tool_call') throw new Error('Savor does not answer MCP elicitation forms.')
+    if (method === 'mcpServer/elicitation/request' && params._meta?.codex_approval_kind === 'mcp_tool_call') {
+      const meta = params._meta
       // Savor's own tools (messages, documents, workflows, preview) never need a prompt.
       if (params.serverName === 'savor') return { action: 'accept', content: {}, _meta: { persist: 'session' } }
       const persist: string[] = Array.isArray(meta.persist) ? meta.persist : []
@@ -264,6 +263,12 @@ export class CodexSession implements Session {
       const choice = await this.host.approve({ title: params.message ?? `Allow the ${params.serverName} MCP server to run a tool?`, detail: `${tool}\n${JSON.stringify(meta.tool_params ?? {}, null, 2).slice(0, 1200)}`, options })
       if (choice === 'decline') return { action: 'decline', content: null, _meta: null }
       return { action: 'accept', content: {}, _meta: choice === 'accept' ? null : { persist: choice } }
+    }
+    if (method === 'mcpServer/elicitation/request') {
+      const fields = formFields(params.requestedSchema)
+      if (!fields) throw new Error('Savor does not answer this MCP elicitation form.')
+      const { choice, content } = await this.host.form({ title: `${params.serverName} asks for details`, detail: params.message ?? '', fields, options: SUBMIT_FORM })
+      return { action: choice, content: content ?? null, _meta: null }
     }
     if (method === 'item/tool/requestUserInput') {
       const qs = (params.questions ?? []) as { id: string; header: string; question: string; options: { label: string }[] | null }[]

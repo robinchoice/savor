@@ -306,6 +306,8 @@ main { flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
 .approval-title { display: flex; align-items: center; gap: 8px; font-weight: 500; }
 .approval pre { max-height: 200px; overflow: auto; background: var(--raised); padding: 10px; border-radius: 8px; font-size: 12px; }
 .approval-link { overflow-wrap: anywhere; }
+.approval-form { padding: 0; gap: 12px; }
+.approval-form input:not([type='checkbox']), .approval-form select { background: var(--raised); }
 
 .md { overflow-wrap: anywhere; }
 .md > :first-child { margin-top: 0; }

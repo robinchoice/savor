@@ -6,6 +6,7 @@
 // - "ask-native: <question>" → item/tool/requestUserInput with the options Red/Blue, then "Codex answered: <label>"
 // - "slow: <text>" → waits for the test's release file, then "Codex echo: <text>" plus what turn/steer added meanwhile
 // - "open-page: <url>" → an MCP server asks through a URL elicitation to open that page, then "Codex page: <action>"
+// - "fill-form: <message>" → an MCP server asks through a form elicitation for a name and a color, then "Codex form: <action> <content>"
 // - a skill item in the input → "Codex skill: <name> from <path>"
 // - review/start, thread/compact/start and thread/shellCommand → a turn with the item Codex reports for each
 // - thread/goal/set → two turns, the second one meets the goal; goal edits without the origin "user" fail
@@ -88,6 +89,10 @@ async function runTurn(params) {
   } else if (input.startsWith('open-page:')) {
     const { action } = await serverRequest('mcpServer/elicitation/request', { threadId, turnId, serverName: 'docs', mode: 'url', message: 'Sign in to Docs.', url: input.slice('open-page:'.length).trim(), elicitationId: 'e1' })
     reply = `Codex page: ${action}`
+  } else if (input.startsWith('fill-form:')) {
+    const requestedSchema = { type: 'object', properties: { name: { type: 'string', title: 'Name' }, color: { type: 'string', enum: ['r', 'b'], enumNames: ['Red', 'Blue'] } }, required: ['name'] }
+    const { action, content } = await serverRequest('mcpServer/elicitation/request', { threadId, turnId, serverName: 'docs', mode: 'form', _meta: null, message: input.slice('fill-form:'.length).trim(), requestedSchema })
+    reply = `Codex form: ${action} ${JSON.stringify(content)}`
   } else {
     if (input.startsWith('slow:')) await released(input)
     reply = input.includes('Question: ') ? `Codex aside in ${threadId}: ${input.slice(input.indexOf('Question: ') + 10)}` : `Codex echo: ${input}${text.includes('and you take over') ? ' (took over)' : ''}`

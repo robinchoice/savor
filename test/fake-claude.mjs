@@ -10,6 +10,8 @@
 // - "own-server: <text>" → reports a background task of its own that keeps running after the conclusion
 // - "native-ask: <question>" → an AskUserQuestion control request with the options Blue/Green
 // - "open-page: <url>" → an MCP server asks through an elicitation control request to open that page, then "Page: <action>"
+// - "fill-form: <message>" → an MCP server asks through an elicitation control request to fill in a form (name, count,
+//   notify, color), then "Form: <action> <content>"
 // - "recall" → concludes with the history Savor handed over in front of the input, or "nothing"
 // - "context: <text>" → concludes with the Savor context it got in front of the input
 // - "note: <text>" → concludes with the note Savor put between that context and the input, or "none"
@@ -34,6 +36,8 @@ import fs from 'node:fs'
 import { spawn } from 'node:child_process'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
+
+const SCHEMA = { type: 'object', properties: { name: { type: 'string', title: 'Name', minLength: 2 }, count: { type: 'integer', title: 'Count', minimum: 1 }, notify: { type: 'boolean', title: 'Notify me', default: true }, color: { type: 'string', title: 'Color', oneOf: [{ const: 'r', title: 'Red' }, { const: 'b', title: 'Blue' }] } }, required: ['name', 'color'] }
 
 const args = process.argv.slice(2)
 if (args[0] === '--version') {
@@ -166,6 +170,9 @@ async function turn(text, command) {
   } else if (input.startsWith('open-page:')) {
     const verdict = await control({ subtype: 'elicitation', mcp_server_name: 'docs', message: 'Sign in to Docs.', mode: 'url', url: input.slice('open-page:'.length).trim(), elicitation_id: 'e1' })
     await call('send_conclusion_message', { text: `Page: ${verdict?.action ?? 'refused'}` })
+  } else if (input.startsWith('fill-form:')) {
+    const verdict = await control({ subtype: 'elicitation', mcp_server_name: 'docs', message: input.slice('fill-form:'.length).trim(), mode: 'form', requested_schema: SCHEMA })
+    await call('send_conclusion_message', { text: `Form: ${verdict?.action ?? 'refused'} ${JSON.stringify(verdict?.content ?? null)}` })
   } else if (input.startsWith('recall')) {
     const handed = text.includes('Earlier in this conversation')
     await call('send_conclusion_message', { text: `Handed over: ${handed ? text.slice(0, text.indexOf('Savor context:')).trim() : 'nothing'}` })

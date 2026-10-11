@@ -384,6 +384,34 @@ test('an MCP server can ask to open a page, as a link with Done and Decline', as
   await api('PATCH', `/projects/${project.id}`, { agent: project.agent })
 })
 
+test('an MCP server can ask to fill in a form, answered with what the user entered', async () => {
+  await newConversation()
+  await send('fill-form: Tell us about the release.')
+  const form = page.locator('.approval:has-text("docs asks for details"):has-text("Tell us about the release.") form')
+  await form.locator('input[name="name"]').fill('Ada')
+  await form.locator('input[name="count"]').fill('3')
+  await form.locator('select[name="color"]').selectOption({ label: 'Blue' })
+  assert.equal(await form.locator('label:has-text("Notify me") input').isChecked(), true)
+  await form.locator('button:has-text("Submit")').click()
+  await page.waitForSelector('text=Form: accept {"name":"Ada","count":3,"notify":true,"color":"b"}')
+  await send('fill-form: Once more.')
+  await page.click('.approval:has-text("Once more.") button:has-text("Decline")')
+  await page.waitForSelector('text=Form: decline null')
+
+  const [project] = (await api('GET', '/projects')).body
+  const thread = (await api('POST', `/projects/${project.id}/threads`, { text: 'fill-form: Who are you?', agent: { provider: 'codex', permissionMode: 'default' } })).body
+  const t = `/projects/${project.id}/threads/${thread.id}`
+  let approval
+  await until(async () => (approval = (await api('GET', t)).body.messages.find((m) => m.approval?.status === 'pending')))
+  assert.deepEqual(approval.approval.fields.map((f) => [f.name, f.type, f.required]), [['name', 'string', true], ['color', 'enum', false]])
+  // The server checks what comes back against the form.
+  assert.equal((await api('POST', `${t}/approvals/${approval.id}`, { choice: 'accept', content: { color: 'b' } })).status, 400)
+  assert.equal((await api('POST', `${t}/approvals/${approval.id}`, { choice: 'accept', content: { name: 'Ada', color: 'green' } })).status, 400)
+  await api('POST', `${t}/approvals/${approval.id}`, { choice: 'accept', content: { name: 'Ada', color: 'b', extra: 1 } })
+  await until(async () => (await api('GET', t)).body.messages.some((m) => m.text === 'Codex form: accept {"name":"Ada","color":"b"}'))
+  await api('PATCH', `/projects/${project.id}`, { agent: project.agent })
+})
+
 test("an agent's own clarifying questions become decisions", async () => {
   await newConversation()
   await send('native-ask: Which color?')

@@ -1,6 +1,6 @@
 // What every agent adapter gets from Savor (the Host) and what it has to provide (a Session).
 import * as store from './store.js'
-import type { AgentConfig, ApprovalOption, Project, Provider, Question, Thread } from './store.js'
+import type { AgentConfig, ApprovalOption, FormField, Project, Provider, Question, Thread } from './store.js'
 import { emit } from './events.js'
 
 export const PROTOCOL = `You are running inside Savor, a local workspace for coding agents. The user only sees messages sent through the savor MCP tools. Your plain assistant text is hidden and only shows up in the activity log.
@@ -46,7 +46,7 @@ export function systemPrompt(p: Project, thread: Thread) {
 // reads a slash command at the very start of an input.
 export interface TurnInput { context: string; input: string; images: string[] }
 export interface Answer { selected: number | null; answer: string | null }
-export interface ApprovalRequest { title: string; detail: string; url?: string; options: ApprovalOption[] }
+export interface ApprovalRequest { title: string; detail: string; url?: string; fields?: FormField[]; options: ApprovalOption[] }
 
 export interface Host {
   p: Project
@@ -63,6 +63,8 @@ export interface Host {
   // The model the agent runs on, as it names it.
   model(id: string): void
   approve(req: ApprovalRequest): Promise<string>
+  // An approval with a form: what the user filled in comes with an allowing choice.
+  form(req: ApprovalRequest & { fields: FormField[] }): Promise<{ choice: string; content?: Record<string, unknown> }>
   ask(questions: Question[]): Promise<Answer[]>
   // `resetsAt` (ms) is set when the turn stopped at a usage limit that resets then.
   ended(result: { text?: string; error?: string; resetsAt?: number | null }): void
@@ -114,6 +116,53 @@ export const OPEN_PAGE: ApprovalOption[] = [
   { id: 'accept', label: 'Done, continue', kind: 'allow' },
   { id: 'decline', label: 'Decline', kind: 'deny' },
 ]
+
+// An MCP server asks the user to fill in a form.
+export const SUBMIT_FORM: ApprovalOption[] = [
+  { id: 'accept', label: 'Submit', kind: 'allow' },
+  { id: 'decline', label: 'Decline', kind: 'deny' },
+]
+
+// The fields of an MCP elicitation form, from its requestedSchema; null when it asks for more than
+// Savor shows (lists, multiple choice).
+export function formFields(schema: any): FormField[] | null {
+  const required: unknown[] = Array.isArray(schema?.required) ? schema.required : []
+  const fields: FormField[] = []
+  for (const [name, s] of Object.entries<any>(schema?.properties ?? {})) {
+    const options = Array.isArray(s.enum)
+      ? s.enum.map((value: string, i: number) => ({ value, label: s.enumNames?.[i] ?? value }))
+      : Array.isArray(s.oneOf)
+        ? s.oneOf.map((o: any) => ({ value: o.const, label: o.title ?? o.const }))
+        : undefined
+    const type = options ? 'enum' : s.type
+    if (!['string', 'number', 'integer', 'boolean', 'enum'].includes(type)) return null
+    const min = s.minimum ?? s.minLength ?? undefined, max = s.maximum ?? s.maxLength ?? undefined
+    fields.push({ name, label: s.title ?? name, description: s.description ?? undefined, type, required: required.includes(name), format: s.format ?? undefined, options, default: s.default ?? undefined, min, max })
+  }
+  return fields
+}
+
+// What the user filled in, checked against the form's fields. Fields left empty are left out.
+export function formContent(fields: FormField[], input: unknown) {
+  const given = (input && typeof input === 'object' ? input : {}) as Record<string, unknown>
+  const content: Record<string, unknown> = {}
+  for (const f of fields) {
+    const v = given[f.name]
+    if (v == null || v === '') {
+      if (f.required) throw new Error(`Fill in ${f.label}.`)
+      continue
+    }
+    const size = typeof v === 'string' ? v.length : v
+    const valid =
+      f.type === 'boolean' ? typeof v === 'boolean'
+      : f.type === 'enum' ? f.options!.some((o) => o.value === v)
+      : (f.type === 'string' ? typeof v === 'string' : typeof v === 'number' && Number.isFinite(v) && (f.type === 'number' || Number.isInteger(v))) &&
+        !(f.min != null && (size as number) < f.min) && !(f.max != null && (size as number) > f.max)
+    if (!valid) throw new Error(`Check ${f.label}.`)
+    content[f.name] = v
+  }
+  return content
+}
 
 // Only web pages are offered as links; anything else could run script in Savor's page.
 export const webUrl = (url: unknown) => (typeof url === 'string' && /^https?:\/\//i.test(url) ? url : null)

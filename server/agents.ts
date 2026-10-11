@@ -40,7 +40,7 @@ const busy = new Map<string, string>() // threadId → turn start
 const turnConclusion = new Map<string, string>()
 const sessions = new Map<string, { session: Session; idleTimer?: NodeJS.Timeout }>()
 const stopped = new Set<string>() // threads whose last turn the user stopped: don't pump the queue
-const approvals = new Map<string, (choice: string) => void>() // approval message id → resolver
+const approvals = new Map<string, (answer: { choice: string; content?: Record<string, unknown> }) => void>() // approval message id → resolver
 const questions = new Map<string, (answers: Answer[]) => void>() // decision group id → resolver
 const preparing = new Map<string, { p: Project; activity: Activity }>() // threads whose turn waits for their new worktree's setup
 const resumeTimers = new Map<string, NodeJS.Timeout>() // threads waiting for a usage limit to reset
@@ -390,7 +390,8 @@ function hostFor(p: Project, thread: Thread, holder: { session?: Session }): Hos
       const d = store.listProjects().find((project) => project.id === p.id)?.agent
       if (d && thread.agent.provider === d.provider && thread.agent.model === d.model) modelSeen(p.id, id)
     },
-    approve: (req) => askApproval(p, tid, req),
+    approve: (req) => askApproval(p, tid, req).then((a) => a.choice),
+    form: (req) => askApproval(p, tid, req),
     ask: (qs) => askQuestions(p, tid, qs),
     backgroundChanged: () => {
       if (!mine()) return
@@ -414,16 +415,16 @@ function askApproval(p: Project, tid: string, req: ApprovalRequest) {
   store.updateThread(p, tid, { unread: true, needsYou: true })
   emit({ type: 'thread', projectId: p.id, threadId: tid })
   notify(p, tid, req.title, 'Needs your approval')
-  return new Promise<string>((resolve) => approvals.set(msg.id, resolve))
+  return new Promise<{ choice: string; content?: Record<string, unknown> }>((resolve) => approvals.set(msg.id, resolve))
 }
 
-export function resolveApproval(p: Project, tid: string, mid: string, choice: string) {
+export function resolveApproval(p: Project, tid: string, mid: string, choice: string, content?: Record<string, unknown>) {
   const msg = store.readMessages(p, tid).find((m) => m.id === mid)
   const a = msg?.approval
   if (!a || a.status !== 'pending') throw new store.NotFound(`approval ${mid}`)
   store.updateMessage(p, tid, mid, { approval: { ...a, status: 'resolved', choice } })
   emit({ type: 'message', projectId: p.id, threadId: tid })
-  approvals.get(mid)?.(choice)
+  approvals.get(mid)?.({ choice, content })
   approvals.delete(mid)
   refreshNeedsYou(p, tid)
 }

@@ -79,7 +79,8 @@ export const readFileAsDataUrl = (f: Blob) =>
 export interface AgentConfig { provider: string; model: string; reasoning: string; fast: boolean; ultracode: boolean; permissionMode: string }
 export interface Question { title: string; body: string; options: string[]; recommended?: number }
 export interface ApprovalOption { id: string; label: string; kind: 'allow' | 'deny' }
-export interface Approval { title: string; detail: string; url?: string; options: ApprovalOption[]; status: 'pending' | 'resolved'; choice?: string }
+export interface FormField { name: string; label: string; description?: string; type: 'string' | 'number' | 'integer' | 'boolean' | 'enum'; required: boolean; format?: string; options?: { value: string; label: string }[]; default?: string | number | boolean; min?: number; max?: number }
+export interface Approval { title: string; detail: string; url?: string; fields?: FormField[]; options: ApprovalOption[]; status: 'pending' | 'resolved'; choice?: string }
 export interface Message {
   id: string
   ts: string

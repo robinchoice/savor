@@ -9,7 +9,7 @@ import path from 'node:path'
 import * as store from './store.js'
 import type { ApprovalOption, Thread } from './store.js'
 import { BIN, command, mcpUrl } from './config.js'
-import { configKey, forkOf, OPEN_PAGE, rememberSession, sessionIdOf, summarize, systemPrompt, webUrl, type Host, type Session, type TurnInput } from './session.js'
+import { configKey, forkOf, formFields, OPEN_PAGE, rememberSession, SUBMIT_FORM, sessionIdOf, summarize, systemPrompt, webUrl, type Host, type Session, type TurnInput } from './session.js'
 import type { ModelInfo, SkillInfo } from './providers.js'
 
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
@@ -194,11 +194,17 @@ export class ClaudeSession implements Session {
   }
 
   private async control(requestId: string, req: any) {
-    if (req.subtype === 'elicitation') {
-      const url = req.mode === 'url' && webUrl(req.url)
-      if (!url) throw new Error('Savor does not answer MCP elicitation forms.')
+    if (req.subtype === 'elicitation' && req.mode === 'url') {
+      const url = webUrl(req.url)
+      if (!url) throw new Error('Savor opens only http and https pages.')
       const choice = await this.host.approve({ title: req.title ?? `${req.mcp_server_name} asks you to open a page`, detail: req.message ?? '', url, options: OPEN_PAGE })
       return this.respond(requestId, { action: choice })
+    }
+    if (req.subtype === 'elicitation') {
+      const fields = formFields(req.requested_schema)
+      if (!fields) throw new Error('Savor does not answer this MCP elicitation form.')
+      const { choice, content } = await this.host.form({ title: req.title ?? `${req.mcp_server_name} asks for details`, detail: req.message ?? '', fields, options: SUBMIT_FORM })
+      return this.respond(requestId, { action: choice, ...(content && { content }) })
     }
     if (req.subtype !== 'can_use_tool') throw new Error(`Savor does not handle ${req.subtype} requests.`)
     const input = req.input ?? {}
