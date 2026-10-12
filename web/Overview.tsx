@@ -50,7 +50,7 @@ const Avatar = ({ project }: { project?: Project }) => (
 )
 
 // Routes: all[/inbox[/new | /:pid/:tid] | /board[/:pid] | /workflows]
-export function AllProjects({ projects, section, rest }: { projects: Project[]; section?: string; rest: string[] }) {
+export function AllProjects({ projects, section, rest, importText }: { projects: Project[]; section?: string; rest: string[]; importText?: string }) {
   const [data] = useApi<Overview>('/overview', (e) => ['projects', 'thread', 'status', 'workflows'].includes(e.type))
   const { boardProject } = usePrefs()
   const byId = new Map(projects.map((p) => [p.id, p]))
@@ -61,7 +61,7 @@ export function AllProjects({ projects, section, rest }: { projects: Project[]; 
         <AllBoard threads={data?.threads} projects={projects} byId={byId} only={byId.get(rest[0] ?? boardProject)} />
       </div>
     )
-  return <div class="page">{section === 'workflows' ? <AllWorkflows workflows={data?.workflows} byId={byId} /> : <AllOverview data={data} projects={projects} byId={byId} />}</div>
+  return <div class="page">{section === 'workflows' ? <AllWorkflows workflows={data?.workflows} byId={byId} /> : <AllOverview data={data} projects={projects} byId={byId} importText={importText} />}</div>
 }
 
 const threadHref = (t: Of<Thread>) => `#/all/inbox/${t.projectId}/${t.id}`
@@ -74,7 +74,7 @@ function dayOf(iso: string) {
 const EARLIER = 12
 
 // First what waits for you, then what runs and what is new, then the rest as a quieter archive.
-function AllOverview({ data, projects, byId }: { data?: Overview; projects: Project[]; byId: Map<string, Project> }) {
+function AllOverview({ data, projects, byId, importText }: { data?: Overview; projects: Project[]; byId: Map<string, Project>; importText?: string }) {
   const [only, setOnly] = useState<string | null>(null)
   const [more, setMore] = useState(false)
   const threads = data?.threads ?? []
@@ -113,7 +113,7 @@ function AllOverview({ data, projects, byId }: { data?: Overview; projects: Proj
             </button>
           ))}
         </div>
-        <StartAnywhere projects={projects} initial={only} />
+        <StartAnywhere projects={projects} initial={only} importText={importText} />
 
         {data && (
           <>
@@ -506,14 +506,27 @@ function AddToBacklog({ projects, initial }: { projects: Project[]; initial: str
 }
 
 // A new conversation in any project, without opening it first.
-function StartAnywhere({ projects, initial, autoFocus }: { projects: Project[]; initial: string | null; autoFocus?: boolean }) {
+function StartAnywhere({ projects, initial, autoFocus, importText }: { projects: Project[]; initial: string | null; autoFocus?: boolean; importText?: string }) {
   const [chosen, setChosen] = useState<string | null>(null)
   const [menu, setMenu] = useState(false)
-  const project = projects.find((p) => p.id === (chosen ?? initial)) ?? projects.find((p) => p.pinned) ?? projects[0]
+  const kontor = projects.find((p) => p.type === 'kontor')
+  const automatic = !!kontor && (importText !== undefined || (chosen ?? initial ?? 'auto') === 'auto')
+  const project = automatic ? kontor : projects.find((p) => p.id === (chosen ?? initial)) ?? projects.find((p) => p.pinned) ?? projects[0]
   const [agent, setAgent] = useState<AgentConfig | null>(null)
+  const [imported, setImported] = useState(false)
   if (!project) return null
+  const consumeImport = () => {
+    setChosen(automatic ? 'auto' : project.id)
+    setAgent(null)
+    setImported(true)
+    const [route, query] = location.hash.split('?')
+    const params = new URLSearchParams(query)
+    params.delete('text')
+    history.replaceState(null, '', `${location.pathname}${location.search}${route}${params.size ? `?${params}` : ''}`)
+    dispatchEvent(new HashChangeEvent('hashchange'))
+  }
   const send = async (text: string, attachments: Attachment[]) => {
-    const t = await api<Thread>('POST', `/projects/${project.id}/threads`, { text, attachments, agent: agent ?? project.agent })
+    const t = await api<Thread>('POST', `/projects/${project.id}/threads`, { text, attachments, agent: agent ?? project.agent, inbox: automatic })
     go(`/all/inbox/${project.id}/${t.id}`)
   }
   const choose = (pid: string) => {
@@ -525,10 +538,11 @@ function StartAnywhere({ projects, initial, autoFocus }: { projects: Project[]; 
     <div class="start-anywhere">
       <div class="menu-anchor">
         <button class="pill" onClick={() => setMenu(!menu)}>
-          Start in <Avatar project={project} /> {project.name} <ChevronDown size={14} />
+          Start in {automatic ? `Automatic · via ${project.name}` : <><Avatar project={project} /> {project.name}</>} <ChevronDown size={14} />
         </button>
         {menu && (
           <div class="menu">
+            {kontor && <button onClick={() => choose('auto')}>Automatic · via {kontor.name}</button>}
             {projects.map((p) => (
               <button key={p.id} onClick={() => choose(p.id)}>
                 <Avatar project={p} /> {p.name}
@@ -537,7 +551,8 @@ function StartAnywhere({ projects, initial, autoFocus }: { projects: Project[]; 
           </div>
         )}
       </div>
-      <Composer key={project.id} project={project} agent={agent ?? project.agent} setAgent={setAgent} onSend={send} placeholder={`Start a conversation in ${project.name}…`} autoFocus={autoFocus} />
+      {imported && <p class="muted">From your shortcut · review and send</p>}
+      <Composer key={project.id} project={project} agent={agent ?? project.agent} setAgent={setAgent} onSend={send} placeholder={automatic ? 'What needs doing? Projects are chosen automatically…' : `Start a conversation in ${project.name}…`} autoFocus={autoFocus} importText={importText} onImport={consumeImport} />
     </div>
   )
 }

@@ -347,9 +347,10 @@ route('GET', '/projects/:pid/threads', (params) => {
 })
 route('POST', '/projects/:pid/threads', (params, b, ctx) => {
   const p = project(params)
+  if (b.inbox === true && p.type !== 'kontor') throw new BadRequest('Automatic routing needs a Kontor project.')
   const agent = agentFrom(ctx, p.agent, b.agent ?? {})
   const worktree = typeof b.worktree === 'string' && b.worktree.trim() ? git.addWorktree(p, b.worktree.trim()) : null
-  const t = store.createThread(p, { title: b.text || 'New conversation', agent, worktree })
+  const t = store.createThread(p, { title: b.text || 'New conversation', agent, worktree, inbox: b.inbox === true })
   if (b.agent && ctx.auth.origin === 'local') store.updateProject(p.id, { agent })
   emit({ type: 'thread', projectId: p.id, threadId: t.id })
   agents.send(p, t.id, inputFrom(b, ctx, p, t.id))
@@ -410,6 +411,18 @@ route('GET', '/projects/:pid/threads/:tid', (params) => {
   }
 })
 route('GET', '/projects/:pid/threads/:tid/activity', (params) => store.readActivity(project(params), params.tid))
+route('GET', '/projects/:pid/threads/:tid/links', (params) => {
+  const p = project(params)
+  const t = store.getThread(p, params.tid)
+  const projects = store.listProjects()
+  const sourceProject = projects.find((p) => p.id === t.routedFrom?.projectId)
+  const sourceThread = sourceProject && store.listThreads(sourceProject).find((s) => s.id === t.routedFrom?.threadId)
+  const link = (p: store.Project, t: store.Thread) => ({ project: { id: p.id, name: p.name, tint: p.tint }, thread: listed(p, t) })
+  return {
+    source: sourceProject && sourceThread ? link(sourceProject, sourceThread) : null,
+    targets: projects.flatMap((target) => store.listThreads(target).filter((s) => s.routedFrom?.projectId === p.id && s.routedFrom.threadId === t.id).map((s) => link(target, s))),
+  }
+})
 route('PATCH', '/projects/:pid/threads/:tid', (params, b, ctx) => {
   const p = project(params)
   const patch: Partial<store.Thread> = {}

@@ -22,6 +22,8 @@ interface Props {
   onStop?: () => void
   placeholder: string
   draft?: string
+  importText?: string
+  onImport?: () => void
   picked?: Picked[]
   clearPicked?: (i: number) => void // -1 clears all
   // Line comments from the changes view go along with the next message.
@@ -72,6 +74,16 @@ export function Composer(props: Props) {
   const [text, setText] = useState(() => localStorage.getItem(draftKey) ?? '')
   // Saved in the same tick as the keystroke: leaving the conversation right away must not lose it.
   useLayoutEffect(() => (text ? localStorage.setItem(draftKey, text) : localStorage.removeItem(draftKey)), [text])
+  const importedText = useRef<string>()
+  useLayoutEffect(() => {
+    if (props.importText === undefined) { importedText.current = undefined; return }
+    if (importedText.current === props.importText) return
+    importedText.current = props.importText
+    const merged = [text.trimEnd(), props.importText].filter(Boolean).join('\n\n')
+    localStorage.setItem(draftKey, merged)
+    setText(merged)
+    props.onImport?.()
+  }, [props.importText])
   const [files, setFiles] = useState<(Attachment & { image: boolean })[]>([])
   const [error, setError] = useState('')
   const [voiceSetup, setVoiceSetup] = useState(false)

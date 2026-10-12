@@ -138,6 +138,8 @@ export interface Thread {
   ciWatch?: { sha: string } | null
   context?: { tokens: number; window: number | null } | null
   parentId?: string
+  inbox?: boolean
+  routedFrom?: { projectId: string; threadId: string }
   fork?: { provider: string; sessionId: string | null }
   agentSessions: { provider: string; sessionId: string }[]
   worktree?: { branch: string; path: string } | null

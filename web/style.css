@@ -1260,6 +1260,8 @@ details.box[open] > summary .chev { transform: rotate(180deg); }
   .workspace { padding: 16px; }
   .workspace-grid { grid-template-columns: 1fr; }
 }
+.routing-links { display: flex; flex-wrap: wrap; gap: 8px 16px; padding: 10px 20px; border-bottom: 1px solid var(--line); font-size: 12px; }
+.routing-links a { display: flex; align-items: center; gap: 7px; min-width: 0; overflow-wrap: anywhere; }
 
 /* ---- dock: the project's panels on a computer ---- */
 .dock { position: relative; width: 100%; height: 100%; overflow: hidden; }
