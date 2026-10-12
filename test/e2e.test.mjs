@@ -2599,6 +2599,38 @@ test('agents wait for CI without holding their turn, and Savor continues the req
   assert.deepEqual([after.thread.ciWatch, after.messages.filter((m) => m.kind === 'conclusion').length], [null, 1])
 })
 
+test('the status bar shows the running CI runs after a push, and a failed run until it is dismissed', { timeout: 90_000 }, async () => {
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
+  const ago = (s) => new Date(Date.now() - s * 1000).toISOString()
+  const listed = (id, number, status, conclusion, startedAt, updatedAt = startedAt) => ({ databaseId: id, number, workflowName: 'CI', workflowDatabaseId: 1, status, conclusion, url: `https://github.com/acme/app/actions/runs/${id}`, createdAt: startedAt, startedAt, updatedAt })
+  const earlier = [listed(1, 10, 'completed', 'success', ago(4000), ago(3700)), listed(2, 11, 'completed', 'success', ago(3000), ago(2500)), listed(3, 9, 'completed', 'failure', ago(5000), ago(4900))]
+  const gh = (live) => fs.writeFileSync(AGENT_LOG + '.gh.json', JSON.stringify({ live, jobs: { 4: [{ status: 'completed', steps: [{ status: 'completed' }, { status: 'completed' }] }, { status: 'in_progress', steps: [{ status: 'completed' }, { status: 'in_progress' }, { status: 'queued' }] }] } }))
+  gh([listed(4, 12, 'in_progress', '', ago(40)), ...earlier])
+  await page.goto(`${base}/#/p/${project.id}`)
+
+  // A push renames the new remote-tracking ref into .git/refs/remotes/origin; nothing is asked before.
+  const refs = path.join(PROJECT, '.git', 'refs', 'remotes', 'origin')
+  fs.mkdirSync(refs, { recursive: true })
+  let n = 0
+  await until(async () => {
+    fs.writeFileSync(path.join(refs, `push-${n++}`), gitIn(PROJECT, 'rev-parse', 'HEAD'))
+    await new Promise((r) => setTimeout(r, 2000))
+    return (await api('GET', '/ci')).body.length > 0
+  }, 40_000)
+  const [run] = (await api('GET', '/ci')).body
+  assert.deepEqual({ ...run, startedAt: undefined }, { id: 4, projectId: project.id, project: project.name, workflow: 'CI', number: 12, url: 'https://github.com/acme/app/actions/runs/4', status: 'in_progress', failed: false, startedAt: undefined, done: 3, total: 5, typicalMs: 400_000 })
+  await page.waitForSelector('.statusbar .ci-run:has-text("#12 CI 3/5")')
+  assert.match(await page.locator('.statusbar .ci-run').innerText(), /\+\d:\d\d ~\d:\d\d/)
+
+  // The run fails: it stays red until it is dismissed. The failure before the push is not shown.
+  gh([listed(4, 12, 'completed', 'failure', ago(60), ago(1)), ...earlier])
+  await page.waitForSelector('.statusbar .ci-run.failed:has-text("#12 CI failed")', { timeout: 30_000 })
+  await page.click('.statusbar .ci-dismiss')
+  await page.waitForSelector('.statusbar .ci-run', { state: 'detached' })
+  assert.deepEqual((await api('GET', '/ci')).body, [])
+  for (let i = 0; i < n; i++) fs.rmSync(path.join(refs, `push-${i}`))
+})
+
 test("the header shows how full the agent's context window is", async () => {
   const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
   await page.goto(`${base}/#/p/${project.id}`)

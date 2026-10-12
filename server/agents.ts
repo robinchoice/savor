@@ -609,6 +609,7 @@ async function fallBack(p: Project, tid: string, provider: Provider, resetsAt: n
 // and continues the request with their result. A failure after the agent concluded goes to the user.
 export function watchCi(p: Project, tid: string, sha: string) {
   setCi(p, tid, { sha, since: store.now(), inputId: request(p, tid).inputId })
+  ci.wake(p.id)
   emit({ type: 'status', projectId: p.id, threadId: tid })
 }
 

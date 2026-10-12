@@ -2,7 +2,7 @@ import type { ServerResponse } from 'node:http'
 import { VERSION } from './config.js'
 
 export interface SavorEvent {
-  type: 'connected' | 'message' | 'thread' | 'status' | 'activity' | 'documents' | 'workflows' | 'processes' | 'projects' | 'browser' | 'devices' | 'notify' | 'presets' | 'terminal' | 'review' | 'backlog' | 'restart' | 'settings' | 'voice'
+  type: 'connected' | 'message' | 'thread' | 'status' | 'activity' | 'documents' | 'workflows' | 'processes' | 'projects' | 'browser' | 'devices' | 'notify' | 'presets' | 'terminal' | 'review' | 'backlog' | 'restart' | 'settings' | 'voice' | 'ci'
   projectId?: string
   threadId?: string
   title?: string

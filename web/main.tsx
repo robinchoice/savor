@@ -19,7 +19,7 @@ import { BugButton } from './BugButton'
 import { AddProject, SetupWizard } from './Setup'
 import { setPrefs, usePrefs } from './prefs'
 import { ShortcutsDialog, useShortcut, type Action } from './Shortcuts'
-import { UsageMeter } from './Usage'
+import { StatusBar } from './StatusBar'
 import '@fontsource-variable/geist'
 import '@fontsource-variable/geist-mono'
 import './style.css'
@@ -163,6 +163,7 @@ function App() {
         )}
       </main>
       {!docked && terminal}
+      {!narrow && <StatusBar />}
       {me.origin === 'local' && <PairingRequests />}
     </div>
   )
@@ -320,7 +321,6 @@ function TopBar({ projects, active, all, me, setMe }: { projects: Project[]; act
       {tabMenu && <TabMenu project={tabMenu.project} at={tabMenu} fix={() => fixUpTo(sorted.map((p) => p.id), tabMenu.project.id)} close={() => setTabMenu(null)} />}
       <div class="topbar-right">
         <WorkflowButtons />
-        <UsageMeter />
         <div class="menu-anchor">
           <button class="pill" onClick={() => setMenu(menu === 'projects' ? null : 'projects')}>
             <FolderOpen size={15} /> Projects <ChevronDown size={14} />

@@ -27,6 +27,7 @@ import { antigravityAside } from './antigravity.js'
 import { isUnsafe, listAgents, listSkills, listUsage, mergeAgent } from './providers.js'
 import { nextRun, runEarly, runs, runWorkflow, syncSchedules, validateCron } from './scheduler.js'
 import * as git from './git.js'
+import * as ci from './ci.js'
 import { deleteSessions, importSessions, listSessions } from './import.js'
 import * as voice from './voice.js'
 import * as workspace from './workspace.js'
@@ -147,6 +148,8 @@ route('PUT', '/devices/address', (_, b, ctx) => {
 })
 route('GET', '/agents', (_, __, ctx) => listAgents(ctx.query.has('refresh')))
 route('GET', '/usage', () => listUsage())
+route('GET', '/ci', () => ci.liveRuns())
+route('POST', '/ci/dismiss', (_, b) => (ci.dismiss(Number(b.id)), { ok: true }))
 // The agent new projects start with.
 route('GET', '/agent', () => store.state().agent ?? store.defaultAgent())
 route('PUT', '/agent', (_, b, ctx) => {
@@ -1071,6 +1074,7 @@ http
     processes.watchProcesses()
     startRelay()
     startUsagePing()
+    ci.startCiMonitor()
     if (process.env.SAVOR_EXIT_ON_UPDATE) exitOnUpdate(process.env.SAVOR_EXIT_ON_UPDATE)
     agents.resumeInterrupted()
     console.log(`Savor running — open ${PUBLIC_URL}/?token=${store.state().token}`)

@@ -60,7 +60,13 @@ export function UsageBars({ usage }: { usage: Usage }) {
   )
 }
 
-export function UsageMeter() {
+// "Weekly · Fable" → "Fable", "5 hours" → "5h": short enough for the status bar.
+const short = (label: string) =>
+  label.replace(/^Weekly · /, '').replace(/^Weekly$/, 'week').replace(/^(\d+) (h|d|m)\w*$/, '$1$2')
+
+// The limits in the status bar: per agent the least that is left as a bar, then each limit. A click shows
+// when they reset.
+export function UsageStatus() {
   const usage = useUsage()
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -73,20 +79,27 @@ export function UsageMeter() {
   if (!usage.length) return null
   const stale = usage.some((u) => u.stale)
   const least = (u: Usage) => Math.min(...u.windows.map(left))
-  const title = `Subscription limits left: ${usage.map((u) => `${u.name} ${least(u)}%`).join(', ')}`
   return (
-    <div class="menu-anchor wide-only" ref={ref}>
-      <button class={`pill usage-pill ${stale ? 'stale' : ''}`} title={stale ? UPDATING : title} onClick={() => setOpen(!open)}>
+    <div class="menu-anchor" ref={ref}>
+      <button class={`status-usage ${stale ? 'stale' : ''}`} title={stale ? UPDATING : 'Subscription limits: when they reset'} onClick={() => setOpen(!open)}>
         {stale && <span class="spinner small" />}
         {usage.map((u) => (
-          <span key={u.provider} class={least(u) <= 10 ? 'low' : ''}>
+          <span key={u.provider} class="status-agent">
             <ProviderIcon provider={u.provider} size={13} />
-            {least(u)}%
+            <span class="mini-bar">
+              <i class={least(u) <= 10 ? 'low' : ''} style={{ width: `${least(u)}%` }} />
+            </span>
+            {u.windows.map((w, i) => (
+              <span key={w.label}>
+                {i > 0 && <span class="muted"> · </span>}
+                <b class={left(w) <= 10 ? 'low' : ''}>{left(w)}%</b> <span class="muted">left {short(w.label)}</span>
+              </span>
+            ))}
           </span>
         ))}
       </button>
       {open && (
-        <div class="menu right usage">
+        <div class="menu up usage">
           {usage.map((u) => (
             <Fragment key={u.provider}>
               <div class="menu-label">
