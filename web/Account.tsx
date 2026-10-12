@@ -296,9 +296,9 @@ function RelayRow({ onClose }: { onClose: () => void }) {
 
 // Updates of the desktop app, and the restart of the daemon (as a service) into an installed update.
 function UpdateSettings() {
-  const [settings] = useApi<{ autoUpdate: boolean; autoRestart: boolean; service: boolean }>('/settings', (e) => e.type === 'settings')
+  const [settings] = useApi<{ autoUpdate: boolean; autoRestart: boolean; service: boolean; usagePing: boolean | null }>('/settings', (e) => e.type === 'settings')
   if (!settings) return null
-  const toggle = (key: 'autoUpdate' | 'autoRestart') => api('PATCH', '/settings', { [key]: !settings[key] })
+  const toggle = (key: 'autoUpdate' | 'autoRestart' | 'usagePing') => api('PATCH', '/settings', { [key]: !settings[key] })
   return (
     <>
       {desktop && (
@@ -316,6 +316,17 @@ function UpdateSettings() {
             <small class="muted">Otherwise Savor asks before it restarts</small>
           </span>
           <button class={`switch ${settings.autoRestart ? 'on' : ''}`} role="switch" aria-checked={settings.autoRestart} onClick={() => toggle('autoRestart')}>
+            <i />
+          </button>
+        </div>
+      )}
+      {settings.usagePing !== null && (
+        <div class="setting">
+          <span>
+            Count this installation
+            <small class="muted">Once a day, a random ID, the version and the platform, so we know how many people use Savor</small>
+          </span>
+          <button class={`switch ${settings.usagePing ? 'on' : ''}`} role="switch" aria-checked={settings.usagePing} onClick={() => toggle('usagePing')}>
             <i />
           </button>
         </div>

@@ -153,6 +153,18 @@ SAVOR_HOST=0.0.0.0 SAVOR_PUBLIC_URL=http://my-desktop.tailnet.ts.net:4317 npm st
 
 Without a connected relay, the pairing QR code points at `SAVOR_PUBLIC_URL`.
 
+## Usage ping
+
+The desktop app counts its installations with one anonymous ping a day to the relay at `savor.diespaetzles.lol`. It sends exactly this:
+
+```json
+{ "id": "random, made on your computer", "version": "0.6.20", "platform": "linux", "internal": false }
+```
+
+The ID is 16 random bytes, unrelated to your computer or anything else. `internal` is true only on the maker's own computers. Nothing else is sent: no projects, no conversations, no names. The relay stores the ID per day without IP addresses, deletes IDs it hasn't seen for 90 days and keeps only weekly sums after that ([`relay/usage.ts`](relay/usage.ts), [`server/usage.ts`](server/usage.ts)). Switch it off in the account menu under App settings → **Count this installation**. Savor run from source or with `npm start` sends nothing.
+
+To mark an installation as internal, set `"internal": true` in `~/.savor/state.json` and restart Savor.
+
 ## Configuration
 
 | Variable | Default | |
@@ -165,6 +177,9 @@ Without a connected relay, the pairing QR code points at `SAVOR_PUBLIC_URL`.
 | `RELAY_WEB_DIR` | `dist/web` | Relay only: web app to serve |
 | `RELAY_TRUST_PROXY` | off | Relay only: set to `1` behind a reverse proxy, so rate limits use `X-Forwarded-For` |
 | `RELAY_MAX_DAEMONS` | `5000` | Relay only: computers that can be connected at once |
+| `RELAY_DB` | in memory | Relay only: SQLite file for the installation counts |
+| `RELAY_USAGE_TOKEN` | – | Relay only: bearer token for `GET /usage`, the weekly installation counts |
+| `SAVOR_USAGE_URL` | set by the desktop app | Where the daily usage ping goes; unset, nothing is sent |
 | `SAVOR_CHROMIUM` | Playwright Chromium, then system Chrome/Chromium | Browser for the preview |
 | `SAVOR_CLAUDE_BIN`, `SAVOR_CODEX_BIN`, `SAVOR_OPENCODE_BIN`, `SAVOR_GROK_BIN`, `SAVOR_ANTIGRAVITY_BIN` | `claude`, `codex`, `opencode`, `grok`, `agy` | Agent binaries |
 | `SAVOR_ANTIGRAVITY_HOME` | `~/.gemini` | Where agy keeps its settings |
@@ -195,10 +210,12 @@ server/
   files.ts      project file access
   awake.ts      keep-awake inhibitor
   relay-client.ts  outbound relay connection, serves tunneled devices
+  usage.ts      the anonymous daily usage ping
 shared/
   tunnel.ts     end-to-end encryption for the relay tunnel (noble crypto)
 relay/
   server.ts     the relay: daemon login, device routing, serves the web app
+  usage.ts      counts installations from their daily ping
 web/            Preact PWA (CodeMirror and TipTap load on demand for the editors)
 recipes/        workflow gallery: markdown with front matter, bundled into the UI
 desktop/        Electron shell and installers (electron-builder)

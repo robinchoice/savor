@@ -32,6 +32,8 @@ function shellPath() {
 
 function daemonEnv() {
   const env = { ...process.env, ELECTRON_RUN_AS_NODE: '1', SAVOR_PORT: String(PORT), PATH: shellPath() }
+  // Installed apps send the anonymous daily usage ping (server/usage.ts), builds run from source don't.
+  if (app.isPackaged) env.SAVOR_USAGE_URL ??= 'https://savor.diespaetzles.lol/usage'
   // Inside an AppImage, library paths point into the image and break tools the agents run.
   if (process.env.APPDIR) for (const key of ['LD_LIBRARY_PATH', 'PYTHONHOME', 'PYTHONPATH']) if (env[key]?.includes(process.env.APPDIR)) delete env[key]
   return env

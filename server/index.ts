@@ -15,6 +15,7 @@ import * as files from './files.js'
 import * as awake from './awake.js'
 import * as terminal from './terminal.js'
 import { closeDevice, pairingLink, relayStatus, startRelay } from './relay-client.js'
+import { startUsagePing, usageAvailable } from './usage.js'
 import { newNonce, securityHeaders, withNonce } from '../shared/headers.js'
 import { fanoutBranches } from '../shared/fanout.js'
 import { handleMcp } from './mcp.js'
@@ -1019,13 +1020,20 @@ route('POST', '/restart', () => {
   restartNow()
 })
 // `service`: the daemon restarts itself after updates, so the setting for that applies.
-const settings = () => ({ autoUpdate: store.state().autoUpdate !== false, autoRestart: store.state().autoRestart !== false, service: !!process.env.SAVOR_EXIT_ON_UPDATE })
+// `usagePing`: null where nothing is sent anyway, see usage.ts.
+const settings = () => ({
+  autoUpdate: store.state().autoUpdate !== false,
+  autoRestart: store.state().autoRestart !== false,
+  service: !!process.env.SAVOR_EXIT_ON_UPDATE,
+  usagePing: usageAvailable() ? store.state().usagePing !== false : null,
+})
 route('GET', '/settings', () => settings())
 route('PATCH', '/settings', (_, b, ctx) => {
   localOnly(ctx)
   const s = store.state()
   if (typeof b.autoUpdate === 'boolean') s.autoUpdate = b.autoUpdate
   if (typeof b.autoRestart === 'boolean') s.autoRestart = b.autoRestart
+  if (typeof b.usagePing === 'boolean') s.usagePing = b.usagePing
   store.saveState(s)
   emit({ type: 'settings' })
   if (restart.updated && typeof b.autoRestart === 'boolean') scheduleRestart()
@@ -1052,6 +1060,7 @@ http
     syncSchedules()
     processes.watchProcesses()
     startRelay()
+    startUsagePing()
     if (process.env.SAVOR_EXIT_ON_UPDATE) exitOnUpdate(process.env.SAVOR_EXIT_ON_UPDATE)
     agents.resumeInterrupted()
     console.log(`Savor running — open ${PUBLIC_URL}/?token=${store.state().token}`)

@@ -15,6 +15,7 @@ import * as tunnel from '../shared/tunnel.ts'
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..')
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'savor-relay-'))
 const TAP = path.join(TMP, 'tap.log')
+const USAGE_DB = path.join(TMP, 'usage.db')
 const children = []
 let browser, page, daemonBase, relayBase, token
 
@@ -69,7 +70,7 @@ before(async () => {
   const [daemonPort, relayPort] = [await freePort(), await freePort()]
   daemonBase = `http://127.0.0.1:${daemonPort}`
   relayBase = `http://127.0.0.1:${relayPort}`
-  await start('dist/relay/server.mjs', { RELAY_PORT: String(relayPort), RELAY_TAP_FILE: TAP, RELAY_HANDSHAKE_TIMEOUT_MS: String(HANDSHAKE_MS) }, 'Savor relay listening')
+  await start('dist/relay/server.mjs', { RELAY_PORT: String(relayPort), RELAY_TAP_FILE: TAP, RELAY_HANDSHAKE_TIMEOUT_MS: String(HANDSHAKE_MS), RELAY_DB: USAGE_DB, RELAY_USAGE_TOKEN: 'usage-token' }, 'Savor relay listening')
   await start(
     'dist/server/index.mjs',
     {
@@ -77,6 +78,7 @@ before(async () => {
       SAVOR_PORT: String(daemonPort),
       SAVOR_CLAUDE_BIN: path.join(ROOT, 'test/fake-claude.mjs'),
       SAVOR_TUNNEL_HANDSHAKE_MS: String(HANDSHAKE_MS),
+      SAVOR_USAGE_URL: relayBase + '/usage',
     },
     'Savor running',
   )
@@ -294,6 +296,35 @@ test('a relay that accepts but never answers does not leave the daemon connectin
     await local('PUT', '/relay', { url: relayBase, enabled: true })
     await until(async () => (await local('GET', '/relay')).state === 'online')
   }
+})
+
+test('the relay counts installations from their daily ping, and keeps the counts across a restart', async () => {
+  const usage = (base, token = 'usage-token') => fetch(base + '/usage', { headers: { authorization: `Bearer ${token}` } })
+  const ping = (body) => fetch(relayBase + '/usage', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+  await until(async () => (await (await usage(relayBase)).json()).active7.external === 1)
+  const state = JSON.parse(fs.readFileSync(path.join(TMP, 'home/state.json'), 'utf8'))
+  assert.match(state.installId, /^[\w-]{22}$/)
+  assert.ok(state.usagePingedAt)
+  assert.equal((await local('GET', '/settings')).usagePing, true)
+
+  assert.equal((await ping({ id: 'x'.repeat(22), version: '1.0.0', platform: 'darwin', internal: true })).status, 204)
+  for (const bad of [{ id: 'short', version: '1.0.0', platform: 'linux', internal: false }, { id: 'y'.repeat(22), version: '<b>', platform: 'linux', internal: false }, { id: 'y'.repeat(22), version: '1.0.0', platform: 'beos', internal: false }, { id: 'y'.repeat(22), version: '1.0.0', platform: 'linux' }])
+    assert.equal((await ping(bad)).status, 400)
+  assert.equal((await usage(relayBase, 'wrong')).status, 401)
+
+  // A second relay on the same database, as after a redeploy.
+  const port = await freePort()
+  await start('dist/relay/server.mjs', { RELAY_PORT: String(port), RELAY_DB: USAGE_DB, RELAY_USAGE_TOKEN: 'usage-token' }, 'Savor relay listening')
+  const counts = await (await usage(`http://127.0.0.1:${port}`)).json()
+  assert.deepEqual(counts.active7, { internal: 1, external: 1 })
+  const version = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version
+  assert.deepEqual(
+    counts.weeks.map(({ week, ...rest }) => rest).sort((a, b) => a.platform.localeCompare(b.platform)),
+    [
+      { internal: true, platform: 'darwin', version: '1.0.0', installs: 1 },
+      { internal: false, platform: process.platform, version, installs: 1 },
+    ],
+  )
 })
 
 test('spoofed X-Forwarded-For does not bypass the rate limit', async () => {

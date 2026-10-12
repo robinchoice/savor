@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url'
 import { WebSocketServer, type WebSocket } from 'ws'
 import { daemonId, publicKey, relayChallenge } from '../shared/tunnel.js'
 import { newNonce, securityHeaders, withNonce } from '../shared/headers.js'
+import * as usage from './usage.js'
 
 const PORT = Number(process.env.RELAY_PORT ?? 8787)
 const HERE = path.dirname(fileURLToPath(import.meta.url))
@@ -25,6 +26,8 @@ const MAX_DAEMONS = Number(process.env.RELAY_MAX_DAEMONS ?? 5000)
 const MAX_DEVICES_PER_DAEMON = 32
 const MAX_DEVICES_PER_IP_PER_DAEMON = 8
 const CONNECTS_PER_MINUTE = 60
+// Lets GET /usage read the installation counts; without it, /usage only takes pings.
+const USAGE_TOKEN = process.env.RELAY_USAGE_TOKEN
 // For tests: append every forwarded payload so they can check that no plaintext passes through.
 const TAP = process.env.RELAY_TAP_FILE
 
@@ -159,7 +162,34 @@ function acceptDevice(socket: WebSocket, id: string, ip: string) {
   })
 }
 
-const server = http.createServer(serveStatic)
+// POST: an installation's daily ping. GET: the counts, sums only.
+function serveUsage(req: http.IncomingMessage, res: http.ServerResponse) {
+  const reply = (status: number, body?: object) => res.writeHead(status, body && { 'content-type': 'application/json' }).end(body && JSON.stringify(body))
+  if (req.method === 'GET') {
+    const auth = req.headers.authorization ?? ''
+    const hash = (s: string) => crypto.createHash('sha256').update(s).digest()
+    if (!USAGE_TOKEN || !crypto.timingSafeEqual(hash(auth), hash(`Bearer ${USAGE_TOKEN}`))) return reply(401)
+    return reply(200, usage.summary())
+  }
+  if (req.method !== 'POST') return reply(405)
+  if (rateLimited(clientIp(req))) return reply(429)
+  let body = ''
+  req.on('data', (chunk) => {
+    body += chunk
+    if (body.length > 1024) req.destroy()
+  })
+  req.on('end', () => {
+    const ping = usage.parsePing(parse(body) ?? {})
+    if (!ping) return reply(400)
+    usage.record(ping)
+    reply(204)
+  })
+}
+
+usage.prune()
+setInterval(() => usage.prune(), 3_600_000).unref()
+
+const server = http.createServer((req, res) => (new URL(req.url ?? '/', 'http://x').pathname === '/usage' ? serveUsage(req, res) : serveStatic(req, res)))
 const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_FRAME })
 
 server.on('upgrade', (req, socket, head) => {

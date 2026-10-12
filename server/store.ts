@@ -178,6 +178,12 @@ interface State {
   autoUpdate?: boolean
   // Whether the daemon, run as a service, restarts by itself once an update was installed.
   autoRestart?: boolean
+  // The anonymous daily usage ping (usage.ts): off when false; the random installation ID, when the
+  // last ping went out, and whether this is one of the maker's own installations.
+  usagePing?: boolean
+  installId?: string
+  usagePingedAt?: string
+  internal?: boolean
   // The agent new projects start with, else defaultAgent().
   agent?: AgentConfig
   // The daemon's long-term X25519 key for the relay tunnel (base64url secret key).
