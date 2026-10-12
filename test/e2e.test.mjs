@@ -300,12 +300,24 @@ test('picked answers stay with their conversation until they are sent', async ()
   assert.equal(await page.evaluate((id) => localStorage.getItem(`savor-answers:${id}`), asked.split('/').at(-1)), null)
 })
 
-test('Enter sends the answers from a picked option', async () => {
+test('Enter sends the answers from a picked option, Alt+Enter also opens the next conversation', async () => {
+  await newConversation()
+  await send('ask: Ship it?')
+  await page.waitForSelector('.option')
+  // With another conversation waiting, Enter still only sends.
   await newConversation()
   await send('ask: Ship it?')
   await page.click('.option:has-text("Yes")')
+  const here = await page.evaluate(() => location.hash)
   await page.keyboard.press('Enter')
   await page.waitForSelector('text=Selected: Yes')
+  assert.equal(await page.evaluate(() => location.hash), here)
+  await newConversation()
+  await send('ask: Ship it?')
+  await page.click('.option:has-text("Yes")')
+  const last = await page.evaluate(() => location.hash)
+  await page.keyboard.press('Alt+Enter')
+  await page.waitForFunction((h) => location.hash !== h, last)
 })
 
 test('a comment can be sent before every question is answered', async () => {

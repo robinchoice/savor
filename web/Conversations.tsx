@@ -1469,11 +1469,11 @@ function Questions({ decisions, active, answers, setAnswer }: { decisions: Decis
   return (
     <div
       class="questions"
-      // A click on an option leaves the focus there, so Enter sends from the options like from the comment box.
+      // A click on an option leaves the focus there, so Enter sends from the options like from the comment box, Alt+Enter also opens the next conversation.
       onKeyDown={(e) => {
         if (open && e.key === 'Enter' && !e.shiftKey && !e.isComposing && ['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement).tagName)) {
           e.preventDefault()
-          document.querySelector<HTMLButtonElement>('.composer.answering button.send')?.click()
+          document.querySelector<HTMLButtonElement>(`.composer.answering button.send.${e.altKey ? 'next' : 'wide'}`)?.click()
         }
       }}
     >

@@ -216,7 +216,7 @@ export function Composer(props: Props) {
         </button>
       )}
       {props.onNext && (
-        <button class="send" title="Send and open the next conversation that needs you" disabled={!canSend} onClick={() => submit(false, true)}>
+        <button class="send next" title="Send and open the next conversation that needs you (Alt+Enter)" disabled={!canSend} onClick={() => submit(false, true)}>
           <ArrowRight size={16} />
         </button>
       )}
@@ -361,7 +361,7 @@ export function Composer(props: Props) {
               setSlashOpen(false)
             } else if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault()
-              submit(e.ctrlKey || e.metaKey)
+              submit(e.ctrlKey || e.metaKey, e.altKey)
             }
           }}
         />
