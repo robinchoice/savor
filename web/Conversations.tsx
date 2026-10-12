@@ -1,4 +1,4 @@
-import { Fragment, render } from 'preact'
+import { Fragment, render, type JSX } from 'preact'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
@@ -18,6 +18,7 @@ import { Fanout } from './Fanout'
 import { setPrefs, usePrefs } from './prefs'
 import { keyLabel, useKey, useShortcut } from './Shortcuts'
 import { runInTerminal, setTerminalHome, showTerminal } from './Terminal'
+import { offerUndo, resetWalk, swipeToFinish, ThumbBar, UndoToast } from './Swipe'
 
 const SHELL = /\blanguage-(bash|sh|shell|zsh)\b/
 
@@ -168,6 +169,13 @@ export function Conversations({ project, threadId, fanoutId, isNew }: { project:
   const plainWorktrees = (worktrees ?? []).filter((w) => !fanoutPaths.has(w.path))
 
   const filtered = { all: open, you: forYou, working }
+  // On a phone the bar below a conversation walks through the list as shown, or all of it for one outside the filter.
+  const all = [...forYou, ...working, ...rest, ...finished]
+  const shown = filter === 'all' ? all : filtered[filter]
+  const siblings = shown.some((t) => t.id === threadId) ? shown : all
+  useEffect(() => {
+    if (!threadId) resetWalk()
+  }, [threadId])
   const tab = (id: keyof typeof filtered, label: string) => (
     <button class={`filter ${filter === id ? 'active' : ''} ${id === 'you' && forYou.length ? 'attention' : ''}`} onClick={() => setFilter(id)}>
       {label} <b>{filtered[id].length}</b>
@@ -244,7 +252,8 @@ export function Conversations({ project, threadId, fanoutId, isNew }: { project:
           <PleasanceFooter />
         </footer>
       </aside>
-      {threadId ? <ThreadView key={threadId} project={project} threadId={threadId} next={nextPaths} /> : fanoutId ? <Fanout key={fanoutId} project={project} id={fanoutId} /> : <NewConversation project={project} />}
+      {threadId ? <ThreadView key={threadId} project={project} threadId={threadId} next={nextPaths} siblings={siblings} /> : fanoutId ? <Fanout key={fanoutId} project={project} id={fanoutId} /> : <NewConversation project={project} />}
+      <UndoToast />
     </div>
   )
 }
@@ -329,6 +338,14 @@ export function ThreadCard({ project, thread: t, active, href = `#/p/${project.i
     e.preventDefault()
     api('PATCH', `/projects/${project.id}/threads/${t.id}`, { completed: true })
   }
+  // A result can be finished with a swipe to the right, and taken back right after.
+  const swipe = (e: PointerEvent) =>
+    swipeToFinish(e, () =>
+      api('PATCH', `/projects/${project.id}/threads/${t.id}`, { completed: true }).then(() =>
+        offerUndo(`Finished: ${t.summary ?? t.title}`, () => api('PATCH', `/projects/${project.id}/threads/${t.id}`, { completed: false })),
+      ),
+    )
+  const swipeable = (card: JSX.Element) => (w?.reason === 'result' ? <div class="swipe-row">{card}</div> : card)
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
   const onContextMenu = (e: MouseEvent) => {
     e.preventDefault()
@@ -347,7 +364,7 @@ export function ThreadCard({ project, thread: t, active, href = `#/p/${project.i
   if (conversations === 'compact' || kind === 'idle' || kind === 'done')
     return (
       <>
-        <a href={href} class={`card compact ${kind} ${active ? 'active' : ''}`} onContextMenu={onContextMenu}>
+        {swipeable(<a href={href} class={`card compact ${kind} ${active ? 'active' : ''}`} onContextMenu={onContextMenu} onPointerDown={w?.reason === 'result' ? swipe : undefined}>
           {ring}
           {avatar}
           <div class="card-title" title={t.title}>{t.summary ?? t.title}</div>
@@ -356,13 +373,13 @@ export function ThreadCard({ project, thread: t, active, href = `#/p/${project.i
             {chip}
             {when}
           </span>
-        </a>
+        </a>)}
         {contextMenu}
       </>
     )
   return (
     <>
-      <a href={href} class={`card ${kind} ${active ? 'active' : ''}`} onContextMenu={onContextMenu}>
+      {swipeable(<a href={href} class={`card ${kind} ${active ? 'active' : ''}`} onContextMenu={onContextMenu} onPointerDown={w?.reason === 'result' ? swipe : undefined}>
         <div class="card-top">
           {avatar}
           {chip}
@@ -402,7 +419,7 @@ export function ThreadCard({ project, thread: t, active, href = `#/p/${project.i
             </button>
           </div>
         )}
-      </a>
+      </a>)}
       {contextMenu}
     </>
   )
@@ -666,7 +683,8 @@ function useNarrow() {
 
 // `back` is where the arrow leads; set outside the project, a second button opens the conversation there.
 // `next` lists the conversations that need you, so Finish & next can open the first other one.
-export function ThreadView({ project, threadId, back, next }: { project: Project; threadId: string; back?: string; next?: string[] }) {
+// `siblings` are the project's conversations in the list's order, for the bar below a conversation on a phone.
+export function ThreadView({ project, threadId, back, next, siblings }: { project: Project; threadId: string; back?: string; next?: string[]; siblings?: Thread[] }) {
   const base = `/projects/${project.id}/threads/${threadId}`
   const [data, reload, loadError] = useApi<ThreadData>(base, (e) => (e.threadId === threadId && ['message', 'thread', 'status'].includes(e.type)) || (e.projectId === project.id && e.type === 'processes'))
   const [activity] = useApi<ActivityEvent[]>(`${base}/activity`, (e) => e.threadId === threadId && (e.type === 'activity' || e.type === 'status'))
@@ -1172,6 +1190,11 @@ export function ThreadView({ project, threadId, back, next }: { project: Project
           </div>
           <ActivityLog events={activity ?? []} />
         </aside>
+      )}
+      {narrow && siblings && (
+        <ThumbBar project={project} threadId={threadId} siblings={siblings}>
+          {siblings.map((t) => <ThreadCard key={t.id} project={project} thread={t} active={t.id === threadId} />)}
+        </ThumbBar>
       )}
     </div>
   )

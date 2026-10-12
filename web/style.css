@@ -629,7 +629,7 @@ main { flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
   .next-btn svg, .prev-btn svg { display: block; }
   .next-btn span, .next-btn kbd, .prev-btn span, .prev-btn kbd { display: none; }
   .conversations.has-detail .conv-list { display: none; }
-  .conversations:not(.has-detail) > :not(.conv-list) { display: none; }
+  .conversations:not(.has-detail) > :not(.conv-list, .undo-toast) { display: none; }
   .files, .split-page { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }
   .file-tree, .side-list { max-height: 35vh; border-right: 0; border-bottom: 1px solid var(--line); }
   .thread-layout { flex-direction: column; }
@@ -653,6 +653,36 @@ main { flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
   .doc, .form { padding: 16px; }
   .menu.wide, .procs, .mention { width: min(92vw, 380px); min-width: 0; }
 }
+
+/* Phone: the bar below a conversation and its sheet; results swipe away to the right */
+.thumb-bar, .peek, .edge-back { display: none; }
+@media (max-width: 860px) {
+  .conversations.has-detail { overflow: hidden; }
+  .thread-layout { position: relative; }
+  .thumb-bar { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 6px; flex: none; padding: 2px 10px calc(4px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); background: var(--bar); touch-action: none; user-select: none; -webkit-user-select: none; }
+  .thumb-bar > button { min-width: 0; padding: 8px 2px; font-size: 12.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; }
+  .thumb-bar > .thumb-next { text-align: right; }
+  .thumb-bar > .thumb-grab { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 6px 10px; font-size: 11px; color: var(--faint); }
+  .thumb-bar.lifting .thumb-grab i { background: var(--link); }
+  .peek { display: block; position: absolute; top: 0; bottom: 0; width: 100%; padding: 14px 16px; background: var(--bg); }
+  .peek.prev { right: 100%; }
+  .peek.next { left: 100%; }
+  .peek h1 { font-size: 20px; }
+  .edge-back { display: block; position: absolute; left: 0; top: 0; bottom: 0; width: 12px; z-index: 6; touch-action: none; }
+}
+.thumb-grab i, .thumb-grabber i { display: block; width: 40px; height: 5px; border-radius: 3px; background: var(--line-strong); }
+.thumb-sheet-wrap { position: fixed; inset: 0; z-index: 40; display: flex; align-items: flex-end; background: var(--band-dim); }
+.thumb-sheet { width: 100%; max-height: 80dvh; display: flex; flex-direction: column; background: var(--panel); border-top: 1px solid var(--line-strong); border-radius: 18px 18px 0 0; padding-bottom: env(safe-area-inset-bottom); animation: sheet-up 0.25s ease-out; }
+.thumb-grabber { display: grid; place-items: center; padding: 10px 0 8px; touch-action: none; }
+@keyframes sheet-up { from { transform: translateY(100%); } }
+.swipe-row { position: relative; flex: none; border-radius: 10px; overflow: hidden; }
+.swipe-row.swiping { background: var(--green); }
+.swipe-row.swiping::before { content: '✓ Finish'; position: absolute; left: 16px; top: 50%; transform: translateY(-50%); color: var(--bg); font-weight: 600; }
+.swipe-row > .card { touch-action: pan-y; }
+.swipe-row.swiping > .card:not(.active) { background: var(--panel); }
+.undo-toast { position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 50; display: flex; align-items: center; gap: 16px; max-width: calc(100vw - 32px); padding: 10px 16px; border-radius: 12px; background: var(--raised); box-shadow: var(--shadow); font-size: 14px; }
+.undo-toast span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.undo-toast button { flex: none; color: var(--link); font-weight: 600; }
 
 /* v0.3: queue, approvals with options, file attachments, find in conversation, presets */
 .msg.user.queued .msg-card { border-style: dashed; opacity: 0.8; }

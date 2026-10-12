@@ -1199,6 +1199,24 @@ test('agents can start conversations in a worktree', async () => {
   await api('DELETE', `/projects/${project.id}/worktrees?path=${encodeURIComponent(child.worktree.path)}`)
 })
 
+test('a conversation whose worktree was removed outside Savor continues in the project folder', async () => {
+  const [project] = (await api('GET', '/projects')).body
+  const thread = (await api('POST', `/projects/${project.id}/threads`, { text: 'in the worktree', worktree: 'feature/gone' })).body
+  const t = `/projects/${project.id}/threads/${thread.id}`
+  await until(async () => (await api('GET', t)).body.messages.some((m) => m.text === 'Echo: in the worktree'))
+  // Removed by hand, so git still lists it as prunable.
+  fs.rmSync(thread.worktree.path, { recursive: true, force: true })
+  assert.equal((await api('GET', `/projects/${project.id}/worktrees`)).body.length, 0)
+  await api('POST', `${t}/messages`, { text: 'still there?' })
+  await until(async () => (await api('GET', t)).body.messages.some((m) => m.text === 'Echo: still there?'))
+  assert.equal(fs.realpathSync(agentRuns().filter((r) => r.agent === 'claude').at(-1).cwd), fs.realpathSync(PROJECT))
+  const after = (await api('GET', t)).body
+  assert.equal(after.thread.worktree, null)
+  assert.ok(after.messages.some((m) => m.kind === 'update' && m.text.includes('feature/gone no longer exists')))
+  gitIn(PROJECT, 'worktree', 'prune')
+  gitIn(PROJECT, 'branch', '-D', 'feature/gone')
+})
+
 test('a new worktree gets the files .worktreeinclude names, and its first turn waits for the project setup', async () => {
   const [project] = (await api('GET', '/projects')).body
   const p = `/projects/${project.id}`
@@ -2608,4 +2626,60 @@ test('the All tab answers questions in place and starts what waits in the backlo
   assert.deepEqual(await call('list_backlog', {}), [])
   await page.waitForSelector('.board-card:has-text("Translate the footer")', { state: 'detached' })
   await client.close()
+})
+
+test('on a phone the bar below a conversation swipes to its neighbours, and a result swipes to Finish', async () => {
+  const [project] = (await api('GET', '/projects')).body
+  const threads = `/projects/${project.id}/threads`
+  const read = async (id) => (await api('GET', `${threads}/${id}`)).body
+  const settled = async (id) => {
+    const d = await read(id)
+    return !d.busy && d.messages.some((m) => m.kind === 'conclusion')
+  }
+  const menu = (await api('POST', threads, { text: 'plan the menu', agent: { provider: 'claude' } })).body
+  const footer = (await api('POST', threads, { text: 'plan the footer', agent: { provider: 'claude' } })).body
+  await until(async () => (await settled(menu.id)) && (await settled(footer.id)))
+  await page.setViewportSize({ width: 390, height: 844 })
+  try {
+    await page.goto(`${base}/#/p/${project.id}/t/${menu.id}`)
+    const bar = await page.waitForSelector('.thumb-bar')
+    const title = (await page.textContent('.thread-head h1')).trim()
+
+    // Dragging the bar to the left opens the next conversation, which leads back with the left title.
+    const box = await bar.boundingBox()
+    const [x, y] = [box.x + box.width / 2, box.y + box.height / 2]
+    await page.mouse.move(x, y)
+    await page.mouse.down()
+    await page.mouse.move(x - 220, y, { steps: 8 })
+    await page.mouse.up()
+    await page.waitForFunction((id) => !location.hash.endsWith(id), menu.id)
+    await page.waitForSelector(`.thumb-prev:has-text("${title}")`)
+
+    // Swiping up shows all conversations of the project; Escape closes them again.
+    await page.mouse.move(x, y)
+    await page.mouse.down()
+    await page.mouse.move(x, y - 120, { steps: 6 })
+    await page.mouse.up()
+    await page.waitForSelector(`.thumb-sheet .card[href="#/p/${project.id}/t/${menu.id}"]`)
+    await page.keyboard.press('Escape')
+    await page.waitForSelector('.thumb-sheet', { state: 'detached' })
+
+    // In the list, a read result swipes to the right to Finish, and Undo opens it again.
+    await page.goto(`${base}/#/p/${project.id}`)
+    const card = `.swipe-row .card[href="#/p/${project.id}/t/${menu.id}"]`
+    await page.waitForSelector(card)
+    await page.evaluate((sel) => {
+      const el = document.querySelector(sel)
+      const r = el.getBoundingClientRect()
+      const at = (type, dx) => el.dispatchEvent(new PointerEvent(type, { pointerId: 7, pointerType: 'touch', clientX: r.left + 20 + dx, clientY: r.top + 10, bubbles: true }))
+      at('pointerdown', 0)
+      for (const dx of [20, 80, 160, 260]) at('pointermove', dx)
+      at('pointerup', 260)
+    }, card)
+    await until(async () => (await read(menu.id)).thread.completed)
+    await page.click('.undo-toast button:text-is("Undo")')
+    await until(async () => !(await read(menu.id)).thread.completed)
+  } finally {
+    await page.setViewportSize({ width: 1400, height: 900 })
+  }
 })
