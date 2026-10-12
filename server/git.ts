@@ -77,7 +77,8 @@ export function listWorktrees(p: Project): Worktree[] {
     // Git prints forward slashes on Windows too.
     const dir = path.normalize(block.match(/^worktree (.+)$/m)?.[1] ?? '')
     const branch = block.match(/^branch refs\/heads\/(.+)$/m)?.[1]
-    if (!dir || !branch || !dir.startsWith(root)) continue
+    // One removed by hand stays listed as prunable until `git worktree prune`.
+    if (!dir || !branch || !dir.startsWith(root) || !fs.existsSync(dir)) continue
     let ahead = 0
     let dirty = false
     try {

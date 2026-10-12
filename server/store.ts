@@ -370,7 +370,8 @@ export function getThread(p: Project, tid: string): Thread {
   return { ...t, agent: upgradeAgent(t.agent) }
 }
 
-export const cwdOf = (p: Project, t: Thread) => t.worktree?.path ?? p.path
+// A worktree removed outside Savor falls back to the project folder.
+export const cwdOf = (p: Project, t: Thread) => (t.worktree && fs.existsSync(t.worktree.path) ? t.worktree.path : p.path)
 
 export function createThread(p: Project, init: { title: string; label?: string | null; agent?: AgentConfig; parentId?: string; fork?: Thread['fork']; worktree?: { branch: string; path: string } | null; workflow?: Thread['workflow']; fanout?: Thread['fanout']; unattended?: boolean }): Thread {
   const t: Thread = {

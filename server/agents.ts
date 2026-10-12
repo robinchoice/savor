@@ -1,5 +1,6 @@
 // Turns, queues and sessions: one agent session per conversation, one turn at a time, input that
 // arrives during a turn waits in the queue.
+import fs from 'node:fs'
 import path from 'node:path'
 import * as store from './store.js'
 import type { AgentConfig, Message, Origin, Project, Provider, Question, Thread } from './store.js'
@@ -160,8 +161,22 @@ export function removeQueued(p: Project, tid: string, mid: string) {
   emit({ type: 'message', projectId: p.id, threadId: tid })
 }
 
+// A worktree removed outside Savor (by an agent or by hand): the conversation continues in the project
+// folder with a fresh agent session, as after removing the worktree in Savor.
+function leaveRemovedWorktree(p: Project, tid: string) {
+  const t = store.getThread(p, tid)
+  if (!t.worktree || fs.existsSync(t.worktree.path)) return
+  const s = sessions.get(tid)
+  sessions.delete(tid)
+  clearTimeout(s?.idleTimer)
+  s?.session.kill()
+  store.updateThread(p, tid, { worktree: null, agentSessions: [], ...(t.fork && { fork: { ...t.fork, sessionId: null } }) })
+  post(p, tid, { kind: 'update', text: `The worktree of branch ${t.worktree.branch} no longer exists. This conversation continues in the project folder.` })
+}
+
 function deliver(p: Project, tid: string, msg: Message) {
   const startedAt = store.now()
+  leaveRemovedWorktree(p, tid)
   const thread = store.updateThread(p, tid, { needsYou: false, workingSince: startedAt })
   store.updateMessage(p, tid, msg.id, { delivered: true })
   requests.set(tid, { inputId: msg.id, startedAt, updates: new Map() })
@@ -308,12 +323,12 @@ function endTurn(p: Project, tid: string, result: { text?: string; error?: strin
 // An agent that has not seen the thread yet gets the visible history handed over: after a switch
 // of agents, and in a fork whose agent has no session to branch off. The excerpt names where the
 // whole of it can be read.
-function handover(p: Project, thread: Thread) {
+function handover(p: Project, thread: Thread, input: Message) {
   const provider = thread.agent.provider
   if (sessionIdOf(thread, provider) || forkOf(p, thread, provider)) return ''
   const earlier = thread.fork && thread.parentId ? store.readMessages(p, thread.parentId).slice(0, thread.fork.messages) : []
-  const history = [...earlier, ...store.readMessages(p, thread.id).slice(0, -1)]
-    .filter((m) => m.text && m.kind !== 'error')
+  const history = [...earlier, ...store.readMessages(p, thread.id)]
+    .filter((m) => m.id !== input.id && m.text && m.kind !== 'error')
     .slice(-30)
     .map((m) => `[${m.from ? `agent message from “${m.from.label}” (${m.from.project})` : m.kind === 'user' ? 'user' : 'agent'}] ${m.text!.slice(0, 2000)}`)
   if (!history.length) return ''
@@ -336,7 +351,7 @@ function turnInput(p: Project, thread: Thread, msg: Message, note = ''): TurnInp
   }
   const files = (msg.files ?? []).map((f) => path.join(dir, f))
   const attached = files.length ? `\n\nAttached files:\n${files.join('\n')}` : ''
-  return { context: `${handover(p, thread)}Savor context:\n${JSON.stringify(context)}\n\n${note}New input:\n`, input: `${msg.text}${attached}`, images: (msg.images ?? []).map((f) => path.join(dir, f)) }
+  return { context: `${handover(p, thread, msg)}Savor context:\n${JSON.stringify(context)}\n\n${note}New input:\n`, input: `${msg.text}${attached}`, images: (msg.images ?? []).map((f) => path.join(dir, f)) }
 }
 
 // ---- sessions ----
