@@ -206,6 +206,14 @@ export function Composer(props: Props) {
     }
   }
   const setAgent = (a: AgentConfig) => Promise.resolve(props.setAgent(a)).then(() => setError(''), (e: Error) => setError(e.message))
+  // One step along the efforts the model offers, from the next turn on.
+  const stepEffort = (by: number) => {
+    const efforts = effortsOf(props.agent, info)
+    const next = efforts[efforts.indexOf(props.agent.reasoning) + by]
+    if (!fanout && next) setAgent({ ...props.agent, reasoning: next })
+  }
+  useShortcut('effortUp', () => stepEffort(1))
+  useShortcut('effortDown', () => stepEffort(-1))
   // Dropped files also get their name in the text, so the agent knows which attachment is meant.
   const addFiles = async (list: FileList | File[], mention = false) => {
     const picked = [...list].slice(0, MAX_FILES - files.length)
