@@ -35,4 +35,5 @@
 - Bump the patch version by default; use `--minor` only when asked.
 - The version lives in `package.json` and `desktop/package.json`, and the server reads it from there. Don't hard-code it anywhere else.
 - Pushed tags are final. If a release fails, delete its draft, fix the cause and release the next patch version. Never delete or move a tag.
-- After each release, `release.yml` pushes fresh screenshots to `main`, so fetch before the next push.
+- After each release, `release.yml` pushes fresh screenshots and the landing page's download links to `main`, so fetch before the next push.
+- Release files carry the version in their names. electron-updater overwrites an AppImage without a version in its name in place (like the one Robin's service starts) and renames a versioned one to the new version.

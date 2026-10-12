@@ -75,7 +75,7 @@
       "target": [
         "AppImage"
       ],
-      "artifactName": "${productName}.${ext}",
+      "artifactName": "${productName}-${version}.${ext}",
       "category": "Development",
       "syncDesktopName": true,
       "extraResources": [
@@ -109,7 +109,7 @@
         }
       ],
       "category": "public.app-category.developer-tools",
-      "artifactName": "${productName}-${arch}.${ext}",
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist",
       "extendInfo": {
@@ -145,7 +145,7 @@
       ]
     },
     "nsis": {
-      "artifactName": "${productName}-Setup.${ext}"
+      "artifactName": "${productName}-${version}-Setup.${ext}"
     },
     "publish": [
       {

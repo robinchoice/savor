@@ -119,8 +119,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # Retakes the README and landing page screenshots from the released code and commits them to main;
-  # the push deploys the landing page.
+  # Retakes the README and landing page screenshots from the released code, points the landing page's
+  # download links at this release's files, which carry the version in their names, and commits both
+  # to main; the push deploys the landing page.
   screenshots:
     needs: publish
     runs-on: ubuntu-latest
@@ -140,11 +141,16 @@ jobs:
           git checkout -f -B main FETCH_HEAD
           cp "$RUNNER_TEMP"/screenshots/* docs/screenshots
           cp "$RUNNER_TEMP"/img/* site/img
-          git add docs/screenshots site/img
+          v=${GITHUB_REF_NAME#v}
+          sed -i -E \
+            -e "s#releases/(latest/download|download/v[0-9.]+)/#releases/download/v$v/#g" \
+            -e "s#Savor(-[0-9]+\.[0-9]+\.[0-9]+)?(-arm64|-x64|-Setup)?\.(AppImage|dmg|exe)#Savor-$v\2.\3#g" \
+            site/index.html
+          git add docs/screenshots site/img site/index.html
           git diff --cached --quiet && exit 0
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m "docs: retake the screenshots for $GITHUB_REF_NAME"
+          git commit -m "docs: retake the screenshots and download links for $GITHUB_REF_NAME"
           git push origin main
 
   relay:
