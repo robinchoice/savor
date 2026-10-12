@@ -361,7 +361,7 @@ function ProjectsMenu({ projects, active, me, setMe, close }: { projects: Projec
   const q = query.trim().toLowerCase()
   const shown = projects
     .filter((p) => !q || p.name.toLowerCase().includes(q) || p.path.toLowerCase().includes(q))
-    .sort((a, b) => Number(b.pinned) - Number(a.pinned) || (a.pinned ? 0 : a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })))
+    .sort((a, b) => Number(b.pinned) - Number(a.pinned) || a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
   const pin = (e: Event, p: Project) => {
     e.preventDefault()
     e.stopPropagation()
