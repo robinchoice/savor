@@ -402,6 +402,7 @@ function buildServer(p: Project, tid: string) {
       if (t.needsYou) throw new Error('The conversation waits for the user.')
       store.updateThread(target, id, { completed: true })
       emit({ type: 'thread', projectId: target.id, threadId: id })
+      agents.tidyWorktree(target, t.worktree?.path)
       return ok({ id, completed: true, url: threadUrl(id, target) })
     },
   )

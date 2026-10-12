@@ -12,7 +12,8 @@ import { CodexSession } from './codex.js'
 import { AcpSession } from './acp.js'
 import { AntigravitySession } from './antigravity.js'
 import * as push from './push.js'
-import { setupOf } from './git.js'
+import * as git from './git.js'
+import * as terminal from './terminal.js'
 import * as ci from './ci.js'
 import { modelSeen } from './scheduler.js'
 import { listAgents, listUsage, mergeAgent, STATIC } from './providers.js'
@@ -174,13 +175,35 @@ function leaveRemovedWorktree(p: Project, tid: string) {
   post(p, tid, { kind: 'update', text: `The worktree of branch ${t.worktree.branch} no longer exists. This conversation continues in the project folder.` })
 }
 
+// Removes the worktree and its branch. Its conversations stay, finished, and continue in the project
+// folder with a fresh agent session that gets the visible history handed over.
+export function removeWorktree(p: Project, wt: { branch: string; path: string }) {
+  for (const t of store.listThreads(p).filter((t) => t.worktree?.path === wt.path)) {
+    stop(t.id)
+    // A fork that has not started yet loses the session it would have branched off, like the others lose theirs.
+    store.updateThread(p, t.id, { worktree: null, agentSessions: [], completed: true, ...(t.fork && { fork: { ...t.fork, sessionId: null } }) })
+  }
+  terminal.closeFolder(wt.path)
+  git.removeWorktree(p, wt.path)
+  git.deleteBranch(p, wt.branch)
+  emit({ type: 'thread', projectId: p.id })
+}
+
+// A worktree whose conversations are all finished and whose work is merged has done its job, and goes.
+export function tidyWorktree(p: Project, dir: string | undefined) {
+  const wt = dir && git.listWorktrees(p).find((w) => w.path === dir)
+  if (!wt || !git.isSpent(p, wt)) return
+  if (store.listThreads(p).some((t) => t.worktree?.path === dir && (!t.completed || busy.has(t.id) || waiting(p, t)))) return
+  removeWorktree(p, wt)
+}
+
 function deliver(p: Project, tid: string, msg: Message) {
   const startedAt = store.now()
   leaveRemovedWorktree(p, tid)
   const thread = store.updateThread(p, tid, { needsYou: false, workingSince: startedAt })
   store.updateMessage(p, tid, msg.id, { delivered: true })
   requests.set(tid, { inputId: msg.id, startedAt, updates: new Map() })
-  const setup = setupOf(thread.worktree?.path)
+  const setup = git.setupOf(thread.worktree?.path)
   if (!setup) {
     const session = sessionFor(p, thread)
     beginTurn(p, tid)

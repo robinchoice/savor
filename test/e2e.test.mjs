@@ -1229,6 +1229,46 @@ test('agents can start conversations in a worktree', async () => {
   await api('DELETE', `/projects/${project.id}/worktrees?path=${encodeURIComponent(child.worktree.path)}`)
 })
 
+test('a worktree goes by itself once its conversations are finished and its work is merged', async () => {
+  const [project] = (await api('GET', '/projects')).body
+  const [other] = (await api('GET', `/projects/${project.id}/threads`)).body
+  const start = async (text) => {
+    const thread = (await api('POST', `/projects/${project.id}/threads`, { text, worktree: 'feature/tidy' })).body
+    const t = `/projects/${project.id}/threads/${thread.id}`
+    await until(async () => (await api('GET', t)).body.messages.some((m) => m.text === `Echo: ${text}`))
+    await until(async () => !(await api('GET', t)).body.busy)
+    return t
+  }
+  const [a, b] = [await start('tidy one'), await start('tidy two')]
+  const dir = (await api('GET', a)).body.thread.worktree.path
+  const exists = async () => (await api('GET', `/projects/${project.id}/worktrees`)).body.some((w) => w.path === dir)
+  fs.writeFileSync(path.join(dir, 'tidy.txt'), 'tidy\n')
+  gitIn(dir, 'add', '.')
+  gitIn(dir, 'commit', '-q', '-m', 'tidy')
+
+  // Not merged yet, then merged with a conversation still open, then with uncommitted changes: it stays.
+  await api('PATCH', a, { completed: true })
+  assert.ok(await exists())
+  await api('POST', `/projects/${project.id}/worktrees/merge`, { path: dir })
+  assert.ok(await exists())
+  fs.writeFileSync(path.join(dir, 'scratch.txt'), 'wip\n')
+  await api('PATCH', b, { completed: true })
+  assert.ok(await exists())
+
+  // The last one finished by an agent, with nothing left uncommitted: worktree and branch go.
+  fs.rmSync(path.join(dir, 'scratch.txt'))
+  await api('PATCH', b, { completed: false })
+  const { mcpToken } = JSON.parse(fs.readFileSync(path.join(HOME, 'state.json'), 'utf8'))
+  const client = new Client({ name: 'e2e', version: '1' })
+  await client.connect(new StreamableHTTPClientTransport(new URL(`${base}/mcp?project=${project.id}&thread=${other.id}`), { requestInit: { headers: { authorization: `Bearer ${mcpToken}` } } }))
+  await client.callTool({ name: 'complete_conversation', arguments: { id: b.split('/').at(-1) } })
+  await client.close()
+  assert.ok(!(await exists()))
+  assert.ok(!fs.existsSync(dir))
+  assert.ok(!gitIn(PROJECT, 'branch', '--list', 'feature/tidy'))
+  for (const t of [a, b]) assert.equal((await api('GET', t)).body.thread.worktree, null)
+})
+
 test('a conversation whose worktree was removed outside Savor continues in the project folder', async () => {
   const [project] = (await api('GET', '/projects')).body
   const thread = (await api('POST', `/projects/${project.id}/threads`, { text: 'in the worktree', worktree: 'feature/gone' })).body

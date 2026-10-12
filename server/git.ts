@@ -176,6 +176,16 @@ export function isMerged(p: Project, branch: string, base: string) {
   }
 }
 
+// Whether a worktree holds nothing the project folder lacks: no uncommitted changes, and its branch is in HEAD.
+export function isSpent(p: Project, wt: { branch: string; path: string }) {
+  try {
+    git(p.path, 'merge-base', '--is-ancestor', wt.branch, 'HEAD')
+    return git(wt.path, 'status', '--porcelain') === ''
+  } catch {
+    return false
+  }
+}
+
 export function removeWorktree(p: Project, dir: string) {
   git(p.path, 'worktree', 'remove', '--force', dir)
   fs.rmSync(setupLog(dir), { force: true })

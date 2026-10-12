@@ -438,8 +438,12 @@ route('PATCH', '/projects/:pid/threads/:tid', (params, b, ctx) => {
     if (agent.provider !== current.provider || agent.model !== current.model) patch.context = null
     if (ctx.auth.origin === 'local') store.updateProject(p.id, { agent })
   }
-  const t = store.updateThread(p, params.tid, patch)
+  let t = store.updateThread(p, params.tid, patch)
   emit({ type: 'thread', projectId: p.id, threadId: t.id })
+  if (patch.completed) {
+    agents.tidyWorktree(p, t.worktree?.path)
+    t = store.getThread(p, t.id)
+  }
   return t
 })
 // A fork continues from where the conversation stands, in a conversation of its own.
@@ -589,24 +593,15 @@ route('POST', '/projects/:pid/worktrees/merge', (params, b) => {
   if (!wt) throw new store.NotFound('worktree')
   git.mergeWorktree(p, wt.branch)
   emit({ type: 'thread', projectId: p.id })
+  agents.tidyWorktree(p, wt.path)
   return git.branches(p.path)
 })
-// Removes the worktree and its branch. Its conversations stay, and continue in the project folder
-// with a fresh agent session that gets the visible history handed over.
 route('DELETE', '/projects/:pid/worktrees', (params, _, ctx) => {
   localOnly(ctx)
   const p = project(params)
   const wt = git.listWorktrees(p).find((w) => w.path === ctx.query.get('path'))
   if (!wt) throw new store.NotFound('worktree')
-  for (const t of store.listThreads(p).filter((t) => t.worktree?.path === wt.path)) {
-    agents.stop(t.id)
-    // A fork that has not started yet loses the session it would have branched off, like the others lose theirs.
-    store.updateThread(p, t.id, { worktree: null, agentSessions: [], completed: true, ...(t.fork && { fork: { ...t.fork, sessionId: null } }) })
-  }
-  terminal.closeFolder(wt.path)
-  git.removeWorktree(p, wt.path)
-  git.deleteBranch(p, wt.branch)
-  emit({ type: 'thread', projectId: p.id })
+  agents.removeWorktree(p, wt)
   return {}
 })
 
