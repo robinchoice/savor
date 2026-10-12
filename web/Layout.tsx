@@ -3,6 +3,7 @@ import { createPortal } from 'preact/compat'
 import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { GripVertical, PanelsTopLeft } from 'lucide-preact'
 import { setPrefs, usePrefs } from './prefs'
+import { useShortcut } from './Shortcuts'
 
 // On a computer the project's panels sit in a dock: the conversation list, the main view (a conversation's chat
 // or the current page), the stage beside the chat (preview or changes) and the terminal. Each panel renders through
@@ -363,6 +364,7 @@ export function Dock({ children }: { children: ComponentChildren }) {
 export function ArrangeButton() {
   useStore()
   const { freeWindows } = usePrefs()
+  useShortcut('arrange', !freeWindows && (() => setArranging(!arranging)))
   if (freeWindows) return null
   return (
     <button class={`icon-btn ${arranging ? 'on' : ''}`} title="Arrange panels" onClick={() => setArranging(!arranging)}>

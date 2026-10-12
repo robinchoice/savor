@@ -2314,12 +2314,14 @@ test('panels resize and dock elsewhere, free windows move, and the settings rese
   const list = await box('list')
   await dragTo({ x: list.x + list.width, y: list.y + 200 }, list.x + list.width + 100, list.y + 200)
   assert.equal(Math.round((await box('list')).width), Math.round(list.width + 100))
+  await page.evaluate(() => localStorage.setItem('savor-prefs', JSON.stringify({ ...JSON.parse(localStorage.getItem('savor-prefs')), shortcuts: { arrange: 'L' } })))
   await page.reload()
   await page.waitForSelector('.dock-leaf[data-panel="terminal"] .terminal-panel')
   assert.equal(Math.round((await box('list')).width), Math.round(list.width + 100))
 
-  // Arranging: the terminal dropped on the right edge of the chat docks beside it.
-  await page.click('[title="Arrange panels"]')
+  // Arranging, here by its key: the terminal dropped on the right edge of the chat docks beside it.
+  await page.keyboard.press('Alt+l')
+  await page.waitForSelector('.arrange-bar')
   const terminal = await box('terminal')
   const chat = await box('main')
   await dragTo({ x: terminal.x + terminal.width / 2, y: terminal.y + terminal.height / 2 }, chat.x + chat.width - 20, chat.y + chat.height / 2)
