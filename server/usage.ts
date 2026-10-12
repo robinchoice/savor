@@ -7,6 +7,9 @@ import * as store from './store.js'
 import { VERSION } from './config.js'
 
 const URL = process.env.SAVOR_USAGE_URL
+// Only this daemon pings: agents, their shells and the daemons they start for tests or as dev servers
+// must not inherit the URL, or each would count as another installation.
+delete process.env.SAVOR_USAGE_URL
 const DAY = 86_400_000
 
 export const usageAvailable = () => !!URL
