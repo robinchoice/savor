@@ -348,10 +348,13 @@ function turnInput(p: Project, thread: Thread, msg: Message, note = ''): TurnInp
     decisions: store.listDecisions(p, thread.id).slice(-20),
     cwd: store.cwdOf(p, thread),
     worktree: thread.worktree?.branch ?? null,
+    ...(thread.routedFrom && { inboxSource: { ...thread.routedFrom, url: appUrl(`/all/inbox/${thread.routedFrom.projectId}/${thread.routedFrom.threadId}`) } }),
+    ...(thread.inbox && { routedConversations: store.listProjects().flatMap((target) => store.listThreads(target).filter((t) => t.routedFrom?.projectId === p.id && t.routedFrom.threadId === thread.id).map((t) => ({ projectId: target.id, project: target.name, threadId: t.id, title: t.title, url: appUrl(`/all/inbox/${target.id}/${t.id}`) }))) }),
   }
   const files = (msg.files ?? []).map((f) => path.join(dir, f))
   const attached = files.length ? `\n\nAttached files:\n${files.join('\n')}` : ''
-  return { context: `${handover(p, thread, msg)}Savor context:\n${JSON.stringify(context)}\n\n${note}New input:\n`, input: `${msg.text}${attached}`, images: (msg.images ?? []).map((f) => path.join(dir, f)) }
+  const routing = thread.inbox ? `This conversation is a shared inbox. Use list_projects to identify the right repositories. Route clearly scoped work through start_conversation with the target project and a concise, self-contained task; use a separate worktree for code changes. Split independent tasks across projects. Check the conversation history before delegating again. Handle notes and general questions here; ask the user when the project or intent is unclear. Do not change repository code in this inbox. Link every started conversation in your conclusion. Preserve the user's requested scope and permissions.\n\n` : ''
+  return { context: `${handover(p, thread, msg)}Savor context:\n${JSON.stringify(context)}\n\n${routing}${note}New input:\n`, input: `${msg.text}${attached}`, images: (msg.images ?? []).map((f) => path.join(dir, f)) }
 }
 
 // ---- sessions ----

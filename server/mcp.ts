@@ -321,6 +321,7 @@ function buildServer(p: Project, tid: string) {
         label,
         agent: chosen,
         parentId: here ? tid : undefined,
+        routedFrom: store.getThread(p, tid).inbox ? { projectId: p.id, threadId: tid } : undefined,
         worktree: worktree ? addWorktree(target, worktree) : here ? store.getThread(p, tid).worktree : null,
         unattended: agents.unattended(store.getThread(p, tid)),
       })

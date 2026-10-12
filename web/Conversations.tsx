@@ -688,6 +688,7 @@ export function ThreadView({ project, threadId, back, next, siblings }: { projec
   const base = `/projects/${project.id}/threads/${threadId}`
   const [data, reload, loadError] = useApi<ThreadData>(base, (e) => (e.threadId === threadId && ['message', 'thread', 'status'].includes(e.type)) || (e.projectId === project.id && e.type === 'processes'))
   const [activity] = useApi<ActivityEvent[]>(`${base}/activity`, (e) => e.threadId === threadId && (e.type === 'activity' || e.type === 'status'))
+  const [links] = useApi<{ source: { project: { id: string; name: string; tint: string }; thread: Thread } | null; targets: { project: { id: string; name: string; tint: string }; thread: Thread }[] }>(data?.thread.inbox || data?.thread.routedFrom ? `${base}/links` : null, (e) => ['thread', 'status', 'projects'].includes(e.type))
   // Chat, browser or changes: the first preview of a conversation opens the browser, after that the last choice stands.
   const viewKey = `savor-view:${threadId}`
   const [view, setViewState] = useState(() => localStorage.getItem(viewKey))
@@ -1037,6 +1038,12 @@ export function ThreadView({ project, threadId, back, next, siblings }: { projec
               </div>
             </div>
           </header>
+          {links && (links.source || links.targets.length > 0) && (
+            <div class="routing-links">
+              {links.source && <a href={`#/all/inbox/${links.source.project.id}/${links.source.thread.id}`}>← Inbox · {links.source.thread.summary ?? links.source.thread.title}</a>}
+              {links.targets.map(({ project: target, thread: t }) => <a key={t.id} href={`#/all/inbox/${target.id}/${t.id}`}><span class={`ring ${RINGS[kindOf(t)]}`} />{target.name} · {t.summary ?? t.title}</a>)}
+            </div>
+          )}
           {!(browserMode && narrow) && (
             <>
               {find.open && (

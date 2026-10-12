@@ -86,6 +86,8 @@ export interface Thread {
   // is, as far as the agent says.
   context?: { tokens: number; window: number | null } | null
   parentId?: string
+  inbox?: boolean
+  routedFrom?: { projectId: string; threadId: string }
   // Set for a fork of the conversation `parentId`: how many messages that one had, and the agent
   // session to branch off, when its agent had one and can copy it. Without one the agent gets the
   // visible history.
@@ -379,7 +381,7 @@ export function getThread(p: Project, tid: string): Thread {
 // A worktree removed outside Savor falls back to the project folder.
 export const cwdOf = (p: Project, t: Thread) => (t.worktree && fs.existsSync(t.worktree.path) ? t.worktree.path : p.path)
 
-export function createThread(p: Project, init: { title: string; label?: string | null; agent?: AgentConfig; parentId?: string; fork?: Thread['fork']; worktree?: { branch: string; path: string } | null; workflow?: Thread['workflow']; fanout?: Thread['fanout']; unattended?: boolean }): Thread {
+export function createThread(p: Project, init: { title: string; label?: string | null; agent?: AgentConfig; parentId?: string; inbox?: boolean; routedFrom?: Thread['routedFrom']; fork?: Thread['fork']; worktree?: { branch: string; path: string } | null; workflow?: Thread['workflow']; fanout?: Thread['fanout']; unattended?: boolean }): Thread {
   const t: Thread = {
     id: newId(),
     title: init.title.slice(0, 300),
@@ -395,6 +397,8 @@ export function createThread(p: Project, init: { title: string; label?: string |
     error: null,
   }
   if (init.parentId) t.parentId = init.parentId
+  if (init.inbox) t.inbox = true
+  if (init.routedFrom) t.routedFrom = init.routedFrom
   if (init.fork) t.fork = init.fork
   if (init.worktree) t.worktree = init.worktree
   if (init.workflow) t.workflow = init.workflow

@@ -121,7 +121,7 @@ function App() {
 
   let main = <Welcome me={me} setMe={setMe} />
   if (route[0] === 'devices') main = <Devices />
-  else if (route[0] === 'all') main = <AllProjects projects={projects ?? []} section={route[1]} rest={route.slice(2)} />
+  else if (route[0] === 'all') main = <AllProjects projects={projects ?? []} section={route[1]} rest={route.slice(2)} importText={new URLSearchParams(location.hash.split('?')[1] ?? '').get('text') ?? undefined} />
   else if (project) {
     if (section === 'files') main = <FilesView key={project.id} project={project} rest={rest} />
     else if (section === 'workflows') main = <Workflows key={project.id} project={project} rest={rest} />
