@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'preact/hooks'
+import type { PanelId, Rect, Split } from './Layout'
 
 // How Savor looks on this device.
 export type Theme = 'system' | 'light' | 'dark'
@@ -14,8 +15,7 @@ export interface Prefs {
   // The floating bug button and where it was dragged to, null for its default spot.
   bugButton: boolean
   bugAt: { x: number; y: number } | null
-  // Browser mode: how wide the chat beside the page is, and the size the page is drawn in.
-  chatWidth: number
+  // The size the page beside the chat is drawn in.
   previewDevice: Device
   // Workflow groups marked as “Not a duplicate” in All projects.
   notDuplicates: string[]
@@ -23,8 +23,11 @@ export interface Prefs {
   boardProject: string | null
   // The terminal panel below the project.
   terminalOpen: boolean
-  terminalHeight: number
   terminalMax: boolean
+  // Where the panels are docked, null for the default; with free windows, where each window is.
+  layout: Split | null
+  freeWindows: boolean
+  windows: Partial<Record<PanelId, Rect>> | null
   // Action → key, see Shortcuts.tsx. Empty until set.
   shortcuts: Record<string, string>
 }
@@ -37,13 +40,14 @@ let prefs: Prefs = {
   feedbackButton: true,
   bugButton: false,
   bugAt: null,
-  chatWidth: 420,
   previewDevice: 'fit',
   notDuplicates: [],
   boardProject: null,
   terminalOpen: false,
-  terminalHeight: 300,
   terminalMax: false,
+  layout: null,
+  freeWindows: false,
+  windows: null,
   shortcuts: {},
   ...JSON.parse(localStorage.getItem(KEY) ?? '{}'),
   theme: (localStorage.getItem('savor-theme') as Theme | null) ?? 'system',
