@@ -17,6 +17,8 @@ export interface Project {
   paused: boolean
   // Pinned projects are tabs; the others are reached through the Projects menu.
   pinned: boolean
+  // Fixed tabs keep the place they were given, left of the others, which follow by name.
+  fixed: boolean
   // A shell command that runs in each new worktree before its first turn, e.g. `npm install`.
   worktreeSetup: string
   // The project type from templates/ (academic-writing, kontor); none for code.
@@ -285,10 +287,14 @@ export const upgradeAgent = (a: AgentConfig): AgentConfig =>
 
 function loadProject(ref: { path: string }): Project | null {
   const p = readJson<(Partial<Project> & Pick<Project, 'id' | 'name'>) | null>(path.join(ref.path, '.savor', 'project.json'), null)
-  return p && ({ tint: TINTS[0], verbosity: 'medium', paused: false, pinned: true, worktreeSetup: '', ...p, agent: upgradeAgent({ ...defaultAgent(), ...p.agent }), path: ref.path } as Project)
+  return p && ({ tint: TINTS[0], verbosity: 'medium', paused: false, pinned: true, fixed: false, worktreeSetup: '', ...p, agent: upgradeAgent({ ...defaultAgent(), ...p.agent }), path: ref.path } as Project)
 }
 
-export const listProjects = (): Project[] => state().projects.flatMap((ref) => loadProject(ref) ?? [])
+// The order of the tabs and the projects menu: the fixed ones as placed, then the others by name.
+export const listProjects = (): Project[] => {
+  const all = state().projects.flatMap((ref) => loadProject(ref) ?? [])
+  return [...all.filter((p) => p.fixed), ...all.filter((p) => !p.fixed).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }))]
+}
 
 export function getProject(id: string): Project {
   const p = listProjects().find((p) => p.id === id)
@@ -321,6 +327,7 @@ export function addProject(dir: string, name?: string): Project {
     verbosity: 'medium' as const,
     paused: false,
     pinned: true,
+    fixed: false,
     worktreeSetup: '',
   }
   writeJson(path.join(abs, '.savor', 'project.json'), project)
@@ -337,8 +344,9 @@ export function updateProject(id: string, patch: Partial<Omit<Project, 'id' | 'p
   return p
 }
 
-// The order of the tabs and the projects menu: ids not in the list keep their place at the end.
-export function reorderProjects(ids: string[]) {
+// Fixes the tabs `ids` in this order; fixed ones not in the list follow them.
+export function fixProjects(ids: string[]) {
+  for (const id of ids) updateProject(id, { pinned: true, fixed: true })
   const s = state()
   const rank = (id: string) => (ids.includes(id) ? ids.indexOf(id) : ids.length)
   s.projects = [...s.projects].sort((a, b) => rank(a.id) - rank(b.id))

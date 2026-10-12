@@ -191,7 +191,7 @@ test('agent settings fit the viewport and apply right away', async () => {
 })
 
 test('errors retain their provider after switching agents', async () => {
-  const [project] = (await api('GET', '/projects')).body
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
   const t = (await api('POST', `/projects/${project.id}/threads`, { text: 'fail: Session limit reached', agent: project.agent })).body
   const route = `/projects/${project.id}/threads/${t.id}`
   await until(async () => (await api('GET', route)).body.messages.some((m) => m.kind === 'error'))
@@ -204,7 +204,7 @@ test('errors retain their provider after switching agents', async () => {
 })
 
 test('a Claude Code that is too old says how to update it', async () => {
-  const [project] = (await api('GET', '/projects')).body
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
   fs.writeFileSync(AGENT_LOG + '.outdated', '')
   const t = (await api('POST', `/projects/${project.id}/threads`, { text: 'hello', agent: project.agent })).body
   const route = `/projects/${project.id}/threads/${t.id}`
@@ -219,7 +219,7 @@ test('a Claude Code that is too old says how to update it', async () => {
 })
 
 test('historical approvals render and failed conversation loads can be retried', async () => {
-  const [project] = (await api('GET', '/projects')).body
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
   const t = (await api('POST', `/projects/${project.id}/threads`, { text: 'historical approval' })).body
   const endpoint = `${base}/api/projects/${project.id}/threads/${t.id}`
   await until(async () => !(await api('GET', `/projects/${project.id}/threads/${t.id}`)).body.busy)
@@ -333,7 +333,7 @@ test('a comment can be sent before every question is answered', async () => {
 })
 
 test("the user's input passes over open questions, another agent's leaves them open", async () => {
-  const [project] = (await api('GET', '/projects')).body
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
   const threads = `/projects/${project.id}/threads`
   const sender = (await api('POST', threads, { text: 'plan the release', agent: { provider: 'claude' } })).body
   const target = (await api('POST', threads, { text: 'ask: Ship it?', agent: { provider: 'claude' } })).body
@@ -385,7 +385,7 @@ test('an MCP server can ask to open a page, as a link with Done and Decline', as
   await send('open-page: javascript:alert(1)')
   await page.waitForSelector('text=Page: refused')
 
-  const [project] = (await api('GET', '/projects')).body
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
   const thread = (await api('POST', `/projects/${project.id}/threads`, { text: 'open-page: https://docs.example/codex', agent: { provider: 'codex', permissionMode: 'default' } })).body
   const t = `/projects/${project.id}/threads/${thread.id}`
   let approval
@@ -410,7 +410,7 @@ test('an MCP server can ask to fill in a form, answered with what the user enter
   await page.click('.approval:has-text("Once more.") button:has-text("Decline")')
   await page.waitForSelector('text=Form: decline null')
 
-  const [project] = (await api('GET', '/projects')).body
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
   const thread = (await api('POST', `/projects/${project.id}/threads`, { text: 'fill-form: Who are you?', agent: { provider: 'codex', permissionMode: 'default' } })).body
   const t = `/projects/${project.id}/threads/${thread.id}`
   let approval
@@ -537,7 +537,7 @@ test("tasks Claude marks as ambient are no background work and can't be stopped"
 })
 
 test('queued messages can be removed before they are sent', async () => {
-  const [project] = (await api('GET', '/projects')).body
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
   const thread = (await api('POST', `/projects/${project.id}/threads`, { text: 'slow: busy' })).body
   const t = `/projects/${project.id}/threads/${thread.id}`
   const queued = (await api('POST', `${t}/messages`, { text: 'never mind' })).body
@@ -550,7 +550,7 @@ test('queued messages can be removed before they are sent', async () => {
 })
 
 test('Codex runs through the app-server protocol with approvals and questions', async () => {
-  const [project] = (await api('GET', '/projects')).body
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
   const thread = (await api('POST', `/projects/${project.id}/threads`, { text: 'approve: run', agent: { provider: 'codex', permissionMode: 'default' } })).body
   const t = `/projects/${project.id}/threads/${thread.id}`
   let approval
@@ -573,7 +573,7 @@ test('Codex runs through the app-server protocol with approvals and questions', 
 })
 
 test('OpenCode runs through the Agent Client Protocol', async () => {
-  const [project] = (await api('GET', '/projects')).body
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
   const thread = (await api('POST', `/projects/${project.id}/threads`, { text: 'hello acp', agent: { provider: 'opencode', model: 'fake/model', reasoning: 'high', permissionMode: 'plan' } })).body
   const t = `/projects/${project.id}/threads/${thread.id}`
   await until(async () => (await api('GET', t)).body.messages.some((m) => m.text === 'ACP echo: hello acp'))
@@ -597,7 +597,7 @@ test('OpenCode runs through the Agent Client Protocol', async () => {
 })
 
 test('Antigravity continues its conversation with the chosen model, effort and mode, and reaches Savor through MCP', async () => {
-  const [project] = (await api('GET', '/projects')).body
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
   const thread = (await api('POST', `/projects/${project.id}/threads`, { text: 'hello agy', agent: { provider: 'antigravity', model: 'fake-claude', reasoning: 'high', permissionMode: 'plan' } })).body
   const t = `/projects/${project.id}/threads/${thread.id}`
   await until(async () => (await api('GET', t)).body.messages.some((m) => m.text === 'Antigravity echo: hello agy'))
@@ -660,7 +660,7 @@ test('OpenCode is probed again only when its binary changes', async () => {
 })
 
 test('Ultracode is a switch next to the effort, and the old Ultracode effort becomes X-High with it', async () => {
-  const [project] = (await api('GET', '/projects')).body
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
   const thread = (await api('POST', `/projects/${project.id}/threads`, { text: 'hello ultracode', agent: { provider: 'claude', reasoning: 'ultracode' } })).body
   assert.deepEqual([thread.agent.reasoning, thread.agent.ultracode], ['xhigh', true])
   await until(async () => (await api('GET', `/projects/${project.id}/threads/${thread.id}`)).body.messages.some((m) => m.text === 'Echo: hello ultracode'))
@@ -696,7 +696,7 @@ test('presets are saved globally and only from this computer', async () => {
 })
 
 test('files can be attached to a message', async () => {
-  const [project] = (await api('GET', '/projects')).body
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
   const dataUrl = `data:text/plain;base64,${Buffer.from('hello from a file').toString('base64')}`
   const thread = (await api('POST', `/projects/${project.id}/threads`, { text: 'read this', attachments: [{ name: 'notes.txt', dataUrl }] })).body
   const t = `/projects/${project.id}/threads/${thread.id}`
@@ -808,7 +808,7 @@ test('voice input rejects missing or incomplete PCM', async () => {
 })
 
 test('deleting a conversation whose agent session is still open leaves the daemon running', async () => {
-  const [project] = (await api('GET', '/projects')).body
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
   const t = `/projects/${project.id}/threads`
   // One with an idle session after its turn, one deleted in the middle of a turn.
   const idle = (await api('POST', t, { text: 'delete me' })).body
@@ -827,7 +827,7 @@ test('deleting a conversation whose agent session is still open leaves the daemo
 })
 
 test('workflows run in a new conversation', async () => {
-  const [project] = (await api('GET', '/projects')).body
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
   const wf = (await api('POST', `/projects/${project.id}/workflows`, { name: 'Nightly', prompt: 'nightly check', cron: '0 3 * * *' })).body
   assert.match(wf.id, /^[0-9a-f]{16}$/)
   assert.equal((await api('POST', `/projects/${project.id}/workflows`, { name: 'Bad', prompt: 'x', cron: 'not a cron' })).status, 400)
@@ -878,7 +878,7 @@ test('workflows run in a new conversation', async () => {
 })
 
 test('a workflow runs at the first scheduled time after it was saved', async () => {
-  const [project] = (await api('GET', '/projects')).body
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
   const wf = (await api('POST', `/projects/${project.id}/workflows`, { name: 'Every five', prompt: 'every five', cron: '*/5 * * * * *' })).body
   const first = Math.floor(Date.parse(wf.settledAt) / 5000) * 5000 + 5000
   let run
@@ -888,7 +888,7 @@ test('a workflow runs at the first scheduled time after it was saved', async () 
 })
 
 test('a workflow lists its runs, catches up a missed time and skips one while a run is open', async () => {
-  const [project] = (await api('GET', '/projects')).body
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
   const list = `/projects/${project.id}/workflows`
   // Due once a year, so the test decides when a scheduled time counts as missed.
   const wf = (await api('POST', list, { name: 'Yearly', prompt: 'yearly check', cron: '0 0 1 1 *' })).body
@@ -955,7 +955,7 @@ test('a workflow lists its runs, catches up a missed time and skips one while a 
 })
 
 test('a workflow button runs it early, in place of its next scheduled time', async () => {
-  const [project] = (await api('GET', '/projects')).body
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
   const list = `/projects/${project.id}/workflows`
   const wf = (await api('POST', list, { name: 'Wrap-up', prompt: 'wrap up', cron: '*/10 * * * * *', button: true })).body
   const w = `${list}/${wf.id}`
@@ -1022,7 +1022,7 @@ test('auth: tokens, pairing and remote limits', async () => {
 })
 
 test('the MCP token stays off agent command lines, which every user on the machine can read', async () => {
-  const [project] = (await api('GET', '/projects')).body
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
   const thread = (await api('POST', `/projects/${project.id}/threads`, { text: 'hello codex', agent: { provider: 'codex' } })).body
   await until(async () => (await api('GET', `/projects/${project.id}/threads/${thread.id}`)).body.messages.some((m) => m.text === 'Codex echo: hello codex'))
   await api('PATCH', `/projects/${project.id}`, { agent: project.agent })
@@ -1040,7 +1040,7 @@ test('the MCP token stays off agent command lines, which every user on the machi
 test('what a paired device changes never runs as local', async () => {
   const pairing = (await api('POST', '/devices/pairing')).body
   const device = (await redeem(pairing.code, 'CI tablet')).headers.get('set-cookie').split(';')[0]
-  const [project] = (await api('GET', '/projects')).body
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
   const pid = project.id
   const bypass = { ...project.agent, permissionMode: 'bypassPermissions' }
 
@@ -1093,7 +1093,7 @@ test('pages on other ports of this host cannot use the login cookie', async (t) 
 })
 
 test('stopping a process only works for processes registered in the project', async (t) => {
-  const [project] = (await api('GET', '/projects')).body
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
   const [thread] = (await api('GET', `/projects/${project.id}/threads`)).body
   const proc = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60_000)'], { stdio: 'ignore' })
   t.after(() => proc.kill())
@@ -1137,7 +1137,7 @@ test('a paired device keeps its push subscription until it is revoked', async ()
 })
 
 test('a conversation can work in its own git worktree, which merges back and can be deleted', async () => {
-  const [project] = (await api('GET', '/projects')).body
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
   gitIn(PROJECT, 'init', '-q', '-b', 'main')
   gitIn(PROJECT, 'commit', '-q', '--allow-empty', '-m', 'init')
   const thread = (await api('POST', `/projects/${project.id}/threads`, { text: 'hello worktree', worktree: 'feature/wt' })).body
@@ -1215,7 +1215,7 @@ test('a conversation can work in its own git worktree, which merges back and can
 })
 
 test('agents can start conversations in a worktree', async () => {
-  const [project] = (await api('GET', '/projects')).body
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
   const [thread] = (await api('GET', `/projects/${project.id}/threads`)).body
   const { mcpToken } = JSON.parse(fs.readFileSync(path.join(HOME, 'state.json'), 'utf8'))
   const client = new Client({ name: 'e2e', version: '1' })
@@ -1270,7 +1270,7 @@ test('a worktree goes by itself once its conversations are finished and its work
 })
 
 test('a conversation whose worktree was removed outside Savor continues in the project folder', async () => {
-  const [project] = (await api('GET', '/projects')).body
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
   const thread = (await api('POST', `/projects/${project.id}/threads`, { text: 'in the worktree', worktree: 'feature/gone' })).body
   const t = `/projects/${project.id}/threads/${thread.id}`
   await until(async () => (await api('GET', t)).body.messages.some((m) => m.text === 'Echo: in the worktree'))
@@ -1288,7 +1288,7 @@ test('a conversation whose worktree was removed outside Savor continues in the p
 })
 
 test('a new worktree gets the files .worktreeinclude names, and its first turn waits for the project setup', async () => {
-  const [project] = (await api('GET', '/projects')).body
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
   const p = `/projects/${project.id}`
   fs.writeFileSync(path.join(PROJECT, '.gitignore'), '.env\nsecret/\n')
   fs.writeFileSync(path.join(PROJECT, '.worktreeinclude'), '.env\nsecret/\nnotes.local\n')
@@ -1342,7 +1342,7 @@ test('a new worktree gets the files .worktreeinclude names, and its first turn w
 })
 
 test('agents can start conversations in other projects, and input from a paired device stays visible there', async () => {
-  const [project] = (await api('GET', '/projects')).body
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
   const folder = path.join(TMP, 'design-target')
   const other = (await api('POST', '/projects', { path: folder, name: 'Design Target', create: true })).body
   await api('PATCH', `/projects/${other.id}`, { agent: { provider: 'claude', model: 'design-model', reasoning: 'high', fast: false, permissionMode: 'acceptEdits' } })
@@ -1399,7 +1399,7 @@ test('agents can start conversations in other projects, and input from a paired 
 })
 
 test('agents add projects: a new folder gets a git repository, an existing project stays the same, paired devices cannot', async () => {
-  const [project] = (await api('GET', '/projects')).body
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
   const { mcpToken } = JSON.parse(fs.readFileSync(path.join(HOME, 'state.json'), 'utf8'))
   const connect = async (thread) => {
     const client = new Client({ name: 'e2e', version: '1' })
@@ -1435,7 +1435,7 @@ test('agents add projects: a new folder gets a git repository, an existing proje
 })
 
 test('agents send messages to conversations in other projects, marked as theirs, and a message they set off sends none on', async () => {
-  const [project] = (await api('GET', '/projects')).body
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
   const other = (await api('POST', '/projects', { path: path.join(TMP, 'message-target'), name: 'Message Target', create: true })).body
   const { mcpToken } = JSON.parse(fs.readFileSync(path.join(HOME, 'state.json'), 'utf8'))
   const connect = async (pid, tid) => {
@@ -1519,7 +1519,7 @@ test('agents send messages to conversations in other projects, marked as theirs,
 })
 
 test('the terminal starts with a shell per folder and worktree, opens and closes more, on paired devices only once allowed here', async () => {
-  const [project] = (await api('GET', '/projects')).body
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
   const t = `/projects/${project.id}/terminal`
   const thread = (await api('POST', `/projects/${project.id}/threads`, { text: 'terminal work', worktree: 'term/wt' })).body
 
@@ -1580,7 +1580,7 @@ test('the terminal starts with a shell per folder and worktree, opens and closes
 })
 
 test("a conversation continues in the agent's own terminal UI", async () => {
-  const [project] = (await api('GET', '/projects')).body
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
   const thread = (await api('POST', `/projects/${project.id}/threads`, { text: 'before the terminal' })).body
   const url = `/projects/${project.id}/threads/${thread.id}`
   await until(async () => (await api('GET', url)).body.messages.some((m) => m.text === 'Echo: before the terminal'))
@@ -1600,7 +1600,7 @@ test("a conversation continues in the agent's own terminal UI", async () => {
 })
 
 test('a shell command in a message runs in the terminal with one click', async () => {
-  const [project] = (await api('GET', '/projects')).body
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
   const thread = (await api('POST', `/projects/${project.id}/threads`, { text: 'Run this:\n\n```bash\necho $((6*7))-clicked\n```\n\n```js\nconsole.log(1)\n```\n\n```\nnpm test\n```' })).body
   await page.goto(`${base}/#/p/${project.id}/t/${thread.id}`)
   await page.waitForSelector('.msg .md-command')
@@ -1613,7 +1613,7 @@ test('a shell command in a message runs in the terminal with one click', async (
 })
 
 test('in the inbox, the context menu and the run button reach the project of the conversation', async (t) => {
-  const [project] = (await api('GET', '/projects')).body
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
   const thread = (await api('POST', `/projects/${project.id}/threads`, { text: 'Inbox run:\n\n```bash\necho $((6*8))-inbox\n```' })).body
   const context = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: 'en-US' })
   t.after(() => context.close())
@@ -1634,7 +1634,7 @@ test('in the inbox, the context menu and the run button reach the project of the
 })
 
 test('text from the context menu runs in a new or an open conversation of another project', async (t) => {
-  const [project] = (await api('GET', '/projects')).body
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
   const other = (await api('POST', '/projects', { path: path.join(TMP, 'elsewhere-target'), name: 'Elsewhere Target', create: true })).body
   const source = (await api('POST', `/projects/${project.id}/threads`, { text: 'plan both sides' })).body
   await until(async () => (await api('GET', `/projects/${project.id}/threads/${source.id}`)).body.messages.some((m) => m.text === 'Echo: plan both sides'))
@@ -1675,7 +1675,7 @@ test('text from the context menu runs in a new or an open conversation of anothe
 })
 
 test('a prompt fans out to several agents in worktrees of their own, and the picked one merges', async () => {
-  const [project] = (await api('GET', '/projects')).body
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
   assert.equal((await api('POST', `/projects/${project.id}/fanout`, { text: 'x', agents: [{ provider: 'claude' }] })).status, 400)
   const runs = (await api('POST', `/projects/${project.id}/fanout`, { text: 'Add a dark mode toggle', agents: [{ provider: 'claude' }, { provider: 'codex' }, { provider: 'claude' }] })).body
   const branches = runs.map((t) => t.worktree.branch)
@@ -1716,7 +1716,7 @@ test('a prompt fans out to several agents in worktrees of their own, and the pic
 })
 
 test('Claude Code and Codex sessions of the project can be imported and continue', async () => {
-  const [project] = (await api('GET', '/projects')).body
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
   const rec = (o) => JSON.stringify(o) + '\n'
   const claudeDir = path.join(TMP, 'claude', 'projects', PROJECT.replace(/[^a-zA-Z0-9]/g, '-'))
   fs.mkdirSync(claudeDir, { recursive: true })
@@ -1796,7 +1796,7 @@ test('Claude Code and Codex sessions of the project can be imported and continue
 })
 
 test('the workflow gallery fills the editor with a recipe', async () => {
-  const [project] = (await api('GET', '/projects')).body
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
   await page.goto(`${base}/#/p/${project.id}/workflows/gallery`)
   await page.click('.recipe:has-text("Standup notes")')
   await page.waitForSelector('text=New workflow from “Standup notes”')
@@ -1810,7 +1810,7 @@ test('the workflow gallery fills the editor with a recipe', async () => {
 })
 
 test('files open in the code editor, markdown and documents in the rich editor', async () => {
-  const [project] = (await api('GET', '/projects')).body
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
   fs.writeFileSync(path.join(PROJECT, 'hello.js'), 'const a = 1\n')
   await page.goto(`${base}/#/p/${project.id}/files/f/hello.js`)
   await page.click('.cm-editor .cm-content')
@@ -1861,6 +1861,34 @@ test('unpinned projects leave the tab bar and stay in the Projects menu', async 
   await until(async () => (await api('GET', '/projects')).body.find((p) => p.id === other.id).pinned)
   await page.keyboard.press('Escape')
   await page.click('.conv-head h2')
+})
+
+test('tabs follow by name behind the ones fixed in place', async () => {
+  const names = () => page.$$eval('.project-tab:not(.all-tab) .name', (els) => els.map((e) => e.textContent))
+  const tab = (name) => `.project-tab[href^="#/p/${projects.find((p) => p.name === name).id}"]`
+  const fixed = async () => (await api('GET', '/projects')).body.filter((p) => p.fixed).map((p) => p.name)
+  const added = [(await api('POST', '/projects', { path: path.join(TMP, 'zebra'), create: true })).body, (await api('POST', '/projects', { path: path.join(TMP, 'aardvark'), create: true })).body]
+  const projects = (await api('GET', '/projects')).body
+  await page.goto(`${base}/#/all`)
+  await page.waitForSelector(tab('zebra'))
+  const before = await names()
+  assert.deepEqual(before, [...before].sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })))
+  // Fixing the last tab keeps it, and the tabs before it, where they are.
+  await page.click(tab(before.at(-1)), { button: 'right' })
+  await page.click('.menu >> text=Keep in place')
+  await until(async () => (await fixed()).length === before.length)
+  assert.deepEqual(await fixed(), before)
+  // A released tab follows by name again, behind the fixed ones.
+  await page.click(tab(before[0]), { button: 'right' })
+  await page.click('.menu >> text=Sort by name')
+  await until(async () => (await names()).at(-1) === before[0])
+  // Closing a tab releases it too.
+  await page.click(tab(before[1]), { button: 'right' })
+  await page.click('.menu >> text=Close tab')
+  await until(async () => !(await fixed()).includes(before[1]))
+  await api('PATCH', `/projects/${projects.find((p) => p.name === before[1]).id}`, { pinned: true })
+  for (const name of await fixed()) await api('PATCH', `/projects/${projects.find((p) => p.name === name).id}`, { fixed: false })
+  for (const p of added) await api('DELETE', `/projects/${p.id}`)
 })
 
 test('a draft stays with its conversation', async () => {
@@ -2440,7 +2468,7 @@ test('the preview takes the mouse, shortcuts and the clipboard', async (t) => {
 })
 
 test('a turn cut off by a restart continues in the same agent session', async () => {
-  const [project] = (await api('GET', '/projects')).body
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
   const t = `/projects/${project.id}/threads`
   const thread = (await api('POST', t, { text: 'slow: survive' })).body
   const read = async () => (await api('GET', `${t}/${thread.id}`)).body
@@ -2477,7 +2505,7 @@ test('a turn cut off by a restart continues in the same agent session', async ()
 })
 
 test('a turn that stops at a usage limit continues once it resets, also after a restart, and what is queued waits', async () => {
-  const [project] = (await api('GET', '/projects')).body
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
   const t = `/projects/${project.id}/threads`
   const read = async (id) => (await api('GET', `${t}/${id}`)).body
   const thread = (await api('POST', t, { text: 'limit: soon' })).body
@@ -2518,7 +2546,7 @@ test('a turn that stops at a usage limit continues once it resets, also after a 
 })
 
 test('agents wait for CI without holding their turn, and Savor continues the request with the result', async () => {
-  const [project] = (await api('GET', '/projects')).body
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
   const t = `/projects/${project.id}/threads`
   const read = async (id) => (await api('GET', `${t}/${id}`)).body
   const conclusion = async (id) => {
@@ -2572,7 +2600,7 @@ test('agents wait for CI without holding their turn, and Savor continues the req
 })
 
 test("the header shows how full the agent's context window is", async () => {
-  const [project] = (await api('GET', '/projects')).body
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
   await page.goto(`${base}/#/p/${project.id}`)
   await page.reload()
   await newConversation()
@@ -2590,7 +2618,7 @@ test("the header shows how full the agent's context window is", async () => {
 })
 
 test('a fork continues in a conversation of its own, as a copy of the agent session where there is one', async () => {
-  const [project] = (await api('GET', '/projects')).body
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
   const threads = `/projects/${project.id}/threads`
   const read = async (id) => (await api('GET', `${threads}/${id}`)).body
   const idle = (id) => until(async () => !(await read(id)).busy && (await read(id)).messages.some((m) => m.kind === 'conclusion'))
@@ -2672,7 +2700,7 @@ test('a fork continues in a conversation of its own, as a copy of the agent sess
 })
 
 test('the All tab answers questions in place and starts what waits in the backlog', async () => {
-  const [project] = (await api('GET', '/projects')).body
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
   const threads = `/projects/${project.id}/threads`
   const read = async (id) => (await api('GET', `${threads}/${id}`)).body
   const asked = (await api('POST', threads, { text: 'ask: Ship the footer?', agent: { provider: 'claude' } })).body
@@ -2732,10 +2760,12 @@ test('the All tab answers questions in place and starts what waits in the backlo
   await page.fill('.board-add textarea', 'Write the footer copy')
   await page.click('.board-add >> text=Add')
   await page.waitForSelector('.board-card:has-text("Write the footer copy")')
+  // It goes to the first tab.
+  const tab = (await api('GET', '/projects')).body.find((p) => p.pinned)
   const [item] = (await api('GET', '/backlog')).body.items
-  assert.deepEqual([item.title, item.projectId], ['Write the footer copy', project.id])
+  assert.deepEqual([item.title, item.projectId], ['Write the footer copy', tab.id])
   await page.click('.board-card:has-text("Write the footer copy") >> text=Start')
-  await until(async () => (await api('GET', threads)).body.some((t) => t.title === 'Write the footer copy'))
+  await until(async () => (await api('GET', `/projects/${tab.id}/threads`)).body.some((t) => t.title === 'Write the footer copy'))
   await until(async () => !(await api('GET', '/backlog')).body.items.length)
 
   // Agents put follow-ups on the backlog and find them there.
@@ -2758,7 +2788,7 @@ test('the All tab answers questions in place and starts what waits in the backlo
 })
 
 test('on a phone the bar below a conversation swipes to its neighbours, and a result swipes to Finish', async () => {
-  const [project] = (await api('GET', '/projects')).body
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
   const threads = `/projects/${project.id}/threads`
   const read = async (id) => (await api('GET', `${threads}/${id}`)).body
   const settled = async (id) => {

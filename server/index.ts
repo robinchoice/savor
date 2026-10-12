@@ -272,7 +272,7 @@ route('POST', '/projects', (_, b, ctx) => {
   return git.openProject(b.path, b.name, !!b.create)
 })
 route('PUT', '/projects/order', (_, b) => {
-  store.reorderProjects((b.ids ?? []).map(String))
+  store.fixProjects((b.ids ?? []).map(String))
   emit({ type: 'projects' })
   return {}
 })
@@ -286,8 +286,10 @@ route('PATCH', '/projects/:pid', (params, b, ctx) => {
   const setupChanged = typeof b.worktreeSetup === 'string' && b.worktreeSetup !== p.worktreeSetup
   if (roleChanged || setupChanged || (agent && JSON.stringify(agent) !== JSON.stringify(p.agent))) localOnly(ctx)
   if (roleChanged) store.saveRole(p, b.role)
-  const patch = Object.fromEntries(Object.entries(b).filter(([k]) => ['name', 'tint', 'agent', 'verbosity', 'paused', 'pinned', 'worktreeSetup', 'type'].includes(k)))
+  const patch = Object.fromEntries(Object.entries(b).filter(([k]) => ['name', 'tint', 'agent', 'verbosity', 'paused', 'pinned', 'fixed', 'worktreeSetup', 'type'].includes(k)))
   if (agent) patch.agent = agent
+  // A closed tab opens again among the others, by name.
+  if (patch.pinned === false) patch.fixed = false
   const updated = store.updateProject(p.id, patch)
   emit({ type: 'projects' })
   return updated

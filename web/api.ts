@@ -177,6 +177,7 @@ export interface Project {
   verbosity: 'low' | 'medium' | 'high'
   paused: boolean
   pinned: boolean
+  fixed: boolean
   worktreeSetup: string
   type?: string
   counts: { working: number; blocked: number; unread: number; open: number }

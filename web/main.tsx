@@ -1,7 +1,7 @@
 import './monitoring'
-import { render } from 'preact'
+import { Fragment, render } from 'preact'
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
-import { Coffee, Download, FolderOpen, Monitor, Pin, PinOff, RefreshCw, Search, Files as FilesIcon, MessageSquare, Moon, Server, SlidersHorizontal, SquareKanban, Sun, Workflow as WorkflowIcon, ChevronDown, Inbox, Layers, LayoutList, Smartphone, X, CalendarCheck, FileDown, MoreHorizontal, SquareTerminal } from 'lucide-preact'
+import { ArrowDownAZ, Coffee, Download, Lock, FolderOpen, Monitor, Pin, PinOff, RefreshCw, Search, Files as FilesIcon, MessageSquare, Moon, Server, SlidersHorizontal, SquareKanban, Sun, Workflow as WorkflowIcon, ChevronDown, Inbox, Layers, LayoutList, Smartphone, X, CalendarCheck, FileDown, MoreHorizontal, SquareTerminal } from 'lucide-preact'
 import { api, avatarStyle, cap, connectEvents, desktop, go, initial, lastThreadKey, Unauthorized, useApi, useEvent, type Me, type Project } from './api'
 import { ContextActions, Conversations } from './Conversations'
 import { FilesView } from './Files'
@@ -240,12 +240,20 @@ function TopBar({ projects, active, all, me, setMe }: { projects: Project[]; act
     e.stopPropagation()
     api('PATCH', `/projects/${p.id}`, { pinned: !p.pinned })
   }
-  // Tabs can be dragged into a new order; it shows right away and the server keeps it.
+  // Tabs follow by name, behind the fixed ones. A tab dragged to a place, or fixed with a right click, stays
+  // there, and so do the tabs before it. The new order shows right away and the server keeps it.
   const [drag, setDrag] = useState<{ id: string; over?: string; after?: boolean } | null>(null)
   const [order, setOrder] = useState<string[] | null>(null)
+  const [tabMenu, setTabMenu] = useState<{ project: Project; x: number; y: number } | null>(null)
   useEffect(() => setOrder(null), [projects])
   const sorted = order ? [...projects].sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id)) : projects
   const tabs = sorted.filter((p) => p.pinned || p.id === active?.id)
+  const fixUpTo = (ids: string[], id: string) => {
+    setOrder(ids)
+    const upTo = ids.indexOf(id)
+    const fixed = new Set(projects.filter((p) => p.fixed).map((p) => p.id))
+    api('PUT', '/projects/order', { ids: ids.filter((x, i) => fixed.has(x) || (i <= upTo && tabs.some((p) => p.id === x))) })
+  }
   for (let i = 0; i < 9; i++) useShortcut(`project${i + 1}` as Action, tabs[i] && (() => (location.hash = projectHref(tabs[i].id))))
   useShortcut('shortcuts', () => setDialog('shortcuts'))
   const dragOver = (e: DragEvent, p: Project) => {
@@ -259,9 +267,8 @@ function TopBar({ projects, active, all, me, setMe }: { projects: Project[]; act
     if (!drag?.over) return setDrag(null)
     const ids = sorted.map((p) => p.id).filter((id) => id !== drag.id)
     ids.splice(ids.indexOf(drag.over) + (drag.after ? 1 : 0), 0, drag.id)
-    setOrder(ids)
     setDrag(null)
-    api('PUT', '/projects/order', { ids })
+    fixUpTo(ids, drag.id)
   }
   // A click outside a menu closes it, unless that click just opened the other menu.
   const closeMenu = (which: typeof menu) => setMenu((m) => (m === which ? null : m))
@@ -284,29 +291,33 @@ function TopBar({ projects, active, all, me, setMe }: { projects: Project[]; act
           <Counts project={{ counts: { working: total('working'), blocked: total('blocked'), unread: total('unread'), open: total('open') } }} />
         </a>
         <span class="tab-sep" />
-        {tabs.map((p) => (
-          <a
-            key={p.id}
-            href={projectHref(p.id)}
-            class={`project-tab ${p.id === active?.id ? 'active' : ''} ${drag?.id === p.id ? 'dragging' : ''} ${drag?.over === p.id ? (drag.after ? 'drop-after' : 'drop-before') : ''}`}
-            draggable
-            onDragStart={(e) => (e.dataTransfer!.effectAllowed = 'move', setDrag({ id: p.id }))}
-            onDragOver={(e) => dragOver(e, p)}
-            onDrop={drop}
-            onDragEnd={() => setDrag(null)}
-          >
-            <span class="avatar" style={avatarStyle(p.tint)}>
-              {initial(p.name)}
-            </span>
-            <span class="name">{p.name}</span>
-            {p.paused && <span class="muted small">paused</span>}
-            <Counts project={p} />
-            <button class={`tab-pin ${p.pinned ? '' : 'unpinned'}`} title={p.pinned ? 'Unpin: remove the tab' : 'Pin as a tab'} onClick={(e) => togglePin(e, p)}>
-              {p.pinned ? <PinOff size={13} /> : <Pin size={13} />}
-            </button>
-          </a>
+        {tabs.map((p, i) => (
+          <Fragment key={p.id}>
+            {i > 0 && tabs[i - 1].fixed && !p.fixed && <span class="tab-sep" />}
+            <a
+              href={projectHref(p.id)}
+              class={`project-tab ${p.id === active?.id ? 'active' : ''} ${drag?.id === p.id ? 'dragging' : ''} ${drag?.over === p.id ? (drag.after ? 'drop-after' : 'drop-before') : ''}`}
+              draggable
+              onDragStart={(e) => (e.dataTransfer!.effectAllowed = 'move', setDrag({ id: p.id }))}
+              onDragOver={(e) => dragOver(e, p)}
+              onDrop={drop}
+              onDragEnd={() => setDrag(null)}
+              onContextMenu={(e) => (e.preventDefault(), setTabMenu({ project: p, x: e.clientX, y: e.clientY }))}
+            >
+              <span class="avatar" style={avatarStyle(p.tint)}>
+                {initial(p.name)}
+              </span>
+              <span class="name">{p.name}</span>
+              {p.paused && <span class="muted small">paused</span>}
+              <Counts project={p} />
+              <button class={`tab-pin ${p.pinned ? '' : 'unpinned'}`} title={p.pinned ? 'Unpin: remove the tab' : 'Pin as a tab'} onClick={(e) => togglePin(e, p)}>
+                {p.pinned ? <PinOff size={13} /> : <Pin size={13} />}
+              </button>
+            </a>
+          </Fragment>
         ))}
       </nav>
+      {tabMenu && <TabMenu project={tabMenu.project} at={tabMenu} fix={() => fixUpTo(sorted.map((p) => p.id), tabMenu.project.id)} close={() => setTabMenu(null)} />}
       <div class="topbar-right">
         <WorkflowButtons />
         <UsageMeter />
@@ -342,6 +353,44 @@ function TopBar({ projects, active, all, me, setMe }: { projects: Project[]; act
         {bugButton && <BugButton me={me} />}
       </div>
     </header>
+  )
+}
+
+// Right-clicking a tab fixes it in place, lets it follow by name again, or closes it.
+function TabMenu({ project: p, at, fix, close }: { project: Project; at: { x: number; y: number }; fix: () => void; close: () => void }) {
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const on = (e: MouseEvent) => !e.composedPath().includes(ref.current!) && close()
+    setTimeout(() => {
+      addEventListener('click', on)
+      addEventListener('contextmenu', on)
+    })
+    return () => {
+      removeEventListener('click', on)
+      removeEventListener('contextmenu', on)
+    }
+  }, [])
+  const patch = (body: Partial<Project>) => {
+    close()
+    api('PATCH', `/projects/${p.id}`, body)
+  }
+  return (
+    <div ref={ref} class="menu" style={{ position: 'fixed', left: at.x, top: at.y }}>
+      {p.fixed ? (
+        <button onClick={() => patch({ fixed: false })}>
+          <ArrowDownAZ size={14} /> Sort by name
+        </button>
+      ) : (
+        <button onClick={() => (close(), fix())}>
+          <Lock size={14} /> Keep in place
+        </button>
+      )}
+      {p.pinned && (
+        <button onClick={() => patch({ pinned: false })}>
+          <PinOff size={14} /> Close tab
+        </button>
+      )}
+    </div>
   )
 }
 
