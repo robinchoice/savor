@@ -189,6 +189,17 @@ export function removeWorktree(p: Project, wt: { branch: string; path: string })
   emit({ type: 'thread', projectId: p.id })
 }
 
+// The project folder moves: idle agent processes end, and the next input starts them in the new place.
+export function endSessions(p: Project) {
+  for (const t of store.listThreads(p)) {
+    const s = sessions.get(t.id)
+    if (!s || busy.has(t.id)) continue
+    sessions.delete(t.id)
+    clearTimeout(s.idleTimer)
+    s.session.kill()
+  }
+}
+
 // A worktree whose conversations are all finished and whose work is merged has done its job, and goes.
 export function tidyWorktree(p: Project, dir: string | undefined) {
   const wt = dir && git.listWorktrees(p).find((w) => w.path === dir)
@@ -451,7 +462,7 @@ function hostFor(p: Project, thread: Thread, holder: { session?: Session }): Hos
 
 // ---- approvals and clarifying questions ----
 
-function askApproval(p: Project, tid: string, req: ApprovalRequest) {
+export function askApproval(p: Project, tid: string, req: ApprovalRequest) {
   const msg = post(p, tid, { kind: 'approval', approval: { ...req, status: 'pending' } })
   store.updateThread(p, tid, { unread: true, needsYou: true })
   emit({ type: 'thread', projectId: p.id, threadId: tid })

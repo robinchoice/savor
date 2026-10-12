@@ -88,6 +88,7 @@ small { display: block; font-size: 12px; }
 .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .row.wide > * { flex: 1; min-width: 180px; }
 .error-text { color: var(--red); font-size: 13px; }
+.warning-text { color: var(--needs); font-size: 13px; }
 
 button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; padding: 0; }
 button:disabled { opacity: 0.45; cursor: default; }
@@ -718,6 +719,10 @@ mark { background: color-mix(in srgb, var(--attn) 50%, transparent); color: inhe
 .overlay { position: fixed; inset: 0; z-index: 80; background: rgb(0 0 0 / 0.5); display: flex; align-items: center; justify-content: center; padding: 24px; }
 .dialog { background: var(--panel); border: 1px solid var(--line-strong); border-radius: 14px; box-shadow: var(--shadow); width: min(100%, 980px); max-height: 90vh; display: flex; flex-direction: column; overflow: hidden; }
 .import-dialog { width: min(100%, 640px); }
+.move-section .row input { flex: 1; min-width: 240px; }
+.move-plan { display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; border: 1px solid var(--line-strong); border-radius: 10px; }
+.move-plan p, .move-plan pre { margin: 0; }
+.move-plan pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 .dialog-head { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-bottom: 1px solid var(--line); }
 .dialog-head > svg { color: var(--muted); flex: none; }
 .dialog-title { flex: 1; min-width: 0; }

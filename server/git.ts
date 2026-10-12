@@ -5,6 +5,7 @@ import path from 'node:path'
 import * as store from './store.js'
 import type { Project } from './store.js'
 import { emit } from './events.js'
+import { followMovedFolder } from './move.js'
 
 export class GitError extends Error {}
 
@@ -38,8 +39,10 @@ export function keepOutOfGit(dir: string) {
   } catch {} // not a git repository
 }
 
-// A new project is a new folder with a git repository; an existing folder is opened as it is.
+// A new project is a new folder with a git repository; an existing folder is opened as it is, and
+// the project of one that moved outside Savor follows it there.
 export function openProject(dir: string, name: string | undefined, create: boolean) {
+  followMovedFolder(dir)
   const p = store.addProject(dir, name)
   if (create) {
     try {

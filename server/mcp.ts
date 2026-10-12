@@ -15,6 +15,8 @@ import { runWorkflow, syncSchedules, validateCron } from './scheduler.js'
 import { listAgents, mergeAgent, STATIC } from './providers.js'
 import { addWorktree, git, openProject } from './git.js'
 import * as ci from './ci.js'
+import * as move from './move.js'
+import * as terminal from './terminal.js'
 
 const SUMMARY = z.string().min(1).max(120).describe('One short sentence on what the user\'s latest input asks for, in their language. The conversation list shows it.')
 
@@ -288,6 +290,62 @@ function buildServer(p: Project, tid: string) {
       if (!/^(~\/|\/)/.test(dir)) throw new Error('Give an absolute path or one starting with ~/.')
       const project = openProject(dir, name, !fs.existsSync(store.expand(dir)))
       return ok({ id: project.id, name: project.name, path: project.path })
+    },
+  )
+
+  // Both change what Savor knows about the computer's folders, so the user approves each call in this conversation.
+  const approved = async (title: string, detail: string, allow: string) =>
+    (await agents.askApproval(p, tid, { title, detail, options: [{ id: 'allow', label: allow, kind: 'allow' }, { id: 'deny', label: 'Cancel', kind: 'deny' }] })).choice === 'allow'
+
+  server.registerTool(
+    'move_project',
+    {
+      description:
+        'Move or rename a project folder, archive it to `_archive/` next to it, or point the project at the place it already moved to (e.g. the target of a symlink). Conversations, git worktrees and Claude Code sessions follow. The user approves the move here first. Conversations of that project must not be at work, so it can\'t move the project this conversation runs in.',
+      inputSchema: {
+        project: z.string().min(1).describe('Project id or absolute path, see list_projects'),
+        path: z.string().min(1).optional().describe('New absolute path or ~/…'),
+        archive: z.boolean().optional().describe('Move to `_archive/<folder>` next to the folder instead of `path`'),
+        link: z.boolean().optional().describe('Leave a symlink at the old path, or keep the one there (default true)'),
+      },
+    },
+    async ({ project, path: dir, archive, link }) => {
+      const target = findProject(project)
+      const to = archive ? move.archivePath(target) : dir
+      if (!to || !/^(~\/|\/)/.test(to)) throw new Error('Give `path` as an absolute path or one starting with ~/, or `archive`.')
+      const plan = move.planMove(target, to)
+      if (plan.blockers.length) throw new Error(plan.blockers.join(' '))
+      const keep = link ?? true
+      const detail = [
+        `${plan.mode === 'move' ? 'Moves' : 'Points the project from'} ${plan.from} ${plan.mode === 'move' ? 'to' : 'at'} ${plan.to}${plan.mode === 'move' && keep ? ', leaving a symlink at the old path' : ''}.`,
+        plan.symlink && (keep ? `The symlink ${plan.from} stays.` : `Deletes the symlink ${plan.from}.`),
+        plan.claudeSessions && `${plan.claudeSessions} Claude Code session${plan.claudeSessions === 1 ? '' : 's'} move along.`,
+        plan.worktrees && `${plan.worktrees} worktree${plan.worktrees === 1 ? '' : 's'} get repaired.`,
+        plan.processes.length && `Processes outside Savor work in the folder:\n${plan.processes.map((pr) => `  ${pr.pid} ${pr.command}`).join('\n')}`,
+      ].filter(Boolean).join('\n')
+      if (!(await approved(`Move ${target.name}?`, detail, plan.processes.length ? 'Move anyway' : 'Move'))) return ok('The user cancelled the move.')
+      // Moved or removed elsewhere meanwhile, it would be another folder now.
+      const now = store.listProjects().find((q) => q.id === target.id)
+      if (now?.path !== target.path) throw new Error(`${target.name} changed while waiting for the approval. Look again.`)
+      const moved = move.moveProject(now, to, { link: keep, force: true })
+      return ok({ id: moved.id, name: moved.name, path: moved.path })
+    },
+  )
+
+  server.registerTool(
+    'remove_project',
+    {
+      description: 'Remove a project from Savor. Its folder and the conversations in its .savor stay on disk; adding the folder again brings them back. The user approves it here first.',
+      inputSchema: { project: z.string().min(1).describe('Project id or absolute path, see list_projects') },
+    },
+    async ({ project }) => {
+      const target = findProject(project)
+      if (target.id === p.id) throw new Error('This conversation runs in that project. Remove it from another one.')
+      if (!(await approved(`Remove ${target.name} from Savor?`, `${target.path} and its conversations stay on disk.`, 'Remove'))) return ok('The user kept the project.')
+      store.removeProject(target.id)
+      terminal.closeProject(target.id)
+      emit({ type: 'projects' })
+      return ok(`Removed ${target.name}.`)
     },
   )
 

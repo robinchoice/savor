@@ -290,6 +290,18 @@ function loadProject(ref: { path: string }): Project | null {
   return p && ({ tint: TINTS[0], verbosity: 'medium', paused: false, pinned: true, fixed: false, worktreeSetup: '', ...p, agent: upgradeAgent({ ...defaultAgent(), ...p.agent }), path: ref.path } as Project)
 }
 
+// The project's folder moved or turned out to live elsewhere: its registration follows.
+export function setProjectPath(id: string, dir: string): Project {
+  const s = state()
+  const ref = s.projects.find((r) => r.id === id)
+  if (!ref) throw new NotFound(`project ${id}`)
+  ref.path = dir
+  saveState(s)
+  const p = getProject(id)
+  writeJson(path.join(dataDir(p), 'project.json'), p)
+  return p
+}
+
 // The order of the tabs and the projects menu: the fixed ones as placed, then the others by name.
 export const listProjects = (): Project[] => {
   const all = state().projects.flatMap((ref) => loadProject(ref) ?? [])

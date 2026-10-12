@@ -20,7 +20,8 @@ const CAPABILITIES = { experimentalApi: true, requestAttestation: false }
 
 function spawnAppServer(projectId?: string, threadId?: string) {
   const args = ['app-server']
-  if (projectId && threadId) args.push('-c', `mcp_servers.savor.url=${JSON.stringify(mcpUrl(projectId, threadId))}`, '-c', 'mcp_servers.savor.bearer_token_env_var="SAVOR_MCP_TOKEN"')
+  // Some Savor tools wait for the user's approval, far longer than Codex's 60 s for a tool call.
+  if (projectId && threadId) args.push('-c', `mcp_servers.savor.url=${JSON.stringify(mcpUrl(projectId, threadId))}`, '-c', 'mcp_servers.savor.bearer_token_env_var="SAVOR_MCP_TOKEN"', '-c', 'mcp_servers.savor.tool_timeout_sec=86400')
   return spawn(...command(BIN.codex, args), { env: { ...process.env, SAVOR_MCP_TOKEN: store.state().mcpToken }, stdio: ['pipe', 'pipe', 'pipe'] })
 }
 

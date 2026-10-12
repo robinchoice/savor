@@ -116,7 +116,100 @@ export function Settings({ project }: { project: Project }) {
           </button>
         </div>
       </form>
+      <MoveSection project={project} />
       <ImportSection project={project} />
+    </div>
+  )
+}
+
+interface MovePlan { from: string; to: string; mode: 'move' | 'relink'; blockers: string[]; processes: { pid: number; command: string }[]; symlink: boolean; claudeSessions: number; worktrees: number }
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
+
+// Renaming or moving the folder, archiving it, or pointing the project at the place it already moved to.
+function MoveSection({ project }: { project: Project }) {
+  const [target, setTarget] = useState(project.path)
+  const [plan, setPlan] = useState<MovePlan | null>(null)
+  const [link, setLink] = useState(true)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [done, setDone] = useState('')
+  const parent = project.path.slice(0, project.path.lastIndexOf('/'))
+  const archived = parent.endsWith('/_archive')
+  const check = async (to: string) => {
+    setTarget(to)
+    setDone('')
+    setError('')
+    try {
+      setPlan(await api<MovePlan>('POST', `/projects/${project.id}/move`, { path: to, dryRun: true }))
+    } catch (e) {
+      setPlan(null)
+      setError((e as Error).message)
+    }
+  }
+  const run = async () => {
+    setBusy(true)
+    try {
+      const moved = await api<Project>('POST', `/projects/${project.id}/move`, { path: plan!.to, link, force: plan!.processes.length > 0 })
+      setDone(`The project is now at ${moved.path}.`)
+      setTarget(moved.path)
+      setPlan(null)
+      setError('')
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <div class="form move-section">
+      <h2>Move folder</h2>
+      <p class="muted">Rename or move the project folder, or point the project at the place it already moved to. Conversations, worktrees and Claude Code sessions come along.</p>
+      <form class="row" onSubmit={(e) => (e.preventDefault(), check(target))}>
+        <input class="mono" value={target} onInput={(e) => (setPlan(null), setTarget(e.currentTarget.value))} aria-label="New path" />
+        <button type="submit" class="ghost" disabled={!target.trim() || target === project.path}>
+          Check
+        </button>
+        {!archived && (
+          <button type="button" class="ghost" onClick={() => check(`${parent}/_archive/${project.path.slice(parent.length + 1)}`)}>
+            Archive
+          </button>
+        )}
+      </form>
+      {error && <p class="error-text">{error}</p>}
+      {done && <p class="muted">{done}</p>}
+      {plan && (
+        <div class="move-plan">
+          <p>
+            {plan.mode === 'move' ? `Moves the folder to ${plan.to}.` : `${plan.to} already is this folder: the project points there.`}
+            {plan.claudeSessions > 0 && ` ${plural(plan.claudeSessions, 'Claude Code session')} move along.`}
+            {plan.worktrees > 0 && ` ${plural(plan.worktrees, 'worktree')} get repaired.`} Savor's terminals of this project close.
+          </p>
+          {plan.blockers.map((b) => (
+            <p key={b} class="error-text">
+              {b}
+            </p>
+          ))}
+          {plan.processes.length > 0 && (
+            <div>
+              <p class="warning-text">Processes outside Savor work in the folder. They keep running in the old place:</p>
+              <pre class="mono small">{plan.processes.map((p) => `${p.pid}  ${p.command}`).join('\n')}</pre>
+            </div>
+          )}
+          {(plan.mode === 'move' || plan.symlink) && (
+            <label class="check">
+              <input type="checkbox" checked={link} onChange={(e) => setLink(e.currentTarget.checked)} /> {plan.mode === 'move' ? 'Leave a symlink at the old path' : `Keep the symlink ${plan.from}`}
+            </label>
+          )}
+          {!plan.blockers.length && (
+            <div class="row">
+              <button type="button" class="primary" disabled={busy} onClick={run}>
+                {busy ? 'Moving…' : plan.processes.length ? 'Move anyway' : plan.mode === 'move' ? 'Move' : 'Point here'}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }

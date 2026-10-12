@@ -29,7 +29,7 @@ export const watchProcesses = () => setInterval(sweep, 5000)
 
 const cgroupOf = (pid: number | 'self') => fs.readFileSync(`/proc/${pid}/cgroup`, 'utf8')
 
-function tree(root: number) {
+export function tree(root: number) {
   const parents = new Map<number, number>()
   for (const d of fs.readdirSync('/proc')) {
     if (!/^\d+$/.test(d)) continue

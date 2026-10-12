@@ -10,7 +10,7 @@ import { mergeAgent } from './providers.js'
 export interface ImportableSession { provider: 'claude' | 'codex'; id: string; title: string; startedAt: string; messages: number; imported: boolean }
 interface Parsed { id: string; title: string; startedAt: string; updatedAt: string; messages: Omit<Message, 'id'>[] }
 
-const claudeDir = () => process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), '.claude')
+export const claudeDir = () => process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), '.claude')
 const codexDir = () => process.env.CODEX_HOME ?? path.join(os.homedir(), '.codex')
 
 // Savor's turn envelope wraps the user's text; only the input is shown.

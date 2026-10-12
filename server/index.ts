@@ -28,6 +28,7 @@ import { isUnsafe, listAgents, listSkills, listUsage, mergeAgent } from './provi
 import { nextRun, runEarly, runs, runWorkflow, syncSchedules, validateCron } from './scheduler.js'
 import * as git from './git.js'
 import * as ci from './ci.js'
+import * as move from './move.js'
 import { deleteSessions, importSessions, listSessions } from './import.js'
 import * as voice from './voice.js'
 import * as workspace from './workspace.js'
@@ -296,6 +297,19 @@ route('PATCH', '/projects/:pid', (params, b, ctx) => {
   const updated = store.updateProject(p.id, patch)
   emit({ type: 'projects' })
   return updated
+})
+// Moves or renames the project folder, or points the project at where it already is. `dryRun` only shows the plan.
+route('POST', '/projects/:pid/move', (params, b, ctx) => {
+  localOnly(ctx)
+  const p = project(params)
+  if (!/^(~\/|\/)/.test(String(b.path ?? ''))) throw new BadRequest('Give an absolute path or one starting with ~/.')
+  if (b.dryRun) return move.planMove(p, b.path)
+  try {
+    return move.moveProject(p, b.path, { link: b.link !== false, force: !!b.force })
+  } catch (e) {
+    if (e instanceof move.MoveError) throw new BadRequest(e.message)
+    throw e
+  }
 })
 route('DELETE', '/projects/:pid', (params, _, ctx) => {
   localOnly(ctx)
