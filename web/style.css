@@ -903,13 +903,15 @@ mark { background: color-mix(in srgb, var(--attn) 50%, transparent); color: inhe
 .statusbar .muted { color: var(--muted); }
 .statusbar b { font-weight: 500; }
 .statusbar b.low { color: var(--red); }
-.status-usage { display: flex; align-items: center; gap: 18px; height: 22px; padding: 0 4px; border-radius: 5px; }
+.statusbar > .menu-anchor { display: flex; min-width: 0; }
+.status-usage { display: flex; align-items: center; gap: 18px; min-width: 0; overflow: hidden; height: 22px; padding: 0 4px; border-radius: 5px; }
 .status-usage:hover { background: var(--raised); }
 .status-agent { display: inline-flex; align-items: center; gap: 6px; }
 .mini-bar { width: 40px; height: 4px; border-radius: 2px; background: var(--line-strong); overflow: hidden; }
 .mini-bar i { display: block; height: 100%; background: var(--grad); }
 .mini-bar i.low { background: var(--red); }
-.status-ci { display: flex; align-items: center; gap: 8px; min-width: 0; overflow: hidden; }
+/* Runs come and go, so they win the space over the limits. */
+.status-ci { display: flex; align-items: center; gap: 8px; flex: none; max-width: 70%; overflow: hidden; }
 .ci-run { display: inline-flex; align-items: center; gap: 5px; }
 .ci-run a { color: var(--text); text-decoration: none; padding: 0 3px; border-radius: 4px; }
 .ci-run a:hover { background: var(--raised); }
