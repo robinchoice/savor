@@ -141,7 +141,7 @@ try {
     const page = await browser.newPage({ locale: 'en-US', timezoneId: TZ, ...options })
     await page.addInitScript((t) => {
       localStorage.setItem('savor-theme', t)
-      localStorage.setItem('savor-prefs', JSON.stringify({ chatWidth: 560 }))
+      localStorage.setItem('savor-prefs', JSON.stringify({ layout: { dir: 'col', sizes: [0, 300], children: [{ dir: 'row', sizes: [330, 560, 0], children: ['list', 'main', 'stage'] }, 'terminal'] } }))
     }, theme)
     await page.goto(`${base}/?token=${token}`)
     return page

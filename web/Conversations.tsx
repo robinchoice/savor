@@ -15,10 +15,11 @@ import { Preview } from './Preview'
 import { PleasanceFooter } from './PleasanceFooter'
 import { Changes, type ReviewComment, type Source } from './Changes'
 import { Fanout } from './Fanout'
-import { setPrefs, usePrefs } from './prefs'
+import { usePrefs } from './prefs'
 import { keyLabel, useKey, useShortcut } from './Shortcuts'
 import { runInTerminal, setTerminalHome, showTerminal } from './Terminal'
 import { offerUndo, resetWalk, swipeToFinish, ThumbBar, UndoToast } from './Swipe'
+import { Panel, useHidePanel, useNarrow } from './Layout'
 
 const SHELL = /\blanguage-(bash|sh|shell|zsh)\b/
 
@@ -195,64 +196,76 @@ export function Conversations({ project, threadId, fanoutId, isNew }: { project:
 
   return (
     <div class={`conversations ${threadId || fanoutId || isNew ? 'has-detail' : ''}`}>
-      <aside class="conv-list">
-        <div class="conv-head">
-          <h2>Conversations</h2>
-          <NextButton paths={nextPaths} />
-          <a class="new-btn" href={`#/p/${project.id}/new`} title="New conversation">
-            <Plus size={18} />
-          </a>
-        </div>
-        <label class="search">
-          <Search size={15} />
-          <input placeholder="Search conversations..." value={query} onInput={(e) => setQuery(e.currentTarget.value)} />
-        </label>
-        <div class="filters">
-          {tab('all', 'All')}
-          {tab('you', 'For you')}
-          {tab('working', 'Working')}
-        </div>
-        {filter !== 'all' ? (
-          <div class="cards">
-            {filtered[filter].map((t) => <ThreadCard key={t.id} project={project} thread={t} active={t.id === threadId} />)}
-            {threads && !filtered[filter].length && <p class="muted center">{q ? 'No matching conversations.' : 'No conversations in this filter.'}</p>}
+      <Panel id="list">
+        <aside class="conv-list">
+          <div class="conv-head">
+            <h2>Conversations</h2>
+            <NextButton paths={nextPaths} />
+            <a class="new-btn" href={`#/p/${project.id}/new`} title="New conversation">
+              <Plus size={18} />
+            </a>
           </div>
-        ) : (
-          <div class="cards">
-            {section('for-you', 'For you', forYou)}
-            {section('working', 'Working', working)}
-            {section('open', 'Open', rest)}
-            {(fanouts.size > 0 || plainWorktrees.length > 0) && (
-              <div class={`sec worktrees ${closed.includes('worktrees') ? 'closed' : ''}`}>
-                <button class="sec-head" onClick={() => toggle('worktrees')}>
-                  Worktrees <span class="sec-count">{fanouts.size + plainWorktrees.length}</span>
-                  <ChevronDown size={13} />
-                </button>
-                {!closed.includes('worktrees') && (
-                  <>
-                    {[...fanouts].map(([id, list]) => (
-                      <a key={id} class={`fan-head ${id === fanoutId ? 'active' : ''}`} href={`#/p/${project.id}/fan/${id}`} title="Compare the results">
-                        <Split size={14} />
-                        <span class="fan-title">{list[0].title}</span>
-                        <span class="muted small">{list.some((t) => t.busy || t.waiting) ? `${list.filter((t) => !t.busy && !t.waiting).length} of ${list.length} finished` : 'Compare'}</span>
-                      </a>
-                    ))}
-                    {plainWorktrees.map((w) => (
-                      <WorktreeHead key={w.path} project={project} branch={w.branch} path={w.path} info={w} />
-                    ))}
-                  </>
-                )}
-              </div>
-            )}
-            {section('finished', 'Finished', finished)}
-            {threads && !visible.length && <p class="muted center">{q ? 'No matching conversations.' : 'No conversations yet.'}</p>}
+          <label class="search">
+            <Search size={15} />
+            <input placeholder="Search conversations..." value={query} onInput={(e) => setQuery(e.currentTarget.value)} />
+          </label>
+          <div class="filters">
+            {tab('all', 'All')}
+            {tab('you', 'For you')}
+            {tab('working', 'Working')}
           </div>
-        )}
-        <footer class="list-foot">
-          <PleasanceFooter />
-        </footer>
-      </aside>
-      {threadId ? <ThreadView key={threadId} project={project} threadId={threadId} next={nextPaths} siblings={siblings} /> : fanoutId ? <Fanout key={fanoutId} project={project} id={fanoutId} /> : <NewConversation project={project} />}
+          {filter !== 'all' ? (
+            <div class="cards">
+              {filtered[filter].map((t) => <ThreadCard key={t.id} project={project} thread={t} active={t.id === threadId} />)}
+              {threads && !filtered[filter].length && <p class="muted center">{q ? 'No matching conversations.' : 'No conversations in this filter.'}</p>}
+            </div>
+          ) : (
+            <div class="cards">
+              {section('for-you', 'For you', forYou)}
+              {section('working', 'Working', working)}
+              {section('open', 'Open', rest)}
+              {(fanouts.size > 0 || plainWorktrees.length > 0) && (
+                <div class={`sec worktrees ${closed.includes('worktrees') ? 'closed' : ''}`}>
+                  <button class="sec-head" onClick={() => toggle('worktrees')}>
+                    Worktrees <span class="sec-count">{fanouts.size + plainWorktrees.length}</span>
+                    <ChevronDown size={13} />
+                  </button>
+                  {!closed.includes('worktrees') && (
+                    <>
+                      {[...fanouts].map(([id, list]) => (
+                        <a key={id} class={`fan-head ${id === fanoutId ? 'active' : ''}`} href={`#/p/${project.id}/fan/${id}`} title="Compare the results">
+                          <Split size={14} />
+                          <span class="fan-title">{list[0].title}</span>
+                          <span class="muted small">{list.some((t) => t.busy || t.waiting) ? `${list.filter((t) => !t.busy && !t.waiting).length} of ${list.length} finished` : 'Compare'}</span>
+                        </a>
+                      ))}
+                      {plainWorktrees.map((w) => (
+                        <WorktreeHead key={w.path} project={project} branch={w.branch} path={w.path} info={w} />
+                      ))}
+                    </>
+                  )}
+                </div>
+              )}
+              {section('finished', 'Finished', finished)}
+              {threads && !visible.length && <p class="muted center">{q ? 'No matching conversations.' : 'No conversations yet.'}</p>}
+            </div>
+          )}
+          <footer class="list-foot">
+            <PleasanceFooter />
+          </footer>
+        </aside>
+      </Panel>
+      {threadId ? (
+        <ThreadView key={threadId} project={project} threadId={threadId} next={nextPaths} siblings={siblings} />
+      ) : fanoutId ? (
+        <Panel id="main" title="Comparison">
+          <Fanout key={fanoutId} project={project} id={fanoutId} />
+        </Panel>
+      ) : (
+        <Panel id="main" title="New conversation">
+          <NewConversation project={project} />
+        </Panel>
+      )}
       <UndoToast />
     </div>
   )
@@ -669,18 +682,6 @@ function ContextUse({ context: c }: { context: NonNullable<Thread['context']> })
   )
 }
 
-// Phones and narrow windows, where chat and page do not fit side by side.
-function useNarrow() {
-  const query = useMemo(() => matchMedia('(max-width: 860px)'), [])
-  const [narrow, setNarrow] = useState(query.matches)
-  useEffect(() => {
-    const change = () => setNarrow(query.matches)
-    query.addEventListener('change', change)
-    return () => query.removeEventListener('change', change)
-  }, [])
-  return narrow
-}
-
 // `back` is where the arrow leads; set outside the project, a second button opens the conversation there.
 // `next` lists the conversations that need you, so Finish & next can open the first other one.
 // `siblings` are the project's conversations in the list's order, for the bar below a conversation on a phone.
@@ -697,8 +698,6 @@ export function ThreadView({ project, threadId, back, next, siblings }: { projec
   // What the agent says while the chat is out of sight shows above the small composer.
   const [seen, setSeen] = useState(0)
   const narrow = useNarrow()
-  const { chatWidth } = usePrefs()
-  const layoutRef = useRef<HTMLDivElement>(null)
   // Moving the composer between chat and page starts it fresh, so a suggestion taken up earlier must not come back.
   const setView = (v: 'chat' | 'browser' | 'changes') => {
     localStorage.setItem(viewKey, v)
@@ -747,6 +746,8 @@ export function ThreadView({ project, threadId, back, next, siblings }: { projec
   // Browser and changes both sit beside the chat.
   const browserMode = mode !== 'chat'
   const floating = browserMode && (chatHidden || narrow)
+  // Beside the page the conversation list makes room, as it always did.
+  useHidePanel('list', browserMode)
   useEffect(() => setSeen(data?.messages.length ?? 0), [floating, !data])
   useEffect(() => {
     const el = listRef.current
@@ -787,12 +788,14 @@ export function ThreadView({ project, threadId, back, next, siblings }: { projec
   useShortcut('browser', () => setView(mode === 'browser' ? 'chat' : 'browser'))
 
   if (!data) return (
-    <section class="thread">
-      <div class="empty-state" role="status">
-        <p>{loadError ? `Could not load this conversation: ${loadError.message}` : 'Loading conversation…'}</p>
-        {loadError && <button class="ghost" onClick={reload}>Try again</button>}
-      </div>
-    </section>
+    <Panel id="main" title="Chat">
+      <section class="thread">
+        <div class="empty-state" role="status">
+          <p>{loadError ? `Could not load this conversation: ${loadError.message}` : 'Loading conversation…'}</p>
+          {loadError && <button class="ghost" onClick={reload}>Try again</button>}
+        </div>
+      </section>
+    </Panel>
   )
   const { thread, messages, decisions, busy, waiting } = data
   // An agent can be stopped while it works, waits, or still runs background work after its conclusion.
@@ -880,27 +883,6 @@ export function ThreadView({ project, threadId, back, next, siblings }: { projec
     if (browserMode) setView('chat')
     setActivityOpen(true)
   }
-  // Dragging the divider moves the border between chat and page; the width stays for next time.
-  const resize = (e: PointerEvent) => {
-    e.preventDefault()
-    const handle = e.currentTarget as HTMLElement
-    const layout = layoutRef.current!
-    const from = e.clientX - layout.querySelector<HTMLElement>('.thread')!.offsetWidth
-    let width = chatWidth
-    const move = (ev: PointerEvent) => {
-      width = Math.round(Math.max(300, Math.min(layout.clientWidth - 420, ev.clientX - from)))
-      layout.style.setProperty('--chat', `${width}px`)
-    }
-    const up = () => {
-      handle.removeEventListener('pointermove', move)
-      handle.removeEventListener('pointerup', up)
-      setPrefs({ chatWidth: width })
-    }
-    handle.setPointerCapture(e.pointerId)
-    handle.addEventListener('pointermove', move)
-    handle.addEventListener('pointerup', up)
-  }
-
   // On a phone and beside the preview, the header keeps only the menu and the switch.
   const compactHead = browserMode || narrow
   const said = thread.needsYou ? 'Your turn' : last && last.kind !== 'user' && messages.length > seen ? last.text : ''
@@ -941,262 +923,265 @@ export function ThreadView({ project, threadId, back, next, siblings }: { projec
   )
 
   return (
-    <div class={`thread-layout ${browserMode ? 'browser' : ''}`} ref={layoutRef} style={browserMode ? { '--chat': `${chatWidth}px` } : undefined}>
+    <div class={`thread-layout ${browserMode ? 'browser' : ''}`}>
       {!(browserMode && chatHidden && !narrow) && (
-        <section class="thread">
-          <header class="thread-head">
-            <a class="square back" href={`#${back ?? `/p/${project.id}`}`} title="All conversations">
-              <ArrowLeft size={17} />
-            </a>
-            {browserMode && (
-              <button class="square list" title="Show conversations" onClick={() => setView('chat')}>
-                <PanelLeft size={17} />
-              </button>
-            )}
-            <div class="thread-head-text">
-              <h1>{thread.summary ?? thread.title}</h1>
-              <div class="thread-sub">
-                <Label label={thread.label} />
-                <span class={`status ${status.cls}`}>
-                  {status.icon} {status.text}{busy && elapsed ? ` · ${elapsed}` : ''}
-                </span>
-                {data.background && !busy && !waiting && <span class="status">Background work running</span>}
-                {stoppable && <button class="status stop-work" onClick={stop}>Stop</button>}
-                {queued > 0 && <span class="status">{queued} queued</span>}
-                {thread.worktree && (
-                  <span class="status worktree" title={thread.worktree.path}>
-                    <GitBranch size={12} /> {thread.worktree.branch}
+        <Panel id="main" title="Chat" class={`thread-layout ${browserMode ? 'browser' : ''}`}>
+          <section class="thread">
+            <header class="thread-head">
+              <a class="square back" href={`#${back ?? `/p/${project.id}`}`} title="All conversations">
+                <ArrowLeft size={17} />
+              </a>
+              {browserMode && (
+                <button class="square list" title="Show conversations" onClick={() => setView('chat')}>
+                  <PanelLeft size={17} />
+                </button>
+              )}
+              <div class="thread-head-text">
+                <h1>{thread.summary ?? thread.title}</h1>
+                <div class="thread-sub">
+                  <Label label={thread.label} />
+                  <span class={`status ${status.cls}`}>
+                    {status.icon} {status.text}{busy && elapsed ? ` · ${elapsed}` : ''}
                   </span>
-                )}
-                {thread.fanout && (
-                  <a class="status" href={`#/p/${project.id}/fan/${thread.fanout.id}`} title="Compare with the other agents">
-                    <Split size={12} /> Comparison
-                  </a>
-                )}
-                {thread.fork && (
-                  <a class="status fork" href={`#/p/${project.id}/t/${thread.parentId}`} title="Open the conversation this one branches off">
-                    <GitFork size={12} /> Fork
-                  </a>
-                )}
-                {thread.context && <ContextUse context={thread.context} />}
-              </div>
-            </div>
-            <div class="head-actions">
-              {back && (
-                <a class="square" href={`#/p/${project.id}/t/${threadId}`} title={`Open in ${project.name}`}>
-                  <SquareArrowOutUpRight size={16} />
-                </a>
-              )}
-              {!compactHead && (
-                <button class={`square ${thread.completed ? 'on' : ''}`} title={thread.completed ? 'Reopen' : 'Finish'} onClick={() => patch({ completed: !thread.completed })}>
-                  <Check size={17} />
-                </button>
-              )}
-              <div class="group">
-                {!compactHead && (
-                  <button class={`square ${find.open ? 'on' : ''}`} title="Find in conversation (Ctrl+F)" onClick={() => setFind({ ...find, open: !find.open })}>
-                    <Search size={17} />
-                  </button>
-                )}
-                <div class="menu-anchor">
-                  <button class="square" title="More" onClick={() => setMenu(!menu)}>
-                    <MoreHorizontal size={17} />
-                  </button>
-                  {menu && (
-                    <div class="menu right" onClick={() => setMenu(false)}>
-                      {compactHead && <button onClick={() => patch({ completed: !thread.completed })}>{thread.completed ? 'Reopen' : 'Finish'}</button>}
-                      {compactHead && <button onClick={openFind}>Find in conversation</button>}
-                      {compactHead && <button onClick={showActivity}>Show activity</button>}
-                      <button onClick={rename}>Rename label</button>
-                      {!busy && <button onClick={fork}>Fork conversation</button>}
-                      {!busy && inTerminal && <button onClick={openInTerminal}>Open in terminal</button>}
-                      <button onClick={() => navigator.clipboard.writeText(`${project.path}/.savor/threads/${thread.id}/messages.jsonl`)}>Copy file path</button>
-                      {stoppable && <button onClick={stop}>Stop agent</button>}
-                      <button class="danger" onClick={remove}>
-                        Delete conversation
-                      </button>
-                    </div>
+                  {data.background && !busy && !waiting && <span class="status">Background work running</span>}
+                  {stoppable && <button class="status stop-work" onClick={stop}>Stop</button>}
+                  {queued > 0 && <span class="status">{queued} queued</span>}
+                  {thread.worktree && (
+                    <span class="status worktree" title={thread.worktree.path}>
+                      <GitBranch size={12} /> {thread.worktree.branch}
+                    </span>
                   )}
+                  {thread.fanout && (
+                    <a class="status" href={`#/p/${project.id}/fan/${thread.fanout.id}`} title="Compare with the other agents">
+                      <Split size={12} /> Comparison
+                    </a>
+                  )}
+                  {thread.fork && (
+                    <a class="status fork" href={`#/p/${project.id}/t/${thread.parentId}`} title="Open the conversation this one branches off">
+                      <GitFork size={12} /> Fork
+                    </a>
+                  )}
+                  {thread.context && <ContextUse context={thread.context} />}
                 </div>
+              </div>
+              <div class="head-actions">
+                {back && (
+                  <a class="square" href={`#/p/${project.id}/t/${threadId}`} title={`Open in ${project.name}`}>
+                    <SquareArrowOutUpRight size={16} />
+                  </a>
+                )}
                 {!compactHead && (
-                  <button class={`square ${activityOpen ? 'on' : ''}`} title="Activity" onClick={() => setActivityOpen(!activityOpen)}>
-                    <PanelRight size={17} />
+                  <button class={`square ${thread.completed ? 'on' : ''}`} title={thread.completed ? 'Reopen' : 'Finish'} onClick={() => patch({ completed: !thread.completed })}>
+                    <Check size={17} />
                   </button>
                 )}
-              </div>
-              <div class="modes">
-                <button class={mode === 'chat' ? 'on' : ''} aria-pressed={mode === 'chat'} title="Chat" onClick={() => setView('chat')}>
-                  <MessageSquare size={15} /> <span>Chat</span>
-                </button>
-                <button class={mode === 'browser' ? 'on' : ''} aria-pressed={mode === 'browser'} title="Browser" onClick={() => setView('browser')}>
-                  <Globe size={15} /> <span>Browser</span>
-                </button>
-                <button class={mode === 'changes' ? 'on' : ''} aria-pressed={mode === 'changes'} title="Changes" onClick={() => setView('changes')}>
-                  <FileDiff size={15} /> <span>Changes</span>
-                  {review?.length ? <i class="mode-count">{review.length}</i> : null}
-                </button>
-              </div>
-            </div>
-          </header>
-          {links && (links.source || links.targets.length > 0) && (
-            <div class="routing-links">
-              {links.source && <a href={`#/all/inbox/${links.source.project.id}/${links.source.thread.id}`}>← Inbox · {links.source.thread.summary ?? links.source.thread.title}</a>}
-              {links.targets.map(({ project: target, thread: t }) => <a key={t.id} href={`#/all/inbox/${target.id}/${t.id}`}><span class={`ring ${RINGS[kindOf(t)]}`} />{target.name} · {t.summary ?? t.title}</a>)}
-            </div>
-          )}
-          {!(browserMode && narrow) && (
-            <>
-              {find.open && (
-                <div class="find-bar">
-                  <Search size={14} />
-                  <input
-                    ref={findRef}
-                    autoFocus
-                    placeholder="Find in conversation…"
-                    value={find.q}
-                    onInput={(e) => setFind({ open: true, q: e.currentTarget.value, at: 0 })}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') step(e.shiftKey ? -1 : 1)
-                      if (e.key === 'Escape') setFind({ open: false, q: '', at: 0 })
-                    }}
-                  />
-                  <span class="count">{find.q.trim() ? (matches.length ? `${matches.indexOf(currentMatch!) + 1} of ${matches.length}` : 'No matches') : ''}</span>
-                  <button class="icon-btn" title="Older match (Shift+Enter)" disabled={!matches.length} onClick={() => step(-1)}>
-                    <ChevronUp size={16} />
-                  </button>
-                  <button class="icon-btn" title="Newer match (Enter)" disabled={!matches.length} onClick={() => step(1)}>
-                    <ChevronDown size={16} />
-                  </button>
-                  <button class="icon-btn" title="Close (Esc)" onClick={() => setFind({ open: false, q: '', at: 0 })}>
-                    <X size={16} />
-                  </button>
-                </div>
-              )}
-
-              <div class="messages" ref={listRef}>
-                {attributedMessages.map((m, i) => (
-                  <MessageItem
-                    key={m.id}
-                    m={m}
-                    thread={thread}
-                    workflow={i === 0 && thread.workflow ? { ...thread.workflow, href: `#/p/${project.id}/workflows/${thread.workflow.id}` } : undefined}
-                    decisions={decisions.filter((d) => m.decisionIds?.includes(d.id))}
-                    active={i > lastUser || m.kind === 'question'}
-                    answers={answers}
-                    setAnswer={(id, a) => setAnswers({ ...answers, [id]: a })}
-                    base={base}
-                    highlight={find.open ? find.q.trim() : ''}
-                    match={matches.includes(m.id) ? (m.id === currentMatch ? 'current' : 'match') : ''}
-                    onCommit={(hash) => {
-                      setSource(hash)
-                      setView('changes')
-                    }}
-                    preview={!browserMode && m.id === lastConclusion?.id && thread.preview}
-                    onPreview={() => setView('browser')}
-                  />
-                ))}
-                {(busy || waiting) && (
-                  <button class="working-row" title="Show activity" onClick={showActivity}>
-                    <span class="spinner" /> {busy ? workingLabel : waitingFor(thread)}{elapsed && <span class="muted"> · {elapsed}</span>} <ChevronRight size={13} />
-                  </button>
-                )}
-                {showNext && lastConclusion ? (
-                  <div class="next-actions">
-                    <div class="next-head">Next steps</div>
-                    {lastConclusion.suggestions!.map((s) => (
-                      <div class="next-row" key={s}>
-                        <button class="next-text" onClick={() => send(s)}>
-                          <span>{s}</span>
-                          <span class="next-send">
-                            <ArrowUp size={14} />
-                          </span>
-                        </button>
-                        <button class="next-edit" title="Edit before sending" onClick={() => setDraft(s)}>
-                          <Pencil size={15} />
-                        </button>
-                        <button class="next-new" title="Start in a new conversation" onClick={() => sendNew(s)}>
-                          <MessageSquarePlus size={15} />
+                <div class="group">
+                  {!compactHead && (
+                    <button class={`square ${find.open ? 'on' : ''}`} title="Find in conversation (Ctrl+F)" onClick={() => setFind({ ...find, open: !find.open })}>
+                      <Search size={17} />
+                    </button>
+                  )}
+                  <div class="menu-anchor">
+                    <button class="square" title="More" onClick={() => setMenu(!menu)}>
+                      <MoreHorizontal size={17} />
+                    </button>
+                    {menu && (
+                      <div class="menu right" onClick={() => setMenu(false)}>
+                        {compactHead && <button onClick={() => patch({ completed: !thread.completed })}>{thread.completed ? 'Reopen' : 'Finish'}</button>}
+                        {compactHead && <button onClick={openFind}>Find in conversation</button>}
+                        {compactHead && <button onClick={showActivity}>Show activity</button>}
+                        <button onClick={rename}>Rename label</button>
+                        {!busy && <button onClick={fork}>Fork conversation</button>}
+                        {!busy && inTerminal && <button onClick={openInTerminal}>Open in terminal</button>}
+                        <button onClick={() => navigator.clipboard.writeText(`${project.path}/.savor/threads/${thread.id}/messages.jsonl`)}>Copy file path</button>
+                        {stoppable && <button onClick={stop}>Stop agent</button>}
+                        <button class="danger" onClick={remove}>
+                          Delete conversation
                         </button>
                       </div>
-                    ))}
+                    )}
                   </div>
-                ) : null}
-              </div>
-
-              {canComplete && (
-                <div class="complete-actions">
-                  <button class="mark-complete" onClick={() => patch({ completed: true })}>
-                    <span>
-                      <Check size={16} />
-                    </span>
-                    Finish
-                  </button>
-                  {nextPath && (
-                    <button class="mark-complete" onClick={() => patch({ completed: true }).then(() => go(nextPath))}>
-                      <span>
-                        <ArrowRight size={16} />
-                      </span>
-                      Finish & next
+                  {!compactHead && (
+                    <button class={`square ${activityOpen ? 'on' : ''}`} title="Activity" onClick={() => setActivityOpen(!activityOpen)}>
+                      <PanelRight size={17} />
                     </button>
                   )}
                 </div>
-              )}
-              {busy && nextPath && (
-                <div class="complete-actions">
-                  <button class="mark-complete" title="Open the next conversation that needs you" onClick={() => {
-                    trail.push(location.hash.slice(1))
-                    go(nextPath)
-                  }}>
-                    <span>
-                      <ArrowRight size={16} />
-                    </span>
-                    Next
+                <div class="modes">
+                  <button class={mode === 'chat' ? 'on' : ''} aria-pressed={mode === 'chat'} title="Chat" onClick={() => setView('chat')}>
+                    <MessageSquare size={15} /> <span>Chat</span>
+                  </button>
+                  <button class={mode === 'browser' ? 'on' : ''} aria-pressed={mode === 'browser'} title="Browser" onClick={() => setView('browser')}>
+                    <Globe size={15} /> <span>Browser</span>
+                  </button>
+                  <button class={mode === 'changes' ? 'on' : ''} aria-pressed={mode === 'changes'} title="Changes" onClick={() => setView('changes')}>
+                    <FileDiff size={15} /> <span>Changes</span>
+                    {review?.length ? <i class="mode-count">{review.length}</i> : null}
                   </button>
                 </div>
-              )}
+              </div>
+            </header>
+            {links && (links.source || links.targets.length > 0) && (
+              <div class="routing-links">
+                {links.source && <a href={`#/all/inbox/${links.source.project.id}/${links.source.thread.id}`}>← Inbox · {links.source.thread.summary ?? links.source.thread.title}</a>}
+                {links.targets.map(({ project: target, thread: t }) => <a key={t.id} href={`#/all/inbox/${target.id}/${t.id}`}><span class={`ring ${RINGS[kindOf(t)]}`} />{target.name} · {t.summary ?? t.title}</a>)}
+              </div>
+            )}
+            {!(browserMode && narrow) && (
+              <>
+                {find.open && (
+                  <div class="find-bar">
+                    <Search size={14} />
+                    <input
+                      ref={findRef}
+                      autoFocus
+                      placeholder="Find in conversation…"
+                      value={find.q}
+                      onInput={(e) => setFind({ open: true, q: e.currentTarget.value, at: 0 })}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') step(e.shiftKey ? -1 : 1)
+                        if (e.key === 'Escape') setFind({ open: false, q: '', at: 0 })
+                      }}
+                    />
+                    <span class="count">{find.q.trim() ? (matches.length ? `${matches.indexOf(currentMatch!) + 1} of ${matches.length}` : 'No matches') : ''}</span>
+                    <button class="icon-btn" title="Older match (Shift+Enter)" disabled={!matches.length} onClick={() => step(-1)}>
+                      <ChevronUp size={16} />
+                    </button>
+                    <button class="icon-btn" title="Newer match (Enter)" disabled={!matches.length} onClick={() => step(1)}>
+                      <ChevronDown size={16} />
+                    </button>
+                    <button class="icon-btn" title="Close (Esc)" onClick={() => setFind({ open: false, q: '', at: 0 })}>
+                      <X size={16} />
+                    </button>
+                  </div>
+                )}
 
-              {composer}
-            </>
+                <div class="messages" ref={listRef}>
+                  {attributedMessages.map((m, i) => (
+                    <MessageItem
+                      key={m.id}
+                      m={m}
+                      thread={thread}
+                      workflow={i === 0 && thread.workflow ? { ...thread.workflow, href: `#/p/${project.id}/workflows/${thread.workflow.id}` } : undefined}
+                      decisions={decisions.filter((d) => m.decisionIds?.includes(d.id))}
+                      active={i > lastUser || m.kind === 'question'}
+                      answers={answers}
+                      setAnswer={(id, a) => setAnswers({ ...answers, [id]: a })}
+                      base={base}
+                      highlight={find.open ? find.q.trim() : ''}
+                      match={matches.includes(m.id) ? (m.id === currentMatch ? 'current' : 'match') : ''}
+                      onCommit={(hash) => {
+                        setSource(hash)
+                        setView('changes')
+                      }}
+                      preview={!browserMode && m.id === lastConclusion?.id && thread.preview}
+                      onPreview={() => setView('browser')}
+                    />
+                  ))}
+                  {(busy || waiting) && (
+                    <button class="working-row" title="Show activity" onClick={showActivity}>
+                      <span class="spinner" /> {busy ? workingLabel : waitingFor(thread)}{elapsed && <span class="muted"> · {elapsed}</span>} <ChevronRight size={13} />
+                    </button>
+                  )}
+                  {showNext && lastConclusion ? (
+                    <div class="next-actions">
+                      <div class="next-head">Next steps</div>
+                      {lastConclusion.suggestions!.map((s) => (
+                        <div class="next-row" key={s}>
+                          <button class="next-text" onClick={() => send(s)}>
+                            <span>{s}</span>
+                            <span class="next-send">
+                              <ArrowUp size={14} />
+                            </span>
+                          </button>
+                          <button class="next-edit" title="Edit before sending" onClick={() => setDraft(s)}>
+                            <Pencil size={15} />
+                          </button>
+                          <button class="next-new" title="Start in a new conversation" onClick={() => sendNew(s)}>
+                            <MessageSquarePlus size={15} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+
+                {canComplete && (
+                  <div class="complete-actions">
+                    <button class="mark-complete" onClick={() => patch({ completed: true })}>
+                      <span>
+                        <Check size={16} />
+                      </span>
+                      Finish
+                    </button>
+                    {nextPath && (
+                      <button class="mark-complete" onClick={() => patch({ completed: true }).then(() => go(nextPath))}>
+                        <span>
+                          <ArrowRight size={16} />
+                        </span>
+                        Finish & next
+                      </button>
+                    )}
+                  </div>
+                )}
+                {busy && nextPath && (
+                  <div class="complete-actions">
+                    <button class="mark-complete" title="Open the next conversation that needs you" onClick={() => {
+                      trail.push(location.hash.slice(1))
+                      go(nextPath)
+                    }}>
+                      <span>
+                        <ArrowRight size={16} />
+                      </span>
+                      Next
+                    </button>
+                  </div>
+                )}
+
+                {composer}
+              </>
+            )}
+          </section>
+          {!browserMode && activityOpen && (
+            <aside class="side-panel">
+              <div class="panel-title">
+                Activity
+                <button class="icon-btn" title="Close" onClick={() => setActivityOpen(false)}>
+                  <X size={15} />
+                </button>
+              </div>
+              <ActivityLog events={activity ?? []} />
+            </aside>
           )}
-        </section>
+        </Panel>
       )}
-      {browserMode && !chatHidden && <div class="split-handle" onPointerDown={resize} />}
       {browserMode && (
-        <section class="stage">
-          {mode === 'changes' ? (
-            <Changes
-              project={project}
-              thread={thread}
-              commits={[...messages].reverse().flatMap((m) => m.commits ?? [])}
-              source={source ?? (thread.worktree ? 'base' : 'uncommitted')}
-              setSource={setSource}
-              comments={review ?? []}
-              saveComments={saveReview}
-              narrow={narrow}
-              chatHidden={chatHidden}
-              onToggleChat={toggleChat}
-            />
-          ) : (
-            <Preview base={base} threadId={threadId} url={thread.preview} onPick={(p) => setPicked([...picked, p])} narrow={narrow} chatHidden={chatHidden} onToggleChat={toggleChat} />
-          )}
-          {floating && (
-            <div class="float">
-              {bubble}
-              {composer}
-            </div>
-          )}
-        </section>
-      )}
-      {!browserMode && activityOpen && (
-        <aside class="side-panel">
-          <div class="panel-title">
-            Activity
-            <button class="icon-btn" title="Close" onClick={() => setActivityOpen(false)}>
-              <X size={15} />
-            </button>
-          </div>
-          <ActivityLog events={activity ?? []} />
-        </aside>
+        <Panel id="stage" title={mode === 'changes' ? 'Changes' : 'Preview'}>
+          <section class="stage">
+            {mode === 'changes' ? (
+              <Changes
+                project={project}
+                thread={thread}
+                commits={[...messages].reverse().flatMap((m) => m.commits ?? [])}
+                source={source ?? (thread.worktree ? 'base' : 'uncommitted')}
+                setSource={setSource}
+                comments={review ?? []}
+                saveComments={saveReview}
+                narrow={narrow}
+                chatHidden={chatHidden}
+                onToggleChat={toggleChat}
+              />
+            ) : (
+              <Preview base={base} threadId={threadId} url={thread.preview} onPick={(p) => setPicked([...picked, p])} narrow={narrow} chatHidden={chatHidden} onToggleChat={toggleChat} />
+            )}
+            {floating && (
+              <div class="float">
+                {bubble}
+                {composer}
+              </div>
+            )}
+          </section>
+        </Panel>
       )}
       {narrow && siblings && (
         <ThumbBar project={project} threadId={threadId} siblings={siblings}>

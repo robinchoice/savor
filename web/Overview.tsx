@@ -4,6 +4,7 @@ import { ArrowRight, ChevronDown, Plus, Clock, Pause, Play, SquareArrowOutUpRigh
 import { api, avatarStyle, formatStamp, go, initial, kindOf, RINGS, useApi, type AgentConfig, type ApprovalOption, type Attachment, type Decision, type Project, type Thread, type Workflow } from './api'
 import { Composer } from './Composer'
 import { byUrgency, ContextActions, Elapsed, NextButton, plain, ThreadCard, ThreadView } from './Conversations'
+import { Panel } from './Layout'
 import { STATUS, schedule, when } from './Workflows'
 import { setPrefs, usePrefs } from './prefs'
 
@@ -273,42 +274,46 @@ function AllInbox({ threads, projects, byId, rest }: { threads?: Listed[]; proje
   }
   return (
     <div class={`conversations all-inbox ${tid || pid === 'new' ? 'has-detail' : ''}`}>
-      <aside class="conv-list">
-        <div class="conv-head">
-          <h2>Inbox</h2>
-          <NextButton paths={nextPaths} />
-          <a class="new-btn" href="#/all/inbox/new" title="New conversation">
-            <Plus size={18} />
-          </a>
-        </div>
-        <div class="filters">
-          {tab('all', 'All')}
-          {tab('you', 'For you')}
-          {tab('working', 'Working')}
-        </div>
-        <div class="cards">
-          {shown.map((t, i) => (
-            <Fragment key={t.id}>
-              {dayOf(t.updatedAt) !== dayOf(shown[i - 1]?.updatedAt ?? '') && <div class="all-day">{dayOf(t.updatedAt)}</div>}
-              <ThreadCard project={byId.get(t.projectId)!} thread={t} active={t.id === tid} href={threadHref(t)} badge />
-            </Fragment>
-          ))}
-          {threads && !shown.length && <p class="muted center">No open conversations{filter !== 'all' ? ' in this filter' : ''}.</p>}
-        </div>
-      </aside>
+      <Panel id="list" title="Inbox">
+        <aside class="conv-list">
+          <div class="conv-head">
+            <h2>Inbox</h2>
+            <NextButton paths={nextPaths} />
+            <a class="new-btn" href="#/all/inbox/new" title="New conversation">
+              <Plus size={18} />
+            </a>
+          </div>
+          <div class="filters">
+            {tab('all', 'All')}
+            {tab('you', 'For you')}
+            {tab('working', 'Working')}
+          </div>
+          <div class="cards">
+            {shown.map((t, i) => (
+              <Fragment key={t.id}>
+                {dayOf(t.updatedAt) !== dayOf(shown[i - 1]?.updatedAt ?? '') && <div class="all-day">{dayOf(t.updatedAt)}</div>}
+                <ThreadCard project={byId.get(t.projectId)!} thread={t} active={t.id === tid} href={threadHref(t)} badge />
+              </Fragment>
+            ))}
+            {threads && !shown.length && <p class="muted center">No open conversations{filter !== 'all' ? ' in this filter' : ''}.</p>}
+          </div>
+        </aside>
+      </Panel>
       {project && tid ? (
         <>
           <ThreadView key={tid} project={project} threadId={tid} back="/all/inbox" next={nextPaths} />
           <ContextActions project={project} projects={projects} threadId={tid} inbox />
         </>
       ) : (
-        <section class="thread new-thread">
-          <div class="new-hero">
-            <h1>What do you want to build?</h1>
-            <p class="muted">Start a conversation in any project, or pick one from the list.</p>
-          </div>
-          <StartAnywhere projects={projects} initial={null} autoFocus />
-        </section>
+        <Panel id="main" title="New conversation">
+          <section class="thread new-thread">
+            <div class="new-hero">
+              <h1>What do you want to build?</h1>
+              <p class="muted">Start a conversation in any project, or pick one from the list.</p>
+            </div>
+            <StartAnywhere projects={projects} initial={null} autoFocus />
+          </section>
+        </Panel>
       )}
     </div>
   )

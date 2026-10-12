@@ -9,6 +9,7 @@ import { setPrefs, usePrefs, type Density, type Prefs, type Theme } from './pref
 import { qr, RELAY_LABEL, type DeviceRow, type RelayState } from './Settings'
 import { forgetProfile, loadProfile } from './transport'
 import { megabytes, type VoiceModels } from './voice'
+import { resetLayout } from './Layout'
 
 const REPO = 'https://github.com/robinchoice/savor'
 
@@ -431,6 +432,24 @@ export function AccountDialog({ me, projects, toggleAwake, open, onClose }: { me
                 </span>
                 <button class={`switch ${prefs.bugButton ? 'on' : ''}`} role="switch" aria-checked={prefs.bugButton} onClick={() => setPrefs({ bugButton: !prefs.bugButton })}>
                   <i />
+                </button>
+              </div>
+              <div class="setting wide-only">
+                <span>
+                  Free windows
+                  <small class="muted">Expert mode: move and resize panels anywhere, they may overlap</small>
+                </span>
+                <button class={`switch ${prefs.freeWindows ? 'on' : ''}`} role="switch" aria-checked={prefs.freeWindows} onClick={() => setPrefs({ freeWindows: !prefs.freeWindows })}>
+                  <i />
+                </button>
+              </div>
+              <div class="setting wide-only">
+                <span>
+                  Layout
+                  <small class="muted">Puts every panel back in its place and size</small>
+                </span>
+                <button class="ghost" disabled={!prefs.layout && !prefs.windows} onClick={resetLayout}>
+                  Reset
                 </button>
               </div>
               <button class="setting" onClick={() => open('appearance')}>

@@ -495,13 +495,10 @@ main { flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
 
 /* ---- browser mode: the page takes the stage, the chat stays beside it ---- */
 
-.conversations:has(.thread-layout.browser) { grid-template-columns: minmax(0, 1fr); }
-.conversations:has(.thread-layout.browser) .conv-list { display: none; }
 .modes { display: flex; gap: 2px; padding: 2px; margin-left: 6px; border-radius: 10px; background: var(--card); }
 .modes button { display: flex; align-items: center; gap: 6px; height: 30px; padding: 0 11px; border-radius: 8px; color: var(--muted); font-size: 13px; font-weight: 500; transition: background 0.18s ease, color 0.18s ease; }
 .modes button:hover { color: var(--text); }
 .modes button.on { background: var(--raised); color: var(--text); }
-.thread-layout.browser .thread { flex: none; width: clamp(300px, var(--chat), calc(100% - 420px)); }
 .thread-layout.browser .thread-head { padding: 14px 14px 6px; gap: 8px; align-items: center; }
 .thread-layout.browser .thread-head h1 { font-size: 19px; }
 .thread-layout.browser .modes button { padding: 0 9px; }
@@ -509,9 +506,6 @@ main { flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
 .thread-layout.browser .messages { padding: 14px 14px 16px; }
 .thread-layout.browser .complete-actions { margin-left: 14px; }
 .thread-layout.browser .thread .composer { width: calc(100% - 20px); margin-bottom: 10px; }
-.split-handle { flex: none; width: 5px; background: var(--line); cursor: col-resize; touch-action: none; position: relative; z-index: 4; transition: background 0.18s ease; }
-.split-handle::after { content: ''; position: absolute; inset: 0 -5px; }
-.split-handle:hover { background: var(--line-strong); }
 .stage { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--panel); position: relative; }
 .preview { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .preview-bar { display: flex; align-items: center; gap: 4px; padding: 8px 10px; }
@@ -639,7 +633,7 @@ main { flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
   .thread-layout .thread { height: auto; flex: 1; min-height: 0; }
   .side-panel { width: 100%; height: 45%; flex: none; order: -1; border-left: 0; border-bottom: 1px solid var(--line); }
   .thread-layout.browser .thread { flex: none; width: auto; }
-  .thread-layout.browser .square.list, .split-handle { display: none; }
+  .thread-layout.browser .square.list { display: none; }
   .modes button { padding: 0 9px; }
   .modes span { display: none; }
   .float { position: static; transform: none; width: auto; margin: 8px; }
@@ -1153,8 +1147,6 @@ details.box[open] > summary .chev { transform: rotate(180deg); }
 
 .terminal-panel { flex: none; display: flex; flex-direction: column; min-height: 0; background: #0a0a0c; border-top: 1px solid var(--line-strong); }
 .terminal-panel.max { flex: 1; height: auto !important; }
-.terminal-grip { height: 5px; flex: none; cursor: ns-resize; background: var(--bar); touch-action: none; }
-.terminal-panel.max .terminal-grip { display: none; }
 .terminal-bar { display: flex; align-items: center; gap: 6px; padding: 4px 10px 6px; background: var(--bar); border-bottom: 1px solid var(--line); font-size: 12.5px; }
 .terminal-bar .icon-btn { width: 26px; height: 26px; }
 .terminal-title { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-weight: 500; margin-right: 4px; }
@@ -1270,3 +1262,31 @@ details.box[open] > summary .chev { transform: rotate(180deg); }
 }
 .routing-links { display: flex; flex-wrap: wrap; gap: 8px 16px; padding: 10px 20px; border-bottom: 1px solid var(--line); font-size: 12px; }
 .routing-links a { display: flex; align-items: center; gap: 7px; min-width: 0; overflow-wrap: anywhere; }
+
+/* ---- dock: the project's panels on a computer ---- */
+.dock { position: relative; width: 100%; height: 100%; overflow: hidden; }
+.dock-source { position: absolute; width: 0; height: 0; overflow: hidden; }
+.dock-leaf { position: absolute; display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; background: var(--bg); }
+.dock-slot { flex: 1; min-height: 0; display: flex; }
+.dock-box { display: flex; flex: 1; min-width: 0; min-height: 0; }
+.dock-box > * { flex: 1 1 0; min-width: 0; min-height: 0; }
+.dock-box > .side-panel { flex: none; }
+.dock .conv-list { border-right: 0; }
+.dock .terminal-panel { border-top: 0; }
+.dock-gutter { position: absolute; z-index: 6; background: var(--line); touch-action: none; transition: background 0.18s ease; }
+.dock-gutter::after { content: ''; position: absolute; inset: -4px; }
+.dock-gutter.row { cursor: col-resize; }
+.dock-gutter.col { cursor: row-resize; }
+.dock-gutter:hover, .dock.resizing .dock-gutter:active { background: var(--faint); }
+.dock.resizing { user-select: none; }
+.arrange-cover { position: absolute; inset: 0; z-index: 7; display: grid; place-items: center; background: color-mix(in srgb, var(--bg) 72%, transparent); border: 1px dashed var(--line-strong); cursor: grab; touch-action: none; user-select: none; }
+.arrange-cover span { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 10px; background: var(--raised); box-shadow: var(--shadow); font-weight: 600; }
+.arrange-cover.dragging { cursor: grabbing; border-color: var(--attn); }
+.drop-zone { position: absolute; z-index: 8; pointer-events: none; border: 2px solid var(--attn); border-radius: 8px; background: color-mix(in srgb, var(--attn) 22%, transparent); transition: all 0.08s ease; }
+.arrange-bar { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 9; display: flex; align-items: center; gap: 10px; max-width: calc(100% - 32px); padding: 8px 8px 8px 16px; border-radius: 12px; background: var(--raised); box-shadow: var(--shadow); font-size: 13px; }
+.arrange-bar span { color: var(--muted); }
+.dock.free { background: radial-gradient(var(--line-strong) 1px, transparent 1px) 0 0 / 16px 16px; }
+.dock-leaf.window { border: 1px solid var(--line-strong); border-radius: 10px; box-shadow: var(--shadow); }
+.window-head { flex: none; height: 28px; display: flex; align-items: center; padding: 0 10px; background: var(--bar); border-bottom: 1px solid var(--line); color: var(--muted); font-size: 12px; font-weight: 600; cursor: grab; touch-action: none; user-select: none; }
+.window-head:active { cursor: grabbing; }
+.window-size { position: absolute; right: 0; bottom: 0; z-index: 7; width: 16px; height: 16px; cursor: nwse-resize; touch-action: none; }

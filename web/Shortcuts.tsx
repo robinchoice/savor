@@ -16,6 +16,7 @@ export const ACTIONS = {
   workflows: 'Workflows',
   browser: 'Switch between chat and browser',
   terminal: 'Open or close the terminal',
+  arrange: 'Arrange panels',
   project1: 'Project tab 1',
   project2: 'Project tab 2',
   project3: 'Project tab 3',
@@ -42,6 +43,7 @@ export const STANDARD: Record<string, string> = {
   workflows: 'Shift+W',
   browser: 'B',
   terminal: 'Ctrl+`',
+  arrange: 'L',
   ...Object.fromEntries([1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => [`project${n}`, `Alt+${n}`])),
   shortcuts: '?',
 }
