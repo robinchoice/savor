@@ -292,7 +292,7 @@ test('picked answers stay with their conversation until they are sent', async ()
   await page.fill('.option.other .other-answer', 'On Friday')
   await page.goto(`${base}/#/all/inbox`)
   await page.reload()
-  await page.waitForSelector('.all-inbox')
+  await page.waitForSelector('.conv-list h2:has-text("Inbox")')
   await back()
   assert.equal(await page.inputValue('.option.other .other-answer'), 'On Friday')
   await page.click('.composer button:has-text("Send answers")')
@@ -1790,7 +1790,8 @@ test('files open in the code editor, markdown and documents in the rich editor',
   await page.waitForSelector('.rich-content')
 
   await page.click('.tree-head .icon-btn[title="New document"]')
-  await page.waitForSelector('.rich-content')
+  // The new document focuses its text a moment later; the title is typed after that.
+  await page.waitForSelector('.ProseMirror-focused')
   await page.fill('.title-input', 'Launch plan')
   await page.click('.rich-content')
   await page.keyboard.type('# Plan')
@@ -2294,6 +2295,62 @@ test('browser mode gives the page the stage and draws it in the size of that spa
   await page.setViewportSize({ width: 1400, height: 900 })
 })
 
+test('panels resize and dock elsewhere, free windows move, and the settings reset the layout', async () => {
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
+  const thread = (await api('POST', `/projects/${project.id}/threads`, { text: 'arrange the panels' })).body
+  await page.goto(`${base}/#/p/${project.id}/t/${thread.id}`)
+  await page.waitForSelector('text=Echo: arrange the panels')
+  await page.click('.subbar [title="Terminal"]')
+  await page.waitForSelector('.dock-leaf[data-panel="terminal"] .terminal-panel')
+  const box = (id) => page.locator(`.dock-leaf[data-panel="${id}"]`).boundingBox()
+  const dragTo = async (from, x, y) => {
+    await page.mouse.move(from.x, from.y)
+    await page.mouse.down()
+    await page.mouse.move(x, y, { steps: 4 })
+    await page.mouse.up()
+  }
+
+  // The border between list and chat moves, and the width stays after a reload.
+  const list = await box('list')
+  await dragTo({ x: list.x + list.width, y: list.y + 200 }, list.x + list.width + 100, list.y + 200)
+  assert.equal(Math.round((await box('list')).width), Math.round(list.width + 100))
+  await page.reload()
+  await page.waitForSelector('.dock-leaf[data-panel="terminal"] .terminal-panel')
+  assert.equal(Math.round((await box('list')).width), Math.round(list.width + 100))
+
+  // Arranging: the terminal dropped on the right edge of the chat docks beside it.
+  await page.click('[title="Arrange panels"]')
+  const terminal = await box('terminal')
+  const chat = await box('main')
+  await dragTo({ x: terminal.x + terminal.width / 2, y: terminal.y + terminal.height / 2 }, chat.x + chat.width - 20, chat.y + chat.height / 2)
+  await page.click('.arrange-bar >> text=Done')
+  const [docked, beside] = [await box('terminal'), await box('main')]
+  assert.ok(docked.x > beside.x && docked.y === beside.y && docked.height === beside.height, JSON.stringify([docked, beside]))
+  await page.waitForSelector('.dock-leaf[data-panel="terminal"] .terminal-screen')
+
+  // Free windows move by their head.
+  await page.click('.account')
+  await page.click('.account-dialog summary:has-text("App settings")')
+  await page.click('.account-dialog .setting:has-text("Free windows") .switch')
+  await page.click('.account-dialog >> text=Done')
+  await page.waitForSelector('.dock-leaf.window .window-head')
+  assert.equal(await page.isVisible('[title="Arrange panels"]'), false)
+  const window = await box('terminal')
+  await dragTo({ x: window.x + 40, y: window.y + 10 }, window.x - 160, window.y + 10)
+  assert.ok((await box('terminal')).x < window.x - 100)
+
+  // One click in the settings puts everything back.
+  await page.click('.account')
+  await page.click('.account-dialog summary:has-text("App settings")')
+  await page.click('.account-dialog .setting:has-text("Free windows") .switch')
+  await page.click('.account-dialog .setting:has-text("Layout") >> text=Reset')
+  await page.click('.account-dialog >> text=Done')
+  assert.equal(Math.round((await box('list')).width), Math.round(list.width))
+  const [below, main] = [await box('terminal'), await box('main')]
+  assert.ok(below.y > main.y + main.height && below.width > main.width, JSON.stringify([below, main]))
+  await page.click('.subbar [title="Terminal"]')
+})
+
 test('the preview takes the mouse, shortcuts and the clipboard', async (t) => {
   let typed = null
   const site = http.createServer((req, res) => {
@@ -2591,16 +2648,16 @@ test('the All tab answers questions in place and starts what waits in the backlo
 
   // The inbox opens the next conversation that needs you, across projects, as in a project.
   await page.goto(`${base}/#/all/inbox`)
-  await page.click('.all-inbox .next-btn')
+  await page.click('.conv-list .next-btn')
   await page.waitForFunction(() => /^#\/all\/inbox\/[^/]+\/[^/]+$/.test(location.hash))
   const first = await page.evaluate(() => location.hash)
   // The hash changes before Savor renders the conversation; until then J would still lead to it.
-  await page.waitForSelector(`.all-inbox .card.active[href="${first}"]`)
+  await page.waitForSelector(`.conv-list .card.active[href="${first}"]`)
   // The composer has the focus now, so J needs Alt.
   await page.keyboard.press('Alt+j')
   await page.waitForFunction((first) => location.hash !== first, first)
   // Previous leads back to where Next came from.
-  await page.click('.all-inbox .prev-btn')
+  await page.click('.conv-list .prev-btn')
   await page.waitForFunction((first) => location.hash === first, first)
 
   // Finish & next closes a settled conversation and opens the next one that needs you.

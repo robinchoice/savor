@@ -33,12 +33,11 @@ const openLink = (_: MouseEvent, uri: string) => window.open(uri, '_blank', 'nor
 
 // Terminals in the project folder and its worktrees, in a panel below every view of the project.
 export function TerminalPanel({ project, threadId }: { project: Project; threadId?: string }) {
-  const { terminalHeight, terminalMax } = usePrefs()
+  const { terminalMax } = usePrefs()
   const base = `/projects/${project.id}/terminal`
   const [data, reload, error] = useApi<Terminals>(base, (e) => (e.type === 'terminal' || e.type === 'thread') && (!e.projectId || e.projectId === project.id))
   const [pick, setPick] = useState<{ threadId?: string; id: string | null }>({ id: null })
   const [adding, setAdding] = useState(false)
-  const [height, setHeight] = useState(terminalHeight)
   const restart = useRef<() => void>(() => {})
   const addRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -81,21 +80,8 @@ export function TerminalPanel({ project, threadId }: { project: Project; threadI
     api('DELETE', `${base}/${t.id}`).catch(() => {})
   }
 
-  const drag = (e: PointerEvent) => {
-    const move = (m: PointerEvent) => setHeight(Math.round(Math.min(innerHeight - 160, Math.max(120, innerHeight - m.clientY))))
-    const up = (u: PointerEvent) => {
-      removeEventListener('pointermove', move)
-      removeEventListener('pointerup', up)
-      setPrefs({ terminalHeight: Math.round(Math.min(innerHeight - 160, Math.max(120, innerHeight - u.clientY))) })
-    }
-    e.preventDefault()
-    addEventListener('pointermove', move)
-    addEventListener('pointerup', up)
-  }
-
   return (
-    <div class={`terminal-panel ${terminalMax ? 'max' : ''}`} style={{ height }}>
-      <div class="terminal-grip" onPointerDown={drag} />
+    <div class={`terminal-panel ${terminalMax ? 'max' : ''}`}>
       <div class="terminal-bar">
         <span class="terminal-title">
           <SquareTerminal size={15} /> <span>Terminal</span>

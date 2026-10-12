@@ -2,7 +2,7 @@ import './monitoring'
 import { render } from 'preact'
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { Coffee, Download, FolderOpen, Monitor, Pin, PinOff, RefreshCw, Search, Files as FilesIcon, MessageSquare, Moon, Server, SlidersHorizontal, SquareKanban, Sun, Workflow as WorkflowIcon, ChevronDown, Inbox, Layers, LayoutList, Smartphone, X, CalendarCheck, FileDown, MoreHorizontal, SquareTerminal } from 'lucide-preact'
-import { api, avatarStyle, connectEvents, desktop, go, initial, lastThreadKey, Unauthorized, useApi, useEvent, type Me, type Project } from './api'
+import { api, avatarStyle, cap, connectEvents, desktop, go, initial, lastThreadKey, Unauthorized, useApi, useEvent, type Me, type Project } from './api'
 import { ContextActions, Conversations } from './Conversations'
 import { FilesView } from './Files'
 import { WorkflowButtons, Workflows } from './Workflows'
@@ -12,6 +12,7 @@ import { Settings, Devices, Pair, PairingRequests, RemotePair } from './Settings
 import { loadProfile, remote, setTransport } from './transport'
 import { ProcessesPopover } from './Processes'
 import { TerminalButton, TerminalPanel } from './Terminal'
+import { ArrangeButton, Dock, Panel, useNarrow } from './Layout'
 import { useNotifications } from './notify'
 import { AccountDialog, AppearanceMenu, FeedbackDialog } from './Account'
 import { BugButton } from './BugButton'
@@ -51,6 +52,7 @@ function App() {
   const [link, setLink] = useState<{ connected: boolean; error?: string }>({ connected: true })
   const route = useRoute()
   const { terminalOpen, terminalMax } = usePrefs()
+  const narrow = useNarrow()
   const [projects] = useApi<Project[]>(me ? '/projects' : null, (e) => ['projects', 'thread', 'status'].includes(e.type))
 
   // Served by a relay: talk to the paired computer through the encrypted tunnel.
@@ -120,27 +122,47 @@ function App() {
   const project = projects?.find((p) => p.id === pid)
 
   let main = <Welcome me={me} setMe={setMe} />
+  // The conversations and the inbox put their parts in panels of their own; every other page of a project or of All
+  // is the main panel.
+  let panels = false
   if (route[0] === 'devices') main = <Devices />
-  else if (route[0] === 'all') main = <AllProjects projects={projects ?? []} section={route[1]} rest={route.slice(2)} />
+  else if (route[0] === 'all') {
+    panels = route[1] === 'inbox'
+    main = <AllProjects projects={projects ?? []} section={route[1]} rest={route.slice(2)} />
+  }
   else if (project) {
     if (section === 'files') main = <FilesView key={project.id} project={project} rest={rest} />
     else if (section === 'workflows') main = <Workflows key={project.id} project={project} rest={rest} />
     else if (section === 'settings') main = <Settings key={project.id} project={project} />
     else if (section === 'export') main = <ExportView key={project.id} project={project} />
     else if (section === 'today') main = <TodayView key={project.id} project={project} />
-    else main = <Conversations key={project.id} project={project} threadId={section === 't' ? rest[0] : undefined} fanoutId={section === 'fan' ? rest[0] : undefined} isNew={section === 'new'} />
+    else {
+      panels = true
+      main = <Conversations key={project.id} project={project} threadId={section === 't' ? rest[0] : undefined} fanoutId={section === 'fan' ? rest[0] : undefined} isNew={section === 'new'} />
+    }
   }
+  const terminal = project && terminalOpen && <TerminalPanel key={project.id} project={project} threadId={section === 't' ? rest[0] : undefined} />
+  const docked = (project || route[0] === 'all') && !narrow
 
   return (
-    <div class={`app ${project && terminalOpen && terminalMax ? 'terminal-max' : ''}`}>
+    <div class={`app ${!docked && terminal && terminalMax ? 'terminal-max' : ''}`}>
       {mode === 'relay' && !link.connected && <div class="link-banner">Reconnecting to your computer…</div>}
       <UpdateBanner />
       <RestartBanner />
       <TopBar projects={projects ?? []} active={project} all={route[0] === 'all'} me={me} setMe={setMe} />
       {project && <SubBar project={project} projects={projects ?? []} section={section} threadId={section === 't' ? rest[0] : undefined} />}
       {route[0] === 'all' && <AllBar section={route[1]} />}
-      <main>{main}</main>
-      {project && terminalOpen && <TerminalPanel key={project.id} project={project} threadId={section === 't' ? rest[0] : undefined} />}
+      <main>
+        {docked ? (
+          <Dock>
+            {panels ? main : <Panel id="main" title={cap((project ? section : route[1]) ?? 'overview')}>{main}</Panel>}
+            {terminal && <Panel id="terminal">{terminal}</Panel>}
+          </Dock>
+        ) : (
+          main
+        )}
+      </main>
+      {!docked && terminal}
       {me.origin === 'local' && <PairingRequests />}
     </div>
   )
@@ -431,6 +453,7 @@ function SubBar({ project, projects, section, threadId }: { project: Project; pr
       {project.type === 'academic-writing' && tab('export', 'Export', FileDown, `#/p/${project.id}/export`, undefined, 'extra')}
       <ContextActions project={project} projects={projects} threadId={threadId} />
       <div class="subbar-right menu-anchor">
+        <ArrangeButton />
         <TerminalButton project={project} />
         <button class={`icon-btn ${procCount ? 'on' : ''}`} title="Background processes" onClick={() => setMenu(menu === 'procs' ? null : 'procs')}>
           <Server size={16} />
