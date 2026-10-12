@@ -899,7 +899,8 @@ mark { background: color-mix(in srgb, var(--attn) 50%, transparent); color: inhe
 .menu.projects > .error-text { padding: 6px 2px 0; }
 
 .menu.appearance { width: 270px; padding: 10px; }
-.usage-pill { font-variant-numeric: tabular-nums; }
+.usage-pill { font-variant-numeric: tabular-nums; gap: 8px; }
+.usage-pill > span:not(.spinner) { display: inline-flex; align-items: center; gap: 3px; }
 .usage-pill .low { color: var(--text); }
 .usage-row b { font: 750 22px/1 var(--display); font-stretch: 80%; font-variant-numeric: tabular-nums; }
 .menu.usage { width: 260px; padding: 6px 10px 10px; }

@@ -1,9 +1,7 @@
 import { Fragment } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
-import { Gauge } from 'lucide-preact'
 import { api, type Usage } from './api'
-
-const SHORT: Record<string, string> = { claude: 'Claude', codex: 'Codex' }
+import { ProviderIcon } from './Conversations'
 
 // The last answer, so a menu shows the limits as soon as it opens.
 let last: Usage[] = []
@@ -74,18 +72,18 @@ export function UsageMeter() {
   }, [open])
   if (!usage.length) return null
   const stale = usage.some((u) => u.stale)
+  const least = (u: Usage) => Math.min(...u.windows.map(left))
+  const title = `Subscription limits left: ${usage.map((u) => `${u.name} ${least(u)}%`).join(', ')}`
   return (
     <div class="menu-anchor wide-only" ref={ref}>
-      <button class={`pill usage-pill ${stale ? 'stale' : ''}`} title={stale ? UPDATING : 'Subscription limits'} onClick={() => setOpen(!open)}>
-        {stale ? <span class="spinner small" /> : <Gauge size={15} />}
-        {usage.map((u) => {
-          const least = Math.min(...u.windows.map(left))
-          return (
-            <span key={u.provider} class={least <= 10 ? 'low' : ''}>
-              {SHORT[u.provider] ?? u.name} {least}% left
-            </span>
-          )
-        })}
+      <button class={`pill usage-pill ${stale ? 'stale' : ''}`} title={stale ? UPDATING : title} onClick={() => setOpen(!open)}>
+        {stale && <span class="spinner small" />}
+        {usage.map((u) => (
+          <span key={u.provider} class={least(u) <= 10 ? 'low' : ''}>
+            <ProviderIcon provider={u.provider} size={13} />
+            {least(u)}%
+          </span>
+        ))}
       </button>
       {open && (
         <div class="menu right usage">
