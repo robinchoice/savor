@@ -75,6 +75,8 @@ export function Composer(props: Props) {
   const [files, setFiles] = useState<(Attachment & { image: boolean })[]>([])
   const [error, setError] = useState('')
   const [voiceSetup, setVoiceSetup] = useState(false)
+  // What the running recording said so far.
+  const [heard, setHeard] = useState('')
   // 'fan-add' adds an agent to a fan-out, `fan-<i>` changes its i-th agent.
   const [popover, setPopover] = useState<string | null>(null)
   const ref = useRef<HTMLTextAreaElement>(null)
@@ -278,7 +280,13 @@ export function Composer(props: Props) {
         </div>
       )}
       {error && <div class="error-text pad">{error}</div>}
-      {!!props.voice && <VoiceButton key={props.voice} onText={insert} onError={setError} onSetup={setVoiceSetup} big />}
+      {!!props.voice && <VoiceButton key={props.voice} onText={insert} onHeard={setHeard} onError={setError} onSetup={setVoiceSetup} big />}
+      {heard && (
+        // The key keeps Preact from matching it with a later sibling, which would remount the recording button.
+        <div key="heard" class="voice-heard pad">
+          <p>{heard}</p>
+        </div>
+      )}
       {voiceSetup && <VoiceSetup close={() => setVoiceSetup(false)} />}
       {slash !== null && (!skills || matches.length > 0) && (
         <div class="menu up slash">
@@ -443,7 +451,7 @@ export function Composer(props: Props) {
           )}
           {!fanout && <BranchPicker project={props.project} threadId={props.threadId} worktree={props.worktree} setWorktree={props.setWorktree} open={popover === 'branch'} toggle={() => setPopover(popover === 'branch' ? null : 'branch')} />}
           <div class="spacer" />
-          {!props.voice && <VoiceButton onText={insert} onError={setError} onSetup={setVoiceSetup} />}
+          {!props.voice && <VoiceButton onText={insert} onHeard={setHeard} onError={setError} onSetup={setVoiceSetup} />}
           {sendButtons}
         </div>
       )}
@@ -451,7 +459,7 @@ export function Composer(props: Props) {
   )
 }
 
-function VoiceButton({ onText, onError, onSetup, big }: { onText: (s: string) => void; onError: (e: string) => void; onSetup: (open: boolean) => void; big?: boolean }) {
+function VoiceButton({ onText, onHeard, onError, onSetup, big }: { onText: (s: string) => void; onHeard: (s: string) => void; onError: (e: string) => void; onSetup: (open: boolean) => void; big?: boolean }) {
   const [state, setState] = useState<'idle' | 'starting' | 'recording' | 'transcribing'>('idle')
   const [seconds, setSeconds] = useState(0)
   const rec = useRef<Recording | null>(null)
@@ -459,6 +467,7 @@ function VoiceButton({ onText, onError, onSetup, big }: { onText: (s: string) =>
   useEffect(() => () => {
     mounted.current = false
     rec.current?.cancel()
+    onHeard('')
   }, [])
   useEffect(() => {
     if (state !== 'recording') return
@@ -470,7 +479,7 @@ function VoiceButton({ onText, onError, onSetup, big }: { onText: (s: string) =>
   const start = async () => {
     setState('starting')
     try {
-      const recording = await record()
+      const recording = await record(onHeard)
       if (!mounted.current) {
         recording.cancel()
         return
@@ -495,11 +504,13 @@ function VoiceButton({ onText, onError, onSetup, big }: { onText: (s: string) =>
       if (mounted.current) onError((e as Error).message)
     }
     rec.current = null
+    onHeard('')
     setState('idle')
   }
   const cancel = () => {
     rec.current?.cancel()
     rec.current = null
+    onHeard('')
     setState('idle')
   }
   useShortcut('voice', state === 'recording' ? stop : state === 'idle' && start)

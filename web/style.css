@@ -462,6 +462,9 @@ main { flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
 .voice-setup > .icon-btn { position: absolute; top: 4px; right: 4px; }
 .voice-progress { display: flex; align-items: center; gap: 8px; width: 100%; }
 .voice-progress progress { flex: 1; max-width: 320px; accent-color: var(--accent); }
+/* The newest words stay in view. */
+.voice-heard { display: flex; flex-direction: column-reverse; max-height: 30vh; overflow-y: auto; font-size: 13px; color: var(--muted); }
+.voice-heard p { margin: 0; white-space: pre-wrap; }
 .voice-time { display: inline-flex; align-items: center; gap: 6px; font-variant-numeric: tabular-nums; }
 .voice-time::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--red); animation: pulse 1.2s infinite; }
 .attachments { display: flex; gap: 8px; flex-wrap: wrap; padding: 10px 12px 0; }
