@@ -1,3 +1,4 @@
+import fs from 'node:fs'
 import os from 'node:os'
 import type { ServerResponse } from 'node:http'
 import type { IPty } from 'node-pty'
@@ -87,7 +88,10 @@ export async function start(t: Term, cols: number, rows: number) {
   if (t.pty) return resize(t, cols, rows)
   cols = within(cols, 10, 500)
   rows = within(rows, 2, 200)
-  const p = pty.spawn(shell(), [], { name: 'xterm-256color', cwd: t.cwd, cols, rows, env: { ...environment(), TERM: 'xterm-256color', COLORTERM: 'truecolor' } })
+  // The shell starts in the folder a symlinked project path points to. A folder that is gone stays as
+  // it is, so the shell reports it.
+  const cwd = fs.existsSync(t.cwd) ? fs.realpathSync(t.cwd) : t.cwd
+  const p = pty.spawn(shell(), [], { name: 'xterm-256color', cwd, cols, rows, env: { ...environment(), TERM: 'xterm-256color', COLORTERM: 'truecolor' } })
   t.pty = p
   const s = (t.screen = screen(cols, rows))
   p.onData((o) => {

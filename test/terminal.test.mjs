@@ -68,3 +68,18 @@ test("the shell gets the user's environment, not the AppImage's", async () => {
   terminal.close(t)
   v.emit('close')
 })
+
+test('the shell starts in the folder a symlinked project path points to', async () => {
+  const real = fs.realpathSync(fs.mkdtempSync(path.join(HOME, 'real-')))
+  const link = path.join(HOME, 'link')
+  fs.symlinkSync(real, link)
+  const { id, path: shown } = terminal.add('p3', link)
+  assert.equal(shown, link)
+  const t = terminal.get('p3', id)
+  await terminal.start(t, 80, 24)
+  const v = viewer(t)
+  terminal.input(t, 'echo "[$(pwd)]"\n')
+  await until(() => v.messages.some((m) => m.o?.includes(`[${real}]`)))
+  terminal.close(t)
+  v.emit('close')
+})
