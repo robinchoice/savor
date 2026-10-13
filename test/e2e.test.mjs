@@ -2828,7 +2828,9 @@ test('agents wait for CI without holding their turn, and Savor continues the req
 
 test('the status bar shows the running CI runs after a push, and a failed run until it is dismissed', { timeout: 90_000 }, async () => {
   const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
-  const ago = (s) => new Date(Date.now() - s * 1000).toISOString()
+  // One clock reading, so the durations come out exact.
+  const now = Date.now()
+  const ago = (s) => new Date(now - s * 1000).toISOString()
   const listed = (id, number, status, conclusion, startedAt, updatedAt = startedAt) => ({ databaseId: id, number, workflowName: 'CI', workflowDatabaseId: 1, status, conclusion, url: `https://github.com/acme/app/actions/runs/${id}`, createdAt: startedAt, startedAt, updatedAt })
   const earlier = [listed(1, 10, 'completed', 'success', ago(4000), ago(3700)), listed(2, 11, 'completed', 'success', ago(3000), ago(2500)), listed(3, 9, 'completed', 'failure', ago(5000), ago(4900))]
   const gh = (live) => fs.writeFileSync(AGENT_LOG + '.gh.json', JSON.stringify({ live, jobs: { 4: [{ status: 'completed', steps: [{ status: 'completed' }, { status: 'completed' }] }, { status: 'in_progress', steps: [{ status: 'completed' }, { status: 'in_progress' }, { status: 'queued' }] }] } }))
