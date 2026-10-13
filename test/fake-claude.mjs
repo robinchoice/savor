@@ -44,10 +44,6 @@ if (args[0] === '--version') {
   console.log('9.9.9 (Fake Claude)')
   process.exit(0)
 }
-if (args[0] === '-p' && args[1] === '/usage') {
-  console.log('Current session: 10% used · resets 3pm (Europe/Berlin)')
-  process.exit(0)
-}
 if (args[0] === 'auth' && args[1] === 'status') {
   console.log(JSON.stringify({ loggedIn: true, email: 'fake@claude.test' }))
   process.exit(0)

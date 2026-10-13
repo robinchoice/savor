@@ -288,14 +288,21 @@ const windowLabel = (mins: number) => (mins === 10080 ? 'Weekly' : mins % 1440 =
 const resetTime = (s: number) => new Date(s * 1000).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).replace(/\u202f?\s?([AP]M)$/, (_, m) => m.toLowerCase())
 
 const usageProbes: Partial<Record<Provider, () => Promise<UsageWindow[]>>> = {
-  // Lines like "Current week (all models): 50% used · resets Oct 11, 3:59am (Europe/Berlin)".
+  // `claude -p /usage` no longer answers, but Claude Code keeps the last answer of its usage endpoint in
+  // its global config, and its running sessions refresh it. A window whose reset has passed starts over.
   async claude() {
-    const { out } = await run(BIN.claude, ['-p', '/usage'], 30_000)
-    return [...out.matchAll(/^Current ([^:]+): (\d+)% used(?: · resets (.+))?$/gm)].map(([, label, percent, resets]) => ({
-      label: label === 'session' ? '5 hours' : label === 'week (all models)' ? 'Weekly' : label.replace(/^week \((.+)\)$/, 'Weekly · $1'),
-      percent: Number(percent),
-      resets: resets?.replace(/ \([^)]*\)$/, '') ?? null,
-    }))
+    const dir = process.env.CLAUDE_CONFIG_DIR
+    const file = dir ? path.join(dir, '.claude.json') : path.join(os.homedir(), '.claude.json')
+    const limits: any[] = JSON.parse(await fs.promises.readFile(file, 'utf8')).cachedUsageUtilization?.utilization?.limits ?? []
+    return limits.map((l) => {
+      const resets = Date.parse(l.resets_at)
+      const model = l.scope?.model?.display_name
+      return {
+        label: l.group === 'session' ? '5 hours' : model ? `Weekly · ${model}` : 'Weekly',
+        percent: resets < Date.now() ? 0 : l.percent,
+        resets: resets ? resetTime(resets / 1000) : null,
+      }
+    })
   },
   async codex() {
     const limits = await codexUsage()

@@ -66,6 +66,15 @@ async function startDaemon() {
 test('unattended conversations switch agents at a usage limit, and wait when all are used up', { timeout: 120_000 }, async () => {
   port = await freePort()
   fs.writeFileSync(AGENT_LOG + '.full', '')
+  // Claude Code's limits come from its cached usage; the weekly window has reset since.
+  const later = new Date(Date.now() + 3_600_000).toISOString()
+  const limits = [
+    { group: 'session', percent: 40, resets_at: later },
+    { group: 'weekly', percent: 90, resets_at: new Date(Date.now() - 60_000).toISOString() },
+    { group: 'weekly', percent: 5, resets_at: later, scope: { model: { display_name: 'Fable' } } },
+  ]
+  fs.mkdirSync(path.join(TMP, 'claude'), { recursive: true })
+  fs.writeFileSync(path.join(TMP, 'claude', '.claude.json'), JSON.stringify({ cachedUsageUtilization: { utilization: { limits } } }))
   await startDaemon()
   const { token, mcpToken } = JSON.parse(fs.readFileSync(path.join(HOME, 'state.json'), 'utf8'))
   const api = async (method, p, body) => {
@@ -93,6 +102,8 @@ test('unattended conversations switch agents at a usage limit, and wait when all
   assert.equal((await read(full)).thread.unattended, true)
   await until(async () => (await read(full)).thread.resumeAt)
   await until(async () => (await api('GET', '/usage')).find((u) => u.provider === 'codex')?.windows[0].percent === 100)
+  const claude = (await api('GET', '/usage')).find((u) => u.provider === 'claude')
+  assert.deepEqual(claude.windows.map((w) => [w.label, w.percent]), [['5 hours', 40], ['Weekly', 0], ['Weekly · Fable', 5]])
   await new Promise((r) => setTimeout(r, 1000))
   let r = await read(full)
   assert.equal(r.thread.agent.provider, 'claude')
