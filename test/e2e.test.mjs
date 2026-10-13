@@ -1967,6 +1967,7 @@ test('files open in the code editor, markdown and documents in the rich editor',
 test('unpinned projects leave the tab bar and stay in the Projects menu', async () => {
   const other = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
   const row = `.menu a[href^="#/p/${other.id}"]`
+  await page.goto(`${base}/#/p/${other.id}`)
   await page.goto(`${base}/#/all`)
   await page.click('text=Projects')
   await page.click(`${row} .pin`)
@@ -2079,6 +2080,24 @@ test('a restart opens the conversation that was open last', async () => {
   // The app starts on the bare URL, as the desktop app does after an update.
   await page.goto(`${base}/`)
   await page.waitForSelector(`.card.active[href="#/p/${project.id}/t/${thread.id}"]`)
+})
+
+test('a project tab returns to the page the project was left on, as its settings', async () => {
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
+  const other = (await api('POST', '/projects', { path: path.join(TMP, 'elsewhere'), name: 'Elsewhere', create: true })).body
+  await page.goto(`${base}/#/p/${project.id}/settings`)
+  await page.waitForSelector('text=Move folder')
+  await page.goto(`${base}/#/p/${other.id}`)
+  await page.click(`.project-tab[href^="#/p/${project.id}"]`)
+  await page.waitForSelector('text=Move folder')
+  assert.equal(new URL(page.url()).hash, `#/p/${project.id}/settings`)
+  // Back on its conversations, the tab opens those again.
+  await page.click('.subtab >> text=Conversations')
+  await page.waitForSelector('.conv-head')
+  await page.goto(`${base}/#/p/${other.id}`)
+  await page.waitForSelector(`.project-tab.active[href^="#/p/${other.id}"]`)
+  assert.ok(!(await page.getAttribute(`.project-tab[href^="#/p/${project.id}"]`, 'href')).includes('/settings'))
+  await api('DELETE', `/projects/${other.id}`)
 })
 
 test('a project tab opens its topmost open conversation instead of a finished one, ready to type', async () => {

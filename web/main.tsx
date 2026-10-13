@@ -39,9 +39,13 @@ function useRoute() {
 }
 
 // The project that was open last, so a restart of the app (also after an update) returns to it.
+// A project left on another page than its conversations, as its settings or a file, opens there again.
 // On a phone a project opens with its list of conversations: the chat would fill the whole screen.
 const LAST_PROJECT = 'savor-last-project'
+const lastPageKey = (pid: string) => `savor-last-page:${pid}`
 const projectHref = (pid: string) => {
+  const page = localStorage.getItem(lastPageKey(pid))
+  if (page) return `#/p/${pid}/${page}`
   const tid = !matchMedia('(max-width: 860px)').matches && localStorage.getItem(lastThreadKey(pid))
   return `#/p/${pid}${tid ? `/t/${tid}` : ''}`
 }
@@ -86,6 +90,8 @@ function App() {
   useEffect(() => {
     if (route[0] !== 'p' || !route[1]) return
     localStorage.setItem(LAST_PROJECT, route[1])
+    if (route[2] && !['t', 'new', 'fan'].includes(route[2])) return localStorage.setItem(lastPageKey(route[1]), location.hash.split('?')[0].split('/').slice(3).join('/'))
+    localStorage.removeItem(lastPageKey(route[1]))
     if (route[2] === 't' && route[3]) localStorage.setItem(lastThreadKey(route[1]), route[3])
     else localStorage.removeItem(lastThreadKey(route[1]))
   }, [route.join('/')])
