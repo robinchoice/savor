@@ -11,7 +11,9 @@ export const lastThreadKey = (pid: string) => `savor-last-thread:${pid}`
 // The last failed calls, sent along with a bug report.
 export const recentErrors: string[] = []
 
+// A conversation fetched while Savor is not on screen stays unread, so its notice still reaches the phones.
 export async function api<T = any>(method: string, path: string, body?: unknown): Promise<T> {
+  if (method === 'GET' && document.hidden) path += `${path.includes('?') ? '&' : '?'}hidden=1`
   const r = await transport.request(method, '/api' + path, body === undefined ? undefined : JSON.stringify(body))
   if (r.status >= 400) {
     recentErrors.unshift(`${method} /api${path} → ${r.status}`)
@@ -128,12 +130,14 @@ export interface Thread {
   summary?: string | null
   createdAt: string
   updatedAt: string
+  inputAt?: string
   agent: AgentConfig
   preview: string | null
   unread: boolean
   completed: boolean
   needsYou: boolean
   error: string | null
+  notice?: { type: NoticeType; actor: string; at: string } | null
   resumeAt?: string | null
   ciWatch?: { sha: string } | null
   context?: { tokens: number; window: number | null } | null
@@ -159,6 +163,23 @@ export type ThreadKind = 'blocked' | 'failed' | 'new' | 'seen' | 'working' | 'id
 const KINDS: Record<Reason, ThreadKind> = { approval: 'blocked', question: 'blocked', failed: 'failed', new: 'new', result: 'seen' }
 export const kindOf = (t: Thread): ThreadKind => (t.waitsFor ? KINDS[t.waitsFor.reason] : t.busy || t.waiting ? 'working' : t.completed ? 'done' : 'idle')
 export const RINGS: Record<ThreadKind, string> = { blocked: 'needs', failed: 'error', new: 'unread', seen: '', working: 'busy', idle: '', done: 'done' }
+// What the latest notice about a conversation is. What waits for an answer or failed counts as that,
+// whatever came later; conversations from before the types count by their state.
+export type NoticeType = 'ask' | 'result' | 'run' | 'error' | 'ci' | 'message'
+export const NOTICES: Record<NoticeType, { label: string; plural: string }> = {
+  ask: { label: 'Question', plural: 'Questions' },
+  result: { label: 'Result', plural: 'Results' },
+  run: { label: 'Run', plural: 'Runs' },
+  error: { label: 'Error', plural: 'Errors' },
+  ci: { label: 'CI', plural: 'CI' },
+  message: { label: 'Message', plural: 'Messages' },
+}
+export function noticeOf(t: Thread): NoticeType | null {
+  const reason = t.waitsFor?.reason
+  if (reason === 'approval' || reason === 'question') return 'ask'
+  if (reason === 'failed' && t.notice?.type !== 'ci') return 'error'
+  return t.notice?.type ?? (reason === 'new' ? (t.workflow ? 'run' : 'result') : null)
+}
 export interface Worktree { branch: string; path: string; ahead: number; dirty: boolean }
 export interface Change { path: string; additions: number | null; deletions: number | null }
 // One conversation of a fan-out, as the comparison shows it.

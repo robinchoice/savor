@@ -3,7 +3,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import * as store from './store.js'
-import type { AgentConfig, Message, Origin, Project, Provider, Question, Thread } from './store.js'
+import type { AgentConfig, Message, NoticeType, Origin, Project, Provider, Question, Thread } from './store.js'
 import { emit } from './events.js'
 import { appUrl } from './config.js'
 import { Activity, PlanTracker, configKey, forkOf, sessionIdOf, type Answer, type ApprovalRequest, type Host, type Session, type TurnInput } from './session.js'
@@ -98,10 +98,16 @@ export function post(p: Project, tid: string, m: Omit<Message, 'id' | 'ts'>) {
   return msg
 }
 
-// `status` is all a push carries: it passes through the browser's push service.
-export function notify(p: Project, tid: string, body: string, status: string) {
+// A notice is unread until it is seen. `status` is what a push says, besides a question it can answer.
+// The conversation keeps the notice's type and who raised it: its agent, the workflow, CI or the
+// project a message came from. A result of a workflow run counts as a run.
+export function notify(p: Project, tid: string, type: NoticeType, body: string, status: string, actor?: string) {
   const t = store.getThread(p, tid)
+  const kind = type === 'result' && t.workflow ? 'run' : type
+  const notice = { type: kind, actor: actor ?? (kind === 'run' && t.workflow ? t.workflow.name : STATIC[t.agent.provider]?.name ?? t.agent.provider), at: store.now() }
+  store.updateThread(p, tid, { unread: true, notice })
   emit({ type: 'notify', projectId: p.id, threadId: tid, title: `${p.name} · ${t.label?.name ?? t.title}`.slice(0, 120), body: body.slice(0, 200) })
+  emit({ type: 'thread', projectId: p.id, threadId: tid })
   push.send(p, tid, status)
 }
 
@@ -335,8 +341,8 @@ function endTurn(p: Project, tid: string, result: { text?: string; error?: strin
     setCi(p, tid, null)
     post(p, tid, { kind: 'error', text: result.error, modelInfo: agent })
     if (resumeAt && unattended(store.getThread(p, tid))) void fallBack(p, tid, agent.provider, result.resetsAt!, result.error)
-    else if (resumeAt) notify(p, tid, result.error, 'Waits for a usage limit')
-    else if (result.error !== 'Turn stopped.') notify(p, tid, result.error, 'Stopped with an error')
+    else if (resumeAt) notify(p, tid, 'error', result.error, 'Waits for a usage limit')
+    else if (result.error !== 'Turn stopped.') notify(p, tid, 'error', result.error, 'Stopped with an error')
   } else {
     store.updateThread(p, tid, { error: null })
     // Fallback for agents that ignore the message protocol: surface their final text. An agent that
@@ -347,7 +353,7 @@ function endTurn(p: Project, tid: string, result: { text?: string; error?: strin
       r.conclusion = { key: '', id: msg.id }
       markConcluded(tid, msg.id)
       store.updateThread(p, tid, { unread: true })
-      notify(p, tid, result.text, 'Finished')
+      notify(p, tid, 'result', result.text, 'Finished')
     }
   }
   const mid = turnConclusion.get(tid)
@@ -479,7 +485,7 @@ export function askApproval(p: Project, tid: string, req: ApprovalRequest) {
   const msg = post(p, tid, { kind: 'approval', approval: { ...req, status: 'pending' } })
   store.updateThread(p, tid, { unread: true, needsYou: true })
   emit({ type: 'thread', projectId: p.id, threadId: tid })
-  notify(p, tid, req.title, 'Needs your approval')
+  notify(p, tid, 'ask', req.title, 'Needs your approval')
   return new Promise<{ choice: string; content?: Record<string, unknown> }>((resolve) => approvals.set(msg.id, resolve))
 }
 
@@ -501,7 +507,7 @@ function askQuestions(p: Project, tid: string, qs: Question[]) {
   store.updateMessage(p, tid, msg.id, { decisionIds: decisions.map((d) => d.id) })
   store.updateThread(p, tid, { unread: true, needsYou: true })
   emit({ type: 'thread', projectId: p.id, threadId: tid })
-  notify(p, tid, `Your turn: ${qs[0]?.title ?? ''}`, 'Has a question')
+  notify(p, tid, 'ask', `Your turn: ${qs[0]?.title ?? ''}`, 'Has a question')
   return new Promise<Answer[]>((resolve) => questions.set(msg.id, resolve))
 }
 
@@ -616,7 +622,7 @@ async function fallBack(p: Project, tid: string, provider: Provider, resetsAt: n
   const next = [...FALLBACK.slice(i + 1), ...FALLBACK.slice(0, i + 1)].find(([id]) => !full(id))
   if (!next) {
     setResume(p, tid, new Date(Math.min(...limited.values()) + LIMIT_MARGIN_MS).toISOString())
-    return notify(p, tid, error, 'Waits for a usage limit')
+    return notify(p, tid, 'error', error, 'Waits for a usage limit')
   }
   const [to, permissionMode] = next
   const agent = to === p.agent.provider ? p.agent : mergeAgent(thread.agent, { provider: to, permissionMode })
@@ -671,7 +677,7 @@ function ciDone(p: Project, tid: string, watch: NonNullable<Thread['ciWatch']>, 
   if (bad) {
     post(p, tid, { kind: 'error', text: result })
     store.updateThread(p, tid, { unread: true })
-    notify(p, tid, result, 'CI failed')
+    notify(p, tid, 'ci', result, 'CI failed', 'CI')
   }
   emit({ type: 'status', projectId: p.id, threadId: tid })
 }

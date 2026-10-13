@@ -7,7 +7,7 @@ import {
   CircleAlert, ArrowUp, ArrowLeft, Pencil, MessageSquarePlus, Brain, Terminal, Wrench, ArrowRight, Smartphone, Monitor, Bot, ShieldQuestion, X, ChevronUp, ChevronDown, ChevronRight, Paperclip, GitBranch, GitFork, GitMerge, Trash2, Copy, FileDiff, Split, SquareArrowOutUpRight, Workflow as WorkflowIcon, Mail, MailOpen, SquareTerminal, RotateCcw,
 } from 'lucide-preact'
 import {
-  api, avatarStyle, cap, desktop, duration, formatStamp, formatTime, go, initial, lastThreadKey, PROVIDER_NAMES, runTrigger, useApi, kindOf, RINGS, type ActivityEvent, type AgentConfig, type Approval, type ApprovalOption, type Attachment, type Decision, type Message, type Plan, type PlanAgent, type PlanStep, type Proc, type Project, type Reason, type Thread, type Workflow, type Worktree,
+  api, avatarStyle, cap, desktop, duration, formatStamp, formatTime, go, initial, lastThreadKey, PROVIDER_NAMES, runTrigger, useApi, kindOf, noticeOf, NOTICES, RINGS, type ActivityEvent, type AgentConfig, type Approval, type ApprovalOption, type Attachment, type Decision, type Message, type Plan, type PlanAgent, type PlanStep, type Proc, type Project, type Reason, type Thread, type Workflow, type Worktree,
 } from './api'
 import { Composer, quoteInComposer, type Picked } from './Composer'
 import { transport } from './transport'
@@ -376,7 +376,8 @@ export function Elapsed({ since }: { since: string }) {
 }
 
 // Lists outside the project link elsewhere and name the project on each card.
-export function ThreadCard({ project, thread: t, active, href = `#/p/${project.id}/t/${t.id}`, badge }: { project: Project; thread: Thread; active: boolean; href?: string; badge?: boolean }) {
+// The inbox names the type of the latest notice instead of the state, and who raised it when that is not the agent.
+export function ThreadCard({ project, thread: t, active, href = `#/p/${project.id}/t/${t.id}`, badge, children }: { project: Project; thread: Thread; active: boolean; href?: string; badge?: boolean; children?: JSX.Element | null }) {
   const { conversations, show } = usePrefs()
   const avatar = badge && (
     <span class="avatar small" style={avatarStyle(project.tint)} title={project.name}>
@@ -403,7 +404,15 @@ export function ThreadCard({ project, thread: t, active, href = `#/p/${project.i
     setMenu({ x: e.clientX, y: e.clientY })
   }
   const contextMenu = menu && <CardMenu project={project} thread={t} active={active} href={href} at={menu} close={() => setMenu(null)} />
-  const chip = w && <span class={`chip ${kind}`}>{w.reason === 'question' && w.more ? `${w.more + 1} questions` : REASONS[w.reason]}</span>
+  const notice = badge && noticeOf(t)
+  const chip = notice ? (
+    <span class={`chip notice n-${notice} ${t.unread || t.needsYou ? 'fresh' : ''}`}>
+      {w?.reason === 'question' && w.more ? `${w.more + 1} questions` : NOTICES[notice].label}
+      {t.notice && ['run', 'message'].includes(notice) && <span class="notice-actor"> · {t.notice.actor}</span>}
+    </span>
+  ) : (
+    w && <span class={`chip ${kind}`}>{w.reason === 'question' && w.more ? `${w.more + 1} questions` : REASONS[w.reason]}</span>
+  )
   const ring = <span class={`ring ${RINGS[kind]}`} title={w ? REASONS[w.reason] : kind === 'working' ? 'Working' : kind === 'done' ? 'Finished' : t.error === STOPPED ? 'Stopped' : 'Ready'} />
   const when = kind === 'working' ? t.startedAt && <Elapsed since={t.startedAt} /> : show.date && formatStamp(w?.since ?? t.updatedAt)
   const branch = t.worktree && (
@@ -458,11 +467,12 @@ export function ThreadCard({ project, thread: t, active, href = `#/p/${project.i
         ) : w?.reason === 'approval' || w?.reason === 'question' ? (
           <div class="card-ask">
             <span>{w.text}</span>
-            <span class="respond">{w.reason === 'approval' ? 'Review' : 'Answer'}</span>
+            {!children && <span class="respond">{w.reason === 'approval' ? 'Review' : 'Answer'}</span>}
           </div>
         ) : w ? (
           <div class="card-text">{plain(w.text)}</div>
         ) : null}
+        {children}
         {w?.reason === 'result' && (
           <div class="card-actions">
             <button class="ghost small" onClick={finish}>
@@ -726,6 +736,12 @@ function ContextUse({ context: c }: { context: NonNullable<Thread['context']> })
 export function ThreadView({ project, threadId, back, next, siblings }: { project: Project; threadId: string; back?: string; next?: string[]; siblings?: Thread[] }) {
   const base = `/projects/${project.id}/threads/${threadId}`
   const [data, reload, loadError] = useApi<ThreadData>(base, (e) => (e.threadId === threadId && ['message', 'thread', 'status'].includes(e.type)) || (e.projectId === project.id && e.type === 'processes'))
+  // Back on screen, an open conversation counts as seen.
+  useEffect(() => {
+    const seen = () => !document.hidden && reload()
+    document.addEventListener('visibilitychange', seen)
+    return () => document.removeEventListener('visibilitychange', seen)
+  }, [reload])
   const [activity] = useApi<ActivityEvent[]>(`${base}/activity`, (e) => e.threadId === threadId && (e.type === 'activity' || e.type === 'status'))
   const [plans] = useApi<Record<string, Plan>>(`${base}/plans`, (e) => e.threadId === threadId && (e.type === 'plan' || e.type === 'status'))
   const [links] = useApi<{ source: { project: { id: string; name: string; tint: string }; thread: Thread } | null; targets: { project: { id: string; name: string; tint: string }; thread: Thread }[] }>(data?.thread.inbox || data?.thread.routedFrom ? `${base}/links` : null, (e) => ['thread', 'status', 'projects'].includes(e.type))

@@ -3,7 +3,6 @@ import { api, desktop, go, useEvent, type Me, type Project } from './api'
 import { b64 } from '../shared/tunnel'
 
 const KEY = 'savor-notify'
-let pushing = false
 
 // A paired device also gets Web Push from the daemon, so it hears from Savor while the app is closed.
 async function syncPush(on: boolean) {
@@ -11,7 +10,6 @@ async function syncPush(on: boolean) {
   if (!reg?.pushManager) return
   let sub = await reg.pushManager.getSubscription()
   if (!on) {
-    pushing = false
     if (!sub) return
     await sub.unsubscribe()
     return api('DELETE', '/push')
@@ -25,12 +23,12 @@ async function syncPush(on: boolean) {
   }
   sub ??= await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64.dec(publicKey) })
   await api('PUT', '/push', sub.toJSON())
-  pushing = true
-  reportVisible()
 }
 
-// While Savor is on screen the page notifies from the event stream, so the daemon holds back pushes.
-const reportVisible = () => pushing && api('POST', '/push/visible', { visible: !document.hidden }).catch(() => {})
+// While Savor is on screen the page notifies from the event stream, so the daemon holds back its device's
+// pushes. Shown nowhere, a notice goes to the phones at once instead of after the delay.
+const page = Math.random().toString(36).slice(2, 12)
+const reportVisible = () => api('POST', '/push/visible', { visible: !document.hidden, page }).catch(() => {})
 
 export const notificationsOn = () => 'Notification' in window && Notification.permission === 'granted' && localStorage.getItem(KEY) !== 'off'
 
@@ -82,8 +80,8 @@ export function useNotifications(currentThread: string | undefined, projects: Pr
   )
   const remote = !!me && me.origin === 'remote'
   useEffect(() => {
-    if (!remote) return
-    if (notificationsOn()) syncPush(true).catch(console.error)
+    if (remote && notificationsOn()) syncPush(true).catch(console.error)
+    reportVisible()
     document.addEventListener('visibilitychange', reportVisible)
     const timer = setInterval(() => !document.hidden && reportVisible(), 30_000)
     return () => {

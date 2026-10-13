@@ -256,8 +256,10 @@ route('DELETE', '/push', (_, __, ctx) => {
   push.subscribe(deviceOnly(ctx).id, null)
   return {}
 })
+// Every page says whether it shows Savor: a notice goes to the phones at once when none does.
 route('POST', '/push/visible', (_, b, ctx) => {
-  push.setVisible(deviceOnly(ctx).id, !!b.visible)
+  if (typeof b.page !== 'string' || b.page.length > 64) throw new BadRequest('Name the page.')
+  push.setVisible(b.page, ctx.auth.device?.id ?? null, !!b.visible)
   return {}
 })
 
@@ -450,13 +452,19 @@ route('GET', '/projects/:pid/fanout/:id', (params) => {
       }
     })
 })
-route('GET', '/projects/:pid/threads/:tid', (params) => {
+// Seen on one device means seen everywhere: the pushes about it go away on the others.
+function markRead(p: store.Project, tid: string) {
+  const t = store.getThread(p, tid)
+  push.seen(tid)
+  if (!t.unread) return t
+  const read = store.updateThread(p, tid, { unread: false })
+  emit({ type: 'thread', projectId: p.id, threadId: tid })
+  return read
+}
+
+route('GET', '/projects/:pid/threads/:tid', (params, _, ctx) => {
   const p = project(params)
-  let thread = store.getThread(p, params.tid)
-  if (thread.unread) {
-    thread = store.updateThread(p, thread.id, { unread: false })
-    emit({ type: 'thread', projectId: p.id, threadId: thread.id })
-  }
+  const thread = ctx.query.has('hidden') ? store.getThread(p, params.tid) : markRead(p, params.tid)
   return {
     thread,
     busy: agents.isBusy(thread.id),
@@ -491,7 +499,8 @@ route('PATCH', '/projects/:pid/threads/:tid', (params, b, ctx) => {
   const p = project(params)
   const patch: Partial<store.Thread> = {}
   if (typeof b.completed === 'boolean') patch.completed = b.completed
-  if (typeof b.unread === 'boolean') patch.unread = b.unread
+  if (b.unread === true) patch.unread = true
+  if (b.unread === false) markRead(p, params.tid)
   if (typeof b.title === 'string') patch.title = b.title
   if (typeof b.label === 'string') patch.label = b.label ? { name: b.label, hue: store.hueFor(b.label) } : null
   if (b.agent) {
@@ -575,11 +584,64 @@ route('POST', '/projects/:pid/threads/:tid/approvals/:mid', (params, b) => {
     throw new BadRequest((e as Error).message)
   }
   agents.resolveApproval(p, params.tid, params.mid, b.choice, content)
+  markRead(p, params.tid)
   return {}
 })
 route('POST', '/projects/:pid/threads/:tid/decisions', (params, b, ctx) => {
   const p = project(params)
   agents.answerDecisions(p, params.tid, b.answers ?? [], inputFrom({ text: b.comment, attachments: b.attachments }, ctx, p, params.tid))
+  markRead(p, params.tid)
+  return {}
+})
+// An answer from a notification or the inbox reaches the agent only after HOLD_MS, so it can still be taken back.
+const HOLD_MS = 10_000
+const held = new Map<string, NodeJS.Timeout>()
+route('POST', '/projects/:pid/threads/:tid/held', (params, b, ctx) => {
+  const p = project(params)
+  const tid = params.tid
+  let apply: () => void
+  if (typeof b.approval === 'string') {
+    const approval = store.readMessages(p, tid).find((m) => m.id === b.approval)?.approval
+    if (!approval || approval.status !== 'pending' || approval.fields) throw new BadRequest('This approval is no longer open.')
+    if (!approval.options.some((o) => o.id === b.choice)) throw new BadRequest('Choose one of the offered options.')
+    apply = () => agents.resolveApproval(p, tid, b.approval, b.choice)
+  } else {
+    const d = store.listDecisions(p, tid).find((d) => d.id === b.decision && !d.resolved)
+    if (!d) throw new BadRequest('This question was already answered.')
+    if (!Number.isInteger(b.selected) || !d.options[b.selected]) throw new BadRequest('Choose one of the offered options.')
+    const input = inputFrom({ text: '' }, ctx, p, tid)
+    apply = () => agents.answerDecisions(p, tid, [{ id: d.id, selected: b.selected }], input)
+  }
+  markRead(p, tid)
+  const id = store.newId()
+  held.set(
+    id,
+    setTimeout(() => {
+      held.delete(id)
+      // Answered in the conversation meanwhile.
+      try {
+        apply()
+      } catch {}
+    }, HOLD_MS),
+  )
+  return { id, ms: HOLD_MS }
+})
+route('DELETE', '/held/:id', (params) => {
+  clearTimeout(held.get(params.id))
+  if (!held.delete(params.id)) throw new BadRequest('The answer already went to the agent.')
+  return {}
+})
+// Several conversations marked read or unread at once, from the inbox.
+route('POST', '/threads/read', (_, b) => {
+  if (!Array.isArray(b.threads) || typeof b.unread !== 'boolean') throw new BadRequest('Name the conversations and whether they are unread.')
+  for (const { projectId, threadId } of b.threads) {
+    const p = store.listProjects().find((p) => p.id === projectId)
+    if (!p || !store.listThreads(p).some((t) => t.id === threadId)) continue
+    if (b.unread) {
+      store.updateThread(p, threadId, { unread: true })
+      emit({ type: 'thread', projectId: p.id, threadId })
+    } else markRead(p, threadId)
+  }
   return {}
 })
 route('GET', '/projects/:pid/threads/:tid/attachments/:name', (params, _, ctx) => {
@@ -1095,6 +1157,7 @@ const settings = () => ({
   autoRestart: store.state().autoRestart !== false,
   service: !!process.env.SAVOR_EXIT_ON_UPDATE,
   usagePing: usageAvailable() ? store.state().usagePing !== false : null,
+  pushDelay: push.delay(),
 })
 route('GET', '/settings', () => settings())
 route('PATCH', '/settings', (_, b, ctx) => {
@@ -1103,6 +1166,7 @@ route('PATCH', '/settings', (_, b, ctx) => {
   if (typeof b.autoUpdate === 'boolean') s.autoUpdate = b.autoUpdate
   if (typeof b.autoRestart === 'boolean') s.autoRestart = b.autoRestart
   if (typeof b.usagePing === 'boolean') s.usagePing = b.usagePing
+  if (Number.isInteger(b.pushDelay) && b.pushDelay >= 0 && b.pushDelay <= 60) s.pushDelay = b.pushDelay
   store.saveState(s)
   emit({ type: 'settings' })
   if (restart.updated && typeof b.autoRestart === 'boolean') scheduleRestart()

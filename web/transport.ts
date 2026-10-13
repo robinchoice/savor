@@ -91,7 +91,11 @@ export const loadProfile = (): RemoteProfile | null => JSON.parse(localStorage.g
 export async function forgetProfile() {
   localStorage.removeItem(PROFILE_KEY)
   await keyStore('readwrite', (s) => s.delete('device'))
+  await keyStore('readwrite', (s) => s.delete('profile'))
 }
+
+// The service worker has no localStorage: it finds the profile beside the key, to answer from a notification.
+export const storedProfile = () => keyStore<RemoteProfile | undefined>('readonly', (s) => s.get('profile'))
 
 const relaySocket = (daemonPk: Uint8Array) => new WebSocket(`${location.origin.replace(/^http/, 'ws')}/connect?id=${t.daemonId(daemonPk)}`)
 
@@ -147,6 +151,7 @@ type Tunnel = { ws: WebSocket; channel: t.Channel }
 // One encrypted tunnel with request multiplexing. Reconnects on its own and resumes open streams.
 export function remote(profile: RemoteProfile, onState: (connected: boolean, error?: string) => void): Transport {
   const daemonPk = t.publicKey(profile.daemonPk)
+  keyStore('readwrite', (s) => s.put(profile, 'profile')).catch(() => {})
   const device = keyStore<StoredKey | undefined>('readonly', (s) => s.get('device')).then((stored) => {
     if (!stored) throw new Error('This browser has no device key. Pair it again.')
     return deviceKey(stored)

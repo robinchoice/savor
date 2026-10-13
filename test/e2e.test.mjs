@@ -1261,13 +1261,54 @@ test('a paired device keeps its push subscription until it is revoked', async ()
   assert.match((await api('GET', '/push', undefined, device)).body.publicKey, /^B[A-Za-z0-9_-]{86}$/)
   assert.equal((await api('PUT', '/push', { endpoint: 'http://127.0.0.1:1/x', keys: { p256dh: 'a', auth: 'b' } }, device)).status, 400)
   assert.equal((await api('PUT', '/push', { endpoint: 'https://push.example/x', keys: { p256dh: 'a', auth: 'b' } }, device)).status, 200)
-  assert.equal((await api('POST', '/push/visible', { visible: true }, device)).status, 200)
+  assert.equal((await api('POST', '/push/visible', { visible: true }, device)).status, 400, 'a page names itself')
+  assert.equal((await api('POST', '/push/visible', { visible: true, page: 'phone-tab' }, device)).status, 200)
   const stateFile = path.join(HOME, 'state.json')
   assert.ok(fs.readFileSync(stateFile, 'utf8').includes('https://push.example/x'))
   assert.ok(!JSON.stringify((await api('GET', '/devices')).body).includes('push.example'))
   const paired = (await api('GET', '/devices')).body.find((d) => d.name === 'CI push phone')
   await api('DELETE', `/devices/${paired.id}`)
   assert.ok(!fs.readFileSync(stateFile, 'utf8').includes('https://push.example/x'))
+})
+
+test('notices have a type, the inbox filters by it, marks several read and answers with an undo', async () => {
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
+  const threads = `/projects/${project.id}/threads`
+  const listed = async (id) => (await api('GET', '/overview')).body.threads.find((t) => t.id === id)
+  const asked = (await api('POST', threads, { text: 'ask: Paint it blue?', agent: { provider: 'claude' } })).body
+  const done = (await api('POST', threads, { text: 'plan the paint', agent: { provider: 'claude' } })).body
+  await until(async () => (await listed(asked.id))?.notice?.type === 'ask' && (await listed(done.id))?.notice?.type === 'result' && !(await listed(done.id)).busy)
+  assert.equal((await listed(done.id)).notice.actor, 'Claude Code')
+
+  await page.goto(`${base}/#/all/inbox`)
+  await page.click('.conv-list .filter:has-text("Questions")')
+  await page.waitForSelector('.conv-list .card:has-text("Paint it blue?") .chip.notice.n-ask.fresh')
+  assert.equal(await page.locator('.conv-list .card:has-text("plan the paint")').count(), 0)
+  await page.click('.conv-list .filter:has-text("Results")')
+  await page.waitForSelector('.conv-list .card:has-text("plan the paint") .chip.notice.n-result')
+
+  // Marked read in a batch, and back with Undo.
+  await page.click('.conv-list button[title="Select several"]')
+  await page.click('.pick-row:has-text("plan the paint")')
+  await page.click('.pick-bar >> text=Mark read')
+  await until(async () => !(await listed(done.id)).unread)
+  await page.click('.undo-toast:has-text("1 marked read") >> text=Undo')
+  await until(async () => (await listed(done.id)).unread)
+
+  // An answer from the inbox or a notification is held back until its undo window has passed.
+  const decision = (await listed(asked.id)).decisions[0]
+  assert.equal((await api('POST', `${threads}/${asked.id}/held`, { decision: decision.id, selected: 5 })).status, 400)
+  const held = (await api('POST', `${threads}/${asked.id}/held`, { decision: decision.id, selected: 0 })).body
+  assert.equal(held.ms, 10_000)
+  assert.equal((await listed(asked.id)).unread, false, 'answering counts as seen')
+  assert.equal((await api('DELETE', `/held/${held.id}`)).status, 200)
+  assert.equal((await api('DELETE', `/held/${held.id}`)).status, 400)
+  assert.ok(!(await listed(asked.id)).decisions[0].resolved)
+
+  // How long a notice waits before it goes to the phones.
+  assert.equal((await api('GET', '/settings')).body.pushDelay, 5)
+  assert.equal((await api('PATCH', '/settings', { pushDelay: 3 })).body.pushDelay, 3)
+  await api('PATCH', '/settings', { pushDelay: 5 })
 })
 
 test('a conversation can work in its own git worktree, which merges back and can be deleted', async () => {
@@ -2976,8 +3017,13 @@ test('the All tab answers questions in place and starts what waits in the backlo
   const listed = (await api('GET', '/overview')).body.threads.find((t) => t.id === asked.id)
   assert.deepEqual(listed.decisions.map((d) => d.options), [['Yes', 'No']])
   await page.goto(`${base}/#/all`)
+  // The answer waits a few seconds for an undo before it reaches the agent.
   await page.click(`.wait-card:has-text("Ship the footer?") >> button:text-is("Yes")`)
-  await until(async () => (await read(asked.id)).decisions.every((d) => d.resolved && d.selected === 0))
+  await page.click('.undo-toast:has-text("Answered: Yes") >> text=Undo')
+  await page.click(`.wait-card:has-text("Ship the footer?") >> button:text-is("Yes")`)
+  await page.waitForSelector('.undo-toast:has-text("Answered: Yes")')
+  assert.ok((await read(asked.id)).decisions.every((d) => !d.resolved))
+  await until(async () => (await read(asked.id)).decisions.every((d) => d.resolved && d.selected === 0), 15_000)
 
   // The backlog holds the items put there, until started or deleted, and not the next steps conversations suggest.
   assert.equal((await api('POST', `/projects/${project.id}/backlog`, { title: '  ' })).status, 400)

@@ -1,15 +1,22 @@
 // Web Push to paired devices (RFC 8030), so a phone hears about a conversation while the app is closed.
 // The daemon sends straight to the browser's push service; the relay is not involved. Payloads are
-// encrypted for the subscribed browser (RFC 8291) and only carry the project name, a short status and
-// the conversation's address, never conversation content. Requests are signed with this daemon's
-// VAPID key (RFC 8292), created on first use and kept in state.json.
+// encrypted for the subscribed browser (RFC 8291). They carry the project name, a short status and the
+// conversation's address, and for a question that can be answered from the notification its title and
+// options, cut to 120 characters each. Requests are signed with this daemon's VAPID key (RFC 8292),
+// created on first use and kept in state.json.
+// A notice goes to the phones only once it stayed unseen for a while (pushDelay, questions at most a
+// minute), at once when Savor shows nowhere. Seen on one device, it disappears from the others.
 import crypto from 'node:crypto'
 import * as store from './store.js'
 
 const SUBJECT = 'https://github.com/robinchoice/savor'
-// While a device shows Savor, its page notifies from the event stream and the push would be a double.
+// While a page shows Savor it notifies from the event stream, and its device's push would be a double.
 const PRESENCE_MS = 70_000
-const visible = new Map<string, number>() // device id → visible until
+const ASK_DELAY_MS = 60_000
+export const DEFAULT_DELAY = 5
+const visible = new Map<string, { device: string | null; until: number }>() // page id → its device, visible until
+const pending = new Map<string, NodeJS.Timeout>() // thread id → its push waiting to go out
+const sent = new Map<string, Set<string>>() // thread id → the devices that got its push
 
 function vapid() {
   const s = store.state()
@@ -31,10 +38,11 @@ export function subscribe(deviceId: string, sub: store.PushSubscription | null) 
   store.saveState(s)
 }
 
-export function setVisible(deviceId: string, on: boolean) {
-  if (on) visible.set(deviceId, Date.now() + PRESENCE_MS)
-  else visible.delete(deviceId)
+export function setVisible(page: string, device: string | null, on: boolean) {
+  if (on) visible.set(page, { device, until: Date.now() + PRESENCE_MS })
+  else visible.delete(page)
 }
+const shows = (device?: string) => [...visible.values()].some((v) => v.until > Date.now() && (device === undefined || v.device === device))
 
 // aes128gcm content encoding for one record (RFC 8188, keys from RFC 8291).
 export function encrypt(sub: store.PushSubscription, payload: string) {
@@ -78,7 +86,57 @@ async function deliver(deviceId: string, sub: store.PushSubscription, payload: s
   }
 }
 
+// What the app icon counts: conversations with something unseen or waiting for an answer.
+function badge() {
+  let n = 0
+  for (const p of store.listProjects()) for (const t of store.listThreads(p)) if (!t.completed && (t.unread || t.needsYou)) n++
+  return n
+}
+
+const cut = (s: string) => (s.length > 120 ? `${s.slice(0, 119)}…` : s)
+
+// A pending approval without a form, or a single open question with options: answerable from the notification.
+function ask(p: store.Project, tid: string) {
+  const approval = store.readMessages(p, tid).filter((m) => m.approval?.status === 'pending').at(-1)
+  if (approval) {
+    const a = approval.approval!
+    return a.fields ? null : { title: cut(a.title), options: a.options.map((o) => ({ id: o.id, label: cut(o.label) })), recommended: 0, approval: approval.id }
+  }
+  const open = store.listDecisions(p, tid).filter((d) => !d.resolved)
+  const d = open.length === 1 && open[0].options.length ? open[0] : null
+  return d && { title: cut(d.title), options: d.options.map((o, i) => ({ id: String(i), label: cut(o) })), recommended: d.recommended ?? null, decision: d.id }
+}
+
+export const delay = () => store.state().pushDelay ?? DEFAULT_DELAY
+
 export function send(project: store.Project, threadId: string, status: string) {
-  const payload = JSON.stringify({ title: project.name, body: status, tag: threadId, hash: `/p/${project.id}/t/${threadId}` })
-  for (const d of store.state().devices) if (d.push && !((visible.get(d.id) ?? 0) > Date.now())) deliver(d.id, d.push, payload)
+  clearTimeout(pending.get(threadId))
+  const notice = store.getThread(project, threadId).notice
+  const fire = () => {
+    pending.delete(threadId)
+    const t = store.listThreads(project).find((t) => t.id === threadId)
+    // Seen meanwhile, or a newer notice took its place.
+    if (!t?.unread || t.notice?.at !== notice?.at) return
+    const question = t.needsYou ? ask(project, threadId) : null
+    const payload = JSON.stringify({ title: project.name, body: question ? question.title : status, status, tag: threadId, hash: `/p/${project.id}/t/${threadId}`, badge: badge(), ...(question && { question }) })
+    for (const d of store.state().devices) {
+      if (!d.push || shows(d.id)) continue
+      deliver(d.id, d.push, payload)
+      sent.set(threadId, (sent.get(threadId) ?? new Set()).add(d.id))
+    }
+  }
+  const ms = !shows() ? 0 : Math.min(delay() * 60_000, notice?.type === 'ask' ? ASK_DELAY_MS : Infinity)
+  if (ms) pending.set(threadId, setTimeout(fire, ms))
+  else fire()
+}
+
+// The conversation was opened, read or answered somewhere: no push for it anymore, and the ones sent go away.
+export function seen(threadId: string) {
+  clearTimeout(pending.get(threadId))
+  pending.delete(threadId)
+  const devices = sent.get(threadId)
+  if (!devices) return
+  sent.delete(threadId)
+  const payload = JSON.stringify({ dismiss: threadId, badge: badge() })
+  for (const d of store.state().devices) if (d.push && devices.has(d.id)) deliver(d.id, d.push, payload)
 }

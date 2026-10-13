@@ -198,7 +198,7 @@ export function spent(p: Project, tid: string, provider: Provider, usage: { usd?
 
 function warn(p: Project, tid: string, text: string, status: string) {
   agents.post(p, tid, { kind: 'update', text })
-  agents.notify(p, tid, text, status)
+  agents.notify(p, tid, 'run', text, status)
   emit({ type: 'workflows', projectId: p.id })
 }
 

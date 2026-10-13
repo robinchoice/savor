@@ -16,7 +16,8 @@
     "node": ">=22.12"
   },
   "scripts": {
-    "build": "vite build && npm run build:server && npm run build:relay",
+    "build": "vite build && npm run build:sw && npm run build:server && npm run build:relay",
+    "build:sw": "esbuild web/sw.ts --bundle --format=iife --target=es2020 --outfile=dist/web/sw.js",
     "build:server": "esbuild server/index.ts --bundle --platform=node --target=node22 --format=esm --outfile=dist/server/index.mjs --external:playwright-core --external:node-pty --banner:js=\"import { createRequire as __cjsRequire } from 'node:module'; const require = __cjsRequire(import.meta.url);\" && esbuild server/voice-worker.ts --bundle --platform=node --target=node22 --format=esm --outfile=dist/server/voice-worker.mjs --external:transcribe-cpp",
     "build:relay": "esbuild relay/server.ts --bundle --platform=node --target=node22 --format=esm --outfile=dist/relay/server.mjs --external:bufferutil --external:utf-8-validate --banner:js=\"import { createRequire as __cjsRequire } from 'node:module'; const require = __cjsRequire(import.meta.url);\"",
     "prepare": "npm run build",

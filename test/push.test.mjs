@@ -46,7 +46,7 @@ test('payloads are encrypted for the subscribed browser', () => {
   assert.ok(!body.includes(Buffer.from('Savor')))
 })
 
-test('pushes go to subscribed devices that are not showing Savor, signed with the VAPID key', async (t) => {
+test('pushes go to subscribed devices that are not showing Savor, after the delay while Savor shows somewhere', async (t) => {
   const s = store.state()
   s.devices.push(
     { id: 'phone', name: 'Phone', tokenHash: '', publicKey: 'x', createdAt: store.now(), lastSeenAt: null },
@@ -57,19 +57,29 @@ test('pushes go to subscribed devices that are not showing Savor, signed with th
   const keys = { p256dh: ua.public, auth: ua.auth }
   push.subscribe('phone', { endpoint: 'https://fcm.example/send/phone', keys })
   push.subscribe('tablet', { endpoint: 'https://fcm.example/send/tablet', keys })
-  push.setVisible('tablet', true)
+  push.setVisible('tablet-tab', 'tablet', true)
 
   const sent = []
   let status = 201
   t.mock.method(globalThis, 'fetch', async (url, init) => (sent.push({ url, init }), new Response('', { status })))
-  const project = { id: 'p1', name: 'Shop' }
-  push.send(project, 't1', 'Needs your approval')
-  await new Promise((r) => setImmediate(r))
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const payload = (i) => JSON.parse(decrypt(sent[i].init.body, ua.private, b(ua.auth)))
+  const project = store.addProject(fs.mkdtempSync(path.join(HOME, 'shop-')), 'Shop')
+  const thread = store.createThread(project, { title: 'Footer' })
+  const notice = (type, extra = {}) => {
+    store.updateThread(project, thread.id, { unread: true, notice: { type, actor: 'Claude Code', at: new Date(Date.now() + sent.length).toISOString() }, ...extra })
+    push.send(project, thread.id, type === 'ask' ? 'Has a question' : 'Finished')
+  }
 
+  // The tablet shows Savor: the result waits five minutes for being seen, then goes to the phone only.
+  notice('result')
+  t.mock.timers.tick(4 * 60_000)
+  assert.equal(sent.length, 0)
+  t.mock.timers.tick(60_000)
   assert.deepEqual(sent.map((r) => r.url), ['https://fcm.example/send/phone'])
   const { init } = sent[0]
   assert.equal(init.headers['content-encoding'], 'aes128gcm')
-  assert.deepEqual(JSON.parse(decrypt(init.body, ua.private, b(ua.auth))), { title: 'Shop', body: 'Needs your approval', tag: 't1', hash: '/p/p1/t/t1' })
+  assert.deepEqual(payload(0), { title: 'Shop', body: 'Finished', status: 'Finished', tag: thread.id, hash: `/p/${project.id}/t/${thread.id}`, badge: 1 })
 
   const [, jwt, k] = init.headers.authorization.match(/^vapid t=(\S+), k=(\S+)$/)
   assert.equal(k, push.publicKey())
@@ -78,16 +88,37 @@ test('pushes go to subscribed devices that are not showing Savor, signed with th
   assert.ok(crypto.verify('sha256', Buffer.from(`${head}.${claims}`), { key, dsaEncoding: 'ieee-p1363' }, b(sig)))
   assert.equal(JSON.parse(b(claims)).aud, 'https://fcm.example')
 
+  // Seen somewhere: the phone's notification goes away, with the new count for the app icon.
+  store.updateThread(project, thread.id, { unread: false })
+  push.seen(thread.id)
+  assert.equal(sent.length, 2)
+  assert.deepEqual(payload(1), { dismiss: thread.id, badge: 0 })
+  push.seen(thread.id)
+  assert.equal(sent.length, 2, 'only once, and only where a push went')
+
+  // A question waits a minute at most, and one seen before then never goes out.
+  store.saveDecision(project, { id: 'd1', groupId: 'g1', threadId: thread.id, title: 'Ship it?', body: 'CI is green.', options: ['Yes', 'No'], recommended: 0, selected: null, answer: null, resolved: false, createdAt: store.now() })
+  notice('ask', { needsYou: true })
+  t.mock.timers.tick(30_000)
+  push.seen(thread.id)
+  t.mock.timers.tick(60_000)
+  assert.equal(sent.length, 2)
+  notice('ask', { needsYou: true })
+  t.mock.timers.tick(60_000)
+  assert.equal(sent.length, 3)
+  assert.deepEqual(payload(2).question, { title: 'Ship it?', options: [{ id: '0', label: 'Yes' }, { id: '1', label: 'No' }], recommended: 0, decision: 'd1' })
+
   // The VAPID key stays the same and is kept with the daemon's other keys.
   assert.equal(fs.statSync(path.join(HOME, 'state.json')).mode & 0o777, 0o600)
   assert.ok(store.state().vapid.d)
 
-  // A subscription the push service no longer knows is forgotten.
+  // Savor shows nowhere: the push goes out at once. A subscription the push service no longer knows is forgotten.
   status = 410
-  push.setVisible('tablet', false)
-  push.send(project, 't1', 'Finished')
-  await new Promise((r) => setTimeout(r, 50))
-  assert.equal(sent.length, 3)
+  push.setVisible('tablet-tab', 'tablet', false)
+  notice('result')
+  await new Promise((r) => setImmediate(r))
+  await new Promise((r) => setImmediate(r))
+  assert.equal(sent.length, 5)
   assert.equal(devices.deviceById('phone').push, undefined)
   assert.equal(devices.deviceById('tablet').push, undefined)
 

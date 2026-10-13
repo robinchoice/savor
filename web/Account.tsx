@@ -336,6 +336,27 @@ function UpdateSettings() {
   )
 }
 
+// How long a notice waits for being seen on this computer or another device before it goes to the phones.
+function PushDelay() {
+  const [settings] = useApi<{ pushDelay: number }>('/settings', (e) => e.type === 'settings')
+  if (!settings) return null
+  return (
+    <div class="setting wrap">
+      <span>
+        Phones get a notice after
+        <small class="muted">Unless it was seen on another device first. Questions come after a minute at most, and at once when Savor is open nowhere.</small>
+      </span>
+      <div class="segmented">
+        {[0, 1, 3, 5, 15].map((m) => (
+          <button key={m} class={settings.pushDelay === m ? 'selected' : ''} onClick={() => api('PATCH', '/settings', { pushDelay: m })}>
+            {m ? `${m} min` : 'At once'}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // Savor has no accounts: this is the computer it runs on, or on a paired device, that device.
 export function AccountDialog({ me, projects, toggleAwake, open, onClose }: { me: Me; projects: number; toggleAwake: () => void; open: (what: 'feedback' | 'appearance' | 'shortcuts') => void; onClose: () => void }) {
   const local = me.origin === 'local'
@@ -425,6 +446,7 @@ export function AccountDialog({ me, projects, toggleAwake, open, onClose }: { me
                   </button>
                 </div>
               )}
+              {local && <PushDelay />}
               <div class="setting">
                 <span>
                   Bug button

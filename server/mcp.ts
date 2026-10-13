@@ -125,7 +125,7 @@ function buildServer(p: Project, tid: string) {
       agents.markConcluded(tid, msg.id)
       store.updateThread(p, tid, { unread: true, needsYou: store.listDecisions(p, tid).some((d) => !d.resolved), ...(summary && { summary }) })
       touchThread()
-      agents.notify(p, tid, questions?.length ? `Your turn: ${questions[0].title}` : text!, questions?.length ? 'Has a question' : 'Finished')
+      agents.notify(p, tid, questions?.length ? 'ask' : 'result', questions?.length ? `Your turn: ${questions[0].title}` : text!, questions?.length ? 'Has a question' : 'Finished')
       return ok({ id: msg.id, note: 'Delivered. Finish your turn now.' })
     },
   )
@@ -390,7 +390,7 @@ function buildServer(p: Project, tid: string) {
       // Input from a paired device that lands in another project shows up there, not only in this conversation.
       if (!here && origin === 'remote') {
         store.updateThread(target, t.id, { unread: true })
-        agents.notify(target, t.id, `Started from ${p.name} by ${device ?? 'a paired device'}`, 'Started from another project')
+        agents.notify(target, t.id, 'message', `Started from ${p.name} by ${device ?? 'a paired device'}`, 'Started from another project', p.name)
       }
       return ok({ id: t.id, project: target.id, url: threadUrl(t.id, target) })
     },
@@ -438,7 +438,7 @@ function buildServer(p: Project, tid: string) {
       // A message set off by a paired device's input is announced in the receiving conversation, wherever it is.
       if (origin === 'remote') {
         store.updateThread(target, id, { unread: true })
-        agents.notify(target, id, `Message from ${p.name} by ${device ?? 'a paired device'}`, 'Message from another agent')
+        agents.notify(target, id, 'message', `Message from ${p.name} by ${device ?? 'a paired device'}`, 'Message from another agent', p.name)
       }
       emit({ type: 'thread', projectId: target.id, threadId: id })
       return ok({ id: msg.id, queued: msg.delivered === false, url: threadUrl(id, target) })

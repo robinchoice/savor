@@ -59,6 +59,9 @@ export interface Message {
   // The idempotency key of an update, so that a retry is still recognized after a restart.
   key?: string
 }
+// What a notice about a conversation is: a question or approval, a result, a workflow run, an error,
+// failed CI or a message from another project.
+export type NoticeType = 'ask' | 'result' | 'run' | 'error' | 'ci' | 'message'
 export interface Thread {
   id: string
   title: string
@@ -76,6 +79,8 @@ export interface Thread {
   completed: boolean
   needsYou: boolean
   error: string | null
+  // The latest notice about the conversation: what kind it is, who raised it and when. The inbox filters by it.
+  notice?: { type: NoticeType; actor: string; at: string } | null
   // When the agent got the input it still owes work on. It is on disk so that a turn cut off by a
   // restart is found again.
   workingSince?: string | null
@@ -211,6 +216,8 @@ interface State {
   relayToken: string
   // The daemon's VAPID key for Web Push (P-256, private JWK), created on first use.
   vapid?: crypto.webcrypto.JsonWebKey
+  // Minutes a notice waits for being seen on another device before it goes to the phones (push.ts).
+  pushDelay?: number
 }
 
 export const newId = () => crypto.randomUUID().replaceAll('-', '').slice(0, 16)

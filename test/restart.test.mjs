@@ -50,8 +50,8 @@ test('an installed update restarts the daemon after a countdown, or on request',
     return r.json()
   }
 
-  assert.deepEqual(await api('GET', '/settings'), { autoUpdate: true, autoRestart: true, service: true, usagePing: null })
-  assert.deepEqual(await api('PATCH', '/settings', { autoRestart: false }), { autoUpdate: true, autoRestart: false, service: true, usagePing: null })
+  assert.deepEqual(await api('GET', '/settings'), { autoUpdate: true, autoRestart: true, service: true, usagePing: null, pushDelay: 5 })
+  assert.deepEqual(await api('PATCH', '/settings', { autoRestart: false }), { autoUpdate: true, autoRestart: false, service: true, usagePing: null, pushDelay: 5 })
   assert.deepEqual(await api('GET', '/restart'), { updated: false, left: null })
 
   fs.writeFileSync(APP, 'v2')

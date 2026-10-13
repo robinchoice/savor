@@ -1,12 +1,13 @@
-import { Fragment } from 'preact'
+import { Fragment, type JSX } from 'preact'
 import { useState } from 'preact/hooks'
-import { ArrowRight, ChevronDown, Plus, Clock, Pause, Play, SquareArrowOutUpRight, Trash2, TriangleAlert, X } from 'lucide-preact'
-import { api, avatarStyle, formatStamp, go, initial, kindOf, RINGS, useApi, type AgentConfig, type ApprovalOption, type Attachment, type Decision, type Project, type Thread, type Workflow } from './api'
+import { ArrowRight, Check, CheckCheck, ChevronDown, ListChecks, Plus, Clock, Pause, Play, SquareArrowOutUpRight, Trash2, TriangleAlert, X } from 'lucide-preact'
+import { api, avatarStyle, formatStamp, go, initial, kindOf, noticeOf, NOTICES, RINGS, useApi, type NoticeType, type AgentConfig, type ApprovalOption, type Attachment, type Decision, type Project, type Thread, type Workflow } from './api'
 import { Composer } from './Composer'
 import { byUrgency, ContextActions, Elapsed, NextButton, plain, ThreadCard, ThreadView } from './Conversations'
 import { Panel } from './Layout'
 import { STATUS, schedule, when } from './Workflows'
 import { setPrefs, usePrefs } from './prefs'
+import { offerUndo, UndoToast } from './Swipe'
 
 type Of<T> = T & { projectId: string }
 // Conversations that need you also bring what to answer.
@@ -199,6 +200,59 @@ function AllOverview({ data, projects, byId, importText }: { data?: Overview; pr
           </>
         )}
       </aside>
+      <UndoToast />
+    </div>
+  )
+}
+
+// One approval or one question with options, answered in place. The answer reaches the agent only
+// after a few seconds, so it can be taken back; "Why?" shows the agent's reasoning.
+function QuickAnswer({ t, children }: { t: Listed; children?: JSX.Element }) {
+  const [sent, setSent] = useState(false)
+  const [why, setWhy] = useState(false)
+  const decision = t.decisions?.length === 1 && t.decisions[0].options.length ? t.decisions[0] : null
+  if (!t.approval && !decision) return children ? <div class="wait-actions">{children}</div> : null
+  const base = `/projects/${t.projectId}/threads/${t.id}`
+  const stop = (e: Event) => {
+    e.preventDefault()
+    e.stopPropagation()
+  }
+  const hold = (label: string, body: object) => (e: Event) => {
+    stop(e)
+    setSent(true)
+    api<{ id: string; ms: number }>('POST', `${base}/held`, body)
+      .then(({ id, ms }) => offerUndo(`Answered: ${label}`, () => api('DELETE', `/held/${id}`).then(() => setSent(false)), ms))
+      .catch(() => setSent(false))
+  }
+  if (sent)
+    return (
+      <div class="wait-actions">
+        <span class="muted small">Answered</span>
+        {children}
+      </div>
+    )
+  return (
+    <div class="quick-answer" onClick={stop}>
+      <div class="wait-actions">
+        {t.approval
+          ? t.approval.options.map((o, i) => (
+              <button key={o.id} class={i === 0 ? 'primary small' : 'ghost small'} onClick={hold(o.label, { approval: t.approval!.messageId, choice: o.id })}>
+                {o.label}
+              </button>
+            ))
+          : decision!.options.map((o, i) => (
+              <button key={o} class={i === decision!.recommended ? 'primary small' : 'ghost small'} onClick={hold(o, { decision: decision!.id, selected: i })}>
+                {o}
+              </button>
+            ))}
+        {decision?.body && (
+          <button class="why-btn" onClick={(e) => (stop(e), setWhy(!why))}>
+            {why ? 'Hide why' : 'Why?'}
+          </button>
+        )}
+        {children}
+      </div>
+      {why && decision && <div class="why-text">{decision.body}</div>}
     </div>
   )
 }
@@ -207,14 +261,8 @@ const REASONS: Record<string, string> = { approval: 'Approval', question: 'Quest
 
 // The question itself, answerable in place when it is one approval or one question.
 function WaitCard({ t, project }: { t: Listed; project?: Project }) {
-  const [sent, setSent] = useState(false)
-  const base = `/projects/${t.projectId}/threads/${t.id}`
   const w = t.waitsFor!
   const decision = t.decisions?.length === 1 ? t.decisions[0] : null
-  const answer = (fn: () => Promise<unknown>) => {
-    setSent(true)
-    fn().catch(() => setSent(false))
-  }
   return (
     <div class={`wait-card ${w.reason}`}>
       <div class="wait-top">
@@ -228,49 +276,58 @@ function WaitCard({ t, project }: { t: Listed; project?: Project }) {
         <span class="wait-reason">{w.reason === 'question' && w.more ? `${w.more + 1} questions` : REASONS[w.reason]}</span>
         {w.reason === 'failed' ? plain(w.text) : w.text}
       </div>
-      <div class="wait-actions">
-        {sent ? (
-          <span class="muted small">Sent</span>
-        ) : t.approval ? (
-          t.approval.options.map((o, i) => (
-            <button key={o.id} class={i === 0 ? 'primary small' : 'ghost small'} onClick={() => answer(() => api('POST', `${base}/approvals/${t.approval!.messageId}`, { choice: o.id }))}>
-              {o.label}
-            </button>
-          ))
-        ) : decision ? (
-          decision.options.map((o, i) => (
-            <button key={o} class={i === decision.recommended ? 'primary small' : 'ghost small'} onClick={() => answer(() => api('POST', `${base}/decisions`, { answers: [{ id: decision.id, selected: i }], comment: '' }))}>
-              {o}
-            </button>
-          ))
-        ) : null}
+      <QuickAnswer t={t}>
         <a class="wait-open" href={threadHref(t)}>
           {w.reason === 'question' && !decision ? 'Answer' : 'Open conversation'} <ArrowRight size={13} />
         </a>
-      </div>
+      </QuickAnswer>
     </div>
   )
 }
 
-type InboxFilter = 'all' | 'you' | 'working'
+type InboxFilter = 'all' | NoticeType | 'working'
 
-// The open conversations of every project in one list, the chosen one beside it.
+// The open conversations of every project in one list, the chosen one beside it. Filters by the type
+// of the latest notice; several conversations or a whole filter can be marked read at once.
 function AllInbox({ threads, projects, byId, rest }: { threads?: Listed[]; projects: Project[]; byId: Map<string, Project>; rest: string[] }) {
   const [filter, setFilter] = useState<InboxFilter>('all')
+  const [picked, setPicked] = useState<Set<string> | null>(null)
   const [pid, tid] = rest
   const project = byId.get(pid)
-  const open = (threads ?? []).filter((t) => !t.completed && byId.has(t.projectId)).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-  const test: Record<InboxFilter, (t: Thread) => boolean> = { all: () => true, you: (t) => !!t.waitsFor, working: (t) => kindOf(t) === 'working' }
-  const shown = open.filter(test[filter])
-  const forYou = byUrgency(open.filter(test.you))
+  // Newest input or notice first: reading a conversation doesn't move it.
+  const at = (t: Thread) => [t.inputAt ?? '', t.notice?.at ?? ''].sort().at(-1) || t.updatedAt
+  const open = (threads ?? []).filter((t) => !t.completed && byId.has(t.projectId)).sort((a, b) => at(b).localeCompare(at(a)))
+  const test = (f: InboxFilter) => (t: Thread) => (f === 'all' ? true : f === 'working' ? kindOf(t) === 'working' : noticeOf(t) === f)
+  // Questions, approvals and errors stay until they are dealt with; read only takes the rest off the counts.
+  const blocking = (t: Thread) => ['approval', 'question', 'failed'].includes(t.waitsFor?.reason ?? '')
+  const fresh = (t: Thread) => t.unread || blocking(t)
+  const readable = (t: Listed) => t.unread && !blocking(t)
+  const shown = open.filter(test(filter))
+  const forYou = byUrgency(open.filter((t) => !!t.waitsFor))
   const nextPaths = forYou.map((t) => `/all/inbox/${t.projectId}/${t.id}`)
   const tab = (id: InboxFilter, label: string) => {
-    const n = open.filter(test[id]).length
+    const n = open.filter(test(id)).filter(id === 'working' ? () => true : fresh).length
     return (
-      <button class={`filter ${filter === id ? 'active' : ''} ${id === 'you' && n ? 'attention' : ''}`} onClick={() => setFilter(id)}>
-        {label} <b>{n}</b>
+      <button class={`filter ${filter === id ? 'active' : ''} ${id === 'ask' && n ? 'attention' : ''}`} onClick={() => setFilter(id)}>
+        {id !== 'all' && id !== 'working' && <span class={`notice notice-dot n-${id}`} />}
+        {label} {n > 0 && <b>{n}</b>}
       </button>
     )
+  }
+  const key = (t: Listed) => `${t.projectId}/${t.id}`
+  const markRead = (list: Listed[]) => {
+    const unread = list.filter(readable).map((t) => ({ projectId: t.projectId, threadId: t.id }))
+    setPicked(null)
+    if (!unread.length) return
+    api('POST', '/threads/read', { threads: unread, unread: false }).then(() =>
+      offerUndo(`${unread.length} marked read`, () => api('POST', '/threads/read', { threads: unread, unread: true })),
+    )
+  }
+  const toggle = (t: Listed) => (e: Event) => {
+    e.preventDefault()
+    const next = new Set(picked)
+    if (!next.delete(key(t))) next.add(key(t))
+    setPicked(next)
   }
   return (
     <div class={`conversations all-inbox ${tid || pid === 'new' ? 'has-detail' : ''}`}>
@@ -278,27 +335,62 @@ function AllInbox({ threads, projects, byId, rest }: { threads?: Listed[]; proje
         <aside class="conv-list">
           <div class="conv-head">
             <h2>Inbox</h2>
-            <NextButton paths={nextPaths} />
-            <a class="new-btn" href="#/all/inbox/new" title="New conversation">
-              <Plus size={18} />
-            </a>
+            {picked ? (
+              <button class="ghost small" onClick={() => setPicked(null)}>Cancel</button>
+            ) : (
+              <>
+                <button class="icon-btn" title="Select several" onClick={() => setPicked(new Set())}>
+                  <ListChecks size={17} />
+                </button>
+                <button class="icon-btn" title={`Mark everything in ${filter === 'all' ? 'the inbox' : 'this filter'} read`} disabled={!shown.some(readable)} onClick={() => markRead(shown)}>
+                  <CheckCheck size={17} />
+                </button>
+                <NextButton paths={nextPaths} />
+                <a class="new-btn" href="#/all/inbox/new" title="New conversation">
+                  <Plus size={18} />
+                </a>
+              </>
+            )}
           </div>
-          <div class="filters">
+          <div class="filters wrap">
             {tab('all', 'All')}
-            {tab('you', 'For you')}
+            {(Object.keys(NOTICES) as NoticeType[]).map((type) => tab(type, NOTICES[type].plural))}
             {tab('working', 'Working')}
           </div>
           <div class="cards">
             {shown.map((t, i) => (
               <Fragment key={t.id}>
-                {dayOf(t.updatedAt) !== dayOf(shown[i - 1]?.updatedAt ?? '') && <div class="all-day">{dayOf(t.updatedAt)}</div>}
-                <ThreadCard project={byId.get(t.projectId)!} thread={t} active={t.id === tid} href={threadHref(t)} badge />
+                {dayOf(at(t)) !== dayOf(shown[i - 1] ? at(shown[i - 1]) : '') && <div class="all-day">{dayOf(at(t))}</div>}
+                {picked ? (
+                  <div class="pick-row" onClickCapture={toggle(t)}>
+                    <span class={`pick ${picked.has(key(t)) ? 'on' : ''}`}>{picked.has(key(t)) && <Check size={12} />}</span>
+                    <ThreadCard project={byId.get(t.projectId)!} thread={t} active={false} href={threadHref(t)} badge />
+                  </div>
+                ) : (
+                  <ThreadCard project={byId.get(t.projectId)!} thread={t} active={t.id === tid} href={threadHref(t)} badge>
+                    {t.needsYou ? <QuickAnswer t={t} /> : null}
+                  </ThreadCard>
+                )}
               </Fragment>
             ))}
             {threads && !shown.length && <p class="muted center">No open conversations{filter !== 'all' ? ' in this filter' : ''}.</p>}
           </div>
+          {picked && (
+            <div class="pick-bar">
+              <span>{picked.size} selected</span>
+              {picked.size < shown.length ? (
+                <button class="ghost small" onClick={() => setPicked(new Set(shown.map(key)))}>Select all {shown.length}</button>
+              ) : (
+                <button class="ghost small" onClick={() => setPicked(new Set())}>Select none</button>
+              )}
+              <button class="primary small" disabled={!picked.size} onClick={() => markRead(shown.filter((t) => picked.has(key(t))))}>
+                Mark read
+              </button>
+            </div>
+          )}
         </aside>
       </Panel>
+      <UndoToast />
       {project && tid ? (
         <>
           <ThreadView key={tid} project={project} threadId={tid} back="/all/inbox" next={nextPaths} />

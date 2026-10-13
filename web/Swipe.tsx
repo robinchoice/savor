@@ -195,9 +195,9 @@ export function swipeToFinish(e: PointerEvent, finish: () => Promise<unknown>) {
   })
 }
 
-type Undo = { text: string; undo: () => void }
+type Undo = { text: string; undo: () => void; ms: number }
 let offer: ((u: Undo) => void) | undefined
-export const offerUndo = (text: string, undo: () => void) => offer?.({ text, undo })
+export const offerUndo = (text: string, undo: () => void, ms = 5000) => offer?.({ text, undo, ms })
 
 export function UndoToast() {
   const [undo, setUndo] = useState<Undo | null>(null)
@@ -207,7 +207,7 @@ export function UndoToast() {
   }, [])
   useEffect(() => {
     if (!undo) return
-    const timer = setTimeout(() => setUndo(null), 5000)
+    const timer = setTimeout(() => setUndo(null), undo.ms)
     return () => clearTimeout(timer)
   }, [undo])
   return (
