@@ -98,8 +98,10 @@ export function BugButton({ me }: { me: Me }) {
   // The screenshot is taken before the report opens, so it shows the problem.
   const open = async () => {
     setCapturing(true)
+    const daemon = api<string[][]>('GET', '/feedback/context').catch(() => [])
     const context = reportContext(me)
     const shot = await takeScreenshot().catch(() => null)
+    context.push(...(await daemon))
     setFlash(true)
     setTimeout(() => setFlash(false), 350)
     setReport({ shot, context })
@@ -123,12 +125,13 @@ function BugReport({ report, setShot, onClose }: { report: { shot: string | null
   const [text, setText] = useState('')
   const [marking, setMarking] = useState(false)
   const [state, setState] = useState<'sending' | 'sent' | null>(null)
+  const [id, setId] = useState('')
   const [error, setError] = useState('')
   const send = async () => {
     setState('sending')
     setError('')
     try {
-      await api('POST', '/feedback', { text: text.trim(), context: report.context, screenshot: report.shot })
+      setId((await api<{ id: string }>('POST', '/feedback', { text: text.trim(), context: report.context, screenshot: report.shot })).id)
       setState('sent')
     } catch (e) {
       setError((e as Error).message)
@@ -154,7 +157,9 @@ function BugReport({ report, setShot, onClose }: { report: { shot: string | null
           </button>
         </header>
         {state === 'sent' ? (
-          <p class="dialog-body">Thanks, your report was sent.</p>
+          <p class="dialog-body">
+            Thanks, your report was sent. Its ID is <code class="bug-id">{id}</code>.
+          </p>
         ) : (
           <div class="dialog-body form">
             <label>

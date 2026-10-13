@@ -2303,8 +2303,14 @@ test('the bug button sends a bug report with a marked screenshot, once it is swi
   const [report] = reports
   assert.equal(report.text, 'The pin icon overlaps the name')
   assert.equal(report.screenshot, marked)
-  assert.deepEqual(report.context.map(([label]) => label), ['Page', 'Version', 'Device', 'Window', 'Language', 'Failed calls'])
-  assert.match(report.context[1][1], /^Savor \d+\.\d+\.\d+ · \w+ \w+$/)
+  const context = Object.fromEntries(report.context)
+  assert.deepEqual(Object.keys(context), ['Page', 'Version', 'Device', 'Window', 'Language', 'Failed calls', 'Agents', 'Default agent', 'Relay', 'Changed settings', 'Report ID'])
+  assert.match(context.Version, /^Savor \d+\.\d+\.\d+ · \w+ \w+$/)
+  assert.match(context.Agents, /Claude Code/)
+  assert.equal(context.Relay, 'off')
+  // The ID shown after sending is the one in the report and in the daemon's log.
+  assert.match(context['Report ID'], /^BUG-\d{8}T\d{6}Z-[0-9a-f]{6}$/)
+  assert.equal(await page.textContent('.feedback-dialog .bug-id'), context['Report ID'])
   await page.click('.feedback-dialog >> text=Done')
   await page.click('.account')
   await page.click('.account-dialog summary:has-text("App settings")')

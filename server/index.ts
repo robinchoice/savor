@@ -1,5 +1,6 @@
 import { captureException } from './monitoring.js'
 import http, { type IncomingMessage, type ServerResponse } from 'node:http'
+import { randomBytes } from 'node:crypto'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -110,17 +111,34 @@ route('POST', '/awake', (_, b, ctx) => {
 })
 // Bug reports go on to the Pleasance API, which files them as issues in a private repo. Savor keeps nothing.
 const FEEDBACK_URL = process.env.SAVOR_FEEDBACK_URL ?? 'https://api.pleasance.org/savor/feedback'
+// What the daemon adds to a report, shown before it is sent: no paths, project names or URLs.
+route('GET', '/feedback/context', async () => {
+  const installed = (await listAgents()).filter((a) => a.installed)
+  const { agent } = store.state()
+  const s = settings()
+  const changed = [!s.autoUpdate && 'auto update off', !s.autoRestart && 'auto restart off', s.usagePing === false && 'usage ping off'].filter(Boolean)
+  return [
+    ['Agents', installed.map((a) => `${a.name} ${a.version ?? '?'}${a.signedIn === false ? ' (signed out)' : ''}`).join(', ') || 'none installed'],
+    ['Default agent', agent ? `${agent.provider} ${agent.model}` : '–'],
+    ['Relay', relayStatus().state],
+    ['Changed settings', changed.join(', ') || '–'],
+  ]
+})
 route('POST', '/feedback', async (_, b) => {
   if (typeof b.text !== 'string' || !b.text.trim()) throw new BadRequest('Describe what went wrong.')
+  // The ID also goes into this daemon's log, so a report can be matched with what happened here around it.
+  const id = `BUG-${new Date().toISOString().replace(/[-:]|\.\d+/g, '')}-${randomBytes(3).toString('hex')}`
+  const context = [...(Array.isArray(b.context) ? b.context : []), ['Report ID', id]]
   const r = await fetch(FEEDBACK_URL, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ text: b.text, context: b.context, screenshot: b.screenshot ?? null }),
+    body: JSON.stringify({ text: b.text, context, screenshot: b.screenshot ?? null }),
     signal: AbortSignal.timeout(60_000),
   }).catch(() => null)
   if (r?.status === 429) throw new BadRequest('Too many reports from here. Try again in an hour.')
   if (!r?.ok) throw new BadRequest('The report could not be sent. Try again later.')
-  return { ok: true }
+  console.log(`bug report ${id}`)
+  return { ok: true, id }
 })
 route('GET', '/devices', (_, __, ctx) => (localOnly(ctx), devices.listDevices()))
 route('POST', '/devices/token', (_, b, ctx) => {
