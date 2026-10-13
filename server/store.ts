@@ -102,10 +102,15 @@ export interface Thread {
   // Set for a run of a workflow: which one started the conversation and what set it off. A run that was
   // caught up carries the scheduled time it was due, one started early the scheduled time it took the place of,
   // one started by a model change the new model.
-  workflow?: { id: string; name: string; trigger: 'scheduled' | 'manual' | 'caught' | 'early' | 'model'; due?: string; model?: string }
+  // A run with a budget carries it (USD), for the agents that can hold to one.
+  workflow?: { id: string; name: string; trigger: 'scheduled' | 'manual' | 'caught' | 'early' | 'model'; due?: string; model?: string; budgetUsd?: number }
   // Set for a conversation that a workflow run started, directly or through others: like the run, it has no one watching.
   unattended?: boolean
+  // What the conversation's agent sessions used so far, per provider, as each reports it: Claude Code and
+  // OpenCode the cost in USD, Codex the tokens.
+  spent?: Spent[]
 }
+export interface Spent { provider: Provider; usd?: number; tokens?: number }
 export interface ActivityEvent { id: number; type: 'thinking' | 'command' | 'edit' | 'note'; label: string; time: string; finishedAt?: string }
 export interface Decision {
   id: string
@@ -146,6 +151,10 @@ export interface Workflow {
   onModelChange: boolean
   model: string | null
   origin: Origin
+  // USD a single run may cost (agents that report cost and can stop there), and a month's runs together:
+  // at 80 % Savor warns, at 100 % it pauses the workflow.
+  budgetUsd: number | null
+  monthlyBudgetUsd: number | null
 }
 export interface Proc {
   pid: number
@@ -584,7 +593,7 @@ export function removeBacklogItem(p: Project, id: string): boolean {
 
 const wfDir = (p: Project) => path.join(dataDir(p), 'workflows')
 // What workflows saved by earlier versions don't have yet.
-const wfDefaults = { next: [], collection: '', scheduleLabel: null, updatedAt: '', catchUp: true, button: false, settledAt: '', skipped: [], onModelChange: false, model: null }
+const wfDefaults = { next: [], collection: '', scheduleLabel: null, updatedAt: '', catchUp: true, button: false, settledAt: '', skipped: [], onModelChange: false, model: null, budgetUsd: null, monthlyBudgetUsd: null }
 
 export function listWorkflows(p: Project): Workflow[] {
   if (!fs.existsSync(wfDir(p))) return []
@@ -621,6 +630,8 @@ export function saveWorkflow(p: Project, wf: Partial<Workflow> & { name: string;
     onModelChange: false,
     model: null,
     origin: 'local',
+    budgetUsd: null,
+    monthlyBudgetUsd: null,
     ...prev,
     ...wf,
   }
@@ -628,7 +639,7 @@ export function saveWorkflow(p: Project, wf: Partial<Workflow> & { name: string;
   // A label describes one schedule, so it goes when the schedule changes without it.
   if (prev && next.cron !== prev.cron && next.scheduleLabel === prev.scheduleLabel) next.scheduleLabel = null
   // A run only records its time; anything else is an edit.
-  const edited = (['name', 'prompt', 'collection', 'cron', 'timezone', 'scheduleLabel', 'enabled', 'catchUp', 'button', 'onModelChange'] as const).some((k) => next[k] !== prev?.[k])
+  const edited = (['name', 'prompt', 'collection', 'cron', 'timezone', 'scheduleLabel', 'enabled', 'catchUp', 'button', 'onModelChange', 'budgetUsd', 'monthlyBudgetUsd'] as const).some((k) => next[k] !== prev?.[k])
   if (prev && (edited || String(next.next) !== String(prev.next))) next.updatedAt = now()
   // A changed or re-enabled schedule counts from now: what it would have run before is not caught up.
   if (prev && (next.cron !== prev.cron || next.timezone !== prev.timezone || next.enabled !== prev.enabled)) next.settledAt = now()

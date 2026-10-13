@@ -184,8 +184,11 @@ export class CodexSession implements Session {
       if (login?.name !== params.name) return
       this.mcpLogin = null
       login!.done(params)
-    } else if (method === 'thread/tokenUsage/updated') this.host.context(params.tokenUsage.last.totalTokens, params.tokenUsage.modelContextWindow)
-    else if (method === 'item/started') {
+    } else if (method === 'thread/tokenUsage/updated') {
+      this.host.context(params.tokenUsage.last.totalTokens, params.tokenUsage.modelContextWindow)
+      // The thread's total, which Codex keeps across resumes.
+      if (params.tokenUsage.total) this.host.spent({ tokens: params.tokenUsage.total.totalTokens })
+    } else if (method === 'item/started') {
       const item = params.item
       if (item.type === 'commandExecution') activity.start(item.id, 'command', item.command)
       else if (item.type === 'mcpToolCall') activity.start(item.id, 'note', `${item.tool} · ${summarize(item.arguments)}`)

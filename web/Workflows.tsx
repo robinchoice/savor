@@ -12,10 +12,13 @@ const SCHEDULES: [string, string][] = [
   ['0 * * * *', 'Every hour'],
 ]
 
-export const STATUS: Record<Run['status'], [ring: string, label: string]> = { working: ['busy', 'Working'], needs: ['needs', 'Your turn'], stopped: ['', 'Stopped'], failed: ['error', 'Failed'], finished: ['done', 'Finished'], skipped: ['skipped', 'Skipped'] }
+export const STATUS: Record<Run['status'], [ring: string, label: string]> = { working: ['busy', 'Working'], needs: ['needs', 'Your turn'], stopped: ['', 'Stopped'], budget: ['error', 'Budget reached'], failed: ['error', 'Failed'], finished: ['done', 'Finished'], skipped: ['skipped', 'Skipped'] }
 export const when = (iso: string) => new Date(iso).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
 const cronLabel = (w: Workflow) => (w.cron ? w.scheduleLabel || describeCron(w.cron) : '')
 export const schedule = (w: Workflow) => [cronLabel(w), w.onModelChange && 'On a model change'].filter(Boolean).join(' · ') || 'Manual'
+// What runs used, as their agents report it: cost in USD, or tokens.
+const usage = (u: { usd?: number; tokens?: number }) =>
+  [u.usd != null && `$${u.usd.toFixed(2)}`, u.tokens && `${new Intl.NumberFormat(undefined, { notation: 'compact' }).format(u.tokens)} tokens`].filter(Boolean).join(' · ')
 // A run changes with its conversation, so the runs follow the project's conversations too.
 const runsChanged = (project: Project) => (e: SavorEvent) => (e.type === 'workflows' || e.type === 'thread' || e.type === 'status') && e.projectId === project.id
 
@@ -155,6 +158,13 @@ function Overview({ base, project, workflow: w, onRun }: { base: string; project
             {w.nextRunAt && <span>Next run {new Date(w.nextRunAt).toLocaleString()}</span>}
             <span class={w.enabled ? 'on-badge' : 'off-badge'}>{w.enabled ? 'On' : 'Off'}</span>
             {w.collection && <span>{w.collection}</span>}
+            {w.lastRun && usage(w.lastRun) && <span>Last run {usage(w.lastRun)}</span>}
+            {w.month && (w.month.usd || w.month.tokens || w.monthlyBudgetUsd) ? (
+              <span class={w.monthlyBudgetUsd && w.month.usd >= w.monthlyBudgetUsd ? 'danger' : ''}>
+                This month {usage({ usd: w.month.usd || w.monthlyBudgetUsd ? w.month.usd : undefined, tokens: w.month.tokens })}
+                {w.monthlyBudgetUsd ? ` of $${w.monthlyBudgetUsd}` : ''}
+              </span>
+            ) : null}
           </div>
         </div>
         <div class="wf-actions">
@@ -181,7 +191,7 @@ function Overview({ base, project, workflow: w, onRun }: { base: string; project
               </small>
             </span>
             <span class="sum">{r.status === 'skipped' ? `The run from ${blocker(r) ? when(blocker(r)!.at) : 'before'} was still open.` : r.status === 'working' ? 'Working…' : r.summary}</span>
-            <span class="dur">{r.workedMs ? duration(r.workedMs) : ''}</span>
+            <span class="dur">{[r.workedMs ? duration(r.workedMs) : '', usage(r)].filter(Boolean).join(' · ')}</span>
           </a>
         ))}
         {runs && !runs.length && <p class="muted pad">No runs yet. {w.cron && w.enabled ? 'The first one starts on schedule.' : 'Start one with “Run now”.'}</p>}
@@ -232,12 +242,15 @@ function WorkflowForm({ base, projectId, workflow, recipe, all }: { base: string
     button: false,
     onModelChange: recipe?.onModelChange ?? false,
     next: [] as string[],
+    budgetUsd: null as number | null,
+    monthlyBudgetUsd: null as number | null,
     ...workflow,
     cron: workflow?.cron ?? recipe?.schedule ?? '',
   })
   const [custom, setCustom] = useState(() => !!draft.cron && !SCHEDULES.some(([c]) => c === draft.cron))
   const [error, setError] = useState('')
   const field = (k: 'name' | 'prompt' | 'collection' | 'cron' | 'timezone') => (e: Event) => setDraft({ ...draft, [k]: (e.currentTarget as HTMLInputElement).value })
+  const usd = (k: 'budgetUsd' | 'monthlyBudgetUsd') => (e: Event) => setDraft({ ...draft, [k]: Number((e.currentTarget as HTMLInputElement).value) || null })
   const others = all.filter((w) => w.id !== workflow?.id)
   const collections = [...new Set(all.map((w) => w.collection).filter(Boolean))].sort((a, b) => a.localeCompare(b))
 
@@ -336,6 +349,18 @@ function WorkflowForm({ base, projectId, workflow, recipe, all }: { base: string
           <small class="muted">One click runs the workflow now. When it is scheduled within the next 12 hours, this run takes the place of that one.</small>
         </span>
       </label>
+      <div class="row wide">
+        <label>
+          Budget per run <small class="muted">USD, optional</small>
+          <input type="number" min="0.01" step="0.01" value={draft.budgetUsd ?? ''} onInput={usd('budgetUsd')} />
+          <small class="muted">Claude Code stops the run there. Other agents have no budget.</small>
+        </label>
+        <label>
+          Monthly budget <small class="muted">USD, optional</small>
+          <input type="number" min="0.01" step="0.01" value={draft.monthlyBudgetUsd ?? ''} onInput={usd('monthlyBudgetUsd')} />
+          <small class="muted">Warns at 80 % and pauses the workflow at 100 % of what its runs cost this month.</small>
+        </label>
+      </div>
       {others.length > 0 && (
         <fieldset class="chain">
           <legend>

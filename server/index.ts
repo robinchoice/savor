@@ -26,7 +26,7 @@ import { codexAside } from './codex.js'
 import { acpAside } from './acp.js'
 import { antigravityAside } from './antigravity.js'
 import { isUnsafe, listAgents, listSkills, listUsage, mergeAgent } from './providers.js'
-import { nextRun, runEarly, runs, runWorkflow, syncSchedules, validateCron } from './scheduler.js'
+import { month, nextRun, runEarly, runs, runWorkflow, syncSchedules, validateCron } from './scheduler.js'
 import * as git from './git.js'
 import * as ci from './ci.js'
 import * as move from './move.js'
@@ -841,8 +841,9 @@ const saveWorkflowRoute = (params: Params, b: any, ctx: Ctx, id?: string) => {
   } catch (e) {
     throw new BadRequest(`Invalid schedule: ${(e as Error).message}`)
   }
-  const { name, prompt, collection, cron, timezone, scheduleLabel, enabled, catchUp, button, onModelChange, next } = b
-  const fields = Object.fromEntries(Object.entries({ name, prompt, collection, cron, timezone, scheduleLabel, enabled, catchUp, button, onModelChange, next }).filter(([, v]) => v !== undefined))
+  const { name, prompt, collection, cron, timezone, scheduleLabel, enabled, catchUp, button, onModelChange, next, budgetUsd, monthlyBudgetUsd } = b
+  for (const usd of [budgetUsd, monthlyBudgetUsd]) if (usd != null && !(typeof usd === 'number' && usd > 0 && usd < Infinity)) throw new BadRequest('A budget is an amount in USD above 0, or none.')
+  const fields = Object.fromEntries(Object.entries({ name, prompt, collection, cron, timezone, scheduleLabel, enabled, catchUp, button, onModelChange, next, budgetUsd, monthlyBudgetUsd }).filter(([, v]) => v !== undefined))
   const wf = store.saveWorkflow(project(params), { ...(fields as { name: string; prompt: string }), ...(id && { id }) }, ctx.auth.origin)
   syncSchedules()
   emit({ type: 'workflows', projectId: params.pid })
@@ -850,7 +851,7 @@ const saveWorkflowRoute = (params: Params, b: any, ctx: Ctx, id?: string) => {
 }
 // The list shows the latest run that started; a time skipped since then is in the workflow's runs.
 const listWorkflows = (p: store.Project, threads = store.listThreads(p)) =>
-  store.listWorkflows(p).map((wf) => ({ ...wf, nextRunAt: nextRun(wf), lastRun: runs(p, { ...wf, skipped: [] }, threads, 1)[0] ?? null }))
+  store.listWorkflows(p).map((wf) => ({ ...wf, nextRunAt: nextRun(wf), lastRun: runs(p, { ...wf, skipped: [] }, threads, 1)[0] ?? null, month: month(p, wf, threads) }))
 route('GET', '/projects/:pid/workflows', (params) => listWorkflows(project(params)))
 route('GET', '/projects/:pid/workflows/:id/runs', (params) => runs(project(params), store.getWorkflow(project(params), params.id)))
 route('POST', '/projects/:pid/workflows', (params, b, ctx) => saveWorkflowRoute(params, b, ctx))

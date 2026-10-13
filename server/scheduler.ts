@@ -1,8 +1,9 @@
 import { Cron } from 'croner'
 import * as store from './store.js'
-import type { Origin, Project, Thread, Workflow } from './store.js'
+import type { Origin, Project, Provider, Thread, Workflow } from './store.js'
 import { emit } from './events.js'
 import * as agents from './agents.js'
+import { BUDGET_REACHED } from './session.js'
 
 let jobs: Cron[] = []
 // A run that starts this long after its scheduled time was caught up.
@@ -115,7 +116,7 @@ export function runWorkflow(projectId: string, workflowId: string, by: Origin, s
   const chain = linked.length ? `\n\nWhen this is done, continue with the linked workflows in order: ${linked.map((l) => `“${l.name}” (id ${l.id})`).join(', ')}.` : ''
   const changed = start.model ? `The project's agent runs on a new model now: ${start.model}.\n\n` : ''
   const prompt = `${changed}Run workflow “${wf.name}”:\n\n${wf.prompt}${chain}`
-  const thread = store.createThread(p, { title: wf.name, label: wf.name, workflow: { id: wf.id, name: wf.name, ...start } })
+  const thread = store.createThread(p, { title: wf.name, label: wf.name, workflow: { id: wf.id, name: wf.name, ...start, ...(wf.budgetUsd && { budgetUsd: wf.budgetUsd }) } })
   store.saveWorkflow(p, { ...wf, lastRunAt: store.now() })
   emit({ type: 'thread', projectId: p.id, threadId: thread.id })
   emit({ type: 'workflows', projectId: p.id })
@@ -139,11 +140,66 @@ export interface Run {
   trigger: 'scheduled' | 'manual' | 'caught' | 'early' | 'model'
   due?: string
   model?: string
-  status: 'working' | 'needs' | 'stopped' | 'failed' | 'finished' | 'skipped'
+  status: 'working' | 'needs' | 'stopped' | 'budget' | 'failed' | 'finished' | 'skipped'
   // The run's conversation; for a skipped time, the conversation that was in its way.
   threadId: string
   summary: string
   workedMs: number
+  // What the run used, as far as its agent reports it.
+  usd?: number
+  tokens?: number
+}
+
+// What a conversation's agents used, summed over the ones that report it.
+function used(t: Thread) {
+  const usd = t.spent?.filter((s) => s.usd != null)
+  const tokens = t.spent?.filter((s) => s.tokens != null)
+  return { ...(usd?.length && { usd: usd.reduce((n, s) => n + s.usd!, 0) }), ...(tokens?.length && { tokens: tokens.reduce((n, s) => n + s.tokens!, 0) }) }
+}
+
+// What the workflow's runs that started this month used together.
+export function month(p: Project, wf: Workflow, threads = store.listThreads(p)) {
+  const start = new Date()
+  start.setDate(1)
+  start.setHours(0, 0, 0, 0)
+  const runs = threads.filter((t) => t.workflow?.id === wf.id && Date.parse(t.createdAt) >= start.getTime()).map(used)
+  return { usd: runs.reduce((n, r) => n + (r.usd ?? 0), 0), tokens: runs.reduce((n, r) => n + (r.tokens ?? 0), 0) }
+}
+
+// An agent session reported what it used so far. A workflow run counts toward the month: when the runs
+// pass 80 % of the workflow's monthly budget Savor warns, at 100 % it pauses the workflow until it is
+// enabled again.
+export function spent(projectId: string, tid: string, provider: Provider, usage: { usd?: number; tokens?: number }) {
+  const p = store.getProject(projectId)
+  const t = store.getThread(p, tid)
+  const was = t.spent?.find((s) => s.provider === provider)?.usd ?? 0
+  // Saved as it is: this is no change to the conversation, so its place in the list stays.
+  store.saveThread(p, { ...t, spent: [...(t.spent ?? []).filter((s) => s.provider !== provider), { provider, ...usage }] })
+  if (!t.workflow) return
+  emit({ type: 'workflows', projectId })
+  let wf: Workflow
+  try {
+    wf = store.getWorkflow(p, t.workflow.id)
+  } catch {
+    return
+  }
+  const limit = wf.monthlyBudgetUsd
+  if (!limit) return
+  const after = month(p, wf).usd
+  const before = after - ((usage.usd ?? 0) - was)
+  const crossed = (share: number) => before < share * limit && after >= share * limit
+  const total = `$${after.toFixed(2)} of $${limit}`
+  if (crossed(1)) {
+    if (wf.enabled) store.saveWorkflow(p, { ...wf, enabled: false })
+    syncSchedules()
+    warn(p, tid, `“${wf.name}” used its monthly budget (${total}) and is paused. Enable it again on its page to let it run this month.`, 'Monthly budget used')
+  } else if (crossed(0.8)) warn(p, tid, `“${wf.name}” used 80 % of its monthly budget (${total}).`, 'Monthly budget at 80 %')
+}
+
+function warn(p: Project, tid: string, text: string, status: string) {
+  agents.post(p, tid, { kind: 'update', text })
+  agents.notify(p, tid, text, status)
+  emit({ type: 'workflows', projectId: p.id })
 }
 
 // The first words of a message, without its markdown.
@@ -167,10 +223,11 @@ export function runs(p: Project, wf: Workflow, threads = store.listThreads(p), l
         trigger: t.workflow!.trigger,
         due: t.workflow!.due,
         model: t.workflow!.model,
-        status: working(p, t) ? 'working' : t.needsYou ? 'needs' : t.error === 'Turn stopped.' ? 'stopped' : t.error || last?.kind === 'error' ? 'failed' : 'finished',
+        status: working(p, t) ? 'working' : t.needsYou ? 'needs' : t.error === 'Turn stopped.' ? 'stopped' : t.error?.startsWith(BUDGET_REACHED) ? 'budget' : t.error || last?.kind === 'error' ? 'failed' : 'finished',
         threadId: t.id,
         summary: plain(t.error ?? last?.text ?? ''),
         workedMs: messages.reduce((ms, m) => ms + (m.workTiming ? Date.parse(m.workTiming.finishedAt) - Date.parse(m.workTiming.startedAt) : 0), 0),
+        ...used(t),
       }
     })
 }

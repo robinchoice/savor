@@ -110,6 +110,9 @@ let started = false
 let interrupted = false
 // What the user added to the running turn, as Claude Code takes it in at its next step.
 let added = []
+// Each turn costs $0.30. A turn that goes past the budget ends the way Claude Code ends it there.
+const budget = args.includes('--max-budget-usd') ? Number(args[args.indexOf('--max-budget-usd') + 1]) : null
+let cost = 0
 
 async function turn(text, command) {
   const input = command ?? text.slice(text.indexOf('New input:\n') + 'New input:\n'.length).trim()
@@ -211,8 +214,10 @@ async function turn(text, command) {
     await call('send_conclusion_message', { text: `Echo: ${input}`, suggestions: ['Do it again'] })
   }
   // Claude Code ends an interrupted turn with an error result.
+  cost += 0.3
   if (interrupted) out({ type: 'result', subtype: 'error_during_execution', is_error: true, terminal_reason: 'aborted_streaming', result: null })
-  else out({ type: 'result', subtype: 'success', is_error: false, result: 'done', modelUsage: { 'fake-fable': { contextWindow: 200000 } } })
+  else if (budget && cost > budget) out({ type: 'result', subtype: 'error_max_budget_usd', is_error: true, total_cost_usd: cost, errors: [`Reached maximum budget ($${budget})`] })
+  else out({ type: 'result', subtype: 'success', is_error: false, result: 'done', total_cost_usd: cost, modelUsage: { 'fake-fable': { contextWindow: 200000 } } })
 }
 
 const rl = readline.createInterface({ input: process.stdin })

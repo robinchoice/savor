@@ -9,7 +9,7 @@ import path from 'node:path'
 import * as store from './store.js'
 import type { ApprovalOption, Thread } from './store.js'
 import { BIN, command, mcpUrl } from './config.js'
-import { configKey, forkOf, formFields, OPEN_PAGE, rememberSession, SUBMIT_FORM, sessionIdOf, summarize, systemPrompt, webUrl, type Host, type Session, type TurnInput } from './session.js'
+import { budgetReached, configKey, forkOf, formFields, OPEN_PAGE, rememberSession, SUBMIT_FORM, sessionIdOf, summarize, systemPrompt, webUrl, type Host, type Session, type TurnInput } from './session.js'
 import type { ModelInfo, SkillInfo } from './providers.js'
 
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
@@ -50,6 +50,8 @@ export class ClaudeSession implements Session {
   private model = ''
   // When the usage limit Claude ran into resets (ms), while it holds.
   private limit: number | null = null
+  // USD the conversation may cost, for a workflow run with a budget.
+  private budget = 0
 
   constructor(private host: Host, thread: Thread) {
     const { p } = host
@@ -79,6 +81,9 @@ export class ClaudeSession implements Session {
     ]
     if (a.model) args.push('--model', a.model)
     if (EFFORTS.includes(a.reasoning)) args.push('--effort', a.reasoning)
+    // Claude Code keeps a session's cost across resumes, so the budget holds for the whole run.
+    const budget = thread.workflow?.budgetUsd
+    if (budget) args.push('--max-budget-usd', String((this.budget = budget)))
     const sid = sessionIdOf(thread, 'claude')
     const fork = forkOf(p, thread, 'claude')
     if (sid) args.push('--resume', sid)
@@ -173,8 +178,10 @@ export class ClaudeSession implements Session {
     } else if (ev.type === 'result') {
       const window = ev.modelUsage?.[this.model]?.contextWindow
       if (window) this.host.context(this.tokens, window)
+      if (typeof ev.total_cost_usd === 'number') this.host.spent({ usd: ev.total_cost_usd })
       const interrupted = this.interrupted
       this.interrupted = false
+      if (ev.subtype === 'error_max_budget_usd') return this.host.ended({ error: budgetReached(this.budget) })
       this.host.ended(ev.is_error && !interrupted ? { error: ev.result || ev.subtype, resetsAt: this.limit } : { text: ev.is_error ? '' : ev.result ?? '' })
     }
   }

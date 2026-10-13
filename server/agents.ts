@@ -15,7 +15,7 @@ import * as push from './push.js'
 import * as git from './git.js'
 import * as terminal from './terminal.js'
 import * as ci from './ci.js'
-import { modelSeen } from './scheduler.js'
+import { modelSeen, spent } from './scheduler.js'
 import { listAgents, listUsage, mergeAgent, STATIC } from './providers.js'
 
 const IDLE_CLOSE_MS = 5 * 60_000
@@ -442,6 +442,7 @@ function hostFor(p: Project, thread: Thread, holder: { session?: Session }): Hos
       const d = store.listProjects().find((project) => project.id === p.id)?.agent
       if (d && thread.agent.provider === d.provider && thread.agent.model === d.model) modelSeen(p.id, id)
     },
+    spent: (usage) => mine() && spent(p.id, tid, thread.agent.provider, usage),
     approve: (req) => askApproval(p, tid, req).then((a) => a.choice),
     form: (req) => askApproval(p, tid, req),
     ask: (qs) => askQuestions(p, tid, qs),

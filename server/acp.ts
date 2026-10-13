@@ -125,6 +125,8 @@ export class AcpSession implements Session {
       if (['completed', 'failed', 'cancelled'].includes(u.status)) activity.finish(u.toolCallId)
     } else if (kind === 'usage_update') {
       if (u.used) this.host.context(u.used, u.size)
+      // The session's cost so far.
+      if (u.cost?.currency === 'USD') this.host.spent({ usd: u.cost.amount })
     } else if (kind === 'plan') {
       activity.instant('note', `Plan · ${(u.entries ?? []).map((e: any) => e.content).join(' · ')}`)
     }

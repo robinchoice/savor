@@ -62,6 +62,8 @@ export interface Host {
   context(tokens: number, window?: number | null): void
   // The model the agent runs on, as it names it.
   model(id: string): void
+  // What the agent session used so far in total, as the agent reports it.
+  spent(usage: { usd?: number; tokens?: number }): void
   approve(req: ApprovalRequest): Promise<string>
   // An approval with a form: what the user filled in comes with an allowing choice.
   form(req: ApprovalRequest & { fields: FormField[] }): Promise<{ choice: string; content?: Record<string, unknown> }>
@@ -71,6 +73,10 @@ export interface Host {
   // The agent process is gone; a running turn ends with `error`.
   closed(error: string): void
 }
+
+// How a run ends that reached its budget, also in the run's status (scheduler.ts).
+export const BUDGET_REACHED = 'Budget reached'
+export const budgetReached = (usd: number) => `${BUDGET_REACHED}: this run stopped at its limit of $${usd}.`
 
 export interface Session {
   readonly config: string

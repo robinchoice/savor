@@ -954,6 +954,49 @@ test('a workflow lists its runs, catches up a missed time and skips one while a 
   await page.waitForSelector('.wf-over')
 })
 
+test('a workflow run stops at its budget, and the month’s runs pause the workflow at its monthly budget', async () => {
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
+  const list = `/projects/${project.id}/workflows`
+  assert.equal((await api('POST', list, { name: 'Bad budget', prompt: 'x', budgetUsd: -1 })).status, 400)
+  const runsOf = async (wf) => (await api('GET', `${list}/${wf.id}/runs`)).body
+  const ran = async (wf, n) => {
+    const thread = (await api('POST', `${list}/${wf.id}/run`)).body
+    await until(async () => (await runsOf(wf)).length === n && (await runsOf(wf))[0].status !== 'working')
+    return thread
+  }
+
+  // Claude Code gets the run's budget and ends the run there; the run says so.
+  const capped = (await api('POST', list, { name: 'Capped', prompt: 'capped check', budgetUsd: 0.2 })).body
+  const thread = await ran(capped, 1)
+  const run = fs.readFileSync(AGENT_LOG, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).findLast((r) => r.agent === 'claude' && r.argv.includes('--max-budget-usd'))
+  assert.equal(run.argv[run.argv.indexOf('--max-budget-usd') + 1], '0.2')
+  const [r] = await runsOf(capped)
+  assert.deepEqual([r.status, r.usd, r.summary], ['budget', 0.3, 'Budget reached: this run stopped at its limit of $0.2.'])
+  assert.equal((await api('GET', `/projects/${project.id}/threads/${thread.id}`)).body.messages.at(-1).kind, 'error')
+
+  // Each run costs $0.30: the third passes 80 % of $1 and warns, the fourth uses it up and pauses the workflow.
+  const monthly = (await api('POST', list, { name: 'Monthly', prompt: 'monthly check', monthlyBudgetUsd: 1 })).body
+  for (const n of [1, 2]) await ran(monthly, n)
+  const warned = await ran(monthly, 3)
+  const updates = async (t) => (await api('GET', `/projects/${project.id}/threads/${t.id}`)).body.messages.filter((m) => m.kind === 'update').map((m) => m.text)
+  assert.deepEqual(await updates(warned), ['“Monthly” used 80 % of its monthly budget ($0.90 of $1).'])
+  assert.equal((await api('GET', list)).body.find((x) => x.id === monthly.id).enabled, true)
+  const paused = await ran(monthly, 4)
+  assert.deepEqual(await updates(paused), ['“Monthly” used its monthly budget ($1.20 of $1) and is paused. Enable it again on its page to let it run this month.'])
+  const listed = (await api('GET', list)).body.find((x) => x.id === monthly.id)
+  assert.equal(listed.enabled, false)
+  assert.equal(listed.lastRun.usd, 0.3)
+  assert.equal(listed.month.usd.toFixed(2), '1.20')
+
+  // The workflow's page shows what the last run and the month cost.
+  await page.goto(`${base}/#/p/${project.id}/workflows/${monthly.id}`)
+  await page.waitForSelector('.wf-sub >> text=Last run $0.30')
+  await page.waitForSelector('.wf-sub .danger >> text=This month $1.20 of $1')
+  await page.goto(`${base}/#/p/${project.id}/workflows/${capped.id}/edit`)
+  assert.equal(await page.inputValue('label:has-text("Budget per run") input'), '0.2')
+  for (const wf of [capped, monthly]) await api('DELETE', `${list}/${wf.id}`)
+})
+
 test('a workflow button runs it early, in place of its next scheduled time', async () => {
   const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
   const list = `/projects/${project.id}/workflows`
