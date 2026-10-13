@@ -23,6 +23,8 @@
 //   the request with ("ci-done: <text>" concludes right after asking)
 // - "slow: <text>" → acknowledges, waits for the test's release file or an interrupt, then echoes
 //   (and says so when Savor told it that a restart cut the turn off, and names what the user added meanwhile)
+// - "plan: <text>" → acknowledges, plans three tasks (TaskCreate, TaskUpdate) and starts a subagent and a background
+//   command; stop_task stops either. Once the test's release file names the input, it finishes the plan and concludes
 // - a last text block of its own that starts with "/" → "Skill <name and arguments>", the way Claude Code runs slash commands
 // - anything else → acknowledgement plus a conclusion echoing the input with one suggestion
 // While the test's outdated file exists it refuses to start, like a release that lacks an option.
@@ -206,6 +208,26 @@ async function turn(text, command) {
     await call('send_conclusion_message', { text: `Note: ${text.match(/Savor context:\n.*\n\n([\s\S]*)New input:/)[1].trim() || 'none'}` })
   } else if (command) {
     await call('send_conclusion_message', { text: `Skill ${command.slice(1)}` })
+  } else if (input.startsWith('plan:')) {
+    await call('send_acknowledgement_message', { text: 'On it.', summary: 'Work on the request.' })
+    const tool = (name, toolInput, result) => {
+      const id = `toolu_${crypto.randomUUID()}`
+      out({ type: 'assistant', parent_tool_use_id: null, message: { content: [{ type: 'tool_use', id, name, input: toolInput }] } })
+      out({ type: 'user', parent_tool_use_id: null, message: { content: [{ type: 'tool_result', tool_use_id: id, content: result }] } })
+    }
+    tool('TaskCreate', { subject: 'Read the code', description: '' }, 'Task #1 created successfully: Read the code')
+    tool('TaskCreate', { subject: 'Write the code', description: '', activeForm: 'Writing the code' }, [{ type: 'text', text: 'Task #2 created successfully: Write the code' }])
+    tool('TaskCreate', { subject: 'Run the tests', description: '' }, 'Task #3 created successfully: Run the tests')
+    tool('TaskUpdate', { taskId: '1', status: 'completed' }, 'Updated task #1 status')
+    tool('TaskUpdate', { taskId: '2', status: 'in_progress' }, 'Updated task #2 status')
+    out({ type: 'system', subtype: 'task_started', task_id: 'sub1', tool_use_id: 'toolu_agent', description: 'Review the change', subagent_type: 'general-purpose', task_type: 'local_agent' })
+    out({ type: 'system', subtype: 'task_progress', task_id: 'sub1', description: 'Reading the diff', usage: { tool_uses: 1 } })
+    out({ type: 'system', subtype: 'task_started', task_id: 'cmd1', tool_use_id: 'toolu_bash', description: 'npm test', task_type: 'local_bash', is_backgrounded: true })
+    await released(input)
+    tool('TaskUpdate', { taskId: '2', status: 'completed' }, 'Updated task #2 status')
+    tool('TaskUpdate', { taskId: '3', status: 'completed' }, 'Updated task #3 status')
+    out({ type: 'system', subtype: 'task_notification', task_id: 'cmd1', status: 'completed' })
+    await call('send_conclusion_message', { text: `Echo: ${input}` })
   } else if (input.startsWith('slow:')) {
     await call('send_acknowledgement_message', { text: 'On it.', summary: 'Work on the request.' })
     const release = process.env.FAKE_AGENT_LOG + '.release'
@@ -229,6 +251,7 @@ rl.on('line', (line) => {
   if (msg.type === 'control_response') return controls.get(msg.response.request_id)?.(msg.response.response)
   if (msg.type === 'control_request') {
     if (msg.request.subtype === 'interrupt') interrupted = true
+    if (msg.request.subtype === 'stop_task') out({ type: 'system', subtype: 'task_updated', task_id: msg.request.task_id, patch: { status: 'killed' } })
     return out({ type: 'control_response', response: { subtype: 'success', request_id: msg.request_id, response: {} } })
   }
   if (msg.type === 'user') {

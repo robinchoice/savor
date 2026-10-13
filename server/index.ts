@@ -390,8 +390,10 @@ function waitsFor(p: store.Project, t: store.Thread, messages: store.Message[], 
   return null
 }
 
-// The tool the agent runs right now, or the last one of this turn.
+// The step of its plan the agent works on, else the tool it runs right now, or the last one of this turn.
 function step(p: store.Project, t: store.Thread, startedAt: string) {
+  const active = store.readPlans(p, t.id)[agents.request(p, t.id).inputId]?.steps.find((s) => s.status === 'active')
+  if (active) return active.active ?? active.text
   const events = store.readActivity(p, t.id).filter((e) => e.time >= startedAt)
   const label = (events.filter((e) => !e.finishedAt).at(-1) ?? events.at(-1))?.label
   return label?.replaceAll(`${store.cwdOf(p, t)}/`, '') ?? null
@@ -467,6 +469,12 @@ route('GET', '/projects/:pid/threads/:tid', (params) => {
   }
 })
 route('GET', '/projects/:pid/threads/:tid/activity', (params) => store.readActivity(project(params), params.tid))
+route('GET', '/projects/:pid/threads/:tid/plans', (params) => agents.plansOf(project(params), params.tid))
+route('POST', '/projects/:pid/threads/:tid/plans/agents/:aid/stop', (params) => {
+  project(params)
+  agents.stopTask(params.tid, params.aid)
+  return {}
+})
 route('GET', '/projects/:pid/threads/:tid/links', (params) => {
   const p = project(params)
   const t = store.getThread(p, params.tid)

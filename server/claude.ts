@@ -7,7 +7,7 @@ import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import * as store from './store.js'
-import type { ApprovalOption, Thread } from './store.js'
+import type { ApprovalOption, PlanAgent, PlanStep, Thread } from './store.js'
 import { BIN, command, mcpUrl } from './config.js'
 import { budgetReached, configKey, forkOf, formFields, OPEN_PAGE, rememberSession, SUBMIT_FORM, sessionIdOf, summarize, systemPrompt, webUrl, type Host, type Session, type TurnInput } from './session.js'
 import type { ModelInfo, SkillInfo } from './providers.js'
@@ -35,6 +35,12 @@ const pictures = (images: string[]) =>
     source: { type: 'base64', media_type: `image/${path.extname(file).slice(1).toLowerCase().replace('jpg', 'jpeg')}`, data: fs.readFileSync(file).toString('base64') },
   }))
 
+// Claude's todo list: TaskCreate and TaskUpdate, or TodoWrite where Claude Code turns tasks off.
+const STEP = { pending: 'pending', in_progress: 'active', completed: 'done' } as const
+const step = (text: string, status: keyof typeof STEP, active?: string): PlanStep => ({ text, status: STEP[status] ?? 'pending', ...(active && { active }) })
+const resultText = (content: unknown) => (typeof content === 'string' ? content : Array.isArray(content) ? content.map((c) => c?.text ?? '').join('') : '')
+const TASK_END: Record<string, PlanAgent['status']> = { completed: 'done', failed: 'failed', killed: 'stopped', stopped: 'stopped' }
+
 const describe = (tool: string, input: any) =>
   tool === 'Bash' ? String(input?.command ?? '') : /^(Edit|Write|MultiEdit|NotebookEdit)$/.test(tool) ? String(input?.file_path ?? '') : JSON.stringify(input, null, 2).slice(0, 1500)
 
@@ -52,6 +58,11 @@ export class ClaudeSession implements Session {
   private limit: number | null = null
   // USD the conversation may cost, for a workflow run with a budget.
   private budget = 0
+  // The todo list by task id, and the tasks TaskCreate calls are about to create, by tool use id.
+  private todos = new Map<string, PlanStep>()
+  private creates = new Map<string, PlanStep>()
+  // Tasks Claude starts by itself (watchers): no work the user asked for.
+  private ambient = new Set<string>()
 
   constructor(private host: Host, thread: Thread) {
     const { p } = host
@@ -92,7 +103,8 @@ export class ClaudeSession implements Session {
 
     this.child = spawn(...command(BIN.claude, args), {
       cwd: host.cwd,
-      env: { ...process.env, MCP_TOOL_TIMEOUT: String(24 * 3600_000) },
+      // Claude Code keeps its todo tools for older models only; Savor shows the list as the agent's plan.
+      env: { ...process.env, MCP_TOOL_TIMEOUT: String(24 * 3600_000), CLAUDE_CODE_ENABLE_TODO_TOOLS: '1' },
       stdio: ['pipe', 'pipe', 'pipe'],
     })
     const removeConfig = () => fs.rmSync(mcpConfig, { force: true })
@@ -105,6 +117,8 @@ export class ClaudeSession implements Session {
 
   start({ context, input, images }: TurnInput) {
     this.interrupted = false
+    // The task list lives as long as the session: what an earlier request finished is not part of this one's plan.
+    for (const [id, t] of this.todos) if (t.status === 'done') this.todos.delete(id)
     const pics = pictures(images)
     // Claude Code runs a slash command only when the last text block starts with it. What stands in
     // front of that block still reaches the model.
@@ -136,6 +150,10 @@ export class ClaudeSession implements Session {
     return this.tasks > 0
   }
 
+  stopTask(id: string) {
+    this.write({ type: 'control_request', request_id: crypto.randomUUID(), request: { subtype: 'stop_task', task_id: id } })
+  }
+
   private write(msg: unknown) {
     if (this.child.stdin?.writable) this.child.stdin.write(JSON.stringify(msg) + '\n')
   }
@@ -153,9 +171,11 @@ export class ClaudeSession implements Session {
     // Claude names the background tasks that still run (shell commands, subagents) whenever that list changes.
     // Ambient ones (watchers it starts by itself) are no work the user could want to stop.
     if (ev.type === 'system' && ev.subtype === 'background_tasks_changed') {
+      for (const t of ev.tasks ?? []) if (t.ambient) this.ambient.add(t.task_id)
       this.tasks = ev.tasks?.filter((t: { ambient?: boolean }) => !t.ambient).length ?? 0
       return this.host.backgroundChanged()
     }
+    if (ev.type === 'system' && ev.subtype?.startsWith('task_')) this.task(ev)
     if (ev.type === 'assistant' || ev.type === 'user' || (ev.type === 'system' && ['init', 'task_notification'].includes(ev.subtype))) this.host.working()
     if (ev.type === 'rate_limit_event') {
       const info = ev.rate_limit_info ?? {}
@@ -170,9 +190,18 @@ export class ClaudeSession implements Session {
         if (c.type === 'thinking') activity.instant('thinking', 'Thinking')
         if (c.type === 'text' && c.text.trim()) activity.instant('note', c.text)
         if (c.type === 'tool_use') activity.tool(c.id, c.name, c.input)
+        if (c.type === 'tool_use' && !ev.parent_tool_use_id) this.todo(c.id, c.name, c.input ?? {})
       }
     } else if (ev.type === 'user') {
-      for (const c of ev.message?.content ?? []) if (c.type === 'tool_result') activity.finish(c.tool_use_id)
+      for (const c of ev.message?.content ?? []) if (c.type === 'tool_result') {
+        activity.finish(c.tool_use_id)
+        const created = this.creates.get(c.tool_use_id)
+        const id = !c.is_error && resultText(c.content).match(/^Task #(\S+) created successfully/)?.[1]
+        this.creates.delete(c.tool_use_id)
+        if (!created || !id) continue
+        this.todos.set(id, created)
+        this.host.plan.steps([...this.todos.values()])
+      }
     } else if (ev.type === 'control_request') {
       this.control(ev.request_id, ev.request).catch((e: Error) => this.respond(ev.request_id, undefined, e.message))
     } else if (ev.type === 'result') {
@@ -184,6 +213,28 @@ export class ClaudeSession implements Session {
       if (ev.subtype === 'error_max_budget_usd') return this.host.ended({ error: budgetReached(this.budget) })
       this.host.ended(ev.is_error && !interrupted ? { error: ev.result || ev.subtype, resetsAt: this.limit } : { text: ev.is_error ? '' : ev.result ?? '' })
     }
+  }
+
+  private todo(useId: string, tool: string, input: any) {
+    if (tool === 'TodoWrite') this.todos = new Map((input.todos ?? []).map((t: any, i: number) => [String(i), step(t.content, t.status, t.activeForm)]))
+    else if (tool === 'TaskCreate') return this.creates.set(useId, step(input.subject, 'pending', input.activeForm))
+    else if (tool === 'TaskUpdate') {
+      const id = String(input.taskId)
+      const t = this.todos.get(id)
+      if (!t) return
+      if (input.status === 'deleted') this.todos.delete(id)
+      else this.todos.set(id, { ...t, text: input.subject ?? t.text, ...(input.status && { status: STEP[input.status as keyof typeof STEP] }), ...(input.activeForm && { active: input.activeForm }) })
+    } else return
+    this.host.plan.steps([...this.todos.values()])
+  }
+
+  // Subagents and background commands, as Claude Code reports their start, progress and end.
+  private task(ev: any) {
+    if (this.ambient.has(ev.task_id)) return
+    const plan = this.host.plan
+    if (ev.subtype === 'task_started') plan.agent(ev.task_id, { name: ev.description || 'Task', kind: ev.task_type === 'local_bash' ? 'command' : 'agent', type: ev.subagent_type, stoppable: true })
+    else if (ev.subtype === 'task_progress') plan.agent(ev.task_id, { doing: ev.description })
+    else if (TASK_END[ev.patch?.status ?? ev.status]) plan.agent(ev.task_id, { status: TASK_END[ev.patch?.status ?? ev.status] })
   }
 
   // What the request behind an answer carried is what the context holds now. Subagents have their own.

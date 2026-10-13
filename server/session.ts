@@ -54,6 +54,7 @@ export interface Host {
   // Where the agent works: the project folder, or the conversation's worktree.
   cwd: string
   activity: Activity
+  plan: PlanTracker
   // Background work the agent runs inside its own process started or ended.
   backgroundChanged(): void
   // The agent started work on its own (e.g. a background task finished): count the thread as working.
@@ -89,6 +90,8 @@ export interface Session {
   steer?(input: { text: string; images: string[] }): Promise<boolean>
   // Whether the agent runs background work inside its own process (shell commands, subagents). It ends with the process.
   background?(): boolean
+  // Stops one subagent or background command of the plan, where the agent's protocol allows that.
+  stopTask?(id: string): void
 }
 
 export const configKey = (a: AgentConfig) => JSON.stringify([a.provider, a.model, a.reasoning, a.fast, a.ultracode, a.permissionMode])
@@ -224,5 +227,41 @@ export class Activity {
     if (/^(Bash|shell|bash|command)$/i.test(name)) this.start(key, 'command', input?.command ?? summarize(input))
     else if (/^(Edit|Write|MultiEdit|NotebookEdit|edit|write|patch)$/.test(name)) this.start(key, 'edit', `${name} · ${input?.file_path ?? input?.filePath ?? summarize(input)}`)
     else this.start(key, 'note', `${name.replace(/^mcp__savor__/, '')} · ${summarize(input)}`)
+  }
+}
+
+// ---- plan ----
+
+// The agent's todo list and the subagents and background commands it runs, kept with the request they
+// belong to. A subagent that outlives its request stays with the one that started it.
+export class PlanTracker {
+  private owners = new Map<string, string>()
+  constructor(private p: Project, private tid: string, private inputId: () => string, private live: () => boolean) {}
+
+  steps(steps: store.PlanStep[]) {
+    this.change(this.inputId(), (plan) => ({ ...plan, steps }))
+  }
+
+  // An update for an agent the plan doesn't know yet starts it, if it names it.
+  agent(id: string, patch: Partial<store.PlanAgent>) {
+    const key = this.owners.get(id) ?? this.inputId()
+    this.owners.set(id, key)
+    const ended = patch.status && patch.status !== 'running' ? { finishedAt: store.now() } : {}
+    this.change(key, (plan) => {
+      const known = plan.agents.find((a) => a.id === id)
+      if (known) return known.status !== 'running' ? plan : { ...plan, agents: plan.agents.map((a) => (a === known ? { ...a, ...patch, ...ended } : a)) }
+      if (!patch.name) return plan
+      return { ...plan, agents: [...plan.agents, { id, name: patch.name, kind: 'agent', status: 'running', startedAt: store.now(), ...patch, ...ended }] }
+    })
+  }
+
+  private change(key: string, fn: (plan: store.Plan) => store.Plan) {
+    if (!key || !this.live()) return
+    const plans = store.readPlans(this.p, this.tid)
+    const plan = plans[key] ?? { steps: [], agents: [] }
+    const next = fn(plan)
+    if (next === plan) return
+    store.savePlans(this.p, this.tid, { ...plans, [key]: next })
+    emit({ type: 'plan', projectId: this.p.id, threadId: this.tid })
   }
 }

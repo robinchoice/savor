@@ -167,6 +167,9 @@ export interface CommitFile { path: string; additions: number | null; deletions:
 export interface Commit { hash: string; subject: string; body: string; author: string; date: string; files: CommitFile[] }
 export interface ImportableSession { provider: 'claude' | 'codex'; id: string; title: string; startedAt: string; messages: number; imported: boolean }
 export interface Decision { id: string; groupId: string; title: string; body: string; options: string[]; recommended?: number; selected: number | null; answer: string | null; resolved: boolean }
+export interface PlanStep { text: string; status: 'pending' | 'active' | 'done'; active?: string }
+export interface PlanAgent { id: string; name: string; kind: 'agent' | 'command'; type?: string; doing?: string; status: 'running' | 'done' | 'failed' | 'stopped'; startedAt: string; finishedAt?: string; stoppable?: boolean }
+export interface Plan { steps: PlanStep[]; agents: PlanAgent[] }
 export interface ActivityEvent { id: number; type: 'thinking' | 'command' | 'edit' | 'note'; label: string; time: string; finishedAt?: string }
 export interface Project {
   id: string

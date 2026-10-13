@@ -13,6 +13,7 @@
 // - mcpServerStatus/list → the servers docs (signed in) and tracker (not signed in)
 // - mcpServer/oauth/login → a sign-in page on auth.example, then a successful mcpServer/oauthLogin/completed
 // - account/rateLimits/read → a five-hour window 20 % used, 100 % while the test's full file exists
+// - "plan: <text>" → a plan update with one step done and one in progress and a subagent that finished, then "Codex echo: <input>"
 // - anything else → "Codex echo: <input>", with " (took over)" when Savor said it takes over from an agent at its limit
 import fs from 'node:fs'
 import readline from 'node:readline'
@@ -94,6 +95,12 @@ async function runTurn(params) {
     const { action, content } = await serverRequest('mcpServer/elicitation/request', { threadId, turnId, serverName: 'docs', mode: 'form', _meta: null, message: input.slice('fill-form:'.length).trim(), requestedSchema })
     reply = `Codex form: ${action} ${JSON.stringify(content)}`
   } else {
+    if (input.startsWith('plan:')) {
+      notify('turn/plan/updated', { threadId, turnId, explanation: null, plan: [{ step: 'Read the code', status: 'completed' }, { step: 'Change it', status: 'inProgress' }] })
+      const spawn = { type: 'collabAgentToolCall', id: 'spawn1', tool: 'spawnAgent', status: 'completed', senderThreadId: threadId, receiverThreadIds: ['sub-1'], prompt: 'Check the tests\nin detail', model: 'fake-mini', reasoningEffort: null, agentsStates: { 'sub-1': { status: 'running', message: null } } }
+      notify('item/completed', { threadId, turnId, item: spawn })
+      notify('item/completed', { threadId, turnId, item: { ...spawn, id: 'wait1', tool: 'wait', prompt: null, agentsStates: { 'sub-1': { status: 'completed', message: 'All green.' } } } })
+    }
     if (input.startsWith('slow:')) await released(input)
     reply = input.includes('Question: ') ? `Codex aside in ${threadId}: ${input.slice(input.indexOf('Question: ') + 10)}` : `Codex echo: ${input}${text.includes('and you take over') ? ' (took over)' : ''}`
   }

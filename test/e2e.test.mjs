@@ -561,6 +561,48 @@ test("tasks Claude marks as ambient are no background work and can't be stopped"
   assert.equal(await page.locator('.composer .send.stop').count(), 0)
 })
 
+test("the agent's plan shows in the conversation, its subagents stop one by one, and it folds away when done", async () => {
+  await newConversation()
+  await send('plan: ship it')
+  const card = page.locator('.plan-card')
+  await card.locator('.plan-step.s-active:has-text("Writing the code…")').waitFor()
+  assert.equal(await card.locator('.plan-head').innerText(), 'Plan\n1 of 3')
+  // Done steps fold into one line.
+  assert.equal(await card.locator('.plan-step').count(), 2)
+  await card.locator('.plan-fold:has-text("1 done")').click()
+  await card.locator('.plan-step.s-done:has-text("Read the code")').waitFor()
+
+  const review = card.locator('.plan-agent:has-text("Review the change")')
+  await review.locator('small:has-text("general-purpose · Reading the diff")').waitFor()
+  await review.locator('.plan-stop').click()
+  await review.locator('small:has-text("Stopped")').waitFor()
+  assert.equal(await review.locator('.plan-stop').count(), 0)
+  assert.equal(await card.locator('.plan-agent:has-text("npm test") .plan-stop').count(), 1, 'the background command still runs')
+
+  fs.writeFileSync(AGENT_LOG + '.release', 'plan: ship it')
+  await page.waitForSelector('text=Echo: plan: ship it')
+  await card.waitFor({ state: 'detached' })
+  const line = page.locator('.plan-done-line')
+  assert.equal(await line.innerText(), 'Plan · 3 steps done · 1 agent · 1 background command')
+  // The line stands in front of the conclusion and opens the plan again.
+  assert.ok(await page.locator('.plan-done-line + .msg.conclusion').count())
+  await line.locator('.plan-fold').click()
+  assert.equal(await line.locator('.plan-step.s-done').count(), 3)
+  await line.locator('.plan-agent:has-text("npm test") small:has-text("Background command · Done")').waitFor()
+})
+
+test("Codex's plan updates and subagents become the request's plan", async () => {
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
+  const thread = (await api('POST', `/projects/${project.id}/threads`, { text: 'plan: codex', agent: { provider: 'codex' } })).body
+  const t = `/projects/${project.id}/threads/${thread.id}`
+  await until(async () => (await api('GET', t)).body.messages.some((m) => m.text === 'Codex echo: plan: codex'))
+  const input = (await api('GET', t)).body.messages.find((m) => m.kind === 'user')
+  const plan = (await api('GET', `${t}/plans`)).body[input.id]
+  assert.deepEqual(plan.steps, [{ text: 'Read the code', status: 'done' }, { text: 'Change it', status: 'active' }])
+  assert.deepEqual(plan.agents.map((a) => [a.id, a.name, a.type, a.status]), [['sub-1', 'Check the tests', 'fake-mini', 'done']])
+  await api('PATCH', `/projects/${project.id}`, { agent: project.agent })
+})
+
 test('queued messages can be removed before they are sent', async () => {
   const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
   const thread = (await api('POST', `/projects/${project.id}/threads`, { text: 'slow: busy' })).body

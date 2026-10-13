@@ -2,7 +2,7 @@
 // turn/start; approvals and clarifying questions arrive as server requests.
 import { spawn } from 'node:child_process'
 import * as store from './store.js'
-import type { ApprovalOption, Thread } from './store.js'
+import type { ApprovalOption, PlanAgent, Thread } from './store.js'
 import { BIN, command, mcpUrl, VERSION } from './config.js'
 import { Rpc } from './jsonrpc.js'
 import { configKey, forkOf, formFields, OPEN_PAGE, rememberSession, SUBMIT_FORM, sessionIdOf, summarize, systemPrompt, webUrl, type Host, type Session, type TurnInput } from './session.js'
@@ -42,6 +42,8 @@ const ALLOW_SESSION_DENY: ApprovalOption[] = [
   { id: 'acceptForSession', label: 'Allow for this session', kind: 'allow' },
   { id: 'decline', label: 'Deny', kind: 'deny' },
 ]
+
+const CODEX_AGENT: Record<string, PlanAgent['status']> = { pendingInit: 'running', running: 'running', completed: 'done', shutdown: 'done', errored: 'failed', notFound: 'failed', interrupted: 'stopped' }
 
 export class CodexSession implements Session {
   readonly config: string
@@ -184,12 +186,15 @@ export class CodexSession implements Session {
       if (login?.name !== params.name) return
       this.mcpLogin = null
       login!.done(params)
+    } else if (method === 'turn/plan/updated') {
+      this.host.plan.steps((params.plan ?? []).map((s: any) => ({ text: s.step, status: s.status === 'inProgress' ? 'active' : s.status === 'completed' ? 'done' : 'pending' })))
     } else if (method === 'thread/tokenUsage/updated') {
       this.host.context(params.tokenUsage.last.totalTokens, params.tokenUsage.modelContextWindow)
       // The thread's total, which Codex keeps across resumes.
       if (params.tokenUsage.total) this.host.spent({ tokens: params.tokenUsage.total.totalTokens })
     } else if (method === 'item/started') {
       const item = params.item
+      this.subagents(item)
       if (item.type === 'commandExecution') activity.start(item.id, 'command', item.command)
       else if (item.type === 'mcpToolCall') activity.start(item.id, 'note', `${item.tool} · ${summarize(item.arguments)}`)
       else if (item.type === 'dynamicToolCall') activity.start(item.id, 'note', `${item.tool} · ${summarize(item.arguments)}`)
@@ -198,6 +203,7 @@ export class CodexSession implements Session {
     } else if (method === 'item/completed') {
       const item = params.item
       activity.finish(item.id)
+      this.subagents(item)
       if (item.type === 'mcpToolCall' && item.error) activity.instant('note', `${item.tool} failed · ${summarize(item.error.message ?? item.error)}`)
       if (item.type === 'agentMessage' && item.text?.trim()) activity.instant('note', (this.lastText = item.text))
       else if (item.type === 'exitedReviewMode' && item.review?.trim()) this.lastText = item.review
@@ -220,6 +226,16 @@ export class CodexSession implements Session {
         .then((limits) => resetOf(limits))
         .catch(() => null)
         .then((resetsAt) => this.host.ended({ error, resetsAt }))
+    }
+  }
+
+  // Codex's subagents are threads of their own. A spawn names them; every collab call carries their last known state.
+  private subagents(item: any) {
+    if (item.type !== 'collabAgentToolCall') return
+    if (item.tool === 'spawnAgent') for (const id of item.receiverThreadIds ?? []) this.host.plan.agent(id, { name: (item.prompt ?? '').split('\n')[0].slice(0, 120) || 'Subagent', type: item.model ?? undefined })
+    for (const [id, state] of Object.entries<any>(item.agentsStates ?? {})) {
+      const status = CODEX_AGENT[state?.status]
+      if (status) this.host.plan.agent(id, { status })
     }
   }
 

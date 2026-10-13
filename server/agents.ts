@@ -6,7 +6,7 @@ import * as store from './store.js'
 import type { AgentConfig, Message, Origin, Project, Provider, Question, Thread } from './store.js'
 import { emit } from './events.js'
 import { appUrl } from './config.js'
-import { Activity, configKey, forkOf, sessionIdOf, type Answer, type ApprovalRequest, type Host, type Session, type TurnInput } from './session.js'
+import { Activity, PlanTracker, configKey, forkOf, sessionIdOf, type Answer, type ApprovalRequest, type Host, type Session, type TurnInput } from './session.js'
 import { ClaudeSession } from './claude.js'
 import { CodexSession } from './codex.js'
 import { AcpSession } from './acp.js'
@@ -266,6 +266,17 @@ const current = (tid: string) => sessions.get(tid)?.session
 // Background work inside the agent's own process (shell commands, subagents). It ends with the process.
 export const runsBackground = (tid: string) => !!current(tid)?.background?.()
 
+// The plans of a conversation's requests. Subagents of a process that has ended no longer run, whatever they last reported.
+export function plansOf(p: Project, tid: string) {
+  const plans = store.readPlans(p, tid)
+  if (current(tid)) return plans
+  return Object.fromEntries(Object.entries(plans).map(([k, plan]) => [k, { ...plan, agents: plan.agents.map((a) => (a.status === 'running' ? { ...a, status: 'stopped' as const, stoppable: false } : a)) }]))
+}
+
+export function stopTask(tid: string, id: string) {
+  current(tid)?.stopTask?.(id)
+}
+
 // Between turns with a conclusion still owed: the agent waits for a process it registered, for
 // background work of its own, for CI or for a usage limit to reset. A stop or a failure ends that.
 export function waiting(p: Project, t: Thread) {
@@ -429,6 +440,7 @@ function hostFor(p: Project, thread: Thread, holder: { session?: Session }): Hos
     tid,
     cwd: store.cwdOf(p, thread),
     activity: new Activity(p, tid, mine),
+    plan: new PlanTracker(p, tid, () => request(p, tid).inputId, mine),
     working: () => mine() && beginTurn(p, tid),
     context: (tokens, window) => {
       if (!mine()) return

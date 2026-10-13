@@ -111,6 +111,10 @@ export interface Thread {
   spent?: Spent[]
 }
 export interface Spent { provider: Provider; usd?: number; tokens?: number }
+// The agent's own todo list for a request, and the subagents and background commands it runs there, as the agent reports them.
+export interface PlanStep { text: string; status: 'pending' | 'active' | 'done'; active?: string }
+export interface PlanAgent { id: string; name: string; kind: 'agent' | 'command'; type?: string; doing?: string; status: 'running' | 'done' | 'failed' | 'stopped'; startedAt: string; finishedAt?: string; stoppable?: boolean }
+export interface Plan { steps: PlanStep[]; agents: PlanAgent[] }
 export interface ActivityEvent { id: number; type: 'thinking' | 'command' | 'edit' | 'note'; label: string; time: string; finishedAt?: string }
 export interface Decision {
   id: string
@@ -454,6 +458,10 @@ export function updateThread(p: Project, tid: string, patch: Partial<Thread>): T
   saveThread(p, t)
   return t
 }
+
+// Plans by the id of the input whose request they belong to.
+export const readPlans = (p: Project, tid: string): Record<string, Plan> => readJson(path.join(threadDir(p, tid), 'plans.json'), {})
+export const savePlans = (p: Project, tid: string, plans: Record<string, Plan>) => writeJson(path.join(threadDir(p, tid), 'plans.json'), plans)
 
 // Line comments on a conversation's changes, kept until they are sent to the agent. The web app owns their shape.
 export const readReview = (p: Project, tid: string): unknown[] => readJson(path.join(threadDir(p, tid), 'review.json'), [])

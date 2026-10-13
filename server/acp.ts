@@ -128,7 +128,7 @@ export class AcpSession implements Session {
       // The session's cost so far.
       if (u.cost?.currency === 'USD') this.host.spent({ usd: u.cost.amount })
     } else if (kind === 'plan') {
-      activity.instant('note', `Plan · ${(u.entries ?? []).map((e: any) => e.content).join(' · ')}`)
+      this.host.plan.steps((u.entries ?? []).map((e: any) => ({ text: e.content, status: e.status === 'in_progress' ? 'active' : e.status === 'completed' ? 'done' : 'pending' })))
     }
   }
 

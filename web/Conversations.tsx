@@ -7,7 +7,7 @@ import {
   CircleAlert, ArrowUp, ArrowLeft, Pencil, MessageSquarePlus, Brain, Terminal, Wrench, ArrowRight, Smartphone, Monitor, Bot, ShieldQuestion, X, ChevronUp, ChevronDown, ChevronRight, Paperclip, GitBranch, GitFork, GitMerge, Trash2, Copy, FileDiff, Split, SquareArrowOutUpRight, Workflow as WorkflowIcon, Mail, MailOpen, SquareTerminal, RotateCcw,
 } from 'lucide-preact'
 import {
-  api, avatarStyle, cap, desktop, duration, formatStamp, formatTime, go, initial, lastThreadKey, PROVIDER_NAMES, runTrigger, useApi, kindOf, RINGS, type ActivityEvent, type AgentConfig, type Approval, type ApprovalOption, type Attachment, type Decision, type Message, type Proc, type Project, type Reason, type Thread, type Workflow, type Worktree,
+  api, avatarStyle, cap, desktop, duration, formatStamp, formatTime, go, initial, lastThreadKey, PROVIDER_NAMES, runTrigger, useApi, kindOf, RINGS, type ActivityEvent, type AgentConfig, type Approval, type ApprovalOption, type Attachment, type Decision, type Message, type Plan, type PlanAgent, type PlanStep, type Proc, type Project, type Reason, type Thread, type Workflow, type Worktree,
 } from './api'
 import { Composer, quoteInComposer, type Picked } from './Composer'
 import { transport } from './transport'
@@ -172,7 +172,7 @@ export function NextButton({ paths }: { paths: string[] }) {
 }
 
 export function Conversations({ project, threadId, fanoutId, isNew }: { project: Project; threadId?: string; fanoutId?: string; isNew?: boolean }) {
-  const [threads] = useApi<Thread[]>(`/projects/${project.id}/threads`, (e) => e.projectId === project.id && ['thread', 'status', 'message', 'processes', 'activity'].includes(e.type))
+  const [threads] = useApi<Thread[]>(`/projects/${project.id}/threads`, (e) => e.projectId === project.id && ['thread', 'status', 'message', 'processes', 'activity', 'plan'].includes(e.type))
   const [worktrees] = useApi<Worktree[]>(`/projects/${project.id}/worktrees`, (e) => e.projectId === project.id && e.type === 'thread')
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<'all' | 'you' | 'working'>('all')
@@ -727,6 +727,7 @@ export function ThreadView({ project, threadId, back, next, siblings }: { projec
   const base = `/projects/${project.id}/threads/${threadId}`
   const [data, reload, loadError] = useApi<ThreadData>(base, (e) => (e.threadId === threadId && ['message', 'thread', 'status'].includes(e.type)) || (e.projectId === project.id && e.type === 'processes'))
   const [activity] = useApi<ActivityEvent[]>(`${base}/activity`, (e) => e.threadId === threadId && (e.type === 'activity' || e.type === 'status'))
+  const [plans] = useApi<Record<string, Plan>>(`${base}/plans`, (e) => e.threadId === threadId && (e.type === 'plan' || e.type === 'status'))
   const [links] = useApi<{ source: { project: { id: string; name: string; tint: string }; thread: Thread } | null; targets: { project: { id: string; name: string; tint: string }; thread: Thread }[] }>(data?.thread.inbox || data?.thread.routedFrom ? `${base}/links` : null, (e) => ['thread', 'status', 'projects'].includes(e.type))
   // Chat, browser or changes: the first preview of a conversation opens the browser, after that the last choice stands.
   const viewKey = `savor-view:${threadId}`
@@ -796,7 +797,7 @@ export function ThreadView({ project, threadId, back, next, siblings }: { projec
       opened.current = true
     })
     return () => cancelAnimationFrame(frame)
-  }, [data?.messages.length, data?.busy, browserMode, floating, activityOpen])
+  }, [data?.messages.length, data?.busy, browserMode, floating, activityOpen, Object.keys(plans ?? {}).length])
   // Ctrl/⌘F searches the conversation instead of the page.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -880,6 +881,19 @@ export function ThreadView({ project, threadId, back, next, siblings }: { projec
   const nextPath = next?.find((p) => `#${p}` !== location.hash)
   keys.current = { stop: stoppable ? stop : undefined, finish: canComplete ? () => patch({ completed: true }) : undefined }
   const queued = messages.filter((m) => m.kind === 'user' && m.delivered === false).length
+  // A request's plan stands in front of what ended it: its conclusion or error, or the next input with a plan.
+  // The plan of a request still open stays at the end, above the working row.
+  const planAt = new Map<string, string>()
+  let openPlan: string | null = null
+  for (const m of messages) {
+    const own = m.kind === 'user' && m.delivered !== false && plans?.[m.id] && (plans[m.id].steps.length || plans[m.id].agents.length)
+    if (openPlan && (own || m.kind === 'conclusion' || m.kind === 'error')) {
+      planAt.set(m.id, openPlan)
+      openPlan = null
+    }
+    if (own) openPlan = m.id
+  }
+  const planCard = (id: string, live: boolean) => <PlanCard key={`plan-${id}`} plan={plans![id]} live={live} stop={(aid) => api('POST', `${base}/plans/agents/${encodeURIComponent(aid)}/stop`)} />
   const status = busy || waiting
     ? { icon: <span class="ring busy" />, text: busy ? 'Working' : waitingFor(thread), cls: 'working' }
     : thread.needsYou
@@ -1097,26 +1111,29 @@ export function ThreadView({ project, threadId, back, next, siblings }: { projec
 
                 <div class="messages" ref={listRef}>
                   {attributedMessages.map((m, i) => (
-                    <MessageItem
-                      key={m.id}
-                      m={m}
-                      thread={thread}
-                      workflow={i === 0 && thread.workflow ? { ...thread.workflow, href: `#/p/${project.id}/workflows/${thread.workflow.id}` } : undefined}
-                      decisions={decisions.filter((d) => m.decisionIds?.includes(d.id))}
-                      active={i > lastUser || m.kind === 'question'}
-                      answers={answers}
-                      setAnswer={(id, a) => setAnswers({ ...answers, [id]: a })}
-                      base={base}
-                      highlight={find.open ? find.q.trim() : ''}
-                      match={matches.includes(m.id) ? (m.id === currentMatch ? 'current' : 'match') : ''}
-                      onCommit={(hash) => {
-                        setSource(hash)
-                        setView('changes')
-                      }}
-                      preview={!browserMode && m.id === lastConclusion?.id && thread.preview}
-                      onPreview={() => setView('browser')}
-                    />
+                    <Fragment key={m.id}>
+                      {planAt.has(m.id) && planCard(planAt.get(m.id)!, false)}
+                      <MessageItem
+                        m={m}
+                        thread={thread}
+                        workflow={i === 0 && thread.workflow ? { ...thread.workflow, href: `#/p/${project.id}/workflows/${thread.workflow.id}` } : undefined}
+                        decisions={decisions.filter((d) => m.decisionIds?.includes(d.id))}
+                        active={i > lastUser || m.kind === 'question'}
+                        answers={answers}
+                        setAnswer={(id, a) => setAnswers({ ...answers, [id]: a })}
+                        base={base}
+                        highlight={find.open ? find.q.trim() : ''}
+                        match={matches.includes(m.id) ? (m.id === currentMatch ? 'current' : 'match') : ''}
+                        onCommit={(hash) => {
+                          setSource(hash)
+                          setView('changes')
+                        }}
+                        preview={!browserMode && m.id === lastConclusion?.id && thread.preview}
+                        onPreview={() => setView('browser')}
+                      />
+                    </Fragment>
                   ))}
+                  {openPlan && planCard(openPlan, busy || waiting)}
                   {(busy || waiting) && (
                     <button class="working-row" title="Show activity" onClick={showActivity}>
                       <span class="spinner" /> {busy ? workingLabel : waitingFor(thread)}{elapsed && <span class="muted"> · {elapsed}</span>} <ChevronRight size={13} />
@@ -1595,6 +1612,99 @@ function Questions({ decisions, active, answers, setAnswer }: { decisions: Decis
         )
       })}
       {open && <div class="q-hint">Pick an answer {n === 1 ? '' : 'for each question '}and send from the box below. You can add a comment there.</div>}
+    </div>
+  )
+}
+
+const stepIcon = (status: PlanStep['status'] | PlanAgent['status']) =>
+  status === 'done' ? <Check size={14} class="plan-done" /> : status === 'active' || status === 'running' ? <span class="spinner small" /> : status === 'failed' ? <CircleAlert size={14} class="plan-failed" /> : status === 'stopped' ? <X size={14} /> : <span class="ring" />
+
+function StepRows({ steps }: { steps: PlanStep[] }) {
+  return (
+    <>
+      {steps.map((s, i) => (
+        <div key={i} class={`plan-step s-${s.status}`}>
+          <span class="plan-icon">{stepIcon(s.status)}</span>
+          <span>{s.status === 'active' && s.active ? `${s.active}…` : s.text}</span>
+        </div>
+      ))}
+    </>
+  )
+}
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
+
+// The agent's todo list and the subagents and background commands it runs. While the agent works it is a
+// card with the open steps, done ones folded away; afterwards a single line that opens it again. What still
+// runs after the conclusion can be stopped from there.
+function PlanCard({ plan, live, stop }: { plan: Plan; live: boolean; stop: (id: string) => void }) {
+  const [open, setOpen] = useState(false)
+  const done = plan.steps.filter((s) => s.status === 'done')
+  const subagents = plan.agents.filter((a) => a.kind === 'agent').length
+  const commands = plan.agents.length - subagents
+  const running = plan.agents.filter((a) => a.status === 'running').length
+  const agentNote = [subagents && plural(subagents, 'agent'), commands && plural(commands, 'background command'), running && `${running} running`].filter(Boolean).join(' · ')
+  const agents = plan.agents.length > 0 && (
+    <>
+      {plan.steps.length > 0 && <div class="plan-sub">Agents & background work</div>}
+      {plan.agents.map((a) => {
+        const what = [a.kind === 'command' ? 'Background command' : a.type || 'Agent', a.status === 'running' ? a.doing !== a.name && a.doing : cap(a.status)].filter(Boolean).join(' · ')
+        return (
+          <div key={a.id} class={`plan-agent s-${a.status}`}>
+            <span class="plan-icon">{stepIcon(a.status)}</span>
+            <span class="plan-who">
+              <b>{a.name}</b>
+              <small title={what}>{what}</small>
+            </span>
+            <span class="plan-time">{a.finishedAt ? short(Date.parse(a.finishedAt) - Date.parse(a.startedAt)) : a.status === 'running' && <Elapsed since={a.startedAt} />}</span>
+            {a.status === 'running' && a.stoppable && (
+              <button class="plan-stop" title={`Stop ${a.name}`} onClick={() => stop(a.id)}>
+                Stop
+              </button>
+            )}
+          </div>
+        )
+      })}
+    </>
+  )
+  if (!live) {
+    const summary = plan.steps.length > 0 && `Plan · ${done.length === plan.steps.length ? plural(done.length, 'step') : `${done.length} of ${plan.steps.length} steps`} done`
+    return (
+      <div class="plan-done-line">
+        <button class="plan-fold" aria-expanded={open} onClick={() => setOpen(!open)}>
+          <span class="plan-icon">{stepIcon(running ? 'running' : done.length === plan.steps.length ? 'done' : 'pending')}</span>
+          <span>{[summary, agentNote].filter(Boolean).join(' · ')}</span>
+          <ChevronRight size={13} />
+        </button>
+        {open && (
+          <div class="plan-body">
+            <StepRows steps={plan.steps} />
+            {agents}
+          </div>
+        )}
+      </div>
+    )
+  }
+  return (
+    <div class="plan-card">
+      <div class="plan-head">
+        <b>{plan.steps.length ? 'Plan' : 'Agents & background work'}</b>
+        {plan.steps.length > 0 && <span>{done.length} of {plan.steps.length}</span>}
+      </div>
+      {plan.steps.length > 0 && (
+        <div class="plan-bar">
+          <i style={{ width: `${(done.length / plan.steps.length) * 100}%` }} />
+        </div>
+      )}
+      {done.length > 0 && (
+        <button class="plan-fold" aria-expanded={open} onClick={() => setOpen(!open)}>
+          <span class="plan-icon">{!open && stepIcon('done')}</span>
+          <span>{done.length} done</span>
+          <ChevronRight size={13} />
+        </button>
+      )}
+      <StepRows steps={open ? plan.steps : plan.steps.filter((s) => s.status !== 'done')} />
+      {agents}
     </div>
   )
 }
