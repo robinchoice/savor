@@ -535,7 +535,7 @@ export function refreshNeedsYou(p: Project, tid: string) {
 function cancelPending(p: Project, tid: string) {
   for (const m of store.readMessages(p, tid)) {
     if (m.approval?.status === 'pending') {
-      store.updateMessage(p, tid, m.id, { approval: { ...m.approval, status: 'resolved', choice: m.approval.options.find((o) => o.kind === 'deny')?.id } })
+      store.updateMessage(p, tid, m.id, { approval: { ...m.approval, status: 'resolved', choice: m.approval.options.find((o) => o.kind === 'deny')?.id, expired: true } })
       approvals.delete(m.id)
     }
     if (m.kind === 'question' && questions.has(m.id)) questions.delete(m.id)

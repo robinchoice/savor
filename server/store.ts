@@ -32,7 +32,7 @@ export interface ApprovalOption { id: string; label: string; kind: 'allow' | 'de
 // A field of a form an MCP server asks the user to fill in. `min` and `max` bound a number, or the length of a string.
 export interface FormField { name: string; label: string; description?: string; type: 'string' | 'number' | 'integer' | 'boolean' | 'enum'; required: boolean; format?: string; options?: { value: string; label: string }[]; default?: string | number | boolean; min?: number; max?: number }
 // `url` is a page an MCP server asks the user to open, e.g. to sign in; `fields` a form it asks them to fill in.
-export interface Approval { title: string; detail: string; url?: string; fields?: FormField[]; options: ApprovalOption[]; status: 'pending' | 'resolved'; choice?: string }
+export interface Approval { title: string; detail: string; url?: string; fields?: FormField[]; options: ApprovalOption[]; status: 'pending' | 'resolved'; choice?: string; expired?: boolean }
 export interface Message {
   id: string
   ts: string

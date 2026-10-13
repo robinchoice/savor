@@ -1384,7 +1384,7 @@ function MessageItem({ m, thread, workflow, decisions, active, answers, setAnswe
               ))}
             </div>
           ) : (
-            <div class="muted">{a.options?.find((o) => o.id === a.choice)?.label ?? cap(a.status)}</div>
+            <div class="muted">{a.expired ? 'Expired: the agent stopped waiting for an answer' : (a.options?.find((o) => o.id === a.choice)?.label ?? cap(a.status))}</div>
           )}
         </div>
       </div>
