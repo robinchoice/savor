@@ -169,14 +169,14 @@ export function month(p: Project, wf: Workflow, threads = store.listThreads(p)) 
 // An agent session reported what it used so far. A workflow run counts toward the month: when the runs
 // pass 80 % of the workflow's monthly budget Savor warns, at 100 % it pauses the workflow until it is
 // enabled again.
-export function spent(projectId: string, tid: string, provider: Provider, usage: { usd?: number; tokens?: number }) {
-  const p = store.getProject(projectId)
+// It gets the project itself: a session can still report after its project was removed from Savor.
+export function spent(p: Project, tid: string, provider: Provider, usage: { usd?: number; tokens?: number }) {
   const t = store.getThread(p, tid)
   const was = t.spent?.find((s) => s.provider === provider)?.usd ?? 0
   // Saved as it is: this is no change to the conversation, so its place in the list stays.
   store.saveThread(p, { ...t, spent: [...(t.spent ?? []).filter((s) => s.provider !== provider), { provider, ...usage }] })
   if (!t.workflow) return
-  emit({ type: 'workflows', projectId })
+  emit({ type: 'workflows', projectId: p.id })
   let wf: Workflow
   try {
     wf = store.getWorkflow(p, t.workflow.id)
