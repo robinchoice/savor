@@ -194,7 +194,7 @@ function buildServer(p: Project, tid: string) {
     { description: 'Save a workflow. With a cron expression Savor runs it on schedule in a new conversation.', inputSchema: workflowShape },
     async (wf) => {
       if (wf.cron) validateCron(wf.cron, wf.timezone)
-      const saved = store.saveWorkflow(p, wf, agents.originOf(p, tid))
+      const saved = store.saveWorkflow(p, { ...wf, threadId: tid }, agents.originOf(p, tid))
       syncSchedules()
       emit({ type: 'workflows', projectId: p.id })
       return ok({ id: saved.id, url: wfUrl(saved.id) })
@@ -212,7 +212,7 @@ function buildServer(p: Project, tid: string) {
       const prev = store.getWorkflow(p, id)
       if (revision !== revisionOf(prev)) throw new Error('The workflow changed since you read it. Read it again and apply your change to that.')
       const clean = Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined))
-      store.saveWorkflow(p, { ...prev, ...clean }, agents.originOf(p, tid))
+      store.saveWorkflow(p, { ...prev, ...clean, threadId: tid }, agents.originOf(p, tid))
       syncSchedules()
       emit({ type: 'workflows', projectId: p.id })
       return ok({ id, url: wfUrl(id) })

@@ -1296,6 +1296,10 @@ details.box[open] > summary .chev { transform: rotate(180deg); }
 }
 .routing-links { display: flex; flex-wrap: wrap; gap: 8px 16px; padding: 10px 20px; border-bottom: 1px solid var(--line); font-size: 12px; }
 .routing-links a { display: flex; align-items: center; gap: 7px; min-width: 0; overflow-wrap: anywhere; }
+.thread-workflows { display: flex; flex-direction: column; gap: 6px; padding: 8px 20px; border-bottom: 1px solid var(--line); font-size: 12px; }
+.thread-wf { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.thread-wf > a { display: flex; align-items: center; gap: 6px; min-width: 0; overflow-wrap: anywhere; }
+.thread-wf-actions { display: flex; gap: 4px; margin-left: auto; }
 
 /* ---- dock: the project's panels on a computer ---- */
 .dock { position: relative; width: 100%; height: 100%; overflow: hidden; }

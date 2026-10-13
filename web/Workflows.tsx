@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'preact/hooks'
-import { ArrowLeft, Play, Plus, Clock, Link2, Pencil, Trash2, LayoutGrid, Sparkles } from 'lucide-preact'
+import { ArrowLeft, Play, Plus, Clock, Link2, Pencil, Trash2, LayoutGrid, Sparkles, MessageSquare } from 'lucide-preact'
 import { api, duration, go, runTrigger, useApi, type Project, type Run, type SavorEvent, type Thread, type Workflow } from './api'
 import { CATEGORIES, RECIPES, recipe, type Recipe } from './recipes'
 import { describeCron } from './cron'
@@ -165,6 +165,11 @@ function Overview({ base, project, workflow: w, onRun }: { base: string; project
                 {w.monthlyBudgetUsd ? ` of $${w.monthlyBudgetUsd}` : ''}
               </span>
             ) : null}
+            {w.thread && (
+              <a href={`#/p/${project.id}/t/${w.thread.id}`}>
+                <MessageSquare size={12} /> Saved in “{w.thread.title}”
+              </a>
+            )}
           </div>
         </div>
         <div class="wf-actions">

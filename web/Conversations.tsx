@@ -7,7 +7,7 @@ import {
   CircleAlert, ArrowUp, ArrowLeft, Pencil, MessageSquarePlus, Brain, Terminal, Wrench, ArrowRight, Smartphone, Monitor, Bot, ShieldQuestion, X, ChevronUp, ChevronDown, ChevronRight, Paperclip, GitBranch, GitFork, GitMerge, Trash2, Copy, FileDiff, Split, SquareArrowOutUpRight, Workflow as WorkflowIcon, Mail, MailOpen, SquareTerminal, RotateCcw,
 } from 'lucide-preact'
 import {
-  api, avatarStyle, cap, desktop, duration, formatStamp, formatTime, go, initial, lastThreadKey, PROVIDER_NAMES, runTrigger, useApi, kindOf, RINGS, type ActivityEvent, type AgentConfig, type Approval, type ApprovalOption, type Attachment, type Decision, type Message, type Proc, type Project, type Reason, type Thread, type Worktree,
+  api, avatarStyle, cap, desktop, duration, formatStamp, formatTime, go, initial, lastThreadKey, PROVIDER_NAMES, runTrigger, useApi, kindOf, RINGS, type ActivityEvent, type AgentConfig, type Approval, type ApprovalOption, type Attachment, type Decision, type Message, type Proc, type Project, type Reason, type Thread, type Workflow, type Worktree,
 } from './api'
 import { Composer, quoteInComposer, type Picked } from './Composer'
 import { transport } from './transport'
@@ -15,6 +15,7 @@ import { Preview } from './Preview'
 import { PleasanceFooter } from './PleasanceFooter'
 import { Changes, type ReviewComment, type Source } from './Changes'
 import { Fanout } from './Fanout'
+import { schedule, when } from './Workflows'
 import { usePrefs } from './prefs'
 import { keyLabel, useKey, useShortcut } from './Shortcuts'
 import { runInTerminal, setTerminalHome, showTerminal } from './Terminal'
@@ -1064,6 +1065,7 @@ export function ThreadView({ project, threadId, back, next, siblings }: { projec
                 {links.targets.map(({ project: target, thread: t }) => <a key={t.id} href={`#/all/inbox/${target.id}/${t.id}`}><span class={`ring ${RINGS[kindOf(t)]}`} />{target.name} · {t.summary ?? t.title}</a>)}
               </div>
             )}
+            <ThreadWorkflows project={project} threadId={threadId} />
             {!(browserMode && narrow) && (
               <>
                 {find.open && (
@@ -1225,6 +1227,39 @@ export function ThreadView({ project, threadId, back, next, siblings }: { projec
           {siblings.map((t) => <ThreadCard key={t.id} project={project} thread={t} active={t.id === threadId} />)}
         </ThumbBar>
       )}
+    </div>
+  )
+}
+
+// The workflows an agent saved in this conversation, so they can be paused or deleted where they came up.
+function ThreadWorkflows({ project, threadId }: { project: Project; threadId: string }) {
+  const base = `/projects/${project.id}/workflows`
+  const [workflows] = useApi<Workflow[]>(base, (e) => e.type === 'workflows' && e.projectId === project.id)
+  const mine = workflows?.filter((w) => w.threadId === threadId)
+  if (!mine?.length) return null
+  const remove = (w: Workflow) => confirm(`Delete “${w.name}”?`) && api('DELETE', `${base}/${w.id}`)
+  return (
+    <div class="thread-workflows">
+      {mine.map((w) => (
+        <div key={w.id} class="thread-wf">
+          <a href={`#/p/${project.id}/workflows/${w.id}`}>
+            <WorkflowIcon size={14} /> <b>{w.name}</b>
+          </a>
+          <span class="muted">
+            {schedule(w)}
+            {w.nextRunAt && ` · Next run ${when(w.nextRunAt)}`}
+          </span>
+          {!w.enabled && <span class="off-badge">Paused</span>}
+          <span class="thread-wf-actions">
+            <button class="ghost small" onClick={() => api('PUT', `${base}/${w.id}`, { enabled: !w.enabled })}>
+              {w.enabled ? 'Pause' : 'Resume'}
+            </button>
+            <button class="ghost small danger" title="Delete workflow" onClick={() => remove(w)}>
+              <Trash2 size={13} />
+            </button>
+          </span>
+        </div>
+      ))}
     </div>
   )
 }

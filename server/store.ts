@@ -155,6 +155,8 @@ export interface Workflow {
   // at 80 % Savor warns, at 100 % it pauses the workflow.
   budgetUsd: number | null
   monthlyBudgetUsd: number | null
+  // The conversation in which an agent last created or changed it, so that conversation shows it.
+  threadId: string | null
 }
 export interface Proc {
   pid: number
@@ -593,7 +595,7 @@ export function removeBacklogItem(p: Project, id: string): boolean {
 
 const wfDir = (p: Project) => path.join(dataDir(p), 'workflows')
 // What workflows saved by earlier versions don't have yet.
-const wfDefaults = { next: [], collection: '', scheduleLabel: null, updatedAt: '', catchUp: true, button: false, settledAt: '', skipped: [], onModelChange: false, model: null, budgetUsd: null, monthlyBudgetUsd: null }
+const wfDefaults = { next: [], collection: '', scheduleLabel: null, updatedAt: '', catchUp: true, button: false, settledAt: '', skipped: [], onModelChange: false, model: null, budgetUsd: null, monthlyBudgetUsd: null, threadId: null }
 
 export function listWorkflows(p: Project): Workflow[] {
   if (!fs.existsSync(wfDir(p))) return []
@@ -632,6 +634,7 @@ export function saveWorkflow(p: Project, wf: Partial<Workflow> & { name: string;
     origin: 'local',
     budgetUsd: null,
     monthlyBudgetUsd: null,
+    threadId: null,
     ...prev,
     ...wf,
   }

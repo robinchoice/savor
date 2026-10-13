@@ -877,6 +877,30 @@ test('workflows run in a new conversation', async () => {
   await api('DELETE', `/projects/${project.id}/workflows/${first.id}`)
 })
 
+test('a conversation shows the workflows its agent saved', async () => {
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
+  const thread = (await api('POST', `/projects/${project.id}/threads`, { text: 'schedule: Weekly check' })).body
+  await page.goto(`${base}/#/p/${project.id}/t/${thread.id}`)
+  await page.waitForSelector('text=Scheduled:')
+  const wf = (await api('GET', `/projects/${project.id}/workflows`)).body.find((w) => w.name === 'Weekly check')
+  assert.equal(wf.threadId, thread.id)
+  const card = '.thread-wf:has-text("Weekly check")'
+  await page.waitForSelector(`${card} >> text=Mondays at 9:00`)
+  await page.waitForSelector(`${card} >> text=Next run`)
+  await page.click(`${card} button:has-text("Pause")`)
+  await page.waitForSelector(`${card} >> text=Paused`)
+  assert.equal((await api('GET', `/projects/${project.id}/workflows`)).body.find((w) => w.id === wf.id).enabled, false)
+
+  // The workflow's page links back to the conversation.
+  await page.click(`${card} a`)
+  await page.click(`.wf-sub a[href="#/p/${project.id}/t/${thread.id}"]`)
+  await page.waitForSelector(card)
+  page.once('dialog', (d) => d.accept())
+  await page.click(`${card} button[title="Delete workflow"]`)
+  await page.waitForSelector(card, { state: 'detached' })
+  assert.equal((await api('GET', `/projects/${project.id}/workflows/${wf.id}/runs`)).status, 404)
+})
+
 test('a workflow runs at the first scheduled time after it was saved', async () => {
   const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
   const wf = (await api('POST', `/projects/${project.id}/workflows`, { name: 'Every five', prompt: 'every five', cron: '*/5 * * * * *' })).body

@@ -199,6 +199,9 @@ async function turn(text, command) {
       if (r.isError || said.startsWith('CI for ')) await call('send_conclusion_message', { text: `Watch: ${said}` })
       else if (input.startsWith('ci-done:')) await call('send_conclusion_message', { text: 'Done without waiting.' })
     }
+  } else if (input.startsWith('schedule:')) {
+    const wf = await call('create_workflow', { name: input.slice('schedule:'.length).trim(), prompt: 'weekly check', cron: '0 9 * * 1', scheduleLabel: 'Mondays at 9:00' })
+    await call('send_conclusion_message', { text: `Scheduled: ${wf.url}` })
   } else if (input.startsWith('note:')) {
     await call('send_conclusion_message', { text: `Note: ${text.match(/Savor context:\n.*\n\n([\s\S]*)New input:/)[1].trim() || 'none'}` })
   } else if (command) {

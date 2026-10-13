@@ -850,8 +850,12 @@ const saveWorkflowRoute = (params: Params, b: any, ctx: Ctx, id?: string) => {
   return wf
 }
 // The list shows the latest run that started; a time skipped since then is in the workflow's runs.
+// A workflow an agent saved names the conversation it came from while that still exists.
 const listWorkflows = (p: store.Project, threads = store.listThreads(p)) =>
-  store.listWorkflows(p).map((wf) => ({ ...wf, nextRunAt: nextRun(wf), lastRun: runs(p, { ...wf, skipped: [] }, threads, 1)[0] ?? null, month: month(p, wf, threads) }))
+  store.listWorkflows(p).map((wf) => {
+    const from = threads.find((t) => t.id === wf.threadId)
+    return { ...wf, nextRunAt: nextRun(wf), lastRun: runs(p, { ...wf, skipped: [] }, threads, 1)[0] ?? null, month: month(p, wf, threads), thread: from ? { id: from.id, title: from.summary ?? from.title } : null }
+  })
 route('GET', '/projects/:pid/workflows', (params) => listWorkflows(project(params)))
 route('GET', '/projects/:pid/workflows/:id/runs', (params) => runs(project(params), store.getWorkflow(project(params), params.id)))
 route('POST', '/projects/:pid/workflows', (params, b, ctx) => saveWorkflowRoute(params, b, ctx))
