@@ -23,18 +23,55 @@ import { Panel, useHidePanel, useNarrow } from './Layout'
 
 const SHELL = /\blanguage-(bash|sh|shell|zsh)\b/
 
-// Links in messages open in a new tab, so the click doesn't replace Savor itself.
+// Savor's own links, which agents get as http://localhost:4317/#/p/…, stay in the app. On a paired
+// device they name the computer's localhost, so any loopback port counts.
+function savorRoute(href: string) {
+  try {
+    const url = new URL(href)
+    const own = url.origin === location.origin || ['localhost', '127.0.0.1'].includes(url.hostname)
+    return own && url.pathname === '/' && /^#\/(p|all|devices)(\/|$)/.test(url.hash) ? url.hash : null
+  } catch {
+    return null
+  }
+}
+
+// An absolute path on the computer, like /home/me/app/src/main.ts:42 or file:///home/me/app.
+function localPath(href: string) {
+  const raw = href.startsWith('file://') ? href.slice(7) : href.startsWith('/') && !href.startsWith('//') ? href : null
+  const m = raw && decodeURIComponent(raw).match(/^(.+?)(?::(\d+)(?::\d+)?|#L(\d+))?$/)
+  return m ? { path: m[1].replace(/\/$/, '') || '/', line: Number(m[2] ?? m[3]) || null } : null
+}
+
+// A path in a project opens in its Files, the project folder itself opens the project. Others the
+// desktop app shows in the system's file manager.
+async function openPath({ path, line }: { path: string; line: number | null }) {
+  const projects = await api<Project[]>('GET', '/projects')
+  const p = projects.filter((p) => path === p.path || path.startsWith(`${p.path}/`)).sort((a, b) => b.path.length - a.path.length)[0]
+  if (!p) return desktop?.showPath?.(path)
+  const rel = path.slice(p.path.length + 1)
+  go(rel ? `/p/${p.id}/files/f/${encodeURIComponent(rel)}${line ? `/${line}` : ''}` : `/p/${p.id}`)
+}
+
+// Other links in messages open in a new tab, so the click doesn't replace Savor itself.
 DOMPurify.addHook('afterSanitizeAttributes', (node) => {
   const href = node.tagName === 'A' && node.getAttribute('href')
-  if (href && !href.startsWith('#')) {
-    node.setAttribute('target', '_blank')
-    node.setAttribute('rel', 'noreferrer')
-  }
+  if (!href || href.startsWith('#') || localPath(href)) return
+  const route = savorRoute(href)
+  if (route) return node.setAttribute('href', route)
+  node.setAttribute('target', '_blank')
+  node.setAttribute('rel', 'noreferrer')
 })
 
 export function Markdown({ text }: { text: string }) {
   const html = useMemo(() => DOMPurify.sanitize(marked.parse(text, { async: false }) as string), [text])
   const ref = useRef<HTMLDivElement>(null)
+  const onClick = (e: MouseEvent) => {
+    const href = (e.target as HTMLElement).closest('a')?.getAttribute('href')
+    const local = href && localPath(href)
+    if (!local) return
+    e.preventDefault()
+    void openPath(local)
+  }
   // Shell code blocks, and those without a language, get a button below them that runs the command in the project's terminal.
   useLayoutEffect(() => {
     const slots: HTMLElement[] = []
@@ -56,7 +93,7 @@ export function Markdown({ text }: { text: string }) {
     }
     return () => slots.forEach((slot) => render(null, slot))
   }, [html])
-  return <div class="md" ref={ref} dangerouslySetInnerHTML={{ __html: html }} />
+  return <div class="md" ref={ref} onClick={onClick} dangerouslySetInnerHTML={{ __html: html }} />
 }
 
 const PROVIDER_ICONS: Record<string, [any, string]> = {

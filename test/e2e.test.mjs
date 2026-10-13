@@ -1616,6 +1616,29 @@ test('a shell command in a message runs in the terminal with one click', async (
   await api('PATCH', `/projects/${project.id}/threads/${thread.id}`, { completed: true })
 })
 
+test("links to Savor and to the project's files and folders stay in the app", async () => {
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
+  fs.mkdirSync(path.join(PROJECT, 'docs'), { recursive: true })
+  fs.writeFileSync(path.join(PROJECT, 'docs', 'notes.md'), '# Notes\n')
+  const other = (await api('POST', `/projects/${project.id}/threads`, { text: 'The other one' })).body
+  const savor = `http://localhost:4317/#/p/${project.id}/t/${other.id}`
+  const thread = (await api('POST', `/projects/${project.id}/threads`, { text: `[chat](${savor}) [notes](${PROJECT}/docs/notes.md:1) [folder](${PROJECT}/docs) [web](https://example.com)` })).body
+  await page.goto(`${base}/#/p/${project.id}/t/${thread.id}`)
+  const link = (text) => page.locator(`.msg .md a:has-text("${text}")`).first()
+  await link('chat').waitFor()
+  assert.equal(await link('chat').getAttribute('href'), `#/p/${project.id}/t/${other.id}`)
+  assert.equal(await link('chat').getAttribute('target'), null)
+  assert.equal(await link('web').getAttribute('target'), '_blank')
+  await link('notes').click()
+  await until(async () => (await page.evaluate(() => location.hash)) === `#/p/${project.id}/files/f/${encodeURIComponent('docs/notes.md')}/1`)
+  await page.goto(`${base}/#/p/${project.id}/t/${thread.id}`)
+  await link('folder').click()
+  await page.waitForSelector('.file-view >> text=A folder')
+  await page.waitForSelector('.file-tree a:has-text("notes.md")')
+  await api('PATCH', `/projects/${project.id}/threads/${other.id}`, { completed: true })
+  await api('PATCH', `/projects/${project.id}/threads/${thread.id}`, { completed: true })
+})
+
 test('in the inbox, the context menu and the run button reach the project of the conversation', async (t) => {
   const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
   const thread = (await api('POST', `/projects/${project.id}/threads`, { text: 'Inbox run:\n\n```bash\necho $((6*8))-inbox\n```' })).body

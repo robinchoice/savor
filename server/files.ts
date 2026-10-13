@@ -22,7 +22,9 @@ export function list(p: Project, rel: string) {
 
 export function read(p: Project, rel: string) {
   const file = resolve(p, rel)
-  const size = fs.statSync(file).size
+  const stat = fs.statSync(file)
+  if (stat.isDirectory()) return { path: rel, dir: true }
+  const size = stat.size
   const buf = fs.readFileSync(file).subarray(0, MAX_READ)
   const binary = buf.subarray(0, 8000).includes(0)
   return { path: rel, size, binary, truncated: size > MAX_READ, content: binary ? '' : buf.toString('utf8') }

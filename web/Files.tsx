@@ -56,7 +56,8 @@ export function FilesView({ project, rest }: { project: Project; rest: string[] 
 
 function Tree({ project, path, active }: { project: Project; path: string; active?: string }) {
   const [entries] = useApi<Entry[]>(`/projects/${project.id}/files?path=${encodeURIComponent(path)}`, () => false)
-  const [open, setOpen] = useState<Record<string, boolean>>({})
+  // A folder linked from a message comes up opened, as do the folders above the active entry.
+  const [open, setOpen] = useState<Record<string, boolean>>(() => Object.fromEntries((active?.split('/') ?? []).map((_, i, parts) => [parts.slice(0, i + 1).join('/'), true])))
   return (
     <div class="tree">
       {entries?.map((e) =>
@@ -108,7 +109,7 @@ const ModeToggle = ({ rich, setRich }: { rich: boolean; setRich: (b: boolean) =>
 const Loading = () => <p class="muted pad">Loading editor…</p>
 
 function FileEditor({ base, path, line }: { base: string; path: string; line?: number }) {
-  const [file, setFile] = useState<{ content: string; binary: boolean; truncated: boolean; size: number } | null>(null)
+  const [file, setFile] = useState<{ dir?: boolean; content: string; binary: boolean; truncated: boolean; size: number } | null>(null)
   const [draft, setDraft] = useState<string | null>(null)
   const [error, setError] = useState('')
   const [rich, setRich] = useMarkdownMode()
@@ -126,6 +127,13 @@ function FileEditor({ base, path, line }: { base: string; path: string; line?: n
   }
   if (error && !file) return <div class="error-text pad">{error}</div>
   if (!file) return null
+  if (file.dir)
+    return (
+      <div class="empty-state">
+        <h2 class="mono">{path}</h2>
+        <p class="muted">A folder: its files are in the tree.</p>
+      </div>
+    )
   const md = isMarkdown(path)
   return (
     <article class="doc editor-page">

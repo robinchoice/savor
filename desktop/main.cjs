@@ -161,6 +161,12 @@ ipcMain.on('notify', (e, { title, body, hash, tag }) => {
   notifications.set(tag, n)
   n.show()
 })
+// A folder opens in the file manager, a file is only revealed there: opening it could run it.
+ipcMain.on('show-path', (e, file) => {
+  if (!fromUi(e) || typeof file !== 'string' || !path.isAbsolute(file) || !fs.existsSync(file)) return
+  if (fs.statSync(file).isDirectory()) shell.openPath(file)
+  else shell.showItemInFolder(file)
+})
 ipcMain.handle('pick-folder', async (e) => (fromUi(e) ? ((await dialog.showOpenDialog(win, { properties: ['openDirectory', 'createDirectory'] })).filePaths[0] ?? null) : null))
 // The version of a release that finished downloading and waits to be installed.
 let ready = null

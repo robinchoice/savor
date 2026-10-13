@@ -1,4 +1,4 @@
-// What the Savor UI can ask the desktop shell for: the system's folder dialog, updates, notifications and the context menu.
+// What the Savor UI can ask the desktop shell for: the system's folder dialog and file manager, updates, notifications and the context menu.
 const { contextBridge, ipcRenderer } = require('electron')
 
 contextBridge.exposeInMainWorld('savorDesktop', {
@@ -13,6 +13,8 @@ contextBridge.exposeInMainWorld('savorDesktop', {
   // Shows a system notification; a click brings the window to the front and calls back with its hash.
   notify: (options) => ipcRenderer.send('notify', options),
   onOpen: (cb) => ipcRenderer.on('open', (_e, hash) => cb(hash)),
+  // Shows a file or folder outside the projects in the system's file manager.
+  showPath: (path) => ipcRenderer.send('show-path', path),
   // While a project is shown, the context menu offers actions for its folder; cb gets the chosen one. null withdraws them.
   setContextActions: (root, cb) => {
     ipcRenderer.removeAllListeners('context-action')
