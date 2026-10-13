@@ -235,6 +235,11 @@ export function Composer(props: Props) {
           <Square size={13} />
         </button>
       )}
+      {!answers && props.busy && props.onSteer && (
+        <button class="send" title="Add to this turn (Ctrl+Enter): the agent reads it at its next step" disabled={!canSend} onClick={() => submit(true)}>
+          <CornerDownRight size={16} />
+        </button>
+      )}
       {props.onNext && (
         <button class="send next" title="Send and open the next conversation that needs you (Alt+Enter)" disabled={!canSend} onClick={() => submit(false, true)}>
           <ArrowRight size={16} />
@@ -245,17 +250,10 @@ export function Composer(props: Props) {
           {allPicked || !hasInput ? 'Send answers' : 'Send comment'} <ArrowUp size={16} />
         </button>
       ) : (
-        <>
-          {props.busy && props.onSteer && (
-            <button class="send" title="Add to this turn (Ctrl+Enter): the agent reads it at its next step" disabled={!canSend} onClick={() => submit(true)}>
-              <CornerDownRight size={16} />
-            </button>
-          )}
-          <button class={`send ${fanout ? 'wide' : ''}`} title={props.busy ? 'Queue (Enter): sent after the current turn' : fanout ? 'Start one conversation per agent' : 'Send'} disabled={!canSend} onClick={() => submit()}>
-            {props.busy ? <ListPlus size={16} /> : <ArrowUp size={16} />}
-            {fanout && `Start ${fanout.length}`}
-          </button>
-        </>
+        <button class={`send ${fanout ? 'wide' : ''}`} title={props.busy ? 'Queue (Enter): sent after the current turn' : fanout ? 'Start one conversation per agent' : 'Send'} disabled={!canSend} onClick={() => submit()}>
+          {props.busy ? <ListPlus size={16} /> : <ArrowUp size={16} />}
+          {fanout && `Start ${fanout.length}`}
+        </button>
       )}
     </>
   )
