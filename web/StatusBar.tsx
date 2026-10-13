@@ -1,7 +1,10 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
-import { X } from 'lucide-preact'
-import { api, useApi } from './api'
+import { TriangleAlert, X } from 'lucide-preact'
+import { api, go, useApi } from './api'
+import { notifyHealth } from './notify'
 import { UsageStatus } from './Usage'
+
+interface Warning { code: string; severity: 'high' | 'medium' | 'low'; title: string; text: string; action: { label: string; command?: string; href?: string; post?: string; account?: true } }
 
 interface LiveRun { id: number; projectId: string; project: string; workflow: string; number: number; url: string; status: string; failed: boolean; startedAt: string; done: number; total: number; typicalMs: number | null }
 
@@ -18,9 +21,67 @@ const clock = (ms: number) => {
 export function StatusBar() {
   return (
     <footer class="statusbar">
+      <HealthStatus />
       <UsageStatus />
       <CiStatus />
     </footer>
+  )
+}
+
+const RANK = { high: 0, medium: 1, low: 2 }
+// The high warnings already known, so only a new one notifies; null until the first answer.
+let notified: Set<string> | null = null
+
+// What keeps Savor from working right now (server/health.ts): an icon in the colour of the most severe
+// warning, and on click each warning with one sentence and its one action. No icon without warnings.
+function HealthStatus() {
+  const [list] = useApi<Warning[]>('/health', (e) => ['health', 'devices', 'restart', 'settings', 'status', 'connected'].includes(e.type))
+  const [open, setOpen] = useState(false)
+  const [copied, setCopied] = useState('')
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!list) return
+    const high = list.filter((w) => w.severity === 'high')
+    if (notified) for (const w of high) if (!notified.has(w.code)) notifyHealth(w.title, w.text, w.code)
+    notified = new Set(high.map((w) => w.code))
+  }, [list])
+  useEffect(() => {
+    if (!open) return
+    const on = (e: MouseEvent) => !e.composedPath().includes(ref.current!) && setOpen(false)
+    setTimeout(() => addEventListener('click', on))
+    return () => removeEventListener('click', on)
+  }, [open])
+  if (!list?.length) return null
+  const warnings = [...list].sort((a, b) => RANK[a.severity] - RANK[b.severity])
+  const act = (w: Warning) => {
+    const { command, href, post, account } = w.action
+    if (command) return navigator.clipboard?.writeText(command).then(() => setCopied(w.code))
+    setOpen(false)
+    if (href) go(href.slice(1))
+    if (post) api('POST', post)
+    if (account) dispatchEvent(new Event('savor-account'))
+  }
+  return (
+    <div class="menu-anchor" ref={ref}>
+      <button class={`status-health ${warnings[0].severity}`} aria-label="Warnings" title={warnings.map((w) => w.title).join('\n')} onClick={() => setOpen(!open)}>
+        <TriangleAlert size={13} />
+        {warnings.length > 1 && <span>{warnings.length}</span>}
+      </button>
+      {open && (
+        <div class="menu up health">
+          {warnings.map((w) => (
+            <div key={w.code} class={`health-row ${w.severity}`}>
+              <b>{w.title}</b>
+              <small>{w.text}</small>
+              {w.action.command && <code>{w.action.command}</code>}
+              <button class="ghost small" onClick={() => act(w)}>
+                {w.action.command ? (copied === w.code ? 'Copied' : 'Copy command') : w.action.label}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }
 

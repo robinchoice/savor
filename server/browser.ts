@@ -5,7 +5,7 @@ import os from 'node:os'
 import path from 'node:path'
 import type { ServerResponse } from 'node:http'
 import { chromium, type BrowserContext, type CDPSession, type Page } from 'playwright-core'
-import { openStream } from './events.js'
+import { emit, openStream } from './events.js'
 import { HOME } from './store.js'
 
 // One headless page per thread inside a persistent browser profile per project, so logins in the
@@ -35,14 +35,23 @@ function executable() {
 }
 
 // Installers ship without a browser: download Playwright's Chromium on first use.
+let installFailed = false
 function installChromium() {
   const cli = path.join(path.dirname(createRequire(import.meta.url).resolve('playwright-core/package.json')), 'cli.js')
-  return new Promise<string>((resolve, reject) => {
+  const install = new Promise<string>((resolve, reject) => {
     const child = spawn(process.execPath, [cli, 'install', 'chromium'], { stdio: 'inherit', env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' } })
     child.on('error', reject)
     child.on('exit', (code) => (code === 0 ? resolve(chromium.executablePath()) : reject(new Error('Installing Chromium for the preview failed.'))))
   })
+  install.then(
+    () => (installFailed = false),
+    () => ((installFailed = true), emit({ type: 'health' })),
+  )
+  return install
 }
+
+// The download failed and no Chromium turned up since, see health.ts.
+export const previewBrowserFailed = () => installFailed && !executable()
 
 function profile(projectId: string) {
   let ctx = profiles.get(projectId)

@@ -247,6 +247,12 @@ function TopBar({ projects, active, all, me, setMe }: { projects: Project[]; act
   const [order, setOrder] = useState<string[] | null>(null)
   const [tabMenu, setTabMenu] = useState<{ project: Project; x: number; y: number } | null>(null)
   useEffect(() => setOrder(null), [projects])
+  // A health warning in the status bar leads to the agents in this dialog.
+  useEffect(() => {
+    const on = () => setDialog('account')
+    addEventListener('savor-account', on)
+    return () => removeEventListener('savor-account', on)
+  }, [])
   const sorted = order ? [...projects].sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id)) : projects
   const tabs = sorted.filter((p) => p.pinned || p.id === active?.id)
   const fixUpTo = (ids: string[], id: string) => {

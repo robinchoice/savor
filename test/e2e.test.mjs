@@ -90,6 +90,7 @@ async function startDaemon() {
       SAVOR_ANTIGRAVITY_HOME: path.join(TMP, 'agy'),
       SAVOR_TRANSCRIBE_MODULE: path.join(ROOT, 'test/fake-transcribe.mjs'),
       SAVOR_GH_BIN: path.join(ROOT, 'test/fake-gh.mjs'),
+      SAVOR_HEALTH_RELAY_MS: '1500',
       SAVOR_PANDOC_BIN: path.join(ROOT, 'test/fake-pandoc.mjs'),
       SAVOR_FEEDBACK_URL: `http://127.0.0.1:${feedbackApi.address().port}/savor/feedback`,
       FAKE_AGENT_LOG: AGENT_LOG,
@@ -188,6 +189,30 @@ test('agent settings fit the viewport and apply right away', async () => {
   assert.match(await page.locator('.agent-btn').innerText(), /Low/)
   await page.click('.conv-head h2')
   await page.waitForSelector('.agent-menu', { state: 'detached' })
+})
+
+test('the status bar warns about what keeps Savor from working, after a delay for the relay', async () => {
+  assert.equal(await page.locator('.status-health').count(), 0)
+  await api('PUT', '/agent', { provider: 'grok' })
+  await page.click('.status-health.high')
+  await page.waitForSelector('.health-row >> text=Grok Build is not installed')
+  await page.click('.health-row button:has-text("Choose agent")')
+  await page.waitForSelector('.account-dialog')
+  await page.click('.account-dialog .dialog-head .icon-btn')
+  await api('PUT', '/agent', { provider: 'claude' })
+  await page.waitForSelector('.status-health', { state: 'detached' })
+
+  // A relay that can't be reached only shows once it stayed away for the delay.
+  const closed = await freePort()
+  await api('PUT', '/relay', { url: `http://127.0.0.1:${closed}`, enabled: true })
+  assert.equal((await api('GET', '/health')).body.length, 0)
+  await page.waitForSelector('.status-health.medium')
+  await page.click('.status-health')
+  await page.click('.health-row button:has-text("Open remote access")')
+  assert.equal(new URL(page.url()).hash, '#/devices')
+  await api('PUT', '/relay', { url: null, enabled: false })
+  await page.waitForSelector('.status-health', { state: 'detached' })
+  await page.goBack()
 })
 
 test('errors retain their provider after switching agents', async () => {

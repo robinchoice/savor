@@ -67,6 +67,9 @@ async function show(title: string, body: string, hash: string, tag: string) {
   }
 }
 
+// Something keeps Savor from working, see HealthStatus. A click brings Savor to the front where it was.
+export const notifyHealth = (title: string, body: string, code: string) => notificationsOn() && show(title, body, location.hash.slice(1), code)
+
 // Notify when an agent finishes or needs you, unless that conversation is already on screen.
 export function useNotifications(currentThread: string | undefined, projects: Project[] | undefined, me: Me | null | false) {
   useEvent(

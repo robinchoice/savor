@@ -34,6 +34,7 @@ import { deleteSessions, importSessions, listSessions } from './import.js'
 import * as voice from './voice.js'
 import * as workspace from './workspace.js'
 import * as push from './push.js'
+import { listWarnings } from './health.js'
 
 // dist/web next to the sources in development, ../web next to the bundled dist/server/index.mjs.
 const HERE = path.dirname(fileURLToPath(import.meta.url))
@@ -165,7 +166,12 @@ route('PUT', '/devices/address', (_, b, ctx) => {
   store.saveState(s)
   return { url, fallback: PUBLIC_URL }
 })
-route('GET', '/agents', (_, __, ctx) => listAgents(ctx.query.has('refresh')))
+route('GET', '/agents', async (_, __, ctx) => {
+  if (!ctx.query.has('refresh')) return listAgents()
+  const list = await listAgents(true)
+  emit({ type: 'health' })
+  return list
+})
 route('GET', '/usage', () => listUsage())
 route('GET', '/ci', () => ci.liveRuns())
 route('POST', '/ci/dismiss', (_, b) => (ci.dismiss(Number(b.id)), { ok: true }))
@@ -176,6 +182,7 @@ route('PUT', '/agent', (_, b, ctx) => {
   const s = store.state()
   s.agent = agentFrom(ctx, s.agent ?? store.defaultAgent(), b)
   store.saveState(s)
+  emit({ type: 'health' })
   return s.agent
 })
 route('GET', '/presets', () => store.listPresets())
@@ -1068,6 +1075,7 @@ function exitOnUpdate(file: string) {
 
 // `left` instead of a time of day, so a device whose clock is off still counts down correctly.
 route('GET', '/restart', () => ({ updated: restart.updated, left: restart.at && Math.max(0, restart.at - Date.now()) }))
+route('GET', '/health', () => listWarnings(restart.updated && !restart.at))
 route('POST', '/restart', () => {
   if (!restart.updated) throw new BadRequest('No update is waiting for a restart.')
   restartNow()
