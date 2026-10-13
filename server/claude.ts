@@ -58,7 +58,8 @@ export class ClaudeSession implements Session {
     // The MCP config holds the token, so it goes into a file only this user can read.
     const mcpConfig = path.join(store.HOME, 'mcp', `${crypto.randomUUID()}.json`)
     fs.mkdirSync(path.dirname(mcpConfig), { recursive: true, mode: 0o700 })
-    const savor = { type: 'http', url: mcpUrl(p.id, thread.id), headers: { Authorization: `Bearer ${store.state().mcpToken}` } }
+    // Some Savor tools wait for the user's approval: no idle timeout cuts them off.
+    const savor = { type: 'http', url: mcpUrl(p.id, thread.id), headers: { Authorization: `Bearer ${store.state().mcpToken}` }, timeout: 24 * 3600_000 }
     fs.writeFileSync(mcpConfig, JSON.stringify({ mcpServers: { savor } }), { mode: 0o600 })
     const args = [
       '-p',
