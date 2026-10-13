@@ -314,7 +314,7 @@ function ImportDialog({ project, onClose }: { project: Project; onClose: () => v
   )
 }
 
-export interface DeviceRow { id: string; name: string; via: 'lan' | 'relay'; createdAt: string; lastSeenAt: string | null }
+export interface DeviceRow { id: string; name: string; via: 'lan' | 'relay'; terminal?: boolean; createdAt: string; lastSeenAt: string | null }
 export interface RelayState { url: string | null; enabled: boolean; state: 'off' | 'connecting' | 'online' | 'error'; error?: string; id?: string }
 
 export const RELAY_LABEL = { off: 'Off', connecting: 'Connecting…', online: 'Connected', error: 'Not connected' }
@@ -329,7 +329,6 @@ export function qr(text: string) {
 export function Devices() {
   const [devices] = useApi<DeviceRow[]>('/devices', (e) => e.type === 'devices')
   const [relay] = useApi<RelayState>('/relay', (e) => e.type === 'devices')
-  const [terminal] = useApi<{ remote: boolean }>('/terminal', (e) => e.type === 'terminal')
   const [relayUrl, setRelayUrl] = useState<string | null>(null)
   const [error, setError] = useState('')
   const [pairing, setPairing] = useState<{ code: string; url: string; relayUrl: string | null; expiresAt: string } | null>(null)
@@ -472,17 +471,11 @@ export function Devices() {
           </div>
         )}
 
-        <h2>Terminal</h2>
-        <label class="check">
-          <input type="checkbox" checked={!!terminal?.remote} onChange={(e) => api('PUT', '/terminal', { remote: e.currentTarget.checked })} /> Allow the terminal on paired devices
-        </label>
-        <p class="muted">
-          {terminal?.remote
-            ? 'Paired devices can open a shell on this computer in every project folder and worktree, and run any command as you. Revoking a device ends its terminals right away.'
-            : 'The terminal is a shell on this computer. It is always available here, and off for paired devices.'}
-        </p>
-
         <h2>Paired devices</h2>
+        <p class="muted">
+          The terminal is a shell on this computer. A device you allow it can open one in every project folder and worktree and run any command as you. Turning it off or revoking the device ends its
+          terminals right away.
+        </p>
         {devices && !devices.length && <p class="muted">None yet.</p>}
         {devices?.map((d) => (
           <div key={d.id} class="device">
@@ -493,6 +486,9 @@ export function Devices() {
                 {d.via === 'relay' ? 'Via relay' : 'Direct'} · paired {new Date(d.createdAt).toLocaleDateString()} · last seen {d.lastSeenAt ? new Date(d.lastSeenAt).toLocaleString() : 'never'}
               </small>
             </div>
+            <label class="check">
+              <input type="checkbox" checked={!!d.terminal} onChange={(e) => api('PATCH', `/devices/${d.id}`, { terminal: e.currentTarget.checked })} /> Terminal
+            </label>
             <button class="ghost danger" onClick={() => revoke(d)}>
               <Trash2 size={14} /> Revoke
             </button>

@@ -1549,21 +1549,25 @@ test('the terminal starts with a shell per folder and worktree, opens and closes
   assert.deepEqual((await api('GET', t)).body.terminals.map((x) => [x.path, x.running]), [[project.path, false], [thread.worktree.path, true]])
   const id = terminals[1].id
 
-  // Paired devices get it only once it is switched on at this computer, and lose it when it is switched off.
+  // A paired device gets it only once it is switched on for that device at this computer, and loses it when it is switched off.
   const device = await pairDevice('CI terminal')
+  const other = await pairDevice('CI no terminal')
+  const deviceId = (await api('GET', '/devices')).body.find((d) => d.name === 'CI terminal').id
   const wt = thread.worktree.path
   assert.equal((await api('GET', t, undefined, device)).status, 403)
   assert.equal((await api('POST', `${t}/input`, { id, data: 'touch from-device\r' }, device)).status, 403)
-  assert.equal((await api('PUT', '/terminal', { remote: true }, device)).status, 403)
-  assert.equal((await api('PUT', '/terminal', { remote: true })).body.remote, true)
+  assert.equal((await api('PATCH', `/devices/${deviceId}`, { terminal: true }, device)).status, 403)
+  assert.equal((await api('PATCH', `/devices/${deviceId}`, { terminal: true })).status, 200)
+  assert.equal((await api('GET', '/devices')).body.find((d) => d.id === deviceId).terminal, true)
   assert.equal((await api('GET', t, undefined, device)).status, 200)
+  assert.equal((await api('GET', t, undefined, other)).status, 403)
   const stream = await fetch(`${base}/api${t}/stream?id=${id}`, { headers: { cookie: device } })
   const reader = stream.body.getReader()
   let seen = ''
   while (!seen.includes('42-terminal')) seen += new TextDecoder().decode((await reader.read()).value)
   await api('POST', `${t}/input`, { id, data: 'touch from-device\r' }, device)
   await until(() => fs.existsSync(path.join(wt, 'from-device')))
-  await api('PUT', '/terminal', { remote: false })
+  await api('PATCH', `/devices/${deviceId}`, { terminal: false })
   const outcome = await Promise.race([
     (async () => {
       for (;;) if ((await reader.read()).done) return 'ended'

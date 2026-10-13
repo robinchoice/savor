@@ -21,7 +21,7 @@ interface Screen { term: InstanceType<typeof Terminal>; state: InstanceType<type
 // `command` runs in the shell once it starts, e.g. an agent's terminal UI.
 interface Term { id: string; projectId: string; cwd: string; pty: IPty | null; screen: Screen | null; command?: string }
 // A viewer that just opened holds back output until it got the screen.
-interface Viewer { res: ServerResponse; remote: boolean; held?: object[] }
+interface Viewer { res: ServerResponse; device?: string; held?: object[] }
 
 const terms = new Map<string, Term>()
 const viewers = new Map<string, Set<Viewer>>()
@@ -147,11 +147,11 @@ export function closeProject(projectId: string) {
   for (const t of terms.values()) if (t.projectId === projectId) closeFolder(t.cwd)
 }
 
-export function watch(t: Term, res: ServerResponse, remote: boolean) {
+export function watch(t: Term, res: ServerResponse, device?: string) {
   openStream(res)
   const open = viewers.get(t.id) ?? new Set()
   viewers.set(t.id, open)
-  const v: Viewer = { res, remote, held: [] }
+  const v: Viewer = { res, device, held: [] }
   open.add(v)
   res.on('close', () => open.delete(v))
   // The screen once the output so far is parsed, then what came meanwhile.
@@ -165,7 +165,7 @@ export function watch(t: Term, res: ServerResponse, remote: boolean) {
   else show()
 }
 
-// When the terminal is switched off for paired devices, the ones watching lose it right away.
-export function disconnectRemote() {
-  for (const open of viewers.values()) for (const v of open) if (v.remote) v.res.destroy()
+// When the terminal is switched off for a paired device, its open terminals end right away.
+export function disconnectDevice(deviceId: string) {
+  for (const open of viewers.values()) for (const v of open) if (v.device === deviceId) v.res.destroy()
 }

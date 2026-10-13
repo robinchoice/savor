@@ -158,7 +158,8 @@ export interface Proc {
   startedAt: string
 }
 // Devices paired over the LAN get a cookie token (tokenHash), devices paired through the relay a public key.
-export interface Device { id: string; name: string; tokenHash: string; publicKey?: string; push?: PushSubscription; createdAt: string; lastSeenAt: string | null }
+// terminal: whether the device may open the terminal, a shell on this computer.
+export interface Device { id: string; name: string; tokenHash: string; publicKey?: string; push?: PushSubscription; terminal?: boolean; createdAt: string; lastSeenAt: string | null }
 // Where the device's browser receives Web Push (see push.ts).
 export interface PushSubscription { endpoint: string; keys: { p256dh: string; auth: string } }
 export interface Preset { id: string; name: string; agent: AgentConfig }
@@ -174,7 +175,7 @@ interface State {
   publicUrl?: string | null
   // The folder the last new project was created in.
   projectsDir?: string
-  // Whether paired devices may open the terminal, a shell on this computer.
+  // Older versions had one terminal switch for all paired devices; it carries over to each device.
   terminalRemote?: boolean
   // The speech model for voice input (an id from voice.ts), when not the default.
   voiceModel?: string
@@ -248,6 +249,11 @@ export function state(): State {
   }
   if (full.agent) full.agent = upgradeAgent(full.agent)
   full.presets = full.presets.map((x) => ({ ...x, agent: upgradeAgent(x.agent) }))
+  if (full.terminalRemote) for (const d of full.devices) d.terminal = true
+  if ('terminalRemote' in full) {
+    delete full.terminalRemote
+    saveState(full)
+  }
   if (!s || !s.identity || !s.relayToken) saveState(full)
   return full
 }

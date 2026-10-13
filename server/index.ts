@@ -191,6 +191,18 @@ route('POST', '/devices/requests/:id', (params, b, ctx) => {
   devices.decidePairing(params.id, b.approve === true)
   return {}
 })
+route('PATCH', '/devices/:id', (params, b, ctx) => {
+  localOnly(ctx)
+  const s = store.state()
+  const device = s.devices.find((d) => d.id === params.id)
+  if (!device) throw new store.NotFound('device')
+  device.terminal = b.terminal === true
+  store.saveState(s)
+  if (!device.terminal) terminal.disconnectDevice(device.id)
+  emit({ type: 'devices' })
+  emit({ type: 'terminal' })
+  return {}
+})
 route('DELETE', '/devices/:id', (params, _, ctx) => {
   localOnly(ctx)
   devices.revokeDevice(params.id)
@@ -626,20 +638,11 @@ route('DELETE', '/projects/:pid/worktrees', (params, _, ctx) => {
 
 // ---- terminal ----
 
-// The terminal is a shell on this computer. Paired devices only get it once it was switched on here.
-route('GET', '/terminal', (_, __, ctx) => (localOnly(ctx), { remote: !!store.state().terminalRemote }))
-route('PUT', '/terminal', (_, b, ctx) => {
-  localOnly(ctx)
-  const s = store.state()
-  s.terminalRemote = !!b.remote
-  store.saveState(s)
-  if (!s.terminalRemote) terminal.disconnectRemote()
-  emit({ type: 'terminal' })
-  return { remote: s.terminalRemote }
-})
+// The terminal is a shell on this computer. A paired device only gets it once it was switched on for
+// that device here.
 const terminalAllowed = (ctx: Ctx) => {
-  if (ctx.auth.origin !== 'local' && !store.state().terminalRemote)
-    throw new Forbidden('The terminal is off for paired devices. Turn it on at your computer under Devices & remote access.')
+  if (ctx.auth.origin !== 'local' && !ctx.auth.device?.terminal)
+    throw new Forbidden('The terminal is off for this device. Turn it on at your computer under Devices & remote access.')
 }
 // Where a terminal can run: the project folder and its worktrees, each with the conversations in it.
 function terminalPlaces(p: store.Project) {
@@ -710,7 +713,7 @@ route('DELETE', '/projects/:pid/terminal/:tid', (params, _, ctx) => {
 })
 route('GET', '/projects/:pid/terminal/stream', (params, _, ctx) => {
   terminalAllowed(ctx)
-  terminal.watch(terminalOf(params, ctx.query.get('id')), ctx.res, ctx.auth.origin !== 'local')
+  terminal.watch(terminalOf(params, ctx.query.get('id')), ctx.res, ctx.auth.device?.id)
 })
 route('POST', '/projects/:pid/terminal/open', async (params, b, ctx) => {
   terminalAllowed(ctx)
@@ -766,8 +769,8 @@ route('PATCH', '/projects/:pid/export', async (params, b) => {
 // pandoc.yaml can name filters and engines that run as programs, so a paired device exports only
 // where it may use the terminal too.
 route('POST', '/projects/:pid/export', (params, _, ctx) => {
-  if (ctx.auth.origin !== 'local' && !store.state().terminalRemote)
-    throw new Forbidden('Exporting runs pandoc on your computer. Allow the terminal on paired devices at your computer to export from here.')
+  if (ctx.auth.origin !== 'local' && !ctx.auth.device?.terminal)
+    throw new Forbidden('Exporting runs pandoc on your computer. Allow the terminal for this device at your computer to export from here.')
   return asBadRequest(() => workspace.runExport(project(params)))
 })
 route('GET', '/projects/:pid/export/:name', (params, _, ctx) => {
