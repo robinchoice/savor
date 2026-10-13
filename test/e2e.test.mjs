@@ -2625,6 +2625,14 @@ test('the status bar shows the running CI runs after a push, and a failed run un
   assert.deepEqual({ ...run, startedAt: undefined }, { id: 4, projectId: project.id, project: project.name, workflow: 'CI', number: 12, url: 'https://github.com/acme/app/actions/runs/4', status: 'in_progress', failed: false, startedAt: undefined, done: 3, total: 5, typicalMs: 400_000 })
   await page.waitForSelector('.statusbar .ci-run:has-text("#12 CI 3/5")')
   assert.match(await page.locator('.statusbar .ci-run').innerText(), /\+\d:\d\d ~\d:\d\d/)
+  assert.equal(await page.locator('.statusbar .ci-track.moving').count(), 0)
+
+  // Runs that don't fit scroll through like a news ticker, two copies in a row.
+  const narrow = await page.addStyleTag({ content: '.ci-ticker { max-width: 60px }' })
+  await page.waitForSelector('.statusbar .ci-track.moving')
+  assert.equal(await page.locator('.statusbar .ci-runs').count(), 2)
+  await narrow.evaluate((el) => el.remove())
+  await page.waitForSelector('.statusbar .ci-track.moving', { state: 'detached' })
 
   // The run fails: it stays red until it is dismissed. The failure before the push is not shown.
   gh([listed(4, 12, 'completed', 'failure', ago(60), ago(1)), ...earlier])

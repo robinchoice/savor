@@ -64,8 +64,8 @@ export function UsageBars({ usage }: { usage: Usage }) {
 const short = (label: string) =>
   label.replace(/^Weekly · /, '').replace(/^Weekly$/, 'week').replace(/^(\d+) (h|d|m)\w*$/, '$1$2')
 
-// The limits in the status bar: per agent the least that is left as a bar, then each limit. A click shows
-// when they reset.
+// The limits in the status bar: per agent the least that is left as a bar, then what is left of each limit.
+// A click shows when they reset.
 export function UsageStatus() {
   const usage = useUsage()
   const [open, setOpen] = useState(false)
@@ -81,7 +81,7 @@ export function UsageStatus() {
   const least = (u: Usage) => Math.min(...u.windows.map(left))
   return (
     <div class="menu-anchor" ref={ref}>
-      <button class={`status-usage ${stale ? 'stale' : ''}`} title={stale ? UPDATING : 'Subscription limits: when they reset'} onClick={() => setOpen(!open)}>
+      <button class={`status-usage ${stale ? 'stale' : ''}`} title={stale ? UPDATING : 'What is left of the subscription limits: when they reset'} onClick={() => setOpen(!open)}>
         {stale && <span class="spinner small" />}
         {usage.map((u) => (
           <span key={u.provider} class="status-agent">
@@ -92,7 +92,7 @@ export function UsageStatus() {
             {u.windows.map((w, i) => (
               <span key={w.label}>
                 {i > 0 && <span class="muted"> · </span>}
-                <b class={left(w) <= 10 ? 'low' : ''}>{left(w)}%</b> <span class="muted">left {short(w.label)}</span>
+                <b class={left(w) <= 10 ? 'low' : ''}>{left(w)}%</b> <span class="muted">{short(w.label)}</span>
               </span>
             ))}
           </span>

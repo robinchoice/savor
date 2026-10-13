@@ -908,15 +908,24 @@ mark { background: color-mix(in srgb, var(--attn) 50%, transparent); color: inhe
 .statusbar .muted { color: var(--muted); }
 .statusbar b { font-weight: 500; }
 .statusbar b.low { color: var(--red); }
-.statusbar > .menu-anchor { display: flex; min-width: 0; }
-.status-usage { display: flex; align-items: center; gap: 18px; min-width: 0; overflow: hidden; height: 22px; padding: 0 4px; border-radius: 5px; }
+.statusbar > .menu-anchor { display: flex; flex: none; }
+.status-usage { display: flex; align-items: center; gap: 18px; height: 22px; padding: 0 4px; border-radius: 5px; }
 .status-usage:hover { background: var(--raised); }
 .status-agent { display: inline-flex; align-items: center; gap: 6px; }
 .mini-bar { width: 40px; height: 4px; border-radius: 2px; background: var(--line-strong); overflow: hidden; }
 .mini-bar i { display: block; height: 100%; background: var(--grad); }
 .mini-bar i.low { background: var(--red); }
-/* Runs come and go, so they win the space over the limits. */
-.status-ci { display: flex; align-items: center; gap: 8px; flex: none; max-width: 70%; overflow: hidden; }
+/* The limits always show in full, the runs take the rest and scroll through it like a news ticker when
+   they don't fit. Hovering stops them, so a link or the dismiss button can be clicked. */
+.status-ci { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
+.ci-ticker { display: flex; flex: 1; min-width: 0; overflow: hidden; }
+.ci-ticker:has(.moving) { mask-image: linear-gradient(90deg, transparent, #000 16px, #000 calc(100% - 16px), transparent); }
+.ci-track { display: flex; flex: none; margin-left: auto; }
+.ci-track.moving { margin-left: 0; animation: ci-ticker var(--ticker-s) linear infinite; }
+.ci-ticker:hover .ci-track { animation-play-state: paused; }
+@keyframes ci-ticker { to { transform: translateX(-50%); } }
+.ci-runs { display: flex; align-items: center; gap: 8px; }
+.ci-track.moving .ci-runs { padding-right: 40px; }
 .ci-run { display: inline-flex; align-items: center; gap: 5px; }
 .ci-run a { color: var(--text); text-decoration: none; padding: 0 3px; border-radius: 4px; }
 .ci-run a:hover { background: var(--raised); }
@@ -1055,6 +1064,8 @@ details.box[open] > summary .chev { transform: rotate(180deg); }
 @media (prefers-reduced-motion: reduce) {
   .msg { animation: none; }
   .ring.busy { animation: none; border-style: dashed; }
+  .ci-track.moving { animation: none; }
+  .ci-ticker { overflow-x: auto; scrollbar-width: none; }
 }
 
 /* All projects */
