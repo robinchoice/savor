@@ -9,7 +9,7 @@ import { WorkflowButtons, Workflows } from './Workflows'
 import { ExportView, TodayView } from './Workspace'
 import { AllProjects } from './Overview'
 import { Settings, Devices, Pair, PairingRequests, RemotePair } from './Settings'
-import { loadProfile, remote, setTransport } from './transport'
+import { loadProfile, loadProfiles, rememberHost, remote, setTransport, switchProfile } from './transport'
 import { ProcessesPopover } from './Processes'
 import { TerminalButton, TerminalPanel } from './Terminal'
 import { ArrangeButton, Dock, Panel, useNarrow } from './Layout'
@@ -74,6 +74,7 @@ function App() {
     if (me || !link.connected || !mode || (mode === 'relay' && !loadProfile())) return
     api<Me>('GET', '/me').then(
       (m) => {
+        if (mode === 'relay') rememberHost(m.host)
         setMe(m)
         connectEvents()
       },
@@ -82,7 +83,7 @@ function App() {
   }, [mode, link.connected])
   useNotifications(route[2] === 't' ? route[3] : undefined, projects, me)
   useEffect(() => {
-    if (projects?.length && route[0] !== 'p' && route[0] !== 'all' && route[0] !== 'devices') {
+    if (projects?.length && !['p', 'all', 'devices', 'pair', 'rpair'].includes(route[0])) {
       const last = projects.find((p) => p.id === localStorage.getItem(LAST_PROJECT))
       go(projectHref((last ?? projects.find((p) => p.pinned) ?? projects[0]).id))
     }
@@ -112,6 +113,13 @@ function App() {
         <img src="/icon.svg" alt="" />
         <h1>Connecting…</h1>
         <p class="muted">{link.error ?? 'Reaching your computer through the relay.'}</p>
+        {loadProfiles()
+          .filter((p) => p.daemonPk !== loadProfile()!.daemonPk)
+          .map((p) => (
+            <button key={p.daemonPk} class="ghost" onClick={() => switchProfile(p)}>
+              Switch to {p.host ?? 'your other computer'}
+            </button>
+          ))}
       </div>
     ) : null
   if (me === false)

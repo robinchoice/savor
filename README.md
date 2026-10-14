@@ -68,7 +68,7 @@
 - **Terminal**: a panel below the project with one shell per project folder and worktree, for a quick `git status` or test run. It follows the open conversation into its worktree, and shells keep running while the panel is closed, until Savor stops. Paired devices only get it once you turn it on for them at your computer.
 - **Background processes**: agents register the dev servers they start. Savor watches the PIDs, shows logs and can stop them.
 - **Live preview**: the app the agent built runs in a headless Chromium next to the chat, with a persistent browser profile per project so logins survive restarts. You see exactly the page the agent controls, and your clicks, typing and scrolling are forwarded to it. The picker lets you point at an element ("make this bigger"), and its selector and styles go along with your next message.
-- **Devices**: pair a phone or another computer with a QR code. Each device has its own revocable key. Requests from devices are marked *remote*, and agents treat them with extra care.
+- **Devices**: pair a phone or another computer with a QR code. Each device has its own revocable key. A phone paired with several computers switches between them in its account menu. Requests from devices are marked *remote*, and agents treat them with extra care.
 - **Notifications** when an agent finishes, needs an answer or asks for approval, plus an unread count in the tab title and on the app icon. Paired phones get a push only when the notice stays unseen on your other devices for a while (5 minutes by default, questions after one), and at once when Savor is open nowhere. A question can be answered from the notification, with a few seconds to undo, and a notice seen on one device disappears from the others.
 - **Keyboard shortcuts** you set per device for new conversation, Next, the composer, voice input, stop, finish, tabs, browser, terminal and project tabs. Savor starts without any; the setup and the settings offer a suggested set.
 - **Keep awake** toggle, dark and light theme.
@@ -257,7 +257,7 @@ CI runs typecheck and the end-to-end tests on every push. Pushing a tag like `v0
 
 Early. Known gaps:
 - There is no public relay instance yet: run your own (see above) or use a direct connection.
-- A browser remembers one paired computer at a time.
+- A browser can pair with several computers but talks to one at a time, and only that one sends it notifications.
 - The Grok Build adapter hasn't been tested against the real CLI.
 
 ## How Savor is maintained

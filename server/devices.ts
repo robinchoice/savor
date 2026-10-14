@@ -114,7 +114,16 @@ export function addTokenDevice(name: string) {
 
 export const openPairingCodes = () => [...pairings].filter(([, expires]) => expires > Date.now()).map(([code]) => code)
 
-export const addKeyDevice = (name: string, publicKey: string) => addDevice({ name, tokenHash: '', publicKey })
+// One device key serves every computer a browser pairs with, so it can pair here again. It keeps its one
+// entry then, and revoking it still cuts it off.
+export function addKeyDevice(name: string, publicKey: string) {
+  const s = store.state()
+  const known = s.devices.find((d) => d.publicKey === publicKey)
+  if (!known) return addDevice({ name, tokenHash: '', publicKey })
+  known.name = deviceName(name)
+  store.saveState(s)
+  return known
+}
 
 // Guessing codes through the relay gets a handful of tries, then every open code is void.
 export function pairingFailed() {

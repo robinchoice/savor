@@ -33,10 +33,11 @@ function start(entry, env, ready) {
   return new Promise((resolve) => child.stdout.on('data', (d) => d.toString().includes(ready) && resolve()))
 }
 
-const local = async (method, p, body) => {
-  const r = await fetch(`${daemonBase}/api${p}`, { method, headers: { cookie: `savor_token=${token}`, 'content-type': 'application/json' }, body: body && JSON.stringify(body) })
+const call = (base, owner) => async (method, p, body) => {
+  const r = await fetch(`${base}/api${p}`, { method, headers: { cookie: `savor_token=${owner}`, 'content-type': 'application/json' }, body: body && JSON.stringify(body) })
   return r.json()
 }
+const local = (method, p, body) => call(daemonBase, token)(method, p, body)
 
 const HANDSHAKE_MS = 1500
 
@@ -170,12 +171,12 @@ test('a wrong pairing code is rejected', async () => {
 })
 
 // Someone at the computer answers the request, after checking that both show the same number.
-async function answerPairing(approve) {
+async function answerPairing(approve, computer = local) {
   let request
-  await until(async () => ([request] = await local('GET', '/devices/requests')).length)
+  await until(async () => ([request] = await computer('GET', '/devices/requests')).length)
   assert.equal(request.via, 'relay')
   assert.equal((await page.textContent('.check-number')).replace(' ', ''), request.check)
-  await local('POST', `/devices/requests/${request.id}`, { approve })
+  await computer('POST', `/devices/requests/${request.id}`, { approve })
 }
 
 test('a pairing declined on the computer adds no device', async () => {
@@ -217,7 +218,7 @@ test('pair through the relay and work on the project remotely', async () => {
       }),
   )
   assert.deepEqual(key, { webcrypto: true, extractable: false, raw: false }, 'the device key cannot be read out')
-  assert.deepEqual(Object.keys(JSON.parse(await page.evaluate(() => localStorage.getItem('savor-remote')))).sort(), ['daemonPk', 'name'], 'only public pairing metadata in localStorage')
+  assert.deepEqual(Object.keys(JSON.parse(await page.evaluate(() => localStorage.getItem('savor-remote')))).sort(), ['daemonPk', 'host', 'name'], 'only public pairing metadata in localStorage')
 
   const tapped = fs.readFileSync(TAP, 'utf8')
   assert.ok(tapped.length > 1000, 'traffic went through the relay')
@@ -242,6 +243,43 @@ test('remote devices cannot manage devices or add projects', async () => {
   await page.waitForSelector('text=Your projects')
   assert.equal(await page.locator('text=Start new project').count(), 0)
   assert.equal(await page.locator('text=Open any folder').count(), 0)
+})
+
+test('a device pairs with a second computer and switches between both', async () => {
+  const home = path.join(TMP, 'home2')
+  const base = `http://127.0.0.1:${await freePort()}`
+  await start('dist/server/index.mjs', { SAVOR_HOME: home, SAVOR_PORT: new URL(base).port, SAVOR_CLAUDE_BIN: path.join(ROOT, 'test/fake-claude.mjs') }, 'Savor running')
+  const second = call(base, JSON.parse(fs.readFileSync(path.join(home, 'state.json'), 'utf8')).token)
+  await second('PUT', '/relay', { url: relayBase, enabled: true })
+  await until(async () => (await second('GET', '/relay')).state === 'online')
+
+  const { relayUrl } = await second('POST', '/devices/pairing')
+  await page.goto(relayUrl)
+  await page.fill('input', 'CI phone')
+  await page.click('button:has-text("Pair")')
+  await answerPairing(true, second)
+  await page.click('.account')
+  await page.waitForSelector('.account-dialog >> text=Computers')
+  assert.equal(await page.locator('.account-dialog >> text="Connected"').count(), 1)
+  assert.equal(await page.locator('.account-dialog button:has-text("Switch")').count(), 1)
+  const [first] = await local('GET', '/devices')
+  const [paired] = await second('GET', '/devices')
+  assert.equal(paired.name, 'CI phone')
+
+  // Pairing the same computer again keeps its one device entry, so revoking it still cuts the device off.
+  await page.click('.account-dialog >> text=Done')
+  await page.goto((await second('POST', '/devices/pairing')).relayUrl)
+  await page.fill('input', 'CI phone again')
+  await page.click('button:has-text("Pair")')
+  await answerPairing(true, second)
+  await page.waitForSelector('.account')
+  assert.deepEqual((await second('GET', '/devices')).map((d) => [d.id, d.name]), [[paired.id, 'CI phone again']])
+
+  await page.click('.account')
+  await page.click('.account-dialog button:has-text("Switch")')
+  await page.click('text=Projects')
+  await page.waitForSelector('text=Your projects')
+  assert.deepEqual((await local('GET', '/devices')).map((d) => d.id), [first.id])
 })
 
 test('idle sockets cannot lock real devices out', async () => {

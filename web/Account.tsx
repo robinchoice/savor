@@ -7,7 +7,7 @@ import { useNotificationToggle } from './notify'
 import { PleasanceFooter } from './PleasanceFooter'
 import { setPrefs, usePrefs, type Density, type Prefs, type Theme } from './prefs'
 import { qr, RELAY_LABEL, type DeviceRow, type RelayState } from './Settings'
-import { forgetProfile, loadProfile } from './transport'
+import { forgetProfile, loadProfile, loadProfiles, switchProfile } from './transport'
 import { megabytes, type VoiceModels } from './voice'
 import { resetLayout } from './Layout'
 
@@ -357,6 +357,38 @@ function PushDelay() {
   )
 }
 
+// The computers this device is paired with through the relay; Savor talks to one of them at a time.
+function Computers() {
+  const active = loadProfile()!
+  return (
+    <details class="box" open>
+      <summary>
+        <span class="tile">
+          <Laptop size={16} />
+        </span>
+        Computers <ChevronDown size={16} class="chev" />
+      </summary>
+      <div class="box-body">
+        {loadProfiles().map((p) =>
+          p.daemonPk === active.daemonPk ? (
+            <div key={p.daemonPk} class="setting">
+              <span>{p.host ?? 'This computer'}</span>
+              <span class="muted">Connected</span>
+            </div>
+          ) : (
+            <button key={p.daemonPk} class="setting" onClick={() => switchProfile(p)}>
+              <span>{p.host ?? 'Your other computer'}</span>
+              <span class="muted">Switch</span>
+              <ChevronRight size={15} />
+            </button>
+          ),
+        )}
+        <small class="muted">To add a computer, scan the pairing QR code in Savor on it.</small>
+      </div>
+    </details>
+  )
+}
+
 // Savor has no accounts: this is the computer it runs on, or on a paired device, that device.
 export function AccountDialog({ me, projects, toggleAwake, open, onClose }: { me: Me; projects: number; toggleAwake: () => void; open: (what: 'feedback' | 'appearance' | 'shortcuts') => void; onClose: () => void }) {
   const local = me.origin === 'local'
@@ -374,7 +406,7 @@ export function AccountDialog({ me, projects, toggleAwake, open, onClose }: { me
     setUpdate('installing, Savor restarts…')
     desktop!.installUpdate().catch(() => setUpdate('could not install the update'))
   }
-  const forget = () => confirm('Forget this computer on this device? You will need to pair again.') && forgetProfile().then(() => location.reload())
+  const forget = () => confirm('Forget this computer on this device? You will need to pair again.') && forgetProfile().then(() => location.replace('/'))
   return (
     <div class="overlay" onClick={onClose}>
       <div class="dialog account-dialog" onClick={(e) => e.stopPropagation()}>
@@ -418,6 +450,7 @@ export function AccountDialog({ me, projects, toggleAwake, open, onClose }: { me
               </div>
             </div>
           )}
+          {!local && loadProfile() && <Computers />}
           {local && <MyDevices me={me} projects={projects} />}
           {local && <Agents />}
           {local && <VoiceInput />}

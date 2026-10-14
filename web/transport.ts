@@ -33,7 +33,7 @@ export const setTransport = (next: Transport) => (transport = next)
 // ---- device key ----
 // The device's private key is a non-extractable WebCrypto key kept in IndexedDB, so script running
 // on the page can use it but not read it out. Browsers without X25519 in WebCrypto fall back to a
-// raw key.
+// raw key. One key serves every computer the browser pairs with; each of them only knows its public half.
 
 type StoredKey = { privateKey: CryptoKey; pk: Uint8Array } | { sk: Uint8Array; pk: Uint8Array }
 
@@ -82,14 +82,41 @@ function deviceKey(stored: StoredKey): t.DeviceKey {
 
 // ---- remote mode ----
 
-// Which computer this browser is paired with; the key itself lives in IndexedDB.
-export interface RemoteProfile { daemonPk: string; name: string }
+// Which computers this browser is paired with, and the one it talks to; the key itself lives in IndexedDB.
+// `host` is the computer's name, known once it answered.
+export interface RemoteProfile { daemonPk: string; name: string; host?: string }
 const PROFILE_KEY = 'savor-remote'
+const PROFILES_KEY = 'savor-remotes'
 
 export const loadProfile = (): RemoteProfile | null => JSON.parse(localStorage.getItem(PROFILE_KEY) ?? 'null')
+// Browsers paired before there was a list only know their one computer.
+export const loadProfiles = (): RemoteProfile[] => JSON.parse(localStorage.getItem(PROFILES_KEY) ?? 'null') ?? [loadProfile()].filter((p) => p !== null)
 
+function saveProfiles(profiles: RemoteProfile[], active: RemoteProfile | null) {
+  localStorage.setItem(PROFILES_KEY, JSON.stringify(profiles))
+  if (active) localStorage.setItem(PROFILE_KEY, JSON.stringify(active))
+  else localStorage.removeItem(PROFILE_KEY)
+}
+
+export function rememberHost(host: string) {
+  const active = loadProfile()
+  if (!active || active.host === host) return
+  const next = { ...active, host }
+  saveProfiles(loadProfiles().map((p) => (p.daemonPk === next.daemonPk ? next : p)), next)
+}
+
+// The app talks to one computer at a time: switching reloads it with the other one.
+export function switchProfile(profile: RemoteProfile) {
+  localStorage.setItem(PROFILE_KEY, JSON.stringify(profile))
+  location.replace('/')
+}
+
+// Forgets the open computer. The device key goes with the last one.
 export async function forgetProfile() {
-  localStorage.removeItem(PROFILE_KEY)
+  const active = loadProfile()
+  const rest = loadProfiles().filter((p) => p.daemonPk !== active?.daemonPk)
+  saveProfiles(rest, rest[0] ?? null)
+  if (rest.length) return
   await keyStore('readwrite', (s) => s.delete('device'))
   await keyStore('readwrite', (s) => s.delete('profile'))
 }
@@ -121,7 +148,7 @@ async function welcome(ws: WebSocket, hello: object) {
 // asks before it lets the device in; onCheck gets the number both of them show meanwhile.
 export async function pairThroughRelay(daemonPkText: string, code: string, name: string, onCheck: (check: string) => void) {
   const daemonPk = t.publicKey(daemonPkText)
-  const key = await createDeviceKey()
+  const key = (await keyStore<StoredKey | undefined>('readonly', (s) => s.get('device'))) ?? (await createDeviceKey())
   const ws = relaySocket(daemonPk)
   const pairing = t.devicePairing(daemonPk, code)
   const { channel, check } = pairing.finish(await welcome(ws, pairing.hello))
@@ -141,7 +168,8 @@ export async function pairThroughRelay(daemonPkText: string, code: string, name:
   }
   ws.close()
   if (!result.paired) throw new Error('Pairing was not allowed on your computer.')
-  localStorage.setItem(PROFILE_KEY, JSON.stringify({ daemonPk: daemonPkText, name }))
+  const profile = { daemonPk: daemonPkText, name }
+  saveProfiles([...loadProfiles().filter((p) => p.daemonPk !== daemonPkText), profile], profile)
 }
 
 // `on` is the socket a stream was last requested on.
