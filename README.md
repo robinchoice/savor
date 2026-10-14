@@ -232,9 +232,10 @@ Project layout:
 ```
 <project>/.savor/
   project.json, ROLE.md, processes.json, backlog.json
+  actions.jsonl                  what agents changed through Savor's tools, and what they tried
   threads/<id>/thread.json, messages.jsonl, activity.jsonl, attachments/
   decisions/<id>.json
-  documents/<id>.md
+  documents/<id>.md, <id>.json   a document and where its last change came from
   workflows/<id>.json
 ~/.savor/worktrees/<project id>/<branch>/   git worktrees of conversations
 ```

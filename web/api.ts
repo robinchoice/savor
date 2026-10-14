@@ -206,7 +206,7 @@ export interface Project {
   type?: string
   counts: { working: number; blocked: number; unread: number; open: number }
 }
-export interface Doc { id: string; title: string; content: string; updatedAt: string }
+export interface Doc { id: string; title: string; content: string; updatedAt: string; origin?: 'local' | 'remote' }
 export interface Workflow { id: string; name: string; prompt: string; collection: string; cron: string | null; timezone: string; scheduleLabel: string | null; enabled: boolean; catchUp: boolean; button: boolean; onModelChange: boolean; model: string | null; next: string[]; lastRunAt: string | null; threadId: string | null; budgetUsd: number | null; monthlyBudgetUsd: number | null; nextRunAt?: string | null; lastRun?: Run | null; month?: { usd: number; tokens: number }; thread?: { id: string; title: string } | null }
 // A run of a workflow. A skipped one has no conversation of its own: threadId is the conversation that was in its way.
 export interface Run { at: string; trigger: 'scheduled' | 'manual' | 'caught' | 'early' | 'model'; due?: string; model?: string; status: 'working' | 'needs' | 'stopped' | 'budget' | 'failed' | 'finished' | 'skipped'; threadId: string; summary: string; workedMs: number; usd?: number; tokens?: number }

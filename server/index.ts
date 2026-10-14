@@ -894,13 +894,13 @@ route('POST', '/projects/:pid/import', (params, b, ctx) => {
 
 route('GET', '/projects/:pid/docs', (params) => store.listDocs(project(params)))
 route('GET', '/projects/:pid/docs/:id', (params) => store.getDoc(project(params), params.id))
-route('POST', '/projects/:pid/docs', (params, b) => {
-  const doc = store.saveDoc(project(params), { title: b.title, content: b.content ?? '' })
+route('POST', '/projects/:pid/docs', (params, b, ctx) => {
+  const doc = store.saveDoc(project(params), { title: b.title, content: b.content ?? '' }, { origin: ctx.auth.origin })
   emit({ type: 'documents', projectId: params.pid })
   return doc
 })
-route('PUT', '/projects/:pid/docs/:id', (params, b) => {
-  const doc = store.saveDoc(project(params), { id: params.id, title: b.title, content: b.content })
+route('PUT', '/projects/:pid/docs/:id', (params, b, ctx) => {
+  const doc = store.saveDoc(project(params), { id: params.id, title: b.title, content: b.content }, { origin: ctx.auth.origin })
   emit({ type: 'documents', projectId: params.pid })
   return doc
 })
@@ -972,11 +972,11 @@ route('GET', '/overview', () => {
 // ---- backlog ----
 
 route('GET', '/backlog', () => ({ items: store.listProjects().flatMap((p) => store.readBacklog(p).items.map((i) => ({ ...i, projectId: p.id }))) }))
-route('POST', '/projects/:pid/backlog', (params, b) => {
+route('POST', '/projects/:pid/backlog', (params, b, ctx) => {
   const p = project(params)
   const title = typeof b.title === 'string' ? b.title.trim() : ''
   if (!title) throw new BadRequest('Describe what to do.')
-  const item = store.addBacklogItem(p, title)
+  const item = store.addBacklogItem(p, title, { origin: ctx.auth.origin })
   emit({ type: 'backlog', projectId: p.id })
   return item
 })

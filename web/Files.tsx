@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks'
 import { lazy, Suspense } from 'preact/compat'
-import { ChevronDown, ChevronRight, File, FileText, Folder, Plus, Trash2 } from 'lucide-preact'
+import { ChevronDown, ChevronRight, File, FileText, Folder, Plus, Smartphone, Trash2 } from 'lucide-preact'
 import { api, go, useApi, type Doc, type Project } from './api'
 
 // The editors are big: they load when a file or document opens.
@@ -29,7 +29,7 @@ export function FilesView({ project, rest }: { project: Project; rest: string[] 
         </div>
         {docs?.map((d) => (
           <a key={d.id} class={`tree-item ${kind === 'doc' && id === d.id ? 'active' : ''}`} href={`#/p/${project.id}/files/doc/${d.id}`}>
-            <FileText size={14} /> {d.title}
+            <FileText size={14} /> {d.title} {d.origin === 'remote' && <span class="muted" title="Last changed from a paired device"><Smartphone size={12} /></span>}
           </a>
         ))}
         {docs && !docs.length && <p class="muted small pad">No documents yet.</p>}

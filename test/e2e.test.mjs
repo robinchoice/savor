@@ -633,6 +633,7 @@ test('Codex runs through the app-server protocol with approvals and questions', 
   assert.deepEqual(decision.options, ['Red', 'Blue'])
   await api('POST', `${t}/decisions`, { answers: [{ id: decision.id, selected: 1 }] })
   await until(async () => (await api('GET', t)).body.messages.some((m) => m.text === 'Codex answered: Blue'))
+  assert.equal((await api('GET', t)).body.decisions.find((d) => d.id === decision.id).origin, 'local')
   assert.ok((await api('GET', `${t}/activity`)).body.some((a) => a.type === 'command' && a.label === 'echo hi'))
   // A mode the provider does not have is refused, and the project's default agent goes back to Claude.
   assert.equal((await api('POST', `/projects/${project.id}/threads`, { text: 'x', agent: { provider: 'codex', permissionMode: 'bypassPermissions' } })).status, 400)
@@ -1602,8 +1603,19 @@ test('agents add projects: a new folder gets a git repository, an existing proje
   await until(async () => (await api('GET', `/projects/${project.id}/threads/${remote.id}`)).body.messages.some((m) => m.text === 'Echo: make a project'))
   const remoteClient = await connect(remote)
   const refused = await call(remoteClient, 'create_project', { path: path.join(TMP, 'phone-made') })
-  await remoteClient.close()
   assert.ok(refused.isError && !fs.existsSync(path.join(TMP, 'phone-made')), refused.text)
+  const logged = fs.readFileSync(path.join(PROJECT, '.savor', 'actions.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l)).at(-1)
+  assert.deepEqual([logged.tool, logged.threadId, logged.origin, logged.device, logged.error], ['create_project', remote.id, 'remote', 'CI project phone', 'Projects can only be added from input on this computer.'])
+
+  // What it writes is marked as remote, until a change on this computer.
+  const doc = JSON.parse((await call(remoteClient, 'create_document', { title: 'Phone notes', content: 'from the phone' })).text)
+  await remoteClient.close()
+  const read = async () => (await api('GET', `/projects/${project.id}/docs/${doc.id}`)).body
+  assert.deepEqual([(await read()).origin, (await read()).from.threadId], ['remote', remote.id])
+  await api('PUT', `/projects/${project.id}/docs/${doc.id}`, { title: 'Phone notes', content: 'checked here' })
+  assert.deepEqual([(await read()).origin, (await read()).from], ['local', undefined])
+  await api('DELETE', `/projects/${project.id}/docs/${doc.id}`)
+  assert.ok(!fs.existsSync(path.join(PROJECT, '.savor', 'documents', `${doc.id}.json`)))
 
   await api('DELETE', `/devices/${(await api('GET', '/devices')).body.find((d) => d.name === 'CI project phone').id}`)
   await api('DELETE', `/projects/${made.id}`)
@@ -3049,7 +3061,7 @@ test('the All tab answers questions in place and starts what waits in the backlo
   const call = async (name, args) => JSON.parse((await client.callTool({ name, arguments: args })).content[0].text)
   const added = await call('add_to_backlog', { title: 'Translate the footer' })
   assert.ok(added.url.endsWith('/#/all/board'))
-  assert.deepEqual((await call('list_backlog', {})).map((i) => [i.id, i.title]), [[added.id, 'Translate the footer']])
+  assert.deepEqual((await call('list_backlog', {})).map((i) => [i.id, i.title, i.origin, i.from.threadId]), [[added.id, 'Translate the footer', 'local', done.id]])
   await page.waitForSelector('.board-card:has-text("Translate the footer")')
 
   // They remove items that are done, and an unknown id says so.
@@ -3059,6 +3071,13 @@ test('the All tab answers questions in place and starts what waits in the backlo
   assert.deepEqual(await call('list_backlog', {}), [])
   await page.waitForSelector('.board-card:has-text("Translate the footer")', { state: 'detached' })
   await client.close()
+
+  // The action log has each change, the refused one too, with the conversation that made it.
+  const actions = fs.readFileSync(path.join(PROJECT, '.savor', 'actions.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((a) => a.threadId === done.id)
+  assert.deepEqual(
+    actions.map((a) => [a.tool, a.args.id ?? a.args.title, a.origin, !!a.error]),
+    [['add_to_backlog', 'Translate the footer', 'local', false], ['remove_from_backlog', 'nope', 'local', true], ['remove_from_backlog', added.id, 'local', false]],
+  )
 })
 
 test('on a phone the bar below a conversation swipes to its neighbours, and a result swipes to Finish', async () => {

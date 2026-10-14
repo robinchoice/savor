@@ -1,6 +1,6 @@
 import { Fragment, type JSX } from 'preact'
 import { useState } from 'preact/hooks'
-import { ArrowRight, Check, CheckCheck, ChevronDown, ListChecks, Plus, Clock, Pause, Play, SquareArrowOutUpRight, Trash2, TriangleAlert, X } from 'lucide-preact'
+import { ArrowRight, Check, CheckCheck, ChevronDown, ListChecks, Plus, Clock, Pause, Play, Smartphone, SquareArrowOutUpRight, Trash2, TriangleAlert, X } from 'lucide-preact'
 import { api, avatarStyle, formatStamp, go, initial, kindOf, noticeOf, NOTICES, RINGS, useApi, type NoticeType, type AgentConfig, type ApprovalOption, type Attachment, type Decision, type Project, type Thread, type Workflow } from './api'
 import { Composer } from './Composer'
 import { byUrgency, ContextActions, Elapsed, NextButton, plain, ThreadCard, ThreadView } from './Conversations'
@@ -411,7 +411,7 @@ function AllInbox({ threads, projects, byId, rest }: { threads?: Listed[]; proje
   )
 }
 
-interface BacklogItem { id: string; title: string; createdAt: string; projectId: string }
+interface BacklogItem { id: string; title: string; createdAt: string; projectId: string; origin?: 'local' | 'remote' }
 
 // What to start next and what agents work on now. Questions and results stay in Overview and Inbox.
 function AllBoard({ threads, projects, byId, only }: { threads?: Listed[]; projects: Project[]; byId: Map<string, Project>; only?: Project }) {
@@ -457,7 +457,9 @@ function AllBoard({ threads, projects, byId, only }: { threads?: Listed[]; proje
             <Avatar project={byId.get(item.projectId)} /> {byId.get(item.projectId)?.name}
           </>
         )}
-        <span class="ov-meta">{formatStamp(item.createdAt)}</span>
+        <span class="ov-meta">
+          {item.origin === 'remote' && <span title="Added from a paired device"><Smartphone size={12} /></span>} {formatStamp(item.createdAt)}
+        </span>
       </div>
       <div class="board-title">{item.title}</div>
       <div class="board-actions">

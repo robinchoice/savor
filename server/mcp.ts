@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import fs from 'node:fs'
 import path from 'node:path'
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import { McpServer, type ToolCallback } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import { z } from 'zod'
 import * as store from './store.js'
@@ -36,6 +36,39 @@ function buildServer(p: Project, tid: string) {
   const threadUrl = (id: string, project = p) => appUrl(`/p/${project.id}/t/${id}`)
   const touchThread = () => emit({ type: 'thread', projectId: p.id, threadId: tid })
   const modelInfo = () => store.getThread(p, tid).agent
+  // What this conversation's agent writes carries the origin of the input it works on.
+  const provenance = (): store.Provenance => ({ origin: agents.originOf(p, tid), from: { projectId: p.id, threadId: tid } })
+
+  // A tool that changes something. Each call goes to the action log of the project it changed, a refused one too.
+  const changed = (ref: unknown) => {
+    try {
+      return typeof ref === 'string' ? findProject(ref) : p
+    } catch {
+      return p
+    }
+  }
+  const change = <I extends z.ZodRawShape>(name: string, config: { description: string; inputSchema: I }, cb: ToolCallback<I>) =>
+    server.registerTool(name, config, (async (args: Record<string, unknown>, extra: unknown) => {
+      let error: string | undefined
+      try {
+        return await (cb as (args: unknown, extra: unknown) => unknown)(args, extra)
+      } catch (e) {
+        error = (e as Error).message
+        throw e
+      } finally {
+        store.logAction(changed(args.project), {
+          at: store.now(),
+          tool: name,
+          args: Object.fromEntries(Object.entries(args).map(([k, v]) => [k, typeof v === 'string' && v.length > 200 ? `${v.slice(0, 200)}…` : v])),
+          ...(error && { error }),
+          projectId: p.id,
+          threadId: tid,
+          origin: agents.originOf(p, tid),
+          device: agents.deviceOf(p, tid),
+          ...(agents.chainedOf(p, tid) && { chained: true }),
+        })
+      }
+    }) as ToolCallback<I>)
 
   // ---- messages ----
 
@@ -135,27 +168,27 @@ function buildServer(p: Project, tid: string) {
   const docUrl = (id: string) => appUrl(`/p/${p.id}/files/doc/${id}`)
 
   server.registerTool('list_documents', { description: 'List documents in this project.' }, async () =>
-    ok(store.listDocs(p).map(({ id, title, updatedAt }) => ({ id, title, updatedAt, url: docUrl(id) }))),
+    ok(store.listDocs(p).map(({ id, title, updatedAt, origin }) => ({ id, title, updatedAt, origin, url: docUrl(id) }))),
   )
 
   server.registerTool('read_document', { description: 'Read a document (markdown).', inputSchema: { id: z.string() } }, async ({ id }) => ok(store.getDoc(p, id)))
 
-  server.registerTool(
+  change(
     'create_document',
     { description: 'Create a markdown document in this project.', inputSchema: { title: z.string().min(1), content: z.string() } },
     async ({ title, content }) => {
-      const doc = store.saveDoc(p, { title, content })
+      const doc = store.saveDoc(p, { title, content }, provenance())
       emit({ type: 'documents', projectId: p.id })
       return ok({ id: doc.id, url: docUrl(doc.id) })
     },
   )
 
-  server.registerTool(
+  change(
     'update_document',
     { description: 'Replace the title and/or content of a document.', inputSchema: { id: z.string(), title: z.string().optional(), content: z.string().optional() } },
     async ({ id, title, content }) => {
       const prev = store.getDoc(p, id)
-      store.saveDoc(p, { id, title: title ?? prev.title, content: content ?? prev.content })
+      store.saveDoc(p, { id, title: title ?? prev.title, content: content ?? prev.content }, provenance())
       emit({ type: 'documents', projectId: p.id })
       return ok({ id, url: docUrl(id) })
     },
@@ -189,7 +222,7 @@ function buildServer(p: Project, tid: string) {
     return ok({ ...wf, revision: revisionOf(wf) })
   })
 
-  server.registerTool(
+  change(
     'create_workflow',
     { description: 'Save a workflow. With a cron expression Savor runs it on schedule in a new conversation.', inputSchema: workflowShape },
     async (wf) => {
@@ -201,7 +234,7 @@ function buildServer(p: Project, tid: string) {
     },
   )
 
-  server.registerTool(
+  change(
     'update_workflow',
     {
       description: 'Update fields of a workflow, with the revision read_workflow returned for it.',
@@ -219,7 +252,7 @@ function buildServer(p: Project, tid: string) {
     },
   )
 
-  server.registerTool(
+  change(
     'delete_workflow',
     { description: 'Delete a workflow, with the revision read_workflow returned for it.', inputSchema: { id: z.string(), revision: z.string() } },
     async ({ id, revision }) => {
@@ -231,14 +264,14 @@ function buildServer(p: Project, tid: string) {
     },
   )
 
-  server.registerTool('run_workflow', { description: 'Run a workflow now in a new conversation.', inputSchema: { id: z.string() } }, async ({ id }) => {
+  change('run_workflow', { description: 'Run a workflow now in a new conversation.', inputSchema: { id: z.string() } }, async ({ id }) => {
     const t = runWorkflow(p.id, id, agents.originOf(p, tid), undefined, agents.chainedOf(p, tid))
     return ok({ threadId: t.id, url: threadUrl(t.id) })
   })
 
   // ---- backlog ----
 
-  server.registerTool(
+  change(
     'add_to_backlog',
     {
       description:
@@ -247,7 +280,7 @@ function buildServer(p: Project, tid: string) {
     },
     async ({ title, project }) => {
       const target = project ? findProject(project) : p
-      const item = store.addBacklogItem(target, title)
+      const item = store.addBacklogItem(target, title, provenance())
       emit({ type: 'backlog', projectId: target.id })
       return ok({ id: item.id, project: target.id, url: appUrl('/all/board') })
     },
@@ -257,7 +290,7 @@ function buildServer(p: Project, tid: string) {
     ok(store.readBacklog(project ? findProject(project) : p).items),
   )
 
-  server.registerTool(
+  change(
     'remove_from_backlog',
     {
       description:
@@ -278,7 +311,7 @@ function buildServer(p: Project, tid: string) {
     ok(store.listProjects().map(({ id, name, path }) => ({ id, name, path }))),
   )
 
-  server.registerTool(
+  change(
     'create_project',
     {
       description:
@@ -297,7 +330,7 @@ function buildServer(p: Project, tid: string) {
   const approved = async (title: string, detail: string, allow: string) =>
     (await agents.askApproval(p, tid, { title, detail, options: [{ id: 'allow', label: allow, kind: 'allow' }, { id: 'deny', label: 'Cancel', kind: 'deny' }] })).choice === 'allow'
 
-  server.registerTool(
+  change(
     'move_project',
     {
       description:
@@ -332,7 +365,7 @@ function buildServer(p: Project, tid: string) {
     },
   )
 
-  server.registerTool(
+  change(
     'remove_project',
     {
       description: 'Remove a project from Savor. Its folder and the conversations in its .savor stay on disk; adding the folder again brings them back. The user approves it here first.',
@@ -349,7 +382,7 @@ function buildServer(p: Project, tid: string) {
     },
   )
 
-  server.registerTool(
+  change(
     'start_conversation',
     {
       description:
@@ -419,7 +452,7 @@ function buildServer(p: Project, tid: string) {
     },
   )
 
-  server.registerTool(
+  change(
     'send_to_conversation',
     {
       description:
@@ -445,7 +478,7 @@ function buildServer(p: Project, tid: string) {
     },
   )
 
-  server.registerTool(
+  change(
     'complete_conversation',
     {
       description:
@@ -467,7 +500,7 @@ function buildServer(p: Project, tid: string) {
 
   // ---- background processes ----
 
-  server.registerTool(
+  change(
     'register_process',
     {
       description: 'Register a background process you started (server, watcher, long job) right after launch.',
@@ -486,7 +519,7 @@ function buildServer(p: Project, tid: string) {
     },
   )
 
-  server.registerTool('unregister_process', { description: 'Unregister a process after stopping it.', inputSchema: { pid: z.number().int() } }, async ({ pid }) => {
+  change('unregister_process', { description: 'Unregister a process after stopping it.', inputSchema: { pid: z.number().int() } }, async ({ pid }) => {
     processes.unregister(p, pid)
     return ok({ unregistered: pid })
   })

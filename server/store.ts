@@ -28,6 +28,9 @@ export interface Project {
 }
 export interface Question { title: string; body: string; options: string[]; recommended?: number }
 export type Origin = 'local' | 'remote'
+// Where a backlog item or document came from: the origin of the input that wrote it, and the conversation whose agent did.
+// Old ones have none and count as local, like old messages.
+export interface Provenance { origin: Origin; from?: { projectId: string; threadId: string } }
 export interface ApprovalOption { id: string; label: string; kind: 'allow' | 'deny' }
 // A field of a form an MCP server asks the user to fill in. `min` and `max` bound a number, or the length of a string.
 export interface FormField { name: string; label: string; description?: string; type: 'string' | 'number' | 'integer' | 'boolean' | 'enum'; required: boolean; format?: string; options?: { value: string; label: string }[]; default?: string | number | boolean; min?: number; max?: number }
@@ -134,8 +137,10 @@ export interface Decision {
   answer: string | null
   resolved: boolean
   createdAt: string
+  // Where the answer came from.
+  origin?: Origin
 }
-export interface Doc { id: string; title: string; content: string; updatedAt: string }
+export interface Doc extends Partial<Provenance> { id: string; title: string; content: string; updatedAt: string }
 export interface Workflow {
   id: string
   name: string
@@ -547,6 +552,7 @@ export const saveDecision = (p: Project, d: Decision) => writeJson(path.join(dec
 
 const docsDir = (p: Project) => path.join(dataDir(p), 'documents')
 
+// A document is its markdown file; where its content came from sits next to it in <id>.json.
 function readDoc(file: string): Doc {
   const [first, ...rest] = fs.readFileSync(file, 'utf8').split('\n')
   return {
@@ -554,6 +560,7 @@ function readDoc(file: string): Doc {
     title: first.replace(/^#\s*/, ''),
     content: rest.join('\n').replace(/^\n/, ''),
     updatedAt: fs.statSync(file).mtime.toISOString(),
+    ...readJson<Partial<Provenance>>(file.replace(/\.md$/, '.json'), {}),
   }
 }
 
@@ -572,29 +579,31 @@ export function getDoc(p: Project, id: string): Doc {
   return readDoc(file)
 }
 
-export function saveDoc(p: Project, doc: { id?: string; title: string; content: string }): Doc {
+// Like a workflow's, a document's origin is that of its last change.
+export function saveDoc(p: Project, doc: { id?: string; title: string; content: string }, by: Provenance): Doc {
   const id = doc.id ? path.basename(doc.id) : newId()
   fs.mkdirSync(docsDir(p), { recursive: true })
   const file = path.join(docsDir(p), `${id}.md`)
   fs.writeFileSync(file, `# ${doc.title}\n\n${doc.content}`)
+  writeJson(path.join(docsDir(p), `${id}.json`), by)
   return readDoc(file)
 }
 
 export function deleteDoc(p: Project, id: string) {
-  fs.rmSync(path.join(docsDir(p), `${path.basename(id)}.md`), { force: true })
+  for (const ext of ['.md', '.json']) fs.rmSync(path.join(docsDir(p), `${path.basename(id)}${ext}`), { force: true })
 }
 
 // ---- backlog ----
 
 // What to start later, added by the user or by agents with add_to_backlog.
-export interface BacklogItem { id: string; title: string; createdAt: string }
+export interface BacklogItem extends Partial<Provenance> { id: string; title: string; createdAt: string }
 export interface Backlog { items: BacklogItem[] }
 const backlogFile = (p: Project) => path.join(dataDir(p), 'backlog.json')
 export const readBacklog = (p: Project): Backlog => ({ items: readJson<Partial<Backlog>>(backlogFile(p), {}).items ?? [] })
 export const saveBacklog = (p: Project, b: Backlog) => writeJson(backlogFile(p), b)
-export function addBacklogItem(p: Project, title: string): BacklogItem {
+export function addBacklogItem(p: Project, title: string, by: Provenance): BacklogItem {
   const backlog = readBacklog(p)
-  const item = { id: newId(), title, createdAt: now() }
+  const item = { id: newId(), title, createdAt: now(), ...by }
   saveBacklog(p, { ...backlog, items: [item, ...backlog.items] })
   return item
 }
@@ -604,6 +613,30 @@ export function removeBacklogItem(p: Project, id: string): boolean {
   const items = backlog.items.filter((i) => i.id !== id)
   saveBacklog(p, { ...backlog, items })
   return items.length < backlog.items.length
+}
+
+// ---- action log ----
+
+// A change an agent made through one of Savor's tools, or tried to make: the tool, its arguments with long texts cut short,
+// and the conversation that called it with the origin and device of the input it worked on.
+export interface Action {
+  at: string
+  tool: string
+  args: Record<string, unknown>
+  error?: string
+  projectId: string
+  threadId: string
+  origin: Origin
+  device?: string
+  chained?: boolean
+}
+// One JSON line per action in the project it changed. Past 1 MB the file becomes actions.1.jsonl, replacing the one before.
+const ACTION_LOG_MAX = 1_000_000
+export function logAction(p: Project, action: Action) {
+  const file = path.join(dataDir(p), 'actions.jsonl')
+  fs.mkdirSync(dataDir(p), { recursive: true })
+  if (fs.existsSync(file) && fs.statSync(file).size > ACTION_LOG_MAX) fs.renameSync(file, path.join(dataDir(p), 'actions.1.jsonl'))
+  fs.appendFileSync(file, JSON.stringify(action) + '\n')
 }
 
 // ---- workflows ----

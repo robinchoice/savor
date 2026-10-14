@@ -525,6 +525,7 @@ export function answerDecisions(p: Project, tid: string, answers: { id: string; 
     d.resolved = true
     d.selected = a.selected ?? null
     d.answer = a.selected == null ? a.answer?.trim() || null : null
+    d.origin = comment.origin
     store.saveDecision(p, d)
     lines.push(`Decision: ${d.title}\n${d.selected != null ? `Selected: ${d.options[d.selected]}` : d.answer != null ? `Answer: ${d.answer}` : 'Not answered'}`)
     groups.add(d.groupId)
