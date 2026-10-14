@@ -24,14 +24,14 @@ Commit finished steps with a short message.
 Set up this project for a piece of academic writing.
 
 1. Create the layout: manuscript/ with 01-introduction.md as a start, sources/, notes/ with an empty ai-use.md, export/ (ignored by git), an empty references.bib and PROJECT.md.
-2. Check whether pandoc is installed, and for PDF output a LaTeX engine or typst. Note what is missing and how to install it on this system.
-3. Ask me, with options where they make sense:
+2. Check whether pandoc is installed. Without it there is no export: offer to install it for me (on Windows with `winget install --exact --id JohnMacFarlane.Pandoc`, on macOS with Homebrew if it is there, otherwise the .pkg from github.com/jgm/pandoc/releases, on Linux with the package manager) and do it once I agree. LaTeX or typst are needed only for PDF output; check them only if I choose that.
+3. Assume I have never used a terminal, Markdown, git or a reference manager. Explain each term you need in half a sentence, and recommend the simplest choice. Ask me, with options where they make sense:
    - topic, working title and research question (free text)
    - the kind of work: term paper, bachelor's thesis, master's thesis, article, other
    - citation style: APA 7, DIN ISO 690, Harvard, IEEE, Chicago author-date, or the CSL file of my university
-   - what I hand in: DOCX, PDF via LaTeX, PDF via typst
-   - where my sources live: Zotero with Better BibTeX auto-export (then I give you the path of the exported .bib), PDFs I put in sources/, or Open Notebook
+   - what I hand in: DOCX (recommended: opens in Word, which also saves it as PDF), PDF via LaTeX, PDF via typst
+   - where my sources live: PDFs I put in sources/ (recommended without a reference manager), Zotero with Better BibTeX auto-export (then I give you the path of the exported .bib), or Open Notebook
    - language, target length and deadline
    - whether there is a template from my university
 
-After my answers: write PROJECT.md with a line `Target length: <number> words`, fetch the CSL style from the official repository (github.com/citation-style-language/styles) into styles/, write pandoc.yaml with the top-level keys `to` (docx, latex or typst), `bibliography`, `csl`, `citeproc: true` and, if there is one, `reference-doc` or `template`, but without `input-files`: Savor's Export tab passes the chapters of manuscript/ in name order, link or copy the Zotero export to references.bib, rename and outline the chapters for the kind of work and language, try an export, and commit.
+After my answers: write PROJECT.md with a line `Target length: <number> words`, fetch the CSL style from the official repository (github.com/citation-style-language/styles) into styles/, write pandoc.yaml with the top-level keys `to` (docx, latex or typst), `bibliography`, `csl`, `citeproc: true`, if there is one `reference-doc` or `template`, and `lang`, `title`, `author` and `reference-section-title` (the bibliography's heading in the work's language) under `metadata:`, since pandoc rejects them as top-level keys; but without `input-files`: Savor's Export tab passes the chapters of manuscript/ in name order, link or copy the Zotero export to references.bib, rename and outline the chapters for the kind of work and language, try an export, and commit.

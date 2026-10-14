@@ -2,7 +2,7 @@
 title: Check citations
 blurb: Every [@key] resolves, every DOI exists, and the cited source says what the text claims.
 category: Academic writing
-schedule: 0 2 * * *
+schedule: 0 9 * * 1
 ---
 Check the citations in manuscript/.
 

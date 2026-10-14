@@ -1122,6 +1122,9 @@ details.box[open] > summary .chev { transform: rotate(180deg); }
 .setup-list { display: flex; flex-direction: column; gap: 6px; }
 .setup-list .setting { padding: 10px 12px; border-radius: 10px; background: var(--card); border: 1.5px solid transparent; }
 .setup-list .setting.pick.selected { border-color: var(--link); background: var(--raised); }
+.install-help { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; }
+.copy-line { display: flex; align-items: center; gap: 6px; padding: 2px 2px 2px 10px; border-radius: 8px; background: var(--raised); }
+.copy-line code { flex: 1; overflow-x: auto; white-space: nowrap; background: none; }
 .setup-project { display: flex; flex-direction: column; gap: 8px; }
 .setup-project form { display: flex; flex-direction: column; gap: 8px; }
 .setup-dialog .setting select { width: auto; max-width: 60%; }

@@ -65,6 +65,10 @@ export function ExportView({ project }: { project: Project }) {
     const t = await api<{ id: string }>('POST', `/projects/${project.id}/threads`, { text })
     go(`/p/${project.id}/t/${t.id}`)
   }
+  const install = async () => {
+    const t = await api<{ id: string }>('POST', `/projects/${project.id}/threads`, { text: `Install ${state!.missingTools.join(' and ')} on this computer so that the export works. Use the system's package manager if there is one, otherwise the official installer, and tell me if I need to confirm anything.` })
+    go(`/p/${project.id}/t/${t.id}`)
+  }
   if (!state) return <div class="page" />
   const problems = state.checks.some((c) => c.level === 'error' || c.level === 'warn')
   const label = (FORMATS.find(([id]) => id === state.format) ?? [state.format, state.format])[1]
@@ -139,7 +143,10 @@ export function ExportView({ project }: { project: Project }) {
         {state.missingTools.length > 0 && (
           <div class="ws-card missing">
             <b>{state.missingTools.join(' and ')} {state.missingTools.length > 1 ? 'are' : 'is'} not installed.</b>
-            <span class="muted">The export needs {state.missingTools.join(' and ')} on this computer. Ask an agent to install {state.missingTools.length > 1 ? 'them' : 'it'}, or install {state.missingTools.length > 1 ? 'them' : 'it'} yourself.</span>
+            <span class="muted">The export needs {state.missingTools.join(' and ')} on this computer. The agent can install {state.missingTools.length > 1 ? 'them' : 'it'} for you.</span>
+            <button class="ghost" onClick={install}>
+              Let the agent install {state.missingTools.length > 1 ? 'them' : 'it'}
+            </button>
           </div>
         )}
         <div class="row">

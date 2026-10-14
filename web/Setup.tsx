@@ -1,6 +1,6 @@
 import { useState } from 'preact/hooks'
-import { Archive, Code, Folder, GraduationCap, Plus } from 'lucide-preact'
-import { api, describeModel, desktop, effortLabel, go, modelName, useAgents, type AgentConfig, type Me, type Project, type ProviderInfo } from './api'
+import { Archive, Check, Code, Copy, Folder, GraduationCap, Plus, RefreshCw } from 'lucide-preact'
+import { api, describeModel, desktop, effortLabel, fetchAgents, go, modelName, useAgents, type AgentConfig, type Me, type Project, type ProviderInfo } from './api'
 import { ProviderIcon } from './Conversations'
 import { effortsOf } from './Composer'
 import { recipe } from './recipes'
@@ -33,6 +33,51 @@ export function AgentStatusRow({ agent: a }: { agent: ProviderInfo }) {
         </small>
       </span>
       <span class={a.signedIn ? 'ok' : a.signedIn === false ? 'warn' : 'muted'}>{agentStatus(a)}</span>
+    </div>
+  )
+}
+
+function CopyLine({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false)
+  const copy = () => navigator.clipboard.writeText(text).then(() => (setCopied(true), setTimeout(() => setCopied(false), 1500)))
+  return (
+    <div class="copy-line">
+      <code>{text}</code>
+      <button class="icon-btn" title="Copy" aria-label="Copy" onClick={copy}>
+        {copied ? <Check size={14} /> : <Copy size={14} />}
+      </button>
+    </div>
+  )
+}
+
+// Without a signed-in agent: how to get Claude Code on this system, then a look again without a restart.
+function InstallHelp({ system, claude, onCheck }: { system: string; claude?: ProviderInfo; onCheck: () => Promise<void> }) {
+  const [checking, setChecking] = useState(false)
+  const win = system.startsWith('Windows')
+  const check = async () => (setChecking(true), await onCheck(), setChecking(false))
+  return (
+    <div class="box install-help">
+      <b>Get Claude Code</b>
+      <small class="muted">
+        It needs a Claude Pro or Max plan; the free plan does not include it. You use the terminal only for these two steps.
+      </small>
+      {!claude?.installed && (
+        <>
+          <span>1. Open {win ? 'PowerShell' : 'Terminal'} and run:</span>
+          <CopyLine text={win ? 'winget install Anthropic.ClaudeCode' : 'curl -fsSL https://claude.ai/install.sh | bash'} />
+        </>
+      )}
+      <span>{claude?.installed ? 'Sign in in a terminal' : `2. Then sign in, in a new ${win ? 'PowerShell' : 'Terminal'} window`}. Your browser opens for the login:</span>
+      <CopyLine text={!win && !claude?.installed ? '~/.local/bin/claude auth login' : (claude?.signIn ?? 'claude auth login')} />
+      <div class="row">
+        <button class="ghost" disabled={checking} onClick={check}>
+          <RefreshCw size={14} /> {checking ? 'Looking…' : 'Check again'}
+        </button>
+        <span class="spacer" />
+        <a class="small" href="https://code.claude.com/docs/en/setup" target="_blank" rel="noreferrer">
+          Other ways to install
+        </a>
+      </div>
     </div>
   )
 }
@@ -75,7 +120,9 @@ export function AddProject({ me, setMe, onAdded }: { me: Me; setMe: (m: Me) => v
         await api('PATCH', `/projects/${p.id}`, { ...(template.role && { role: template.role }), ...(template !== CODE && { type: template.slug }) })
         for (const r of template.workflows.map((slug) => recipe(slug)!))
           await api('POST', `/projects/${p.id}/workflows`, { name: r.title, prompt: r.prompt, collection: template.title, cron: r.schedule || null, onModelChange: r.onModelChange, enabled: !template.paused })
-        const t = await api<{ id: string }>('POST', `/projects/${p.id}/threads`, { text: template.setup })
+        // The setup prompt is English; the agent talks in the computer's language instead.
+        const text = `${template.setup}\n\nTalk to me in the language of this computer (${navigator.language}) unless I write in another one.`
+        const t = await api<{ id: string }>('POST', `/projects/${p.id}/threads`, { text })
         onAdded()
         return go(`/p/${p.id}/t/${t.id}`)
       }
@@ -172,7 +219,9 @@ const STEPS = ['Agents', 'Default agent', 'Permissions', 'Shortcuts', 'First pro
 // it may do alone, whether to start with keyboard shortcuts, and where to begin. Skipping keeps Savor's
 // defaults; This computer → Agents changes them later.
 export function SetupWizard({ me, setMe }: { me: Me; setMe: (m: Me) => void }) {
-  const agents = useAgents()
+  const found = useAgents()
+  const [rechecked, setRechecked] = useState<ProviderInfo[]>()
+  const agents = rechecked ?? found
   const [step, setStep] = useState(0)
   const [draft, setDraft] = useState<AgentConfig | null>(null)
   const [error, setError] = useState('')
@@ -218,7 +267,9 @@ export function SetupWizard({ me, setMe }: { me: Me; setMe: (m: Me) => void }) {
                   <AgentStatusRow key={a.id} agent={a} />
                 ))}
               </div>
-              {agents && !installed.length && <p class="error-text">No agent is installed yet. Install Claude Code or Codex, sign in, then reopen Savor.</p>}
+              {agents && !installed.some((a) => a.signedIn) && (
+                <InstallHelp system={me.system} claude={agents.find((a) => a.id === 'claude')} onCheck={async () => setRechecked(await fetchAgents(true))} />
+              )}
             </>
           )}
           {step === 1 && agent && info && (

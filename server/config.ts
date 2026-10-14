@@ -1,4 +1,5 @@
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import pkg from '../package.json' with { type: 'json' }
 
@@ -6,6 +7,11 @@ export const PORT = Number(process.env.SAVOR_PORT ?? 4317)
 export const HOST = process.env.SAVOR_HOST ?? '127.0.0.1'
 export const PUBLIC_URL = process.env.SAVOR_PUBLIC_URL ?? `http://localhost:${PORT}`
 export const VERSION: string = pkg.version
+
+// Claude Code's native installer puts it in ~/.local/bin and leaves PATH to the user, so on a fresh
+// computer Savor would not find it.
+const localBin = path.join(os.homedir(), '.local', 'bin')
+if (!(process.env.PATH ?? '').split(path.delimiter).includes(localBin)) process.env.PATH = [process.env.PATH, localBin].filter(Boolean).join(path.delimiter)
 
 export const BIN = {
   claude: process.env.SAVOR_CLAUDE_BIN ?? 'claude',
