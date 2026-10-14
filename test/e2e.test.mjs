@@ -672,6 +672,10 @@ test('Antigravity continues its conversation with the chosen model, effort and m
   await until(async () => !(await api('GET', t)).body.busy)
   await api('POST', `${t}/messages`, { text: 'again' })
   await until(async () => (await api('GET', t)).body.messages.some((m) => m.text === 'Antigravity echo: again'))
+  // A turn that stops at an action agy cannot ask for says so, instead of ending without a word.
+  await until(async () => !(await api('GET', t)).body.busy)
+  await api('POST', `${t}/messages`, { text: 'run a command' })
+  await until(async () => (await api('GET', t)).body.messages.some((m) => m.kind === 'error' && /RunCommand/.test(m.text)))
   const runs = agentRuns().filter((r) => r.agent === 'antigravity')
   const flag = (r, name) => r.argv[r.argv.indexOf(name) + 1]
   assert.deepEqual([flag(runs[0], '--model'), flag(runs[0], '--effort'), flag(runs[0], '--mode')], ['fake-claude', 'high', 'plan'])

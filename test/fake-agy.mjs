@@ -41,6 +41,11 @@ const conversation = flag('--conversation') ?? 'fake-agy-conversation'
 const input = prompt.slice(prompt.indexOf('New input:\n') + 'New input:\n'.length).trim()
 const step = (i, s) => out({ event: 'step_update', step_update: { conversation_id: conversation, step_index: i, ...s } })
 out({ event: 'init', conversation_id: conversation, init: { model: flag('--model') ?? 'fake-gemini-high', cwd: process.cwd() } })
+// A turn that needs a command ends the way headless agy ends one it cannot ask for: no answer, a denied action.
+if (input === 'run a command') {
+  out({ event: 'result', result: { conversation_id: conversation, status: 'SUCCESS', response: '', denied_actions: [{ action: 'command', display_name: 'RunCommand' }] } })
+  process.exit(0)
+}
 step(1, { state: 'ACTIVE', step_type: 'tool', tool_name: 'run_command', tool_info: { name: 'run_command', parameters: { CommandLine: 'ls' } } })
 step(1, { state: 'DONE', step_type: 'tool', tool_name: 'run_command' })
 step(2, { state: 'DONE', step_type: 'agent_response', usage: { input_tokens: 12000, output_tokens: 10, thinking_tokens: 0, cache_read_tokens: 0 } })

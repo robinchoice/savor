@@ -974,6 +974,7 @@ export const patterns: [RegExp, string][] = [
   [/^(\d+) hours$/, '$1 Stunden'],
   [/^(\d+) days$/, '$1 Tage'],
   [/^(\d+) minutes$/, '$1 Minuten'],
+  [/^Antigravity stopped: it needed permission for (.+) and cannot ask for it in Savor\. Allow it in agy's settings \(permissions\.allow in (.+)\) or choose another mode or agent\.$/, 'Antigravity hat aufgehört: Es brauchte eine Erlaubnis für $1 und kann in Savor nicht danach fragen. Erlaube es in den Einstellungen von agy (permissions.allow in $2) oder wähle einen anderen Modus oder Agenten.'],
 ]
 
 export default de

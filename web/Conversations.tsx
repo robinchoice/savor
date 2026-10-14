@@ -21,7 +21,7 @@ import { keyLabel, useKey, useShortcut } from './Shortcuts'
 import { runInTerminal, setTerminalHome, showTerminal } from './Terminal'
 import { offerUndo, resetWalk, swipeToFinish, ThumbBar, UndoToast } from './Swipe'
 import { Panel, useHidePanel, useNarrow } from './Layout'
-import { plural, t } from './i18n'
+import { plural, t, tx } from './i18n'
 
 const SHELL = /\blanguage-(bash|sh|shell|zsh)\b/
 
@@ -1512,7 +1512,7 @@ function MessageItem({ m, thread, workflow, decisions, active, answers, setAnswe
               ))}
             </div>
           ) : null}
-          {m.text && (m.kind === 'user' ? <div class="plain"><Highlighted text={m.text} q={highlight} /></div> : <Markdown text={m.text} />)}
+          {m.text && (m.kind === 'user' ? <div class="plain"><Highlighted text={m.text} q={highlight} /></div> : <Markdown text={m.kind === 'error' ? tx(m.text) : m.text} />)}
           {m.commits?.length ? (
             <div class="commits">
               {m.commits.map((c) => (

@@ -126,6 +126,8 @@ export class AntigravitySession implements Session {
       const denied = (result?.denied_actions ?? []).map((d: any) => d.display_name ?? d.action)
       if (denied.length) activity.instant('note', `Denied: ${denied.join(', ')}. Antigravity cannot ask for approval here; allow it in agy's settings or pick another mode.`)
       if (signal) return this.host.ended({ error: 'Turn stopped.' })
+      // Headless agy ends a turn at the first action it may not take, often without a word.
+      if (result?.status === 'SUCCESS' && !result.response && denied.length) return this.host.ended({ error: `Antigravity stopped: it needed permission for ${denied.join(', ')} and cannot ask for it in Savor. Allow it in agy's settings (permissions.allow in ~/.gemini/antigravity-cli/settings.json) or choose another mode or agent.` })
       if (result?.status === 'SUCCESS') return this.host.ended({ text: result.response ?? '' })
       const error = result?.error || stderr.trim() || `${BIN.antigravity} exited with ${code}.`
       this.host.ended({ error, resetsAt: /quota|limit|credits/i.test(error) ? await antigravityResets().catch(() => null) : null })
