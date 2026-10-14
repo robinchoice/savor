@@ -1158,6 +1158,11 @@ export function ThreadView({ project, threadId, back, next, siblings }: { projec
                         preview={!browserMode && m.id === lastConclusion?.id && thread.preview}
                         onPreview={() => setView('browser')}
                       />
+                      {m.compacted && (
+                        <div class="compacted-row">
+                          Context compacted while idle · {Math.round(m.compacted.from / 1000)}k → {Math.round(m.compacted.to / 1000)}k tokens
+                        </div>
+                      )}
                     </Fragment>
                   ))}
                   {openPlan && planCard(openPlan, busy || waiting)}

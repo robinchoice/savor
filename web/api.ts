@@ -101,6 +101,7 @@ export interface Message {
   device?: string
   from?: { projectId: string; project: string; threadId: string; label: string }
   delivered?: boolean
+  compacted?: { from: number; to: number }
 }
 export interface Attachment { name: string; dataUrl: string }
 export interface ModeInfo { id: string; label: string; detail: string; unsafe?: boolean }

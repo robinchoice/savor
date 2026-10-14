@@ -5,6 +5,7 @@ import { execFile, spawn, type ChildProcess } from 'node:child_process'
 import readline from 'node:readline'
 import crypto from 'node:crypto'
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import * as store from './store.js'
 import type { ApprovalOption, PlanAgent, PlanStep, Thread } from './store.js'
@@ -40,6 +41,25 @@ const STEP = { pending: 'pending', in_progress: 'active', completed: 'done' } as
 const step = (text: string, status: keyof typeof STEP, active?: string): PlanStep => ({ text, status: STEP[status] ?? 'pending', ...(active && { active }) })
 const resultText = (content: unknown) => (typeof content === 'string' ? content : Array.isArray(content) ? content.map((c) => c?.text ?? '').join('') : '')
 const TASK_END: Record<string, PlanAgent['status']> = { completed: 'done', failed: 'failed', killed: 'stopped', stopped: 'stopped' }
+
+// Claude Code's idle compaction as its settings set it up: the context size it starts at, or null when
+// `idleCompaction` is off. The project's settings override the user's, like in Claude Code.
+export function idleCompaction(cwd: string) {
+  let on = true
+  let min = Number(process.env.CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS) || 200_000
+  const user = process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), '.claude')
+  for (const file of [path.join(user, 'settings.json'), path.join(cwd, '.claude', 'settings.json'), path.join(cwd, '.claude', 'settings.local.json')]) {
+    let s: any
+    try {
+      s = JSON.parse(fs.readFileSync(file, 'utf8'))
+    } catch {
+      continue
+    }
+    if (typeof s?.idleCompaction === 'boolean') on = s.idleCompaction
+    min = Number(s?.env?.CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS) || min
+  }
+  return on ? min : null
+}
 
 const describe = (tool: string, input: any) =>
   tool === 'Bash' ? String(input?.command ?? '') : /^(Edit|Write|MultiEdit|NotebookEdit)$/.test(tool) ? String(input?.file_path ?? '') : JSON.stringify(input, null, 2).slice(0, 1500)
@@ -122,7 +142,7 @@ export class ClaudeSession implements Session {
     const pics = pictures(images)
     // Claude Code runs a slash command only when the last text block starts with it. What stands in
     // front of that block still reaches the model.
-    const content = input.startsWith('/') ? [{ type: 'text', text: context }, ...pics, { type: 'text', text: input }] : [{ type: 'text', text: context + input }, ...pics]
+    const content = input.startsWith('/') ? [...(context ? [{ type: 'text', text: context }] : []), ...pics, { type: 'text', text: input }] : [{ type: 'text', text: context + input }, ...pics]
     this.write({ type: 'user', message: { role: 'user', content } })
   }
 
@@ -181,6 +201,11 @@ export class ClaudeSession implements Session {
       const info = ev.rate_limit_info ?? {}
       this.limit = info.status === 'rejected' && info.resetsAt && !info.isUsingOverage ? info.resetsAt * 1000 : null
       return
+    }
+    // After a compaction the context holds its summary.
+    if (ev.type === 'system' && ev.subtype === 'compact_boundary' && ev.compact_metadata?.post_tokens) {
+      this.tokens = ev.compact_metadata.post_tokens
+      return this.host.context(this.tokens)
     }
     if (ev.type === 'system' && ev.subtype === 'init' && ev.session_id) {
       rememberSession(p, tid, 'claude', ev.session_id)

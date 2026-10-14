@@ -7,7 +7,7 @@ import type { AgentConfig, Message, NoticeType, Origin, Project, Provider, Quest
 import { emit } from './events.js'
 import { appUrl } from './config.js'
 import { Activity, PlanTracker, configKey, forkOf, sessionIdOf, type Answer, type ApprovalRequest, type Host, type Session, type TurnInput } from './session.js'
-import { ClaudeSession } from './claude.js'
+import { ClaudeSession, idleCompaction } from './claude.js'
 import { CodexSession } from './codex.js'
 import { AcpSession } from './acp.js'
 import { AntigravitySession } from './antigravity.js'
@@ -18,7 +18,7 @@ import * as ci from './ci.js'
 import { modelSeen, spent } from './scheduler.js'
 import { listAgents, listUsage, mergeAgent, STATIC } from './providers.js'
 
-const IDLE_CLOSE_MS = 5 * 60_000
+const IDLE_CLOSE_MS = Number(process.env.SAVOR_IDLE_CLOSE_MS ?? 5 * 60_000)
 // A turn that stopped at a usage limit continues this long after the limit resets.
 const LIMIT_MARGIN_MS = 60_000
 const CI_POLL_MS = 20_000
@@ -119,7 +119,7 @@ export function send(p: Project, tid: string, input: Input) {
   // New input replaces the turn that waits for a usage limit to reset; it may go to another agent.
   setResume(p, tid, null)
   const thread = store.updateThread(p, tid, { completed: false, inputAt: store.now() })
-  const queued = busy.has(tid)
+  const queued = busy.has(tid) || compacting.has(tid)
   const msg = post(p, tid, { kind: 'user', text: input.text, images: input.images, files: input.files, modelInfo: thread.agent, origin: input.origin, device: input.device, from: input.from, chained: input.chained || undefined, delivered: !queued })
   if (!input.from) skipAsked(p, tid)
   stopped.delete(tid)
@@ -141,6 +141,7 @@ export function sendNow(p: Project, tid: string) {
   stopped.delete(tid)
   if (busy.has(tid)) current(tid)?.interrupt()
   else {
+    compacting.get(tid)?.kill()
     setResume(p, tid, null)
     pump(p, tid)
   }
@@ -241,7 +242,7 @@ function deliver(p: Project, tid: string, msg: Message) {
 }
 
 function pump(p: Project, tid: string) {
-  if (busy.has(tid) || stopped.has(tid) || store.getThread(p, tid).resumeAt) return
+  if (busy.has(tid) || compacting.has(tid) || stopped.has(tid) || store.getThread(p, tid).resumeAt) return
   const next = store.readMessages(p, tid).find((m) => m.kind === 'user' && m.delivered === false)
   if (next) deliver(p, tid, next)
 }
@@ -263,7 +264,9 @@ export function forget(tid: string) {
   s?.session.kill()
   clearTimeout(resumeTimers.get(tid))
   clearTimeout(ciTimers.get(tid))
-  for (const state of [busy, requests, turnConclusion, preparing, resumeTimers, ciTimers]) state.delete(tid)
+  clearTimeout(compactTimers.get(tid))
+  compacting.get(tid)?.kill()
+  for (const state of [busy, requests, turnConclusion, preparing, resumeTimers, ciTimers, compactTimers, compacting]) state.delete(tid)
   stopped.delete(tid)
 }
 
@@ -475,6 +478,7 @@ function hostFor(p: Project, thread: Thread, holder: { session?: Session }): Hos
       sessions.delete(tid)
       cancelPending(p, tid)
       if (busy.has(tid)) endTurn(p, tid, { error }, thread.agent)
+      else scheduleCompact(p, tid)
     },
   }
 }
@@ -682,6 +686,73 @@ function ciDone(p: Project, tid: string, watch: NonNullable<Thread['ciWatch']>, 
   emit({ type: 'status', projectId: p.id, threadId: tid })
 }
 
+// ---- idle compaction ----
+
+// Claude Code compacts a large conversation left idle shortly before its one-hour prompt cache expires, so
+// the next message doesn't send all of it again uncached. It does that only in its terminal UI, and Savor
+// ends the agent process minutes after a turn: Savor compacts open Claude conversations itself, as Claude's
+// settings say. The time counts from the last message, so a restart keeps it.
+const IDLE_COMPACT_MS = Number(process.env.SAVOR_IDLE_COMPACT_MS ?? 54 * 60_000)
+const CACHE_MS = 60 * 60_000
+const compactTimers = new Map<string, NodeJS.Timeout>()
+const compacting = new Map<string, Session>()
+
+function compactable(p: Project, t: Thread) {
+  const min = t.agent.provider === 'claude' && !t.completed && !!sessionIdOf(t, 'claude') && idleCompaction(store.cwdOf(p, t))
+  return !!min && (t.context?.tokens ?? 0) >= min
+}
+
+function scheduleCompact(p: Project, tid: string) {
+  clearTimeout(compactTimers.get(tid))
+  compactTimers.delete(tid)
+  if (!compactable(p, store.getThread(p, tid))) return
+  const idle = Date.now() - Date.parse(store.readMessages(p, tid).at(-1)?.ts ?? '')
+  if (idle < CACHE_MS) compactTimers.set(tid, setTimeout(() => compact(p, tid), Math.max(0, IDLE_COMPACT_MS - idle)))
+}
+
+// The agent resumes its session for /compact alone, outside of any request. Input that arrives meanwhile
+// waits in the queue; "Send now" ends the compaction.
+function compact(p: Project, tid: string) {
+  compactTimers.delete(tid)
+  const t = store.getThread(p, tid)
+  const last = store.readMessages(p, tid).at(-1)
+  if (!last || !compactable(p, t) || busy.has(tid) || sessions.has(tid) || waiting(p, t)) return
+  const from = t.context!.tokens
+  const holder: { session?: Session } = {}
+  const mine = () => !!holder.session && compacting.get(tid) === holder.session
+  const refuse = () => Promise.reject(new Error('Savor is compacting this conversation.'))
+  const host: Host = {
+    p,
+    tid,
+    cwd: store.cwdOf(p, t),
+    activity: new Activity(p, tid, () => false),
+    plan: new PlanTracker(p, tid, () => '', () => false),
+    backgroundChanged: () => {},
+    working: () => {},
+    model: () => {},
+    // What the context holds after the compaction. The conversation shows it below the message it followed.
+    context: (to) => {
+      if (!mine()) return
+      store.saveThread(p, { ...store.getThread(p, tid), context: { tokens: to, window: t.context!.window } })
+      store.updateMessage(p, tid, last.id, { compacted: { from, to } })
+      emit({ type: 'message', projectId: p.id, threadId: tid })
+    },
+    spent: (usage) => mine() && spent(p, tid, 'claude', usage),
+    approve: refuse,
+    form: refuse,
+    ask: refuse,
+    ended: () => holder.session?.end(),
+    closed: () => {
+      if (!mine()) return
+      compacting.delete(tid)
+      pump(p, tid)
+    },
+  }
+  holder.session = new ClaudeSession(host, t)
+  compacting.set(tid, holder.session)
+  holder.session.start({ context: '', input: '/compact', images: [] })
+}
+
 // ---- restarts ----
 
 const INTERRUPTED = `Savor was restarted while you were working on the input below. Your process was cut off, and so was whatever command or tool call was running. Check what is already done before you repeat anything, then finish the work. This is still the same request: do not acknowledge it again.\n\n`
@@ -694,7 +765,10 @@ export function resumeInterrupted() {
     for (const thread of store.listThreads(p)) {
       if (thread.resumeAt) setResume(p, thread.id, thread.resumeAt)
       if (thread.ciWatch) setCi(p, thread.id, thread.ciWatch, 0)
-      if (!thread.workingSince) continue
+      if (!thread.workingSince) {
+        scheduleCompact(p, thread.id)
+        continue
+      }
       const tid = thread.id
       // Whoever asked for these approvals is gone; the agent asks again when it gets there.
       cancelPending(p, tid)
@@ -714,7 +788,8 @@ export function resumeInterrupted() {
 // The daemon is going down: its agents go with it, and their turns continue at the next start. The
 // sessions are let go first, so their ends don't close the turns.
 export function shutdown() {
-  const all = [...sessions.values()]
+  const all = [...sessions.values()].map((s) => s.session).concat([...compacting.values()])
   sessions.clear()
-  for (const { session } of all) session.kill()
+  compacting.clear()
+  for (const session of all) session.kill()
 }
