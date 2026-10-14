@@ -3,8 +3,8 @@ import { ArrowLeft, GitBranch, GitMerge, MessageSquare, Split, Trophy, X } from 
 import { agentSummary, api, duration, go, PROVIDER_NAMES, useAgents, useApi, type FanoutRun, type Project, type ProviderInfo } from './api'
 import { Markdown, ProviderIcon } from './Conversations'
 import { transport } from './transport'
+import { plural, t } from './i18n'
 
-const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
 const totals = (r: FanoutRun) => ({ added: r.changes.reduce((n, c) => n + (c.additions ?? 0), 0), deleted: r.changes.reduce((n, c) => n + (c.deletions ?? 0), 0) })
 
 // The conversations of a fan-out side by side: answer, changed files and preview. Picking one merges
@@ -17,7 +17,7 @@ export function Fanout({ project, id }: { project: Project; id: string }) {
     return (
       <section class="thread">
         <div class="empty-state" role="status">
-          <p>{error ? `Could not load this comparison: ${error.message}` : 'Loading comparison…'}</p>
+          <p>{error ? t('Could not load this comparison: {error}', { error: error.message }) : t('Loading comparison…')}</p>
         </div>
       </section>
     )
@@ -26,19 +26,19 @@ export function Fanout({ project, id }: { project: Project; id: string }) {
   return (
     <section class="thread fanout">
       <header class="thread-head">
-        <a class="square back" href={`#/p/${project.id}`} title="All conversations">
+        <a class="square back" href={`#/p/${project.id}`} title={t('All conversations')}>
           <ArrowLeft size={17} />
         </a>
         <div class="thread-head-text">
           <h1>{runs[0].thread.title}</h1>
           <div class="thread-sub">
             <span class="status">
-              <Split size={12} /> {plural(runs.length, 'agent')}
+              <Split size={12} /> {plural(runs.length, '{n} agent', '{n} agents')}
             </span>
-            <span class="status">{finished === runs.length ? 'All finished' : `${finished} of ${runs.length} finished`}</span>
+            <span class="status">{finished === runs.length ? t('All finished') : t('{done} of {n} finished', { done: finished, n: runs.length })}</span>
             {winner && (
               <span class="status done">
-                <GitMerge size={12} /> {winner.worktree!.branch} merged
+                <GitMerge size={12} /> {t('{branch} merged', { branch: winner.worktree!.branch })}
               </span>
             )}
           </div>
@@ -55,39 +55,39 @@ export function Fanout({ project, id }: { project: Project; id: string }) {
 }
 
 function Column({ project, run, info, onPick }: { project: Project; run: FanoutRun; info?: ProviderInfo; onPick?: () => void }) {
-  const t = run.thread
+  const th = run.thread
   const wt = run.worktree
-  const working = !!(t.busy || t.waiting)
+  const working = !!(th.busy || th.waiting)
   const { added, deleted } = totals(run)
   const [label, cls] = run.merged
-    ? ['Merged', 'done']
+    ? [t('Merged'), 'done']
     : !wt
-      ? ['Deleted', 'done']
+      ? [t('Deleted'), 'done']
       : working
-        ? ['Working', 'working']
-        : t.needsYou
-          ? ['Your turn', 'needs']
-          : t.error
-            ? ['Error', 'error']
+        ? [t('Working'), 'working']
+        : th.needsYou
+          ? [t('Your turn'), 'needs']
+          : th.error
+            ? [t('Error'), 'error']
             : wt.dirty
-              ? ['Uncommitted changes', 'needs']
-              : ['Ready', '']
+              ? [t('Uncommitted changes'), 'needs']
+              : [t('Ready'), '']
   const openPreview = () => {
-    localStorage.setItem(`savor-view:${t.id}`, 'browser')
-    go(`/p/${project.id}/t/${t.id}`)
+    localStorage.setItem(`savor-view:${th.id}`, 'browser')
+    go(`/p/${project.id}/t/${th.id}`)
   }
   return (
     <article class={`fan-col ${run.merged ? 'won' : ''} ${wt ? '' : 'gone'}`}>
       <header class="fan-col-head">
         <div class="fan-who">
-          <ProviderIcon provider={t.agent.provider} size={16} />
-          <b>{PROVIDER_NAMES[t.agent.provider] ?? t.agent.provider}</b>
+          <ProviderIcon provider={th.agent.provider} size={16} />
+          <b>{PROVIDER_NAMES[th.agent.provider] ?? th.agent.provider}</b>
           <span class={`status ${cls}`}>
             {working && <span class="spinner small" />} {label}
           </span>
         </div>
         <small class="muted">
-          {agentSummary(t.agent, info)}
+          {agentSummary(th.agent, info)}
           {run.workTiming && ` · ${duration(Date.parse(run.workTiming.finishedAt) - Date.parse(run.workTiming.startedAt))}`}
         </small>
         {wt && (
@@ -97,19 +97,19 @@ function Column({ project, run, info, onPick }: { project: Project; run: FanoutR
         )}
       </header>
       <section>
-        <div class="fan-k">Answer</div>
-        {run.answer ? <Markdown text={run.answer} /> : <p class="muted small">{working ? 'Working…' : 'No answer yet.'}</p>}
+        <div class="fan-k">{t('Answer')}</div>
+        {run.answer ? <Markdown text={run.answer} /> : <p class="muted small">{working ? t('Working…') : t('No answer yet.')}</p>}
       </section>
       <section>
         <div class="fan-k">
-          {plural(run.changes.length, 'file')} · <span class="add">+{added}</span> <span class="del">−{deleted}</span>
-          {wt && !run.merged && ` · ${plural(wt.ahead, 'commit')}`}
+          {plural(run.changes.length, '{n} file', '{n} files')} · <span class="add">+{added}</span> <span class="del">−{deleted}</span>
+          {wt && !run.merged && ` · ${plural(wt.ahead, '{n} commit', '{n} commits')}`}
         </div>
         {run.changes.map((c) => (
           <div class="fan-file" key={c.path}>
             <span class="mono">{c.path}</span>
             {c.additions === null ? (
-              <span class="muted">binary</span>
+              <span class="muted">{t('binary')}</span>
             ) : (
               <span>
                 <span class="add">+{c.additions}</span> <span class="del">−{c.deletions}</span>
@@ -119,16 +119,16 @@ function Column({ project, run, info, onPick }: { project: Project; run: FanoutR
         ))}
       </section>
       <section>
-        <div class="fan-k">Preview</div>
-        {t.preview ? <Frame path={`/api/projects/${project.id}/threads/${t.id}/browser/frame?at=${encodeURIComponent(t.updatedAt)}`} url={t.preview} onOpen={openPreview} /> : <p class="muted small">No preview: the agent didn’t open one.</p>}
+        <div class="fan-k">{t('Preview')}</div>
+        {th.preview ? <Frame path={`/api/projects/${project.id}/threads/${th.id}/browser/frame?at=${encodeURIComponent(th.updatedAt)}`} url={th.preview} onOpen={openPreview} /> : <p class="muted small">{t('No preview: the agent didn’t open one.')}</p>}
       </section>
       <footer>
-        <a class="ghost" href={`#/p/${project.id}/t/${t.id}`}>
-          <MessageSquare size={14} /> Open
+        <a class="ghost" href={`#/p/${project.id}/t/${th.id}`}>
+          <MessageSquare size={14} /> {t('Open')}
         </a>
         {onPick && wt && (
-          <button class="primary" disabled={working || !wt.ahead} title={working ? 'Wait until the agent is done' : !wt.ahead ? 'Nothing committed yet: ask the agent to commit its work' : 'Merge this one into the project'} onClick={onPick}>
-            <Trophy size={14} /> Pick
+          <button class="primary" disabled={working || !wt.ahead} title={working ? t('Wait until the agent is done') : !wt.ahead ? t('Nothing committed yet: ask the agent to commit its work') : t('Merge this one into the project')} onClick={onPick}>
+            <Trophy size={14} /> {t('Pick')}
           </button>
         )}
       </footer>
@@ -145,8 +145,8 @@ function Frame({ path, url, onOpen }: { path: string; url: string; onOpen: () =>
     return () => current.startsWith('blob:') && URL.revokeObjectURL(current)
   }, [path])
   return (
-    <button class="fan-frame" title="Open the preview" onClick={onOpen}>
-      {src && !failed ? <img src={src} alt="" onError={() => setFailed(true)} /> : <span class="muted small">{failed ? 'Preview not available' : 'Loading preview…'}</span>}
+    <button class="fan-frame" title={t('Open the preview')} onClick={onOpen}>
+      {src && !failed ? <img src={src} alt="" onError={() => setFailed(true)} /> : <span class="muted small">{failed ? t('Preview not available') : t('Loading preview…')}</span>}
       <span class="fan-url">{url}</span>
     </button>
   )
@@ -177,25 +177,25 @@ function PickDialog({ project, run, others, onClose }: { project: Project; run: 
         <header class="dialog-head">
           <GitMerge size={18} />
           <div class="dialog-title">
-            <b>Merge {wt.branch} into the project?</b>
+            <b>{t('Merge {branch} into the project?', { branch: wt.branch })}</b>
             <small class="muted">
-              {plural(wt.ahead, 'commit')} · {plural(run.changes.length, 'file')} <span class="add">+{added}</span> <span class="del">−{deleted}</span>
+              {plural(wt.ahead, '{n} commit', '{n} commits')} · {plural(run.changes.length, '{n} file', '{n} files')} <span class="add">+{added}</span> <span class="del">−{deleted}</span>
             </small>
           </div>
-          <button class="icon-btn" title="Close" onClick={onClose}>
+          <button class="icon-btn" title={t('Close')} onClick={onClose}>
             <X size={16} />
           </button>
         </header>
         <div class="dialog-body">
-          {wt.dirty && <p class="attn-text">This worktree also has uncommitted changes. Only commits are merged, so ask the agent to commit them first or they stay behind.</p>}
+          {wt.dirty && <p class="attn-text">{t('This worktree also has uncommitted changes. Only commits are merged, so ask the agent to commit them first or they stay behind.')}</p>}
           {rest.length > 0 && (
             <label class="pick-others">
               <input type="checkbox" checked={removeOthers} onChange={(e) => setRemoveOthers(e.currentTarget.checked)} />
               <span>
-                {rest.length === 1 ? 'Delete the other worktree and its branch' : `Delete the other ${rest.length} worktrees and their branches`}
+                {rest.length === 1 ? t('Delete the other worktree and its branch') : t('Delete the other {n} worktrees and their branches', { n: rest.length })}
                 <small class="mono muted">{rest.map((r) => r.worktree!.branch).join(', ')}</small>
                 <small class="muted">
-                  {running > 0 && `${plural(running, 'agent')} still working will be stopped. `}{rest.length === 1 ? 'Its conversation stays' : 'Their conversations stay'} and {rest.length === 1 ? 'is' : 'are'} marked finished.
+                  {running > 0 && `${plural(running, '{n} agent still working will be stopped.', '{n} agents still working will be stopped.')} `}{rest.length === 1 ? t('Its conversation stays and is marked finished.') : t('Their conversations stay and are marked finished.')}
                 </small>
               </span>
             </label>
@@ -203,10 +203,10 @@ function PickDialog({ project, run, others, onClose }: { project: Project; run: 
           {error && <div class="error-text">{error}</div>}
           <div class="pick-actions">
             <button class="ghost" onClick={onClose}>
-              Cancel
+              {t('Cancel')}
             </button>
             <button class="primary" disabled={busy} onClick={merge}>
-              <GitMerge size={14} /> {busy ? 'Merging…' : removeOthers && rest.length ? 'Merge and delete' : 'Merge'}
+              <GitMerge size={14} /> {busy ? t('Merging…') : removeOthers && rest.length ? t('Merge and delete') : t('Merge')}
             </button>
           </div>
         </div>

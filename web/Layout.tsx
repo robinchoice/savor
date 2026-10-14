@@ -4,6 +4,7 @@ import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } fro
 import { GripVertical, PanelsTopLeft } from 'lucide-preact'
 import { setPrefs, usePrefs } from './prefs'
 import { useShortcut } from './Shortcuts'
+import { t } from './i18n'
 
 // On a computer the project's panels sit in a dock: the conversation list, the main view (a conversation's chat
 // or the current page), the stage beside the chat (preview or changes) and the terminal. Each panel renders through
@@ -17,7 +18,8 @@ export type Node = PanelId | Split
 export interface Rect { x: number; y: number; w: number; h: number }
 
 const IDS: PanelId[] = ['list', 'main', 'stage', 'terminal']
-const NAMES: Record<PanelId, string> = { list: 'Conversations', main: 'Chat', stage: 'Preview', terminal: 'Terminal' }
+const NAMES: Record<PanelId, string> = { list: t('Conversations'), main: t('Chat'), stage: t('Preview'), terminal: t('Terminal') }
+
 // In each split one panel takes the room that is left, the first of these it contains; the others keep their size.
 const GROWS: PanelId[] = ['stage', 'main', 'list', 'terminal']
 // The layout as it was before panels could move: list, chat and stage side by side, the terminal below all of them.
@@ -330,7 +332,7 @@ export function Dock({ children }: { children: ComponentChildren }) {
                 if (el && box(id).parentElement !== el) el.appendChild(box(id))
               }}
             />
-            {free && <div class="window-size" title="Resize" onPointerDown={(e) => moveWindow(e, id, 'size')} />}
+            {free && <div class="window-size" title={t('Resize')} onPointerDown={(e) => moveWindow(e, id, 'size')} />}
             {editing && on && (
               <div class={`arrange-cover ${drop?.id === id ? 'dragging' : ''}`} onPointerDown={(e) => arrange(e, id)}>
                 <span>
@@ -345,12 +347,12 @@ export function Dock({ children }: { children: ComponentChildren }) {
       {zoneRect && <div class="drop-zone" style={px(zoneRect)} />}
       {editing && (
         <div class="arrange-bar">
-          <span>Drag a panel onto the edge of another to dock it there, or onto its middle to swap them.</span>
+          <span>{t('Drag a panel onto the edge of another to dock it there, or onto its middle to swap them.')}</span>
           <button class="ghost" onClick={resetLayout}>
-            Reset layout
+            {t('Reset layout')}
           </button>
           <button class="primary" onClick={() => setArranging(false)}>
-            Done
+            {t('Done')}
           </button>
         </div>
       )}
@@ -367,7 +369,7 @@ export function ArrangeButton() {
   useShortcut('arrange', !freeWindows && (() => setArranging(!arranging)))
   if (freeWindows) return null
   return (
-    <button class={`icon-btn ${arranging ? 'on' : ''}`} title="Arrange panels" onClick={() => setArranging(!arranging)}>
+    <button class={`icon-btn ${arranging ? 'on' : ''}`} title={t('Arrange panels')} onClick={() => setArranging(!arranging)}>
       <PanelsTopLeft size={16} />
     </button>
   )

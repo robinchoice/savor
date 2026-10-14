@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'preact/hooks'
 import { ExternalLink, ScrollText, Square, X } from 'lucide-preact'
 import { api, useApi, type Proc, type Project } from './api'
 import { transport } from './transport'
+import { t } from './i18n'
 
 export function ProcessesPopover({ project, close }: { project: Project; close: () => void }) {
   const base = `/projects/${project.id}/processes`
@@ -15,24 +16,25 @@ export function ProcessesPopover({ project, close }: { project: Project; close: 
   }, [])
 
   const showLog = async (pid: number) => setLog({ pid, text: (await transport.request('GET', `/api${base}/${pid}/log`)).body })
-  const kill = (p: Proc) => confirm(`Stop ${p.name} (PID ${p.pid})?`) && api('POST', `${base}/${p.pid}/kill`)
+  const kill = (p: Proc) => confirm(t('Stop {name} (PID {pid})?', { name: p.name, pid: p.pid }))
+ && api('POST', `${base}/${p.pid}/kill`)
 
   return (
     <div class="menu right procs" ref={ref}>
       <div class="panel-head">
-        <b>Background processes</b>
-        <button class="icon-btn" title="Close" onClick={close}>
+        <b>{t('Background processes')}</b>
+        <button class="icon-btn" title={t('Close')} onClick={close}>
           <X size={16} />
         </button>
       </div>
-      {procs && !procs.length && <p class="muted small pad">Nothing running. Agents register dev servers and watchers here.</p>}
+      {procs && !procs.length && <p class="muted small pad">{t('Nothing running. Agents register dev servers and watchers here.')}</p>}
       {procs?.map((p) => (
         <div key={p.pid} class="proc">
           <div class="proc-main">
             <b>{p.name}</b> <span class="muted small">PID {p.pid}</span>
             <div class="mono small muted">{p.command}</div>
             <a class="small" href={`#/p/${project.id}/t/${p.threadId}`} onClick={close}>
-              Open conversation
+              {t('Open conversation')}
             </a>
           </div>
           <div class="row">
@@ -42,17 +44,17 @@ export function ProcessesPopover({ project, close }: { project: Project; close: 
               </a>
             )}
             {p.log && (
-              <button class="icon-btn" title="Log" onClick={() => showLog(p.pid)}>
+              <button class="icon-btn" title={t('Log')} onClick={() => showLog(p.pid)}>
                 <ScrollText size={15} />
               </button>
             )}
-            <button class="icon-btn danger" title="Stop" onClick={() => kill(p)}>
+            <button class="icon-btn danger" title={t('Stop')} onClick={() => kill(p)}>
               <Square size={14} />
             </button>
           </div>
         </div>
       ))}
-      {log && <pre class="log">{log.text || '(empty)'}</pre>}
+      {log && <pre class="log">{log.text || t('(empty)')}</pre>}
     </div>
   )
 }

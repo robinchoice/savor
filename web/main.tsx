@@ -23,6 +23,7 @@ import { StatusBar } from './StatusBar'
 import '@fontsource-variable/geist'
 import '@fontsource-variable/geist-mono'
 import './style.css'
+import { t } from './i18n'
 
 function useRoute() {
   // A query after the path, as in #/p/<id>/new?voice=1, is for the view and not part of the route.
@@ -103,21 +104,21 @@ function App() {
     return (
       <div class="gate">
         <img src="/icon.svg" alt="" />
-        <h1>Savor</h1>
-        <p>This is a Savor relay. To reach your computer from here, open Savor on it, go to Devices & remote access → Pair a device, and scan the QR code.</p>
+        <h1>{t('Savor')}</h1>
+        <p>{t('This is a Savor relay. To reach your computer from here, open Savor on it, go to Devices & remote access → Pair a device, and scan the QR code.')}</p>
       </div>
     )
   if (me === null)
     return mode === 'relay' && !link.connected ? (
       <div class="gate">
         <img src="/icon.svg" alt="" />
-        <h1>Connecting…</h1>
-        <p class="muted">{link.error ?? 'Reaching your computer through the relay.'}</p>
+        <h1>{t('Connecting…')}</h1>
+        <p class="muted">{link.error ?? t('Reaching your computer through the relay.')}</p>
         {loadProfiles()
           .filter((p) => p.daemonPk !== loadProfile()!.daemonPk)
           .map((p) => (
             <button key={p.daemonPk} class="ghost" onClick={() => switchProfile(p)}>
-              Switch to {p.host ?? 'your other computer'}
+              {t('Switch to {host}', { host: p.host ?? t('your other computer') })}
             </button>
           ))}
       </div>
@@ -127,7 +128,7 @@ function App() {
       <div class="gate">
         <img src="/icon.svg" alt="" />
         <h1>Savor</h1>
-        <p>Open the link with <code>?token=…</code> that the daemon printed on start, or pair this device from Settings → Devices on your computer.</p>
+        <p>{t('Open the link with ?token=… that the daemon printed on start, or pair this device from Settings → Devices on your computer.')}</p>
       </div>
     )
 
@@ -160,7 +161,7 @@ function App() {
 
   return (
     <div class={`app ${!docked && terminal && terminalMax ? 'terminal-max' : ''}`}>
-      {mode === 'relay' && !link.connected && <div class="link-banner">Reconnecting to your computer…</div>}
+      {mode === 'relay' && !link.connected && <div class="link-banner">{t('Reconnecting to your computer…')}</div>}
       <UpdateBanner />
       <RestartBanner />
       <TopBar projects={projects ?? []} active={project} all={route[0] === 'all'} me={me} setMe={setMe} />
@@ -196,13 +197,13 @@ function UpdateBanner() {
   return (
     <div class="update-banner">
       <Download size={15} />
-      <span>{state === 'installing' ? `Installing Savor ${version}…` : state === 'failed' ? 'Could not install the update' : `Savor ${version} is ready`}</span>
+      <span>{state === 'installing' ? t('Installing Savor {version}…', { version }) : state === 'failed' ? t('Could not install the update') : t('Savor {version} is ready', { version })}</span>
       {state !== 'installing' && (
         <>
           <button class="ghost small" onClick={install}>
-            Install and restart
+            {t('Install and restart')}
           </button>
-          <button class="icon-btn" title="Later: installs when you quit Savor" onClick={() => setState('dismissed')}>
+          <button class="icon-btn" title={t('Later: installs when you quit Savor')} onClick={() => setState('dismissed')}>
             <X size={14} />
           </button>
         </>
@@ -233,10 +234,10 @@ function RestartBanner() {
   return (
     <div class="update-banner">
       {restarting ? <span class="spinner" /> : <RefreshCw size={15} />}
-      <span>{restarting ? 'Savor is restarting…' : left ? `Savor restarts in ${left} s to finish an update` : 'Savor was updated'}</span>
+      <span>{restarting ? t('Savor is restarting…') : left ? t('Savor restarts in {n} s to finish an update', { n: left }) : t('Savor was updated')}</span>
       {!restarting && (
         <button class="ghost small" onClick={restartNow}>
-          Restart now
+          {t('Restart now')}
         </button>
       )}
     </div>
@@ -301,14 +302,14 @@ function TopBar({ projects, active, all, me, setMe }: { projects: Project[]; act
 
   return (
     <header class="topbar">
-      <a href="#/all" class="brand" title="All projects">
-        <img class="logo" src="/icon.svg" alt="Savor" />
-        <span class="brandname" aria-hidden="true">Savor</span>
+      <a href="#/all" class="brand" title={t('All projects')}>
+        <img class="logo" src="/icon.svg" alt={t('Savor')} />
+        <span class="brandname" aria-hidden="true">{t('Savor')}</span>
       </a>
       <nav class="project-tabs">
-        <a href="#/all" class={`project-tab all-tab ${all ? 'active' : ''}`} title="Conversations and workflows of all projects">
+        <a href="#/all" class={`project-tab all-tab ${all ? 'active' : ''}`} title={t('Conversations and workflows of all projects')}>
           <Layers size={16} />
-          <span class="name">All</span>
+          <span class="name">{t('All')}</span>
           <Counts project={{ counts: { working: total('working'), blocked: total('blocked'), unread: total('unread'), open: total('open') } }} />
         </a>
         <span class="tab-sep" />
@@ -329,9 +330,9 @@ function TopBar({ projects, active, all, me, setMe }: { projects: Project[]; act
                 {initial(p.name)}
               </span>
               <span class="name">{p.name}</span>
-              {p.paused && <span class="muted small">paused</span>}
+              {p.paused && <span class="muted small">{t('paused')}</span>}
               <Counts project={p} />
-              <button class={`tab-pin ${p.pinned ? '' : 'unpinned'}`} title={p.pinned ? 'Unpin: remove the tab' : 'Pin as a tab'} onClick={(e) => togglePin(e, p)}>
+              <button class={`tab-pin ${p.pinned ? '' : 'unpinned'}`} title={p.pinned ? t('Unpin: remove the tab') : t('Pin as a tab')} onClick={(e) => togglePin(e, p)}>
                 {p.pinned ? <PinOff size={13} /> : <Pin size={13} />}
               </button>
             </a>
@@ -343,27 +344,27 @@ function TopBar({ projects, active, all, me, setMe }: { projects: Project[]; act
         <WorkflowButtons />
         <div class="menu-anchor">
           <button class="pill" onClick={() => setMenu(menu === 'projects' ? null : 'projects')}>
-            <FolderOpen size={15} /> Projects <ChevronDown size={14} />
+            <FolderOpen size={15} /> {t('Projects')} <ChevronDown size={14} />
           </button>
           {menu === 'projects' && <ProjectsMenu projects={sorted} active={active} me={me} setMe={setMe} close={() => closeMenu('projects')} />}
         </div>
         {feedbackButton && (
-          <button class="icon-btn wide-only" title="Send feedback" onClick={() => setDialog('feedback')}>
+          <button class="icon-btn wide-only" title={t('Send feedback')} onClick={() => setDialog('feedback')}>
             <MessageSquare size={17} />
           </button>
         )}
         {me.origin === 'local' && (
-          <button class={`icon-btn ${me.awake ? 'on' : ''}`} title={me.awake ? 'Keeping this computer awake' : 'Keep this computer awake'} onClick={toggleAwake}>
+          <button class={`icon-btn ${me.awake ? 'on' : ''}`} title={me.awake ? t('Keeping this computer awake') : t('Keep this computer awake')} onClick={toggleAwake}>
             <Coffee size={17} />
           </button>
         )}
         <div class="menu-anchor">
-          <button class="icon-btn wide-only" title="Appearance" onClick={() => setMenu(menu === 'appearance' ? null : 'appearance')}>
+          <button class="icon-btn wide-only" title={t('Appearance')} onClick={() => setMenu(menu === 'appearance' ? null : 'appearance')}>
             <ThemeIcon size={17} />
           </button>
           {menu === 'appearance' && <AppearanceMenu close={() => closeMenu('appearance')} />}
         </div>
-        <button class="account" title={me.origin === 'local' ? 'This computer' : `Remote device: ${me.device}`} onClick={() => setDialog('account')}>
+        <button class="account" title={me.origin === 'local' ? t('This computer') : t('Remote device: {name}', { name: me.device ?? '' })} onClick={() => setDialog('account')}>
           {me.origin === 'local' ? 'S' : <Smartphone size={15} />}
           <span class="online" />
         </button>
@@ -398,16 +399,16 @@ function TabMenu({ project: p, at, fix, close }: { project: Project; at: { x: nu
     <div ref={ref} class="menu" style={{ position: 'fixed', left: at.x, top: at.y }}>
       {p.fixed ? (
         <button onClick={() => patch({ fixed: false })}>
-          <ArrowDownAZ size={14} /> Sort by name
+          <ArrowDownAZ size={14} /> {t('Sort by name')}
         </button>
       ) : (
         <button onClick={() => (close(), fix())}>
-          <Lock size={14} /> Keep in place
+          <Lock size={14} /> {t('Keep in place')}
         </button>
       )}
       {p.pinned && (
         <button onClick={() => patch({ pinned: false })}>
-          <PinOff size={14} /> Close tab
+          <PinOff size={14} /> {t('Close tab')}
         </button>
       )}
     </div>
@@ -417,22 +418,22 @@ function TabMenu({ project: p, at, fix, close }: { project: Project; at: { x: nu
 const Counts = ({ project: p }: { project: Pick<Project, 'counts'> }) => (
   <>
     {p.counts.working > 0 && (
-      <span class="badge working" title="Working">
+      <span class="badge working" title={t('Working')}>
         <span class="ring busy" /> {p.counts.working}
       </span>
     )}
     {p.counts.blocked > 0 && (
-      <span class="badge blocked" title="Questions, approvals and errors">
+      <span class="badge blocked" title={t('Questions, approvals and errors')}>
         <span class="ring needs" /> {p.counts.blocked}
       </span>
     )}
     {p.counts.unread > 0 && (
-      <span class="badge unread" title="New results">
+      <span class="badge unread" title={t('New results')}>
         <span class="ring unread" /> {p.counts.unread}
       </span>
     )}
     {p.counts.open > 0 && (
-      <span class="badge open" title="Read, not finished">
+      <span class="badge open" title={t('Read, not finished')}>
         <span class="ring open" /> {p.counts.open}
       </span>
     )}
@@ -461,14 +462,14 @@ function ProjectsMenu({ projects, active, me, setMe, close }: { projects: Projec
   return (
     <div class="menu right wide projects" ref={ref}>
       <div class="panel-head">
-        <b>Your projects</b>
-        <button class="icon-btn" title="Close" onClick={close}>
+        <b>{t('Your projects')}</b>
+        <button class="icon-btn" title={t('Close')} onClick={close}>
           <X size={16} />
         </button>
       </div>
       <label class="search">
         <Search size={15} />
-        <input autoFocus placeholder="Find a project…" value={query} onInput={(e) => setQuery(e.currentTarget.value)} />
+        <input autoFocus placeholder={t('Find a project…')} value={query} onInput={(e) => setQuery(e.currentTarget.value)} />
       </label>
       <div class="project-list">
         {shown.map((p) => (
@@ -478,7 +479,7 @@ function ProjectsMenu({ projects, active, me, setMe, close }: { projects: Projec
             </span>
             <span class="name">{p.name}</span>
             <Counts project={p} />
-            <button class={`switch pin ${p.pinned ? 'on' : ''}`} style={{ '--c': p.tint }} title={p.pinned ? 'Unpin: remove the tab' : 'Pin as a tab'} onClick={(e) => pin(e, p)}>
+            <button class={`switch pin ${p.pinned ? 'on' : ''}`} style={{ '--c': p.tint }} title={p.pinned ? t('Unpin: remove the tab') : t('Pin as a tab')} onClick={(e) => pin(e, p)}>
               <i>
                 <Pin size={11} />
               </i>
@@ -509,29 +510,29 @@ function SubBar({ project, projects, section, threadId }: { project: Project; pr
   const tab = (id: string, label: string, Icon: any, href: string, counts?: Project['counts'], extra = '') => (
     <a href={href} class={`subtab ${extra} ${(['t', 'new', undefined].includes(section) ? 't' : section) === id ? 'active' : ''}`}>
       <Icon size={15} /> {label}
-      {counts?.blocked ? <i class="pill-count blocked" title="Questions, approvals and errors">{counts.blocked}</i> : null}
-      {counts?.unread ? <i class="pill-count" title="New results">{counts.unread}</i> : null}
+      {counts?.blocked ? <i class="pill-count blocked" title={t('Questions, approvals and errors')}>{counts.blocked}</i> : null}
+      {counts?.unread ? <i class="pill-count" title={t('New results')}>{counts.unread}</i> : null}
     </a>
   )
   return (
     <div class="subbar">
-      {project.type === 'kontor' && tab('today', 'Today', CalendarCheck, `#/p/${project.id}/today`, undefined, 'extra')}
-      {tab('t', 'Conversations', MessageSquare, `#/p/${project.id}`, project.counts)}
-      {tab('files', 'Files', FilesIcon, `#/p/${project.id}/files`)}
-      {tab('workflows', 'Workflows', WorkflowIcon, `#/p/${project.id}/workflows`)}
-      {project.type === 'academic-writing' && tab('export', 'Export', FileDown, `#/p/${project.id}/export`, undefined, 'extra')}
+      {project.type === 'kontor' && tab('today', t('Today'), CalendarCheck, `#/p/${project.id}/today`, undefined, 'extra')}
+      {tab('t', t('Conversations'), MessageSquare, `#/p/${project.id}`, project.counts)}
+      {tab('files', t('Files'), FilesIcon, `#/p/${project.id}/files`)}
+      {tab('workflows', t('Workflows'), WorkflowIcon, `#/p/${project.id}/workflows`)}
+      {project.type === 'academic-writing' && tab('export', t('Export'), FileDown, `#/p/${project.id}/export`, undefined, 'extra')}
       <ContextActions project={project} projects={projects} threadId={threadId} />
       <div class="subbar-right menu-anchor">
         <ArrangeButton />
         <TerminalButton project={project} />
-        <button class={`icon-btn ${procCount ? 'on' : ''}`} title="Background processes" onClick={() => setMenu(menu === 'procs' ? null : 'procs')}>
+        <button class={`icon-btn ${procCount ? 'on' : ''}`} title={t('Background processes')} onClick={() => setMenu(menu === 'procs' ? null : 'procs')}>
           <Server size={16} />
           {procCount > 0 && <i class="dot-count">{procCount}</i>}
         </button>
-        <a class={`icon-btn ${section === 'settings' ? 'on' : ''}`} title="Project settings" href={`#/p/${project.id}/settings`}>
+        <a class={`icon-btn ${section === 'settings' ? 'on' : ''}`} title={t('Project settings')} href={`#/p/${project.id}/settings`}>
           <SlidersHorizontal size={16} />
         </a>
-        <button class={`icon-btn more ${section === 'settings' ? 'on' : ''}`} title="More" onClick={() => setMenu(menu === 'more' ? null : 'more')}>
+        <button class={`icon-btn more ${section === 'settings' ? 'on' : ''}`} title={t('More')} onClick={() => setMenu(menu === 'more' ? null : 'more')}>
           <MoreHorizontal size={16} />
           {procCount > 0 && <i class="dot-count">{procCount}</i>}
         </button>
@@ -553,16 +554,16 @@ function MoreMenu({ project, procCount, openProcs, close }: { project: Project; 
   }, [])
   return (
     <div class="menu right more" ref={ref}>
-      {project.type === 'kontor' && <a href={`#/p/${project.id}/today`} onClick={close}><CalendarCheck size={16} /> <span>Today</span></a>}
-      {project.type === 'academic-writing' && <a href={`#/p/${project.id}/export`} onClick={close}><FileDown size={16} /> <span>Export</span></a>}
+      {project.type === 'kontor' && <a href={`#/p/${project.id}/today`} onClick={close}><CalendarCheck size={16} /> <span>{t('Today')}</span></a>}
+      {project.type === 'academic-writing' && <a href={`#/p/${project.id}/export`} onClick={close}><FileDown size={16} /> <span>{t('Export')}</span></a>}
       <button onClick={() => (setPrefs({ terminalOpen: !terminalOpen }), close())}>
-        <SquareTerminal size={16} /> <span>{terminalOpen ? 'Close terminal' : 'Terminal'}</span>
+        <SquareTerminal size={16} /> <span>{terminalOpen ? t('Close terminal') : t('Terminal')}</span>
       </button>
       <button onClick={openProcs}>
-        <Server size={16} /> <span>Background processes</span>
+        <Server size={16} /> <span>{t('Background processes')}</span>
         {procCount > 0 && <small>{procCount}</small>}
       </button>
-      <a href={`#/p/${project.id}/settings`} onClick={close}><SlidersHorizontal size={16} /> <span>Project settings</span></a>
+      <a href={`#/p/${project.id}/settings`} onClick={close}><SlidersHorizontal size={16} /> <span>{t('Project settings')}</span></a>
     </div>
   )
 }
@@ -575,10 +576,10 @@ function AllBar({ section }: { section?: string }) {
   )
   return (
     <div class="subbar">
-      {tab('', 'Overview', LayoutList)}
-      {tab('inbox', 'Inbox', Inbox)}
-      {tab('board', 'Board', SquareKanban)}
-      {tab('workflows', 'Workflows', WorkflowIcon)}
+      {tab('', t('Overview'), LayoutList)}
+      {tab('inbox', t('Inbox'), Inbox)}
+      {tab('board', t('Board'), SquareKanban)}
+      {tab('workflows', t('Workflows'), WorkflowIcon)}
     </div>
   )
 }
@@ -588,8 +589,9 @@ function Welcome({ me, setMe }: { me: Me; setMe: (m: Me) => void }) {
     <div class="empty-state">
       {me.setup && <SetupWizard me={me} setMe={setMe} />}
       <img src="/icon.svg" alt="" />
-      <h2>Open a project</h2>
-      <p class="muted">Use Projects to start a new project or open a folder. Conversations, documents and workflows live in its <code>.savor/</code> directory.</p>
+      <h2>{t('Open a project')}</h2>
+      <p class="muted">{t('Use Projects to start a new project or open a folder. Conversations, documents and workflows live in its .savor/ directory.')}</p>
+
     </div>
   )
 }

@@ -2,6 +2,7 @@
 // from the notification and routes notification clicks. Built on its own by esbuild into sw.js.
 // All requests go to the network.
 import { direct, remote, storedProfile, type Transport } from './transport'
+import { t } from './i18n'
 
 const sw = self as any
 
@@ -17,7 +18,7 @@ const setBadge = (n: number) => (n ? sw.navigator.setAppBadge?.(n) : sw.navigato
 function actions(q?: Question) {
   if (!q) return []
   const option = (i: number) => ({ action: `o${i}`, title: q.options[i].label })
-  if (q.recommended != null && q.options[q.recommended]) return [option(q.recommended), { action: 'why', title: 'Why?' }]
+  if (q.recommended != null && q.options[q.recommended]) return [option(q.recommended), { action: 'why', title: t('Why?') }]
   return q.options.length === 2 ? [option(0), option(1)] : []
 }
 
@@ -25,7 +26,7 @@ const show = (title: string, body: string, data: Data, extra: object = {}) =>
   sw.registration.showNotification(title, { body, tag: data.push.tag, icon: '/icon.svg', data, ...extra })
 
 function notice(p: Push) {
-  const body = p.question ? `${p.question.title}${p.question.recommended != null && p.question.options[p.question.recommended] ? `\nRecommended: ${p.question.options[p.question.recommended].label}` : ''}` : p.body
+  const body = p.question ? `${p.question.title}${p.question.recommended != null && p.question.options[p.question.recommended] ? `\n${t('Recommended:')} ${p.question.options[p.question.recommended].label}` : ''}` : p.body
   return show(`${p.title} · ${p.status}`, body, { push: p }, { actions: actions(p.question) })
 }
 
@@ -37,7 +38,7 @@ async function dismiss(tag: string) {
   if (!open.length) return
   const sub = await sw.registration.pushManager.getSubscription()
   if (!sub?.endpoint.includes('push.apple.com')) return open.forEach((n) => n.close())
-  return show((open[0].data as Data).push.title, 'Seen on another device.', open[0].data, { silent: true })
+  return show((open[0].data as Data).push.title, t('Seen on another device.'), open[0].data, { silent: true })
 }
 
 sw.addEventListener('push', (e: any) => {
@@ -55,7 +56,7 @@ async function transport(): Promise<Transport> {
 async function call(method: string, path: string, body?: object) {
   const r = await (await transport()).request(method, `/api${path}`, body && JSON.stringify(body))
   const data = r.body ? JSON.parse(r.body) : {}
-  if (r.status >= 400) throw new Error(data.error ?? `Error ${r.status}`)
+  if (r.status >= 400) throw new Error(data.error ?? t('Error {status}', { status: r.status }))
   return data
 }
 
@@ -67,12 +68,12 @@ async function answer(p: Push, i: number) {
   const option = q.options[i]
   try {
     const { id, ms } = await call('POST', `${base(p)}/held`, q.approval ? { approval: q.approval, choice: option.id } : { decision: q.decision, selected: i })
-    await show(`Answered: ${option.label}`, `Goes to the agent in ${Math.round(ms / 1000)} s.`, { push: p, held: id }, { actions: [{ action: 'undo', title: 'Undo' }, { action: 'why', title: 'Why?' }] })
+    await show(t('Answered: {label}', { label: option.label }), t('Goes to the agent in {n} s.', { n: Math.round(ms / 1000) }), { push: p, held: id }, { actions: [{ action: 'undo', title: t('Undo') }, { action: 'why', title: t('Why?') }] })
     await sleep(ms)
     const still: Notification[] = await sw.registration.getNotifications({ tag: p.tag })
-    if (still.some((n) => (n.data as Data).held === id)) await show(`Answered: ${option.label}`, 'Sent to the agent.', { push: p, held: id }, { silent: true })
+    if (still.some((n) => (n.data as Data).held === id)) await show(t('Answered: {label}', { label: option.label }), t('Sent to the agent.'), { push: p, held: id }, { silent: true })
   } catch (e) {
-    await show(`${p.title} · Not answered`, `${(e as Error).message} Tap to open the conversation.`, { push: { ...p, question: undefined } })
+    await show(`${p.title} · Not answered`, `${(e as Error).message} ${t('Tap to open the conversation.')}`, { push: { ...p, question: undefined } })
   }
 }
 
@@ -81,7 +82,7 @@ async function undo(data: Data) {
     await call('DELETE', `/held/${data.held}`)
     await notice(data.push)
   } catch (e) {
-    await show(`${data.push.title} · Too late to undo`, (e as Error).message, { push: { ...data.push, question: undefined } })
+    await show(`${data.push.title} · ${t('Too late to undo')}`, (e as Error).message, { push: { ...data.push, question: undefined } })
   }
 }
 

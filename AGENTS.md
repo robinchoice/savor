@@ -27,6 +27,7 @@
 - The service worker is `web/sw.ts`, bundled by esbuild into `dist/web/sw.js` during `npm run build` (it answers questions from notifications through the relay tunnel). `npm run dev:web` doesn't serve it.
 - `npm test` holds `flock /tmp/savor-test.lock`, so test runs from parallel sessions and worktrees queue instead of overloading the CPU. A run that seems stuck before its first test is waiting for another one.
 - Voice input runs transcribe.cpp (npm `transcribe-cpp` with `koffi`) in `dist/server/voice-worker.mjs`, a process of its own. Its native builds are one npm package per platform, and npm installs only the current machine's: `desktop/package.json` copies the one matching each build, and `release.yml` adds the x64 macOS packages on the arm64 runner. When you bump `transcribe-cpp`, also check the speech model revisions in `server/voice.ts`.
+- The web UI speaks English and German. Every text goes through `t('English text')` from `web/i18n.ts` (`plural()` for counts) with its German entry in `web/de.ts`; `test/i18n.test.mjs` fails on a text without one. Texts the daemon sends with values in them (health warnings, export checks) are translated in the UI by `tx()` with the patterns in `de.ts`. Browser tests pin `locale: 'en-US'`, so on a German machine they still see English.
 
 ## Releases
 

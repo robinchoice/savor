@@ -1,6 +1,7 @@
 // How the UI reaches its daemon: directly over HTTP when served by the daemon, or through the
 // end-to-end encrypted relay tunnel when served by a relay (see shared/tunnel.ts).
 import * as t from '../shared/tunnel'
+import { t as tr } from './i18n'
 
 export interface Response { status: number; type: string; body: string; binary?: boolean }
 
@@ -15,7 +16,7 @@ export interface Transport {
 export const direct: Transport = {
   async request(method, path, body) {
     const r = await fetch(path, { method, headers: method === 'GET' ? {} : { 'content-type': 'application/json' }, body }).catch(() => {
-      throw new Error('Savor is not reachable, the daemon is probably restarting.')
+      throw new Error(tr('Savor is not reachable, the daemon is probably restarting.'))
     })
     return { status: r.status, type: r.headers.get('content-type') ?? '', body: await r.text() }
   },
@@ -49,7 +50,7 @@ function keyStore<T>(mode: IDBTransactionMode, op: (store: IDBObjectStore) => ID
       const req = op(tx.objectStore('keys'))
       tx.oncomplete = () => resolve(req.result)
       tx.onerror = () => reject(tx.error ?? req.error)
-      tx.onabort = () => reject(tx.error ?? new Error('Storing the device key failed.'))
+      tx.onabort = () => reject(tx.error ?? new Error(tr('Storing the device key failed.')))
     }
   })
 }
@@ -157,7 +158,7 @@ export async function pairThroughRelay(daemonPkText: string, code: string, name:
     try {
       return channel.open(text)
     } catch {
-      throw new Error(JSON.parse(text).error === 'pairing failed' ? 'Pairing code invalid or expired.' : 'Pairing failed.')
+      throw new Error(JSON.parse(text).error === 'pairing failed' ? tr('Pairing code invalid or expired.') : tr('Pairing failed.'))
     }
   }
   ws.send(channel.seal({ name, device: t.b64.enc(key.pk) }))
@@ -167,7 +168,7 @@ export async function pairThroughRelay(daemonPkText: string, code: string, name:
     result = await reply()
   }
   ws.close()
-  if (!result.paired) throw new Error('Pairing was not allowed on your computer.')
+  if (!result.paired) throw new Error(tr('Pairing was not allowed on your computer.'))
   const profile = { daemonPk: daemonPkText, name }
   saveProfiles([...loadProfiles().filter((p) => p.daemonPk !== daemonPkText), profile], profile)
 }
@@ -181,7 +182,7 @@ export function remote(profile: RemoteProfile, onState: (connected: boolean, err
   const daemonPk = t.publicKey(profile.daemonPk)
   keyStore('readwrite', (s) => s.put(profile, 'profile')).catch(() => {})
   const device = keyStore<StoredKey | undefined>('readonly', (s) => s.get('device')).then((stored) => {
-    if (!stored) throw new Error('This browser has no device key. Pair it again.')
+    if (!stored) throw new Error(tr('This browser has no device key. Pair it again.'))
     return deviceKey(stored)
   })
   const pending = new Map<number, Pending>()
@@ -220,7 +221,7 @@ export function remote(profile: RemoteProfile, onState: (connected: boolean, err
         for (const [id, p] of pending) {
           if (p.onData) continue
           pending.delete(id)
-          p.reject(new Error('Connection lost'))
+          p.reject(new Error(tr('Connection lost')))
         }
         setTimeout(resume, 2000)
       }

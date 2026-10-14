@@ -1,5 +1,6 @@
 // Voice input: the browser records the microphone, the daemon turns the speech into text with transcribe.cpp.
 import { api, readFileAsDataUrl } from './api'
+import { t } from './i18n'
 
 export interface Recording { stop(): Promise<string>; cancel(): void }
 
@@ -19,11 +20,11 @@ const SETTLE = 12
 
 export async function record(onText: (text: string) => void): Promise<Recording> {
   // Browsers only offer the microphone to secure pages.
-  if (!navigator.mediaDevices) throw new Error('Voice input needs a secure connection: open Savor over https or on localhost.')
+  if (!navigator.mediaDevices) throw new Error(t('Voice input needs a secure connection: open Savor over https or on localhost.'))
   const { ready } = await api<{ ready: boolean }>('POST', '/voice/prepare', {})
-  if (!ready) throw new ModelMissing('The speech model is not downloaded yet.')
+  if (!ready) throw new ModelMissing(t('The speech model is not downloaded yet.'))
   const stream = await navigator.mediaDevices.getUserMedia({ audio: true }).catch((e: Error) => {
-    throw new Error(`Microphone: ${e.message}`)
+    throw new Error(`${t('Microphone:')} ${e.message}`)
   })
   const context = new AudioContext()
   const rate = context.sampleRate

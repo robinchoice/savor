@@ -1,34 +1,35 @@
 import { useEffect, useRef, useState } from 'preact/hooks'
 import { Keyboard, X } from 'lucide-preact'
 import { currentPrefs, setPrefs, usePrefs } from './prefs'
+import { t } from './i18n'
 
 // What a key can do. Each device starts without any keys; the setup and the dialog offer STANDARD.
 export const ACTIONS = {
-  new: 'New conversation',
-  next: 'Next conversation that needs you',
-  previous: 'Back to where Next came from',
-  composer: 'Focus the composer',
-  voice: 'Start or stop voice input',
-  stop: 'Stop the agent',
-  effortUp: 'Raise the effort',
-  effortDown: 'Lower the effort',
-  finish: 'Finish the conversation',
-  conversations: 'Conversations',
-  files: 'Files',
-  workflows: 'Workflows',
-  browser: 'Switch between chat and browser',
-  terminal: 'Open or close the terminal',
-  arrange: 'Arrange panels',
-  project1: 'Project tab 1',
-  project2: 'Project tab 2',
-  project3: 'Project tab 3',
-  project4: 'Project tab 4',
-  project5: 'Project tab 5',
-  project6: 'Project tab 6',
-  project7: 'Project tab 7',
-  project8: 'Project tab 8',
-  project9: 'Project tab 9',
-  shortcuts: 'Show the shortcuts',
+  new: t('New conversation'),
+  next: t('Next conversation that needs you'),
+  previous: t('Back to where Next came from'),
+  composer: t('Focus the composer'),
+  voice: t('Start or stop voice input'),
+  stop: t('Stop the agent'),
+  effortUp: t('Raise the effort'),
+  effortDown: t('Lower the effort'),
+  finish: t('Finish the conversation'),
+  conversations: t('Conversations'),
+  files: t('Files'),
+  workflows: t('Workflows'),
+  browser: t('Switch between chat and browser'),
+  terminal: t('Open or close the terminal'),
+  arrange: t('Arrange panels'),
+  project1: t('Project tab {n}', { n: 1 }),
+  project2: t('Project tab {n}', { n: 2 }),
+  project3: t('Project tab {n}', { n: 3 }),
+  project4: t('Project tab {n}', { n: 4 }),
+  project5: t('Project tab {n}', { n: 5 }),
+  project6: t('Project tab {n}', { n: 6 }),
+  project7: t('Project tab {n}', { n: 7 }),
+  project8: t('Project tab {n}', { n: 8 }),
+  project9: t('Project tab {n}', { n: 9 }),
+  shortcuts: t('Show the shortcuts'),
 }
 export type Action = keyof typeof ACTIONS
 
@@ -135,21 +136,21 @@ export function ShortcutsDialog({ onClose }: { onClose: () => void }) {
         <header class="dialog-head">
           <Keyboard size={18} />
           <div class="dialog-title">
-            <b>Keyboard shortcuts</b>
+            <b>{t('Keyboard shortcuts')}</b>
           </div>
-          <button class="icon-btn" title="Close" onClick={onClose}>
+          <button class="icon-btn" title={t('Close')} onClick={onClose}>
             <X size={16} />
           </button>
         </header>
         <div class="dialog-body">
-          <p class="muted small">Click a key and press the new one, Esc cancels. A key used elsewhere moves here. Keys without Ctrl, ⌘ or Alt also work with Alt, and need it in a text field.</p>
+          <p class="muted small">{t('Click a key and press the new one, Esc cancels. A key used elsewhere moves here. Keys without Ctrl, ⌘ or Alt also work with Alt, and need it in a text field.')}</p>
           {(Object.keys(ACTIONS) as Action[]).map((a) => (
             <div key={a} class="setting">
               <span>{ACTIONS[a]}</span>
               <button class={`key ${recording === a ? 'recording' : ''}`} onClick={() => record(a)}>
-                {recording === a ? 'Press a key…' : shortcuts[a] ? <kbd>{keyLabel(shortcuts[a])}</kbd> : <span class="muted">Not set</span>}
+                {recording === a ? t('Press a key…') : shortcuts[a] ? <kbd>{keyLabel(shortcuts[a])}</kbd> : <span class="muted">{t('Not set')}</span>}
               </button>
-              <button class="icon-btn" title="Remove" disabled={!shortcuts[a]} onClick={() => set(a, null)}>
+              <button class="icon-btn" title={t('Remove')} disabled={!shortcuts[a]} onClick={() => set(a, null)}>
                 <X size={14} />
               </button>
             </div>
@@ -158,14 +159,14 @@ export function ShortcutsDialog({ onClose }: { onClose: () => void }) {
         <footer class="dialog-foot">
           <div class="row">
             <button class="ghost" onClick={() => setPrefs({ shortcuts: STANDARD })}>
-              Use Savor's suggestions
+              {t('Use Savor\'s suggestions')}
             </button>
             <button class="ghost" disabled={!Object.keys(shortcuts).length} onClick={() => setPrefs({ shortcuts: {} })}>
-              Clear all
+              {t('Clear all')}
             </button>
           </div>
           <button class="primary" onClick={onClose}>
-            Done
+            {t('Done')}
           </button>
         </footer>
       </div>

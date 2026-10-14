@@ -11,6 +11,7 @@ import { api, useApi, type Project } from './api'
 import { transport } from './transport'
 import { setPrefs, usePrefs } from './prefs'
 import { useShortcut } from './Shortcuts'
+import { t } from './i18n'
 
 // xterm.js adds <style> elements and has no option for a CSP nonce. Style elements made by script
 // get the page's nonce: script is same-origin only, and the nonce is readable by it anyway.
@@ -84,18 +85,18 @@ export function TerminalPanel({ project, threadId }: { project: Project; threadI
     <div class={`terminal-panel ${terminalMax ? 'max' : ''}`}>
       <div class="terminal-bar">
         <span class="terminal-title">
-          <SquareTerminal size={15} /> <span>Terminal</span>
+          <SquareTerminal size={15} /> <span>{t('Terminal')}</span>
         </span>
         <div class="terminal-places">
           {!error &&
-            terminals.map((t) => (
-              <div key={t.id} class={`terminal-place ${t.id === current?.id ? 'on' : ''}`} title={t.path}>
-                <button onClick={() => setSelected(t.id)}>
-                  {places.find((p) => p.path === t.path)?.branch ? <GitBranch size={13} /> : <Folder size={13} />}
-                  {label(t)}
-                  <i class={t.running ? 'running' : ''} />
+            terminals.map((th) => (
+              <div key={th.id} class={`terminal-place ${th.id === current?.id ? 'on' : ''}`} title={th.path}>
+                <button onClick={() => setSelected(th.id)}>
+                  {places.find((p) => p.path === th.path)?.branch ? <GitBranch size={13} /> : <Folder size={13} />}
+                  {label(th)}
+                  <i class={th.running ? 'running' : ''} />
                 </button>
-                <button class="terminal-close" title="Close terminal" onClick={() => close(t)}>
+                <button class="terminal-close" title={t('Close terminal')} onClick={() => close(th)}>
                   <X size={12} />
                 </button>
               </div>
@@ -103,12 +104,12 @@ export function TerminalPanel({ project, threadId }: { project: Project; threadI
         </div>
         {data && !error && (
           <div class="menu-anchor" ref={addRef}>
-            <button class="icon-btn" title="New terminal" onClick={() => (places.length > 1 ? setAdding(!adding) : add(places[0].path))}>
+            <button class="icon-btn" title={t('New terminal')} onClick={() => (places.length > 1 ? setAdding(!adding) : add(places[0].path))}>
               <Plus size={15} />
             </button>
             {adding && (
               <div class="menu right">
-                <div class="menu-label">New terminal in</div>
+                <div class="menu-label">{t('New terminal in')}</div>
                 {places.map((p) => (
                   <button key={p.path} title={p.path} onClick={() => add(p.path)}>
                     {p.branch ? <GitBranch size={13} /> : <Folder size={13} />}
@@ -120,14 +121,14 @@ export function TerminalPanel({ project, threadId }: { project: Project; threadI
           </div>
         )}
         {current && !error && (
-          <button class="icon-btn" title="Restart shell" onClick={() => restart.current()}>
+          <button class="icon-btn" title={t('Restart shell')} onClick={() => restart.current()}>
             <RotateCcw size={14} />
           </button>
         )}
-        <button class="icon-btn" title={terminalMax ? 'Restore' : 'Maximize'} onClick={() => setPrefs({ terminalMax: !terminalMax })}>
+        <button class="icon-btn" title={terminalMax ? t('Restore') : t('Maximize')} onClick={() => setPrefs({ terminalMax: !terminalMax })}>
           {terminalMax ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
         </button>
-        <button class="icon-btn" title="Close" onClick={() => setPrefs({ terminalOpen: false })}>
+        <button class="icon-btn" title={t('Close')} onClick={() => setPrefs({ terminalOpen: false })}>
           <X size={15} />
         </button>
       </div>
@@ -141,9 +142,9 @@ export function TerminalPanel({ project, threadId }: { project: Project; threadI
       ) : (
         data && (
           <div class="terminal-locked">
-            <p>No terminal open.</p>
+            <p>{t('No terminal open.')}</p>
             <button class="pill" onClick={() => add(places[0].path)}>
-              <Plus size={14} /> New terminal
+              <Plus size={14} /> {t('New terminal')}
             </button>
           </div>
         )
@@ -351,7 +352,7 @@ export function TerminalButton({ project }: { project: Project }) {
   const [data] = useApi<Terminals>(`/projects/${project.id}/terminal`, (e) => e.type === 'terminal' && (!e.projectId || e.projectId === project.id))
   useShortcut('terminal', () => setPrefs({ terminalOpen: !terminalOpen }))
   return (
-    <button class={`icon-btn ${terminalOpen ? 'on' : ''}`} title="Terminal" onClick={() => setPrefs({ terminalOpen: !terminalOpen })}>
+    <button class={`icon-btn ${terminalOpen ? 'on' : ''}`} title={t('Terminal')} onClick={() => setPrefs({ terminalOpen: !terminalOpen })}>
       <SquareTerminal size={16} />
       {data?.terminals.some((t) => t.running) && <i class="terminal-running" />}
     </button>

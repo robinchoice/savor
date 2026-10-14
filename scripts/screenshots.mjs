@@ -165,7 +165,7 @@ try {
   page = await open('dark', { viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true })
   const list = await shoot(page, `/p/${project.id}`, 'text=Website launch checklist', 'mobile.png')
   const chat = await shoot(page, `/p/${project.id}/t/${bakery.id}`, '.stage .screen', 'mobile.png')
-  page = await browser.newPage({ viewport: { width: 1620, height: 1688 } })
+  page = await browser.newPage({ viewport: { width: 1620, height: 1688 }, locale: 'en-US' })
   const src = (png) => `data:image/png;base64,${png.toString('base64')}`
   await page.setContent(`<body style="margin:0;display:flex;gap:60px;background:#fff"><img src="${src(list)}" width="780"><img src="${src(chat)}" width="780"></body>`)
   await page.screenshot({ path: path.join(DOCS, 'mobile.png') })

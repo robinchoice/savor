@@ -4,6 +4,7 @@ import { Download, Smartphone, Trash2, X } from 'lucide-preact'
 import { api, formatDay, go, PROVIDER_NAMES, useApi, useAgents, type ImportableSession, type Project, type Thread } from './api'
 import { pairThroughRelay } from './transport'
 import { TEMPLATES } from './templates'
+import { plural, t } from './i18n'
 
 const TINTS = ['#b5654a', '#8b6bc7', '#3f9a78', '#c59a3d', '#c8577a', '#4a9bb8', '#7a8794']
 
@@ -30,7 +31,7 @@ export function Settings({ project }: { project: Project }) {
     }
   }
   const remove = async () => {
-    if (!confirm(`Remove ${project.name} from Savor? Files stay on disk.`)) return
+    if (!confirm(t('Remove {name} from Savor? Files stay on disk.', { name: project.name }))) return
     await api('DELETE', `/projects/${project.id}`)
     go('/')
   }
@@ -38,14 +39,14 @@ export function Settings({ project }: { project: Project }) {
   return (
     <div class="page">
       <form class="form" onSubmit={save}>
-        <h1>Project settings</h1>
+        <h1>{t('Project settings')}</h1>
         <p class="muted mono">{project.path}</p>
         <label>
-          Name
+          {t('Name')}
           <input value={draft.name} onInput={(e) => set({ name: e.currentTarget.value })} />
         </label>
         <div>
-          <div class="field-label">Color</div>
+          <div class="field-label">{t('Color')}</div>
           <div class="swatches">
             {TINTS.map((t) => (
               <button type="button" key={t} class={`swatch ${draft.tint === t ? 'selected' : ''}`} style={{ background: t }} onClick={() => set({ tint: t })} aria-label={t} />
@@ -53,35 +54,35 @@ export function Settings({ project }: { project: Project }) {
           </div>
         </div>
         <label>
-          Type <small class="muted">adds the type's own tab: Export for academic writing, Today for a Kontor</small>
+          {t('Type')} <small class="muted">{t('adds the type\'s own tab: Export for academic writing, Today for a Kontor')}</small>
           <select value={draft.type} onChange={(e) => set({ type: e.currentTarget.value })}>
-            <option value="">Code</option>
-            {TEMPLATES.map((t) => (
-              <option key={t.slug} value={t.slug}>
-                {t.title}
+            <option value="">{t('Code')}</option>
+            {TEMPLATES.map((tpl) => (
+              <option key={tpl.slug} value={tpl.slug}>
+                {t(tpl.title)}
               </option>
             ))}
           </select>
         </label>
         <label>
-          Role & instructions <small class="muted">ROLE.md — every agent in this project gets this</small>
-          <textarea rows={8} value={role ?? ''} placeholder="e.g. You are the engineer for a small bakery's ordering app. Keep the UI in German." onInput={(e) => (setSaved(false), setRole(e.currentTarget.value))} />
+          {t('Role & instructions')} <small class="muted">{t('ROLE.md — every agent in this project gets this')}</small>
+          <textarea rows={8} value={role ?? ''} placeholder={t('e.g. You are the engineer for a small bakery\'s ordering app. Keep the UI in German.')} onInput={(e) => (setSaved(false), setRole(e.currentTarget.value))} />
         </label>
         <label>
-          Worktree setup <small class="muted">runs in every new worktree before the agent starts; gitignored files named in .worktreeinclude, such as .env, are copied over first</small>
-          <textarea class="mono" rows={2} value={draft.worktreeSetup} placeholder="e.g. npm install" onInput={(e) => set({ worktreeSetup: e.currentTarget.value })} />
+          {t('Worktree setup')} <small class="muted">{t('runs in every new worktree before the agent starts; gitignored files named in .worktreeinclude, such as .env, are copied over first')}</small>
+          <textarea class="mono" rows={2} value={draft.worktreeSetup} placeholder={t('e.g. npm install')} onInput={(e) => set({ worktreeSetup: e.currentTarget.value })} />
         </label>
         <div class="row wide">
           <label>
-            Agent verbosity
+            {t('Agent verbosity')}
             <select value={draft.verbosity} onChange={(e) => set({ verbosity: e.currentTarget.value as Project['verbosity'] })}>
-              <option value="low">Low — just results</option>
-              <option value="medium">Medium</option>
-              <option value="high">High — explain everything</option>
+              <option value="low">{t('Low — just results')}</option>
+              <option value="medium">{t('Medium')}</option>
+              <option value="high">{t('High — explain everything')}</option>
             </select>
           </label>
           <label>
-            Default agent
+            {t('Default agent')}
             <select
               value={draft.agent.provider}
               onChange={(e) => {
@@ -94,7 +95,7 @@ export function Settings({ project }: { project: Project }) {
                 return (
                   <option key={id} value={id}>
                     {name}
-                    {info && !info.installed ? ' (not installed)' : ''}
+                    {info && !info.installed ? t(' (not installed)') : ''}
                   </option>
                 )
               })}
@@ -102,17 +103,17 @@ export function Settings({ project }: { project: Project }) {
           </label>
         </div>
         <label class="check">
-          <input type="checkbox" checked={draft.paused} onChange={(e) => set({ paused: e.currentTarget.checked })} /> Pause project — scheduled workflows don't run
+          <input type="checkbox" checked={draft.paused} onChange={(e) => set({ paused: e.currentTarget.checked })} /> {t('Pause project — scheduled workflows don\'t run')}
         </label>
         <div class="row">
           <button class="primary" type="submit">
-            Save
+            {t('Save')}
           </button>
-          {saved && <span class="muted">Saved.</span>}
+          {saved && <span class="muted">{t('Saved.')}</span>}
           {error && <span class="error-text">{error}</span>}
           <span class="spacer" />
           <button type="button" class="ghost danger" onClick={remove}>
-            Remove project
+            {t('Remove project')}
           </button>
         </div>
       </form>
@@ -124,7 +125,6 @@ export function Settings({ project }: { project: Project }) {
 
 interface MovePlan { from: string; to: string; mode: 'move' | 'relink'; blockers: string[]; processes: { pid: number; command: string }[]; symlink: boolean; claudeSessions: number; worktrees: number }
 
-const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
 
 // Renaming or moving the folder, archiving it, or pointing the project at the place it already moved to.
 function MoveSection({ project }: { project: Project }) {
@@ -151,7 +151,7 @@ function MoveSection({ project }: { project: Project }) {
     setBusy(true)
     try {
       const moved = await api<Project>('POST', `/projects/${project.id}/move`, { path: plan!.to, link, force: plan!.processes.length > 0 })
-      setDone(`The project is now at ${moved.path}.`)
+      setDone(t('The project is now at {path}.', { path: moved.path }))
       setTarget(moved.path)
       setPlan(null)
       setError('')
@@ -163,16 +163,16 @@ function MoveSection({ project }: { project: Project }) {
   }
   return (
     <div class="form move-section">
-      <h2>Move folder</h2>
-      <p class="muted">Rename or move the project folder, or point the project at the place it already moved to. Conversations, worktrees and Claude Code sessions come along.</p>
+      <h2>{t('Move folder')}</h2>
+      <p class="muted">{t('Rename or move the project folder, or point the project at the place it already moved to. Conversations, worktrees and Claude Code sessions come along.')}</p>
       <form class="row" onSubmit={(e) => (e.preventDefault(), check(target))}>
-        <input class="mono" value={target} onInput={(e) => (setPlan(null), setTarget(e.currentTarget.value))} aria-label="New path" />
+        <input class="mono" value={target} onInput={(e) => (setPlan(null), setTarget(e.currentTarget.value))} aria-label={t('New path')} />
         <button type="submit" class="ghost" disabled={!target.trim() || target === project.path}>
-          Check
+          {t('Check')}
         </button>
         {!archived && (
           <button type="button" class="ghost" onClick={() => check(`${parent}/_archive/${project.path.slice(parent.length + 1)}`)}>
-            Archive
+            {t('Archive')}
           </button>
         )}
       </form>
@@ -181,9 +181,9 @@ function MoveSection({ project }: { project: Project }) {
       {plan && (
         <div class="move-plan">
           <p>
-            {plan.mode === 'move' ? `Moves the folder to ${plan.to}.` : `${plan.to} already is this folder: the project points there.`}
-            {plan.claudeSessions > 0 && ` ${plural(plan.claudeSessions, 'Claude Code session')} move along.`}
-            {plan.worktrees > 0 && ` ${plural(plan.worktrees, 'worktree')} get repaired.`} Savor's terminals of this project close.
+            {plan.mode === 'move' ? t('Moves the folder to {path}.', { path: plan.to }) : t('{path} already is this folder: the project points there.', { path: plan.to })}
+            {plan.claudeSessions > 0 && ` ${plural(plan.claudeSessions, '{n} Claude Code session moves along.', '{n} Claude Code sessions move along.')}`}
+            {plan.worktrees > 0 && ` ${plural(plan.worktrees, '{n} worktree gets repaired.', '{n} worktrees get repaired.')}`} {t('Savor\'s terminals of this project close.')}
           </p>
           {plan.blockers.map((b) => (
             <p key={b} class="error-text">
@@ -192,19 +192,19 @@ function MoveSection({ project }: { project: Project }) {
           ))}
           {plan.processes.length > 0 && (
             <div>
-              <p class="warning-text">Processes outside Savor work in the folder. They keep running in the old place:</p>
+              <p class="warning-text">{t('Processes outside Savor work in the folder. They keep running in the old place:')}</p>
               <pre class="mono small">{plan.processes.map((p) => `${p.pid}  ${p.command}`).join('\n')}</pre>
             </div>
           )}
           {(plan.mode === 'move' || plan.symlink) && (
             <label class="check">
-              <input type="checkbox" checked={link} onChange={(e) => setLink(e.currentTarget.checked)} /> {plan.mode === 'move' ? 'Leave a symlink at the old path' : `Keep the symlink ${plan.from}`}
+              <input type="checkbox" checked={link} onChange={(e) => setLink(e.currentTarget.checked)} /> {plan.mode === 'move' ? t('Leave a symlink at the old path') : t('Keep the symlink {path}', { path: plan.from })}
             </label>
           )}
           {!plan.blockers.length && (
             <div class="row">
               <button type="button" class="primary" disabled={busy} onClick={run}>
-                {busy ? 'Moving…' : plan.processes.length ? 'Move anyway' : plan.mode === 'move' ? 'Move' : 'Point here'}
+                {busy ? t('Moving…') : plan.processes.length ? t('Move anyway') : plan.mode === 'move' ? t('Move') : t('Point here')}
               </button>
             </div>
           )}
@@ -219,11 +219,11 @@ function ImportSection({ project }: { project: Project }) {
   const [open, setOpen] = useState(false)
   return (
     <div class="form">
-      <h2>Import conversations</h2>
-      <p class="muted">Claude Code and Codex keep transcripts of the sessions you ran in this folder. Bring them in as conversations; they continue with the same agent session.</p>
+      <h2>{t('Import conversations')}</h2>
+      <p class="muted">{t('Claude Code and Codex keep transcripts of the sessions you ran in this folder. Bring them in as conversations; they continue with the same agent session.')}</p>
       <div class="row">
         <button type="button" class="ghost" onClick={() => setOpen(true)}>
-          <Download size={14} /> Import conversations…
+          <Download size={14} /> {t('Import conversations…')}
         </button>
       </div>
       {open && <ImportDialog project={project} onClose={() => setOpen(false)} />}
@@ -268,10 +268,10 @@ function ImportDialog({ project, onClose }: { project: Project; onClose: () => v
         <header class="dialog-head">
           <Download size={18} />
           <div class="dialog-title">
-            <b>Import conversations</b>
-            <small class="muted">Sessions that ran in {project.path}</small>
+            <b>{t('Import conversations')}</b>
+            <small class="muted">{t('Sessions that ran in {path}', { path: project.path })}</small>
           </div>
-          <button class="icon-btn" title="Close" onClick={onClose}>
+          <button class="icon-btn" title={t('Close')} onClick={onClose}>
             <X size={16} />
           </button>
         </header>
@@ -279,23 +279,23 @@ function ImportDialog({ project, onClose }: { project: Project; onClose: () => v
           {error && <div class="error-text pad">{error}</div>}
           {done ? (
             <p class="pad">
-              Imported {done.length} conversation{done.length === 1 ? '' : 's'}.{' '}
+              {plural(done.length, 'Imported {n} conversation.', 'Imported {n} conversations.')}{' '}
               <a class="link" href={`#/p/${project.id}`} onClick={onClose}>
-                Open conversations
+                {t('Open conversations')}
               </a>
             </p>
           ) : sessions === null ? (
-            <p class="muted pad">Looking for sessions…</p>
+            <p class="muted pad">{t('Looking for sessions…')}</p>
           ) : !sessions.length ? (
-            <p class="muted pad">No Claude Code or Codex sessions found for this folder.</p>
+            <p class="muted pad">{t('No Claude Code or Codex sessions found for this folder.')}</p>
           ) : (
             sessions.map((s) => (
               <label key={s.id} class={`import-row ${s.imported ? 'done' : ''}`}>
                 <input type="checkbox" disabled={s.imported} checked={!s.imported && chosen.has(s.id)} onChange={() => toggle(s.id)} />
                 <span class="import-title">{s.title}</span>
                 <span class="muted small">
-                  {PROVIDER_NAMES[s.provider]} · {formatDay(s.startedAt)} · {s.messages} message{s.messages === 1 ? '' : 's'}
-                  {s.imported ? ' · imported' : ''}
+                  {PROVIDER_NAMES[s.provider]} · {formatDay(s.startedAt)} · {plural(s.messages, '{n} message', '{n} messages')}
+                  {s.imported ? t(' · imported') : ''}
                 </span>
               </label>
             ))
@@ -303,9 +303,9 @@ function ImportDialog({ project, onClose }: { project: Project; onClose: () => v
         </div>
         {!done && sessions?.length ? (
           <footer class="dialog-foot">
-            <span class="muted small">{chosen.size} selected</span>
+            <span class="muted small">{t('{n} selected', { n: chosen.size })}</span>
             <button class="primary" disabled={!chosen.size || busy} onClick={run}>
-              {busy ? 'Importing…' : `Import ${chosen.size}`}
+              {busy ? t('Importing…') : t('Import {n}', { n: chosen.size })}
             </button>
           </footer>
         ) : null}
@@ -317,7 +317,7 @@ function ImportDialog({ project, onClose }: { project: Project; onClose: () => v
 export interface DeviceRow { id: string; name: string; via: 'lan' | 'relay'; terminal?: boolean; createdAt: string; lastSeenAt: string | null }
 export interface RelayState { url: string | null; enabled: boolean; state: 'off' | 'connecting' | 'online' | 'error'; error?: string; id?: string }
 
-export const RELAY_LABEL = { off: 'Off', connecting: 'Connecting…', online: 'Connected', error: 'Not connected' }
+export const RELAY_LABEL = { off: t('Off'), connecting: t('Connecting…'), online: t('Connected'), error: t('Not connected') }
 
 export function qr(text: string) {
   const q = qrcode(0, 'M')
@@ -334,7 +334,7 @@ export function Devices() {
   const [pairing, setPairing] = useState<{ code: string; url: string; relayUrl: string | null; expiresAt: string } | null>(null)
   const [address, setAddress] = useState<{ url: string | null; fallback: string } | null>(null)
   const [addressDraft, setAddressDraft] = useState<string | null>(null)
-  const [shortcutName, setShortcutName] = useState('iPhone shortcut')
+  const [shortcutName, setShortcutName] = useState(t('iPhone shortcut'))
   const [shortcutToken, setShortcutToken] = useState<string | null>(null)
   const [creatingToken, setCreatingToken] = useState(false)
   useEffect(() => void api('GET', '/devices/address').then(setAddress), [])
@@ -351,7 +351,7 @@ export function Devices() {
     }
   }
 
-  const revoke = (d: DeviceRow) => confirm(`Revoke access for ${d.name}?`) && api('DELETE', `/devices/${d.id}`)
+  const revoke = (d: DeviceRow) => confirm(t('Revoke access for {name}?', { name: d.name })) && api('DELETE', `/devices/${d.id}`)
   const createToken = async () => {
     setCreatingToken(true)
     try {
@@ -376,30 +376,29 @@ export function Devices() {
   return (
     <div class="page">
       <div class="form">
-        <h1>Devices & remote access</h1>
+        <h1>{t('Devices & remote access')}</h1>
         <p class="muted">
-          Pair your phone or another computer to use Savor remotely. Requests from paired devices are marked as remote, and agents treat them with extra care.
+          {t('Pair your phone or another computer to use Savor remotely. Requests from paired devices are marked as remote, and agents treat them with extra care.')}
         </p>
 
-        <h2>Relay</h2>
+        <h2>{t('Relay')}</h2>
         <p class="muted">
-          A relay lets paired devices reach this computer from anywhere, without a VPN or open ports. Traffic is end-to-end encrypted between the device and this computer; the relay only forwards
-          ciphertext. The relay does serve the web app, so use one you trust or run your own (<code>npm run relay</code>).
+          {t('A relay lets paired devices reach this computer from anywhere, without a VPN or open ports. Traffic is end-to-end encrypted between the device and this computer; the relay only forwards ciphertext. The relay does serve the web app, so use one you trust or run your own')} (<code>npm run relay</code>).
         </p>
         <div class="row wide">
           <label>
-            Relay URL
+            {t('Relay URL')}
             <input placeholder="https://relay.example.com" value={relayUrl ?? relay?.url ?? ''} onInput={(e) => setRelayUrl(e.currentTarget.value)} />
           </label>
         </div>
         <div class="row">
           {relay?.enabled ? (
             <button class="ghost" onClick={() => saveRelay(false)}>
-              Turn off
+              {t('Turn off')}
             </button>
           ) : (
             <button class="primary" onClick={() => saveRelay(true)}>
-              Connect
+              {t('Connect')}
             </button>
           )}
           {relay && (
@@ -411,86 +410,85 @@ export function Devices() {
         </div>
         {error && <div class="error-text">{error}</div>}
 
-        <h2>Pair a device</h2>
+        <h2>{t('Pair a device')}</h2>
         <p class="muted">
           {relay?.state === 'online'
-            ? 'The QR code opens Savor through the relay.'
-            : 'Without a relay, the device has to reach this computer directly: same network, or a VPN such as Tailscale.'}
+            ? t('The QR code opens Savor through the relay.')
+            : t('Without a relay, the device has to reach this computer directly: same network, or a VPN such as Tailscale.')}
         </p>
         {relay?.state !== 'online' && (
           <div class="row wide">
             <label>
-              Address of this computer for paired devices{' '}
+              {t('Address of this computer for paired devices')}{' '}
               <small class="muted">
-                e.g. the HTTPS address <code>tailscale serve {new URL(address?.fallback ?? 'http://localhost:4317').port}</code> gives it, or its LAN address with Savor started as SAVOR_HOST=0.0.0.0
+                {t('e.g. the HTTPS address {command} gives it, or its LAN address with Savor started as SAVOR_HOST=0.0.0.0', { command: `tailscale serve ${new URL(address?.fallback ?? 'http://localhost:4317').port}` })}
               </small>
               <input placeholder={address?.fallback ?? ''} value={addressDraft ?? address?.url ?? ''} onInput={(e) => setAddressDraft(e.currentTarget.value)} />
             </label>
             {addressDraft !== null && addressDraft !== (address?.url ?? '') && (
               <button class="ghost" onClick={saveAddress}>
-                Save
+                {t('Save')}
               </button>
             )}
           </div>
         )}
         <div class="row">
           <button class="primary" onClick={async () => setPairing(await api('POST', '/devices/pairing'))}>
-            <Smartphone size={15} /> Pair a device
+            <Smartphone size={15} /> {t('Pair a device')}
           </button>
         </div>
         {pairing && link && (
           <div class="pairing">
             <div class="qr" dangerouslySetInnerHTML={{ __html: qr(link) }} />
             <div>
-              <p>Scan the code, or open this link on the device:</p>
+              <p>{t('Scan the code, or open this link on the device:')}</p>
               <p class="mono">{link}</p>
               <p>
-                Code: <b class="mono">{pairing.code}</b> · valid until {new Date(pairing.expiresAt).toLocaleTimeString()}
+                {t('Code:')} <b class="mono">{pairing.code}</b> · {t('valid until {time}', { time: new Date(pairing.expiresAt).toLocaleTimeString() })}
               </p>
             </div>
           </div>
         )}
 
-        <h2>Shortcut token</h2>
-        <p class="muted">For iOS Shortcuts or other HTTP clients that reach this computer directly over your network or VPN. The token has the same access as a paired device. Revoke it in the device list below.</p>
+        <h2>{t('Shortcut token')}</h2>
+        <p class="muted">{t('For iOS Shortcuts or other HTTP clients that reach this computer directly over your network or VPN. The token has the same access as a paired device. Revoke it in the device list below.')}</p>
         {shortcutToken ? (
           <div class="pairing">
             <div>
-              <p>Copy this Cookie header into your shortcut. It is shown only here, until you dismiss it or leave this page.</p>
-              <input aria-label="Shortcut Cookie header" class="mono" readOnly value={`savor_device=${shortcutToken}`} onFocus={(e) => e.currentTarget.select()} />
-              <button class="ghost" onClick={() => setShortcutToken(null)}>Done</button>
+              <p>{t('Copy this Cookie header into your shortcut. It is shown only here, until you dismiss it or leave this page.')}</p>
+              <input aria-label={t('Shortcut Cookie header')} class="mono" readOnly value={`savor_device=${shortcutToken}`} onFocus={(e) => e.currentTarget.select()} />
+              <button class="ghost" onClick={() => setShortcutToken(null)}>{t('Done')}</button>
             </div>
           </div>
         ) : (
           <div class="row wide">
             <label>
-              Shortcut name
+              {t('Shortcut name')}
               <input value={shortcutName} onInput={(e) => setShortcutName(e.currentTarget.value)} />
             </label>
-            <button class="primary" disabled={creatingToken || !shortcutName.trim()} onClick={createToken}>Create token</button>
+            <button class="primary" disabled={creatingToken || !shortcutName.trim()} onClick={createToken}>{t('Create token')}</button>
           </div>
         )}
 
-        <h2>Paired devices</h2>
+        <h2>{t('Paired devices')}</h2>
         <p class="muted">
-          The terminal is a shell on this computer. A device you allow it can open one in every project folder and worktree and run any command as you. Turning it off or revoking the device ends its
-          terminals right away.
+          {t('The terminal is a shell on this computer. A device you allow it can open one in every project folder and worktree and run any command as you. Turning it off or revoking the device ends its terminals right away.')}
         </p>
-        {devices && !devices.length && <p class="muted">None yet.</p>}
+        {devices && !devices.length && <p class="muted">{t('None yet.')}</p>}
         {devices?.map((d) => (
           <div key={d.id} class="device">
             <Smartphone size={18} />
             <div>
               <b>{d.name}</b>
               <small class="muted">
-                {d.via === 'relay' ? 'Via relay' : 'Direct'} · paired {new Date(d.createdAt).toLocaleDateString()} · last seen {d.lastSeenAt ? new Date(d.lastSeenAt).toLocaleString() : 'never'}
+                {d.via === 'relay' ? t('Via relay') : t('Direct')} · {t('paired {when}', { when: new Date(d.createdAt).toLocaleDateString() })} · {t('last seen {when}', { when: d.lastSeenAt ? new Date(d.lastSeenAt).toLocaleString() : t('never') })}
               </small>
             </div>
             <label class="check">
-              <input type="checkbox" checked={!!d.terminal} onChange={(e) => api('PATCH', `/devices/${d.id}`, { terminal: e.currentTarget.checked })} /> Terminal
+              <input type="checkbox" checked={!!d.terminal} onChange={(e) => api('PATCH', `/devices/${d.id}`, { terminal: e.currentTarget.checked })} /> {t('Terminal')}
             </label>
             <button class="ghost danger" onClick={() => revoke(d)}>
-              <Trash2 size={14} /> Revoke
+              <Trash2 size={14} /> {t('Revoke')}
             </button>
           </div>
         ))}
@@ -514,22 +512,22 @@ export function PairingRequests() {
         <header class="dialog-head">
           <Smartphone size={18} />
           <div class="dialog-title">
-            <b>Allow “{request.name}”?</b>
+            <b>{t('Allow “{name}”?', { name: request.name })}</b>
           </div>
         </header>
         <div class="dialog-body">
           <p>
-            A device wants to use Savor on this computer {request.via === 'relay' ? 'through the relay' : 'directly'}. Only allow it if it is yours and shows this number:
+            {request.via === 'relay' ? t('A device wants to use Savor on this computer through the relay. Only allow it if it is yours and shows this number:') : t('A device wants to use Savor on this computer directly. Only allow it if it is yours and shows this number:')}
           </p>
           <b class="check-number">{spaced(request.check)}</b>
-          <p class="muted">If you didn't just pair a device, decline and don't share the pairing code again.</p>
+          <p class="muted">{t('If you didn\'t just pair a device, decline and don\'t share the pairing code again.')}</p>
         </div>
         <footer class="dialog-foot">
           <button class="ghost danger" onClick={() => decide(false)}>
-            Decline
+            {t('Decline')}
           </button>
           <button class="primary" onClick={() => decide(true)}>
-            Allow
+            {t('Allow')}
           </button>
         </footer>
       </div>
@@ -541,8 +539,8 @@ function Waiting({ check }: { check: string }) {
   return (
     <div class="gate">
       <img src="/icon.svg" alt="" />
-      <h1>Allow this device on your computer</h1>
-      <p class="muted">Your computer asks whether to let this device in. Check that it shows the same number:</p>
+      <h1>{t('Allow this device on your computer')}</h1>
+      <p class="muted">{t('Your computer asks whether to let this device in. Check that it shows the same number:')}</p>
       <b class="check-number">{spaced(check)}</b>
     </div>
   )
@@ -550,7 +548,7 @@ function Waiting({ check }: { check: string }) {
 
 // Pairing a phone through the relay: the QR code carries the computer's public key and a one-time code.
 export function RemotePair({ daemonPk, code }: { daemonPk: string; code: string }) {
-  const [name, setName] = useState(/iPhone|Android|iPad/.exec(navigator.userAgent)?.[0] ?? 'My phone')
+  const [name, setName] = useState(/iPhone|Android|iPad/.exec(navigator.userAgent)?.[0] ?? t('My phone'))
   const [busy, setBusy] = useState(false)
   const [check, setCheck] = useState('')
   const [error, setError] = useState('')
@@ -570,16 +568,16 @@ export function RemotePair({ daemonPk, code }: { daemonPk: string; code: string 
   return (
     <div class="gate">
       <img src="/icon.svg" alt="" />
-      <h1>Pair this device</h1>
-      <p class="muted">The connection to your computer is end-to-end encrypted; the relay only passes it on.</p>
+      <h1>{t('Pair this device')}</h1>
+      <p class="muted">{t('The connection to your computer is end-to-end encrypted; the relay only passes it on.')}</p>
       <form class="form" onSubmit={submit}>
         <label>
-          Device name
+          {t('Device name')}
           <input value={name} onInput={(e) => setName(e.currentTarget.value)} />
         </label>
         {error && <div class="error-text">{error}</div>}
         <button class="primary" disabled={busy}>
-          {busy ? 'Pairing…' : 'Pair'}
+          {busy ? t('Pairing…') : t('Pair')}
         </button>
       </form>
     </div>
@@ -588,7 +586,7 @@ export function RemotePair({ daemonPk, code }: { daemonPk: string; code: string 
 
 export function Pair({ code: initial }: { code?: string }) {
   const [code, setCode] = useState(initial ?? '')
-  const [name, setName] = useState(/iPhone|Android|iPad/.exec(navigator.userAgent)?.[0] ?? 'My device')
+  const [name, setName] = useState(/iPhone|Android|iPad/.exec(navigator.userAgent)?.[0] ?? t('My device'))
   const [check, setCheck] = useState('')
   const [error, setError] = useState('')
   const submit = async (e: Event) => {
@@ -598,25 +596,26 @@ export function Pair({ code: initial }: { code?: string }) {
     const r = await fetch('/api/pair', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code, name, check: next }) }).catch(() => null)
     if (r?.ok) return location.replace('/')
     setCheck('')
-    setError((await r?.json().catch(() => null))?.error ?? 'Pairing failed')
+    setError((await r?.json().catch(() => null))?.error ?? t('Pairing failed'))
+
   }
   if (check) return <Waiting check={check} />
   return (
     <div class="gate">
       <img src="/icon.svg" alt="" />
-      <h1>Pair this device</h1>
+      <h1>{t('Pair this device')}</h1>
       <form class="form" onSubmit={submit}>
         <label>
-          Pairing code
+          {t('Pairing code')}
           <input value={code} onInput={(e) => setCode(e.currentTarget.value)} autoFocus={!initial} />
         </label>
         <label>
-          Device name
+          {t('Device name')}
           <input value={name} onInput={(e) => setName(e.currentTarget.value)} />
         </label>
         {error && <div class="error-text">{error}</div>}
         <button class="primary" disabled={!code.trim()}>
-          Pair
+          {t('Pair')}
         </button>
       </form>
     </div>

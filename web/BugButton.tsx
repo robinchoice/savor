@@ -3,6 +3,7 @@ import { domToJpeg } from 'modern-screenshot'
 import { Bug, Send, X } from 'lucide-preact'
 import { api, readFileAsDataUrl, recentErrors, type Me } from './api'
 import { setPrefs, usePrefs } from './prefs'
+import { t } from './i18n'
 
 const SIZE = 44
 type Rect = { x: number; y: number; width: number; height: number }
@@ -111,7 +112,7 @@ export function BugButton({ me }: { me: Me }) {
   return (
     <>
       {!report && !capturing && (
-        <button class="bug-button" data-feedback-ignore style={{ left: x, top: y }} title="Report a bug" aria-label="Report a bug" onPointerDown={down} onPointerMove={move} onPointerUp={up}>
+        <button class="bug-button" data-feedback-ignore style={{ left: x, top: y }} title={t('Report a bug')} aria-label={t('Report a bug')} onPointerDown={down} onPointerMove={move} onPointerUp={up}>
           <Bug size={22} />
         </button>
       )}
@@ -150,43 +151,44 @@ function BugReport({ report, setShot, onClose }: { report: { shot: string | null
         <header class="dialog-head">
           <Bug size={18} />
           <div class="dialog-title">
-            <b>Report a bug</b>
+            <b>{t('Report a bug')}</b>
           </div>
-          <button class="icon-btn" title="Close" onClick={onClose}>
+          <button class="icon-btn" title={t('Close')} onClick={onClose}>
             <X size={16} />
           </button>
         </header>
         {state === 'sent' ? (
           <p class="dialog-body">
-            Thanks, your report was sent. Its ID is <code class="bug-id">{id}</code>.
+            {t('Thanks, your report was sent. Its ID is')} <code class="bug-id">{id}</code>.
           </p>
         ) : (
           <div class="dialog-body form">
             <label>
-              What went wrong?
-              <textarea rows={5} maxLength={4000} autoFocus placeholder="What did you do, what happened, what did you expect?" value={text} onInput={(e) => setText(e.currentTarget.value)} />
+              {t('What went wrong?')}
+              <textarea rows={5} maxLength={4000} autoFocus placeholder={t('What did you do, what happened, what did you expect?')} value={text} onInput={(e) => setText(e.currentTarget.value)} />
             </label>
             {report.shot && (
               <>
-                <img class="bug-shot" src={report.shot} alt="Screenshot" />
+                <img class="bug-shot" src={report.shot} alt={t('Screenshot')} />
                 <div class="row small">
                   <button class="link" onClick={() => setShot(null)}>
-                    Remove screenshot
+                    {t('Remove screenshot')}
                   </button>
                   <span class="muted">·</span>
                   <button class="link" onClick={() => setMarking(true)}>
-                    Mark the spot
+                    {t('Mark the spot')}
                   </button>
                 </div>
               </>
             )}
             <details class="bug-context">
-              <summary>Sent along</summary>
+              <summary>{t('Sent along')}</summary>
               <dl>
                 {report.context.flatMap(([label, value]) => [<dt key={`${label}-t`}>{label}</dt>, <dd key={label}>{value}</dd>])}
               </dl>
             </details>
-            <span class="muted small">Goes to the Savor developers as a private issue. Only they see it{report.shot && ', screenshot included'}.</span>
+            <span class="muted small">{report.shot ? t('Goes to the Savor developers as a private issue. Only they see it, screenshot included.') : t('Goes to the Savor developers as a private issue. Only they see it.')}</span>
+
             {error && <div class="error-text">{error}</div>}
           </div>
         )}
@@ -194,11 +196,11 @@ function BugReport({ report, setShot, onClose }: { report: { shot: string | null
           <span />
           {state === 'sent' ? (
             <button class="primary" onClick={onClose}>
-              Done
+              {t('Done')}
             </button>
           ) : (
             <button class="primary" disabled={!text.trim() || state === 'sending'} onClick={send}>
-              <Send size={15} /> {state === 'sending' ? 'Sending…' : 'Send report'}
+              <Send size={15} /> {state === 'sending' ? t('Sending…') : t('Send report')}
             </button>
           )}
         </footer>
@@ -245,16 +247,16 @@ function MarkSpot({ shot, onCancel, onDone }: { shot: string; onCancel: () => vo
   return (
     <div class="bug-mark" onClick={(e) => e.stopPropagation()}>
       <div class="bug-mark-bar">
-        <span>Drag a frame around the spot</span>
+        <span>{t('Drag a frame around the spot')}</span>
         <button class="ghost" onClick={onCancel}>
-          Cancel
+          {t('Cancel')}
         </button>
         <button class="primary" disabled={!rect} onClick={() => onDone(rect!)}>
-          Done
+          {t('Done')}
         </button>
       </div>
       <div class="bug-mark-canvas" onPointerDown={down} onPointerMove={move} onPointerUp={up}>
-        <img ref={image} src={shot} alt="Screenshot" draggable={false} />
+        <img ref={image} src={shot} alt={t('Screenshot')} draggable={false} />
         {rect && img && (
           <div
             class="bug-mark-frame"

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'preact/hooks'
 import { transport } from './transport'
+import { plural, t } from './i18n'
 
 export class Unauthorized extends Error {}
 
@@ -24,7 +25,7 @@ export async function api<T = any>(method: string, path: string, body?: unknown)
   try {
     data = JSON.parse(r.body)
   } catch {}
-  if (r.status >= 400) throw new Error(data.error ?? `Request failed (${r.status})`)
+  if (r.status >= 400) throw new Error(data.error ?? t('Request failed ({status})', { status: r.status }))
   return data
 }
 
@@ -168,12 +169,12 @@ export const RINGS: Record<ThreadKind, string> = { blocked: 'needs', failed: 'er
 // whatever came later; conversations from before the types count by their state.
 export type NoticeType = 'ask' | 'result' | 'run' | 'error' | 'ci' | 'message'
 export const NOTICES: Record<NoticeType, { label: string; plural: string }> = {
-  ask: { label: 'Question', plural: 'Questions' },
-  result: { label: 'Result', plural: 'Results' },
-  run: { label: 'Run', plural: 'Runs' },
-  error: { label: 'Error', plural: 'Errors' },
+  ask: { label: t('Question'), plural: t('Questions') },
+  result: { label: t('Result'), plural: t('Results') },
+  run: { label: t('Run'), plural: t('Runs') },
+  error: { label: t('Error'), plural: t('Errors') },
   ci: { label: 'CI', plural: 'CI' },
-  message: { label: 'Message', plural: 'Messages' },
+  message: { label: t('Message'), plural: t('Messages') },
 }
 export function noticeOf(t: Thread): NoticeType | null {
   const reason = t.waitsFor?.reason
@@ -239,13 +240,13 @@ export const describeModel = (m: ModelInfo) => {
 // The model by name, also for the default: "Opus 5.5" rather than "Default".
 export const modelName = (a: AgentConfig, info?: ProviderInfo) => {
   const m = info?.models.find((m) => m.id === a.model)
-  return m ? describeModel(m).name : a.model || 'Default'
+  return m ? describeModel(m).name : a.model || t('Default')
 }
 
-export const effortLabel = (e: string) => (e === 'xhigh' ? 'X-High' : cap(e))
+export const effortLabel = (e: string) => t(e === 'xhigh' ? 'X-High' : cap(e))
 
 export const agentSummary = (a: AgentConfig, info?: ProviderInfo) =>
-  [modelName(a, info), a.reasoning && effortLabel(a.reasoning), a.fast && 'Fast', a.ultracode && 'Ultracode'].filter(Boolean).join(' · ')
+  [modelName(a, info), a.reasoning && effortLabel(a.reasoning), a.fast && t('Fast'), a.ultracode && 'Ultracode'].filter(Boolean).join(' · ')
 
 export const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
@@ -265,12 +266,12 @@ export const formatStamp = (iso: string) => (new Date(iso).toDateString() === ne
 // What set a workflow run off. A run that was caught up says when it had been due, one after a model change the new model.
 const dueAt = (iso: string) => new Date(iso).toLocaleString(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit' })
 export const runTrigger = (r: { trigger: Run['trigger']; due?: string; model?: string }) =>
-  r.trigger === 'model' ? `New model ${r.model}` : r.trigger === 'caught' ? `Caught up, was due ${dueAt(r.due!)}` : r.trigger === 'early' ? `Early, in place of ${dueAt(r.due!)}` : r.trigger === 'manual' ? 'Manual' : 'Scheduled'
+  r.trigger === 'model' ? t('New model {model}', { model: r.model ?? '' }) : r.trigger === 'caught' ? t('Caught up, was due {when}', { when: dueAt(r.due!) }) : r.trigger === 'early' ? t('Early, in place of {when}', { when: dueAt(r.due!) }) : r.trigger === 'manual' ? t('Manual') : t('Scheduled')
 export function duration(ms: number) {
   const s = Math.round(ms / 1000)
-  if (s < 60) return `${s} second${s === 1 ? '' : 's'}`
+  if (s < 60) return plural(s, '{n} second', '{n} seconds')
   const m = Math.round(s / 60)
-  if (m < 60) return `${m} minute${m === 1 ? '' : 's'}`
+  if (m < 60) return plural(m, '{n} minute', '{n} minutes')
   const h = Math.floor(m / 60)
-  return `${h} hour${h === 1 ? '' : 's'} ${m % 60} min`
+  return `${plural(h, '{n} hour', '{n} hours')} ${m % 60} min`
 }

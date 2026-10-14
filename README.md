@@ -71,7 +71,7 @@
 - **Devices**: pair a phone or another computer with a QR code. Each device has its own revocable key. A phone paired with several computers switches between them in its account menu. Requests from devices are marked *remote*, and agents treat them with extra care.
 - **Notifications** when an agent finishes, needs an answer or asks for approval, plus an unread count in the tab title and on the app icon. Paired phones get a push only when the notice stays unseen on your other devices for a while (5 minutes by default, questions after one), and at once when Savor is open nowhere. A question can be answered from the notification, with a few seconds to undo, and a notice seen on one device disappears from the others.
 - **Keyboard shortcuts** you set per device for new conversation, Next, the composer, voice input, stop, finish, tabs, browser, terminal and project tabs. Savor starts without any; the setup and the settings offer a suggested set.
-- **Keep awake** toggle, dark and light theme.
+- **Keep awake** toggle, dark and light theme, English and German (follows the system, switchable under Appearance).
 
 Everything lives in plain files: `~/.savor/state.json` holds projects, tokens and devices, each project gets a `.savor/` directory, and worktrees live under `~/.savor/worktrees/`.
 

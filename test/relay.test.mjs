@@ -89,7 +89,7 @@ before(async () => {
   await local('PUT', '/relay', { url: relayBase, enabled: true })
   await until(async () => (await local('GET', '/relay')).state === 'online')
   browser = await chromium.launch({ executablePath: process.env.SAVOR_CHROMIUM })
-  page = await browser.newPage({ viewport: { width: 1400, height: 900 } })
+  page = await browser.newPage({ viewport: { width: 1400, height: 900 }, locale: 'en-US' })
 })
 
 after(async () => {

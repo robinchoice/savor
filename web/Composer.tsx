@@ -7,6 +7,7 @@ import { megabytes, ModelMissing, record, type Recording, type VoiceModels } fro
 import { useUsage } from './Usage'
 import { reviewMessage, type ReviewComment } from './Changes'
 import { fanoutBranches } from '../shared/fanout'
+import { t, tx } from './i18n'
 
 export interface Picked { selector: string; text: string; html: string; styles: Record<string, string>; url: string }
 
@@ -217,7 +218,7 @@ export function Composer(props: Props) {
   // Dropped files also get their name in the text, so the agent knows which attachment is meant.
   const addFiles = async (list: FileList | File[], mention = false) => {
     const picked = [...list].slice(0, MAX_FILES - files.length)
-    if (picked.length < list.length) setError(`Attach up to ${MAX_FILES} files per message.`)
+    if (picked.length < list.length) setError(t('Attach up to {n} files per message.', { n: MAX_FILES }))
     const added = await Promise.all(picked.map(async (f) => ({ name: f.name, dataUrl: await readFileAsDataUrl(f), image: f.type.startsWith('image/') })))
     setFiles((prev) => [...prev, ...added])
     if (mention) setText((t) => (t && !/\s$/.test(t) ? t + ' ' : t) + added.map((f) => `[${f.name}]`).join(' ') + ' ')
@@ -231,28 +232,28 @@ export function Composer(props: Props) {
   const sendButtons = (
     <>
       {props.onStop && (
-        <button class="send stop" title="Stop" onClick={props.onStop}>
+        <button class="send stop" title={t('Stop')} onClick={props.onStop}>
           <Square size={13} />
         </button>
       )}
       {!answers && props.busy && props.onSteer && (
-        <button class="send" title="Add to this turn (Ctrl+Enter): the agent reads it at its next step" disabled={!canSend} onClick={() => submit(true)}>
+        <button class="send" title={t('Add to this turn (Ctrl+Enter): the agent reads it at its next step')} disabled={!canSend} onClick={() => submit(true)}>
           <CornerDownRight size={16} />
         </button>
       )}
       {props.onNext && (
-        <button class="send next" title="Send and open the next conversation that needs you (Alt+Enter)" disabled={!canSend} onClick={() => submit(false, true)}>
+        <button class="send next" title={t('Send and open the next conversation that needs you (Alt+Enter)')} disabled={!canSend} onClick={() => submit(false, true)}>
           <ArrowRight size={16} />
         </button>
       )}
       {answers ? (
-        <button class="send wide" title={allPicked ? 'Send your answers and the comment' : canSend ? 'Send the comment; open questions stay unanswered' : 'Pick an answer for each question or write a comment'} disabled={!canSend} onClick={() => submit()}>
-          {allPicked || !hasInput ? 'Send answers' : 'Send comment'} <ArrowUp size={16} />
+        <button class="send wide" title={allPicked ? t('Send your answers and the comment') : canSend ? t('Send the comment; open questions stay unanswered') : t('Pick an answer for each question or write a comment')} disabled={!canSend} onClick={() => submit()}>
+          {allPicked || !hasInput ? t('Send answers') : t('Send comment')} <ArrowUp size={16} />
         </button>
       ) : (
-        <button class={`send ${fanout ? 'wide' : ''}`} title={props.busy ? 'Queue (Enter): sent after the current turn' : fanout ? 'Start one conversation per agent' : 'Send'} disabled={!canSend} onClick={() => submit()}>
+        <button class={`send ${fanout ? 'wide' : ''}`} title={props.busy ? t('Queue (Enter): sent after the current turn') : fanout ? t('Start one conversation per agent') : t('Send')} disabled={!canSend} onClick={() => submit()}>
           {props.busy ? <ListPlus size={16} /> : <ArrowUp size={16} />}
-          {fanout && `Start ${fanout.length}`}
+          {fanout && t('Start {n}', { n: fanout.length })}
         </button>
       )}
     </>
@@ -266,14 +267,14 @@ export function Composer(props: Props) {
             f.image ? (
               <span key={i} class="thumb" title={f.name}>
                 <img src={f.dataUrl} alt="" />
-                <button onClick={() => setFiles(files.filter((_, j) => j !== i))} aria-label="Remove">
+                <button onClick={() => setFiles(files.filter((_, j) => j !== i))} aria-label={t('Remove')}>
                   <X size={12} />
                 </button>
               </span>
             ) : (
               <span key={i} class="chip-ctx" title={f.name}>
                 <FileText size={13} /> {f.name}
-                <button onClick={() => setFiles(files.filter((_, j) => j !== i))} aria-label="Remove">
+                <button onClick={() => setFiles(files.filter((_, j) => j !== i))} aria-label={t('Remove')}>
                   <X size={12} />
                 </button>
               </span>
@@ -282,7 +283,7 @@ export function Composer(props: Props) {
           {props.picked?.map((p, i) => (
             <span key={i} class="chip-ctx" title={p.html}>
               <Crosshair size={13} /> {p.selector.split(' > ').slice(-1)[0]}
-              <button onClick={() => props.clearPicked?.(i)} aria-label="Remove">
+              <button onClick={() => props.clearPicked?.(i)} aria-label={t('Remove')}>
                 <X size={12} />
               </button>
             </span>
@@ -290,7 +291,7 @@ export function Composer(props: Props) {
           {review.map((c) => (
             <span key={c.id} class="chip-ctx" title={c.text}>
               <MessageSquare size={13} /> {c.path.split('/').pop()}:{c.lines.replace(' (removed)', '')}
-              <button onClick={() => props.setReview?.(review.filter((x) => x.id !== c.id))} aria-label="Remove">
+              <button onClick={() => props.setReview?.(review.filter((x) => x.id !== c.id))} aria-label={t('Remove')}>
                 <X size={12} />
               </button>
             </span>
@@ -308,7 +309,7 @@ export function Composer(props: Props) {
       {voiceSetup && <VoiceSetup close={() => setVoiceSetup(false)} />}
       {slash !== null && (!skills || matches.length > 0) && (
         <div class="menu up slash">
-          {!skills && <div class="menu-label">Loading commands…</div>}
+          {!skills && <div class="menu-label">{t('Loading commands…')}</div>}
           {matches.map((s, i) => (
             <button
               key={s.name}
@@ -331,19 +332,17 @@ export function Composer(props: Props) {
         <div class="aside">
           <div class="aside-head">
             <b>/btw</b> <span>{aside.question}</span>
-            <button class="icon-btn" aria-label="Close" onClick={() => setAside(null)}>
+            <button class="icon-btn" aria-label={t('Close')} onClick={() => setAside(null)}>
               <X size={13} />
             </button>
           </div>
-          {aside.error ? <div class="error-text">{aside.error}</div> : <div class="aside-answer">{aside.answer ?? 'Thinking…'}</div>}
+          {aside.error ? <div class="error-text">{aside.error}</div> : <div class="aside-answer">{aside.answer ?? t('Thinking…')}</div>}
         </div>
       )}
       {props.answering && (
         <div class="answering-row">
-          Answering {props.answering.total === 1 ? 'the question' : `${props.answering.total} questions`}{' '}
-          <span>
-            · {props.answering.picked}/{props.answering.total} picked
-          </span>
+          {props.answering.total === 1 ? t('Answering the question') : t('Answering {n} questions', { n: props.answering.total })}{' '}
+          <span>· {t('{picked}/{total} picked', { picked: props.answering.picked, total: props.answering.total })}</span>
         </div>
       )}
       <div class="composer-top">
@@ -351,7 +350,7 @@ export function Composer(props: Props) {
           ref={ref}
           rows={1}
           value={text}
-          placeholder={props.answering ? 'Add a comment (optional)…' : props.placeholder}
+          placeholder={props.answering ? t('Add a comment (optional)…') : props.placeholder}
           onInput={(e) => {
             setText(e.currentTarget.value)
             setSlashOpen(true)
@@ -391,20 +390,20 @@ export function Composer(props: Props) {
             <Split size={13} />
             {fanout.length > 1 ? (
               <span>
-                Same prompt, one new worktree each: <span class="mono">{fanoutBranches(text, fanout).join(', ')}</span>
+                {t('Same prompt, one new worktree each:')} <span class="mono">{fanoutBranches(text, fanout).join(', ')}</span>
               </span>
             ) : (
-              'Add a second agent to compare.'
+              t('Add a second agent to compare.')
             )}
           </div>
           {fanout.map((a, i) => (
             <div class="menu-anchor" key={i}>
               <span class="fan-chip">
-                <button title="Change agent, model and effort" onClick={() => setPopover(popover === `fan-${i}` ? null : `fan-${i}`)}>
+                <button title={t('Change agent, model and effort')} onClick={() => setPopover(popover === `fan-${i}` ? null : `fan-${i}`)}>
                   <ProviderIcon provider={a.provider} size={15} /> {PROVIDER_NAMES[a.provider] ?? a.provider} <small>{agentSummary(a, agents?.find((x) => x.id === a.provider))}</small>
                 </button>
                 {fanout.length > 1 && (
-                  <button class="icon-btn" title="Remove" onClick={() => setFanout(fanout.filter((_, j) => j !== i))}>
+                  <button class="icon-btn" title={t('Remove')} onClick={() => setFanout(fanout.filter((_, j) => j !== i))}>
                     <X size={13} />
                   </button>
                 )}
@@ -414,7 +413,7 @@ export function Composer(props: Props) {
           ))}
           <div class="menu-anchor">
             <button class="branch-btn" onClick={() => setPopover(popover === 'fan-add' ? null : 'fan-add')}>
-              <Plus size={14} /> Add agent
+              <Plus size={14} /> {t('Add agent')}
             </button>
             {popover === 'fan-add' && (
               <AddAgentMenu
@@ -431,27 +430,27 @@ export function Composer(props: Props) {
       {!props.compact && (
         <div class="composer-bottom">
           <div class="menu-anchor">
-            <button class={`icon-btn ${popover === 'plus' ? 'on' : ''}`} title="Attach, mention or compare agents" onClick={() => setPopover(popover === 'plus' ? null : 'plus')}>
+            <button class={`icon-btn ${popover === 'plus' ? 'on' : ''}`} title={t('Attach, mention or compare agents')} onClick={() => setPopover(popover === 'plus' ? null : 'plus')}>
               <Plus size={18} />
             </button>
             {popover === 'plus' && (
               <div class="menu up plus-menu">
                 <button onClick={() => (setPopover(null), fileRef.current?.click())}>
-                  <Paperclip size={15} /> <span>Attach files</span>
+                  <Paperclip size={15} /> <span>{t('Attach files')}</span>
                 </button>
                 <button onClick={() => setPopover('mention')}>
                   <AtSign size={15} />
                   <span>
-                    Mention
-                    <small>Documents, workflows and files</small>
+                    {t('Mention')}
+                    <small>{t('Documents, workflows and files')}</small>
                   </span>
                 </button>
                 {props.setFanout && (
                   <button class={fanout ? 'selected' : ''} onClick={() => (setFanout(fanout ? null : [props.agent]), setPopover(null))}>
                     <Split size={15} />
                     <span>
-                      Compare agents
-                      <small>The same prompt, one new worktree each</small>
+                      {t('Compare agents')}
+                      <small>{t('The same prompt, one new worktree each')}</small>
                     </span>
                     {fanout && <Check size={15} />}
                   </button>
@@ -549,7 +548,7 @@ function VoiceButton({ onText, onHeard, onError, onSetup, big }: { onText: (s: s
   if (big)
     return (
       <div class="voice big">
-        <button class={`icon-btn${state === 'recording' ? ' recording' : ''}`} title={state === 'recording' ? 'Stop and insert the text' : 'Voice input'} disabled={state === 'starting' || state === 'transcribing'} onClick={state === 'recording' ? stop : start}>
+        <button class={`icon-btn${state === 'recording' ? ' recording' : ''}`} title={state === 'recording' ? t('Stop and insert the text') : t('Voice input')} disabled={state === 'starting' || state === 'transcribing'} onClick={state === 'recording' ? stop : start}>
           {state === 'transcribing' || state === 'starting' ? <span class="spinner" /> : <Mic size={40} />}
         </button>
         {state === 'recording' ? (
@@ -557,13 +556,13 @@ function VoiceButton({ onText, onHeard, onError, onSetup, big }: { onText: (s: s
             <span class="voice-time">
               {Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, '0')}
             </span>{' '}
-            · Tap to stop ·{' '}
-            <button class="link" title="Discard the recording" onClick={cancel}>
-              Discard
+            · {t('Tap to stop')} ·{' '}
+            <button class="link" title={t('Discard the recording')} onClick={cancel}>
+              {t('Discard')}
             </button>
           </span>
         ) : (
-          <span>{state === 'transcribing' ? 'Transcribing…' : state === 'starting' ? 'Starting the microphone…' : 'Tap to record'}</span>
+          <span>{state === 'transcribing' ? t('Transcribing…') : state === 'starting' ? t('Starting the microphone…') : t('Tap to record')}</span>
         )}
       </div>
     )
@@ -574,13 +573,13 @@ function VoiceButton({ onText, onHeard, onError, onSetup, big }: { onText: (s: s
           <span class="voice-time">
             {Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, '0')}
           </span>
-          <button class="icon-btn" title="Discard the recording" onClick={cancel}>
+          <button class="icon-btn" title={t('Discard the recording')} onClick={cancel}>
             <X size={15} />
           </button>
         </>
       )}
-      {state === 'transcribing' && <small>Transcribing…</small>}
-      <button class={`icon-btn${state === 'recording' ? ' recording' : ''}`} title={state === 'recording' ? 'Stop and insert the text' : 'Voice input'} disabled={state === 'starting' || state === 'transcribing'} onClick={state === 'recording' ? stop : start}>
+      {state === 'transcribing' && <small>{t('Transcribing…')}</small>}
+      <button class={`icon-btn${state === 'recording' ? ' recording' : ''}`} title={state === 'recording' ? t('Stop and insert the text') : t('Voice input')} disabled={state === 'starting' || state === 'transcribing'} onClick={state === 'recording' ? stop : start}>
         {state === 'transcribing' ? <span class="spinner small" /> : <Mic size={17} />}
       </button>
     </span>
@@ -594,27 +593,26 @@ function VoiceSetup({ close }: { close: () => void }) {
   if (!model) return null
   return (
     <div class="voice-setup pad">
-      <button class="icon-btn" title="Close" onClick={close}>
+      <button class="icon-btn" title={t('Close')} onClick={close}>
         <X size={14} />
       </button>
       {model.installed ? (
-        <p>{model.name} is ready: click the microphone and speak.</p>
+        <p>{t('{name} is ready: click the microphone and speak.', { name: model.name })}</p>
       ) : (
         <>
           <p>
-            Voice input turns speech into text on this computer, with the speech model {model.name} ({megabytes(model.size)}). Savor downloads it once. Other models are in the
-            settings of this computer under Voice input.
+            {t('Voice input turns speech into text on this computer, with the speech model {name} ({size}). Savor downloads it once. Other models are in the settings of this computer under Voice input.', { name: model.name, size: megabytes(model.size) })}
           </p>
           {model.downloaded !== null ? (
             <div class="voice-progress">
               <progress max={model.size} value={model.downloaded} />
               <small class="muted">
-                {megabytes(model.downloaded)} of {megabytes(model.size)}
+                {t('{done} of {total}', { done: megabytes(model.downloaded), total: megabytes(model.size) })}
               </small>
             </div>
           ) : (
             <button class="primary small" onClick={() => api('POST', `/voice/models/${model.id}/download`)}>
-              <Download size={13} /> Download {model.name}
+              <Download size={13} /> {t('Download {name}', { name: model.name })}
             </button>
           )}
           {model.error && <p class="error-text">{model.error}</p>}
@@ -639,20 +637,20 @@ function MentionMenu({ project, onPick }: { project: Project; onPick: (s: string
   const matching = docs.filter((d) => d.title.toLowerCase().includes(q.toLowerCase()))
   return (
     <div class="menu up mention">
-      <input autoFocus placeholder="Search documents, workflows and files…" value={q} onInput={(e) => setQ(e.currentTarget.value)} />
-      {matching.length > 0 && <div class="menu-label">Documents</div>}
+      <input autoFocus placeholder={t('Search documents, workflows and files…')} value={q} onInput={(e) => setQ(e.currentTarget.value)} />
+      {matching.length > 0 && <div class="menu-label">{t('Documents')}</div>}
       {matching.slice(0, 8).map((d) => (
         <button key={d.id} onClick={() => onPick(`@document:"${d.title}" (id ${d.id})`)}>
           <FileText size={14} /> {d.title}
         </button>
       ))}
-      {wfs.length > 0 && <div class="menu-label">Workflows</div>}
+      {wfs.length > 0 && <div class="menu-label">{t('Workflows')}</div>}
       {wfs.map((w) => (
         <button key={w.id} onClick={() => onPick(`@workflow:"${w.name}" (id ${w.id})`)}>
           <WorkflowIcon size={14} /> {w.name}
         </button>
       ))}
-      <div class="menu-label">Files</div>
+      <div class="menu-label">{t('Files')}</div>
       {files.slice(0, 12).map((f) => (
         <button key={f} onClick={() => onPick(`@${f}`)}>
           <FileText size={14} /> <span class="mono">{f}</span>
@@ -663,12 +661,12 @@ function MentionMenu({ project, onPick }: { project: Project; onPick: (s: string
 }
 
 const EFFORT_DETAIL: Record<string, string> = {
-  low: 'Quick answers with little thinking',
-  medium: 'Balanced speed and depth',
-  high: 'Thorough, for most changes',
-  xhigh: 'Extra thinking for tricky changes',
-  max: 'Longest thinking, uses the limits fastest',
-  ultra: 'The deepest reasoning Codex offers',
+  low: t('Quick answers with little thinking'),
+  medium: t('Balanced speed and depth'),
+  high: t('Thorough, for most changes'),
+  xhigh: t('Extra thinking for tricky changes'),
+  max: t('Longest thinking, uses the limits fastest'),
+  ultra: t('The deepest reasoning Codex offers'),
 }
 
 export const effortsOf = (agent: AgentConfig, info?: ProviderInfo) => info?.models.find((m) => m.id === agent.model)?.efforts ?? info?.efforts ?? []
@@ -690,7 +688,7 @@ export function AgentButton({ agent, info, open, toggle }: { agent: AgentConfig;
   const efforts = effortsOf(agent, info)
   const mode = info?.modes.find((m) => m.id === agent.permissionMode)
   return (
-    <button class={`agent-btn ${open ? 'on' : ''}`} title={`${PROVIDER_NAMES[agent.provider] ?? agent.provider}: change the model, effort and permissions`} onClick={toggle}>
+    <button class={`agent-btn ${open ? 'on' : ''}`} title={`${PROVIDER_NAMES[agent.provider] ?? agent.provider}: ${t('change the model, effort and permissions')}`} onClick={toggle}>
       <ProviderIcon provider={agent.provider} size={16} />
       <b>{modelName(agent, info)}</b>
       {efforts.includes(agent.reasoning) && (
@@ -737,7 +735,7 @@ export function AgentMenu({ agent, agents, setAgent, close }: { agent: AgentConf
   const choose = (p: ProviderInfo) => set({ provider: p.id, model: '', reasoning: p.defaultEffort, fast: false, ultracode: false, permissionMode: p.defaultMode })
   const efforts = effortsOf(agent, info)
   const models = info?.models ?? []
-  const listed = [...(models.some((m) => m.id === '') ? [] : [{ id: '', label: 'Default', detail: `${info?.name ?? 'The agent'}’s own default` }]), ...(agent.model && !models.some((m) => m.id === agent.model) ? [{ id: agent.model, label: agent.model }] : []), ...models]
+  const listed = [...(models.some((m) => m.id === '') ? [] : [{ id: '', label: t('Default'), detail: t('{name}’s own default', { name: info?.name ?? t('The agent') }) }]), ...(agent.model && !models.some((m) => m.id === agent.model) ? [{ id: agent.model, label: agent.model }] : []), ...models]
   const savePreset = async () => {
     try {
       await api('POST', '/presets', { name: presetName, agent })
@@ -747,12 +745,12 @@ export function AgentMenu({ agent, agents, setAgent, close }: { agent: AgentConf
       setError((e as Error).message)
     }
   }
-  const status = (p: ProviderInfo) => (!p.installed ? 'Not installed' : p.signedIn === false ? `Sign in: ${p.signIn}` : p.account ?? p.version ?? '')
+  const status = (p: ProviderInfo) => (!p.installed ? t('Not installed') : p.signedIn === false ? `${t('Sign in:')} ${p.signIn}` : p.account ?? p.version ?? '')
   // The weekly limit says the most about what is left, the others show in the tooltip.
   const limit = (id: string) => {
     const u = usage.find((u) => u.provider === id)
     const w = u?.windows.find((w) => w.label === 'Weekly') ?? u?.windows[0]
-    return w && { left: Math.max(0, 100 - w.percent), label: w.label, all: u!.windows.map((w) => `${w.label}: ${Math.max(0, 100 - w.percent)}% left${w.resets ? `, resets ${w.resets}` : ''}`).join('\n') }
+    return w && { left: Math.max(0, 100 - w.percent), label: w.label, all: u!.windows.map((w) => `${tx(w.label)}: ${t('{n}% left', { n: Math.max(0, 100 - w.percent) })}${w.resets ? `, ${t('resets {when}', { when: w.resets })}` : ''}`).join('\n') }
   }
 
   return (
@@ -760,8 +758,8 @@ export function AgentMenu({ agent, agents, setAgent, close }: { agent: AgentConf
       <div class="sheet-scrim" onClick={close} />
       <div class="menu agent-menu" ref={ref}>
         <div class="panel-head sheet-head">
-          <b>Agent</b>
-          <button class="icon-btn" title="Close" onClick={close}>
+          <b>{t('Agent')}</b>
+          <button class="icon-btn" title={t('Close')} onClick={close}>
             <X size={16} />
           </button>
         </div>
@@ -773,7 +771,7 @@ export function AgentMenu({ agent, agents, setAgent, close }: { agent: AgentConf
                 <ProviderIcon provider={p.id} size={16} />
                 <span>
                   {p.name}
-                  {l ? <small>{l.left}% left · {l.label}</small> : p.modes && <small>{status(p)}</small>}
+                  {l ? <small>{t('{n}% left', { n: l.left })} · {tx(l.label)}</small> : p.modes && <small>{status(p)}</small>}
                   {l && (
                     <span class={`ap-limit ${l.left <= 10 ? 'low' : ''}`}>
                       <i style={{ width: `${l.left}%` }} />
@@ -785,7 +783,7 @@ export function AgentMenu({ agent, agents, setAgent, close }: { agent: AgentConf
           })}
         </div>
         <div class="ap-pane">
-          <div class="menu-label">Model</div>
+          <div class="menu-label">{t('Model')}</div>
           {models.length ? (
             <div class="ap-models">
               {listed.map((m) => {
@@ -793,9 +791,9 @@ export function AgentMenu({ agent, agents, setAgent, close }: { agent: AgentConf
                 return (
                   <button key={m.id} class={`ap-model ${agent.model === m.id ? 'selected' : ''}`} onClick={() => set({ model: m.id })}>
                     <b>
-                      {m.id === '' ? 'Default' : name}
+                      {m.id === '' ? t('Default') : name}
                       {m.id === '' && name !== m.label && <span class="ap-tag">{name}</span>}
-                      {m.id.includes('[1m]') && <span class="ap-tag">1M context</span>}
+                      {m.id.includes('[1m]') && <span class="ap-tag">{t('1M context')}</span>}
                     </b>
                     {detail && <small>{detail}</small>}
                   </button>
@@ -803,14 +801,14 @@ export function AgentMenu({ agent, agents, setAgent, close }: { agent: AgentConf
               })}
             </div>
           ) : (
-            <input placeholder="Default" value={agent.model} onInput={(e) => set({ model: e.currentTarget.value })} />
+            <input placeholder={t('Default')} value={agent.model} onInput={(e) => set({ model: e.currentTarget.value })} />
           )}
           {efforts.length > 0 && (
             <>
               <div class="menu-label">
-                Effort <span>{EFFORT_DETAIL[agent.reasoning]}</span>
+                {t('Effort')} <span>{EFFORT_DETAIL[agent.reasoning]}</span>
               </div>
-              <div class="ap-effort" role="radiogroup" aria-label="Reasoning effort">
+              <div class="ap-effort" role="radiogroup" aria-label={t('Reasoning effort')}>
                 {efforts.map((e) => (
                   <button key={e} role="radio" aria-checked={agent.reasoning === e} class={agent.reasoning === e ? 'selected' : ''} title={EFFORT_DETAIL[e]} onClick={() => set({ reasoning: e })}>
                     {effortLabel(e)}
@@ -823,8 +821,8 @@ export function AgentMenu({ agent, agents, setAgent, close }: { agent: AgentConf
             <button class="ap-row" role="switch" aria-checked={agent.fast} onClick={() => set({ fast: !agent.fast })}>
               <Zap size={15} class="agent-fast" />
               <span>
-                Fast mode
-                <small>Faster output from the same model, uses the limits faster</small>
+                {t('Fast mode')}
+                <small>{t('Faster output from the same model, uses the limits faster')}</small>
               </span>
               <span class={`switch ${agent.fast ? 'on' : ''}`}>
                 <i />
@@ -836,7 +834,7 @@ export function AgentMenu({ agent, agents, setAgent, close }: { agent: AgentConf
               <Sparkles size={15} class="agent-fast" />
               <span>
                 Ultracode
-                <small>Plans larger tasks as workflows of parallel agents, at any effort</small>
+                <small>{t('Plans larger tasks as workflows of parallel agents, at any effort')}</small>
               </span>
               <span class={`switch ${agent.ultracode ? 'on' : ''}`}>
                 <i />
@@ -845,14 +843,14 @@ export function AgentMenu({ agent, agents, setAgent, close }: { agent: AgentConf
           )}
           {info?.modes.length ? (
             <>
-              <div class="menu-label">Permissions</div>
-              <div role="radiogroup" aria-label="Permissions">
+              <div class="menu-label">{t('Permissions')}</div>
+              <div role="radiogroup" aria-label={t('Permissions')}>
                 {info.modes.map((m) => (
                   <button key={m.id} role="radio" aria-checked={agent.permissionMode === m.id} class={`ap-row ${agent.permissionMode === m.id ? 'selected' : ''} ${m.unsafe ? 'unsafe' : ''}`} onClick={() => set({ permissionMode: m.id })}>
                     <span class="ap-radio" />
                     <span>
-                      {m.label}
-                      <small>{m.detail}</small>
+                      {t(m.label)}
+                      <small>{t(m.detail)}</small>
                     </span>
                     {m.unsafe && <ShieldAlert size={15} />}
                   </button>
@@ -867,7 +865,7 @@ export function AgentMenu({ agent, agents, setAgent, close }: { agent: AgentConf
               <button title={`${PROVIDER_NAMES[p.agent.provider] ?? p.agent.provider} · ${agentSummary(p.agent, agents.find((a) => a.id === p.agent.provider))}`} onClick={() => setAgent(p.agent)}>
                 <Bookmark size={13} /> {p.name}
               </button>
-              <button class="ap-remove" title="Remove preset" onClick={() => api('DELETE', `/presets/${p.id}`).catch((e: Error) => setError(e.message))}>
+              <button class="ap-remove" title={t('Remove preset')} onClick={() => api('DELETE', `/presets/${p.id}`).catch((e: Error) => setError(e.message))}>
                 <X size={12} />
               </button>
             </span>
@@ -875,7 +873,7 @@ export function AgentMenu({ agent, agents, setAgent, close }: { agent: AgentConf
           <span class="spacer" />
           {presetName === null ? (
             <button class="ap-preset ghost" onClick={() => setPresetName('')}>
-              <Plus size={13} /> Save as preset
+              <Plus size={13} /> {t('Save as preset')}
             </button>
           ) : (
             <form
@@ -885,9 +883,9 @@ export function AgentMenu({ agent, agents, setAgent, close }: { agent: AgentConf
                 savePreset()
               }}
             >
-              <input autoFocus placeholder="Preset name" value={presetName} onInput={(e) => setPresetName(e.currentTarget.value)} />
+              <input autoFocus placeholder={t('Preset name')} value={presetName} onInput={(e) => setPresetName(e.currentTarget.value)} />
               <button class="primary small" disabled={!presetName.trim()}>
-                Save
+                {t('Save')}
               </button>
             </form>
           )}
@@ -903,7 +901,7 @@ function AddAgentMenu({ agents, onPick }: { agents: ProviderInfo[]; onPick: (a: 
   const [presets] = useApi<Preset[]>('/presets', (e) => e.type === 'presets')
   return (
     <div class="menu up">
-      {!!presets?.length && <div class="menu-label">Presets</div>}
+      {!!presets?.length && <div class="menu-label">{t('Presets')}</div>}
       {presets?.map((p) => (
         <button key={p.id} onClick={() => onPick(p.agent)}>
           <Bookmark size={14} />
@@ -915,7 +913,7 @@ function AddAgentMenu({ agents, onPick }: { agents: ProviderInfo[]; onPick: (a: 
           </span>
         </button>
       ))}
-      <div class="menu-label">Agents</div>
+      <div class="menu-label">{t('Agents')}</div>
       {agents
         .filter((a) => a.installed)
         .map((p) => (
@@ -935,9 +933,9 @@ function BranchPicker({ project, threadId, worktree, setWorktree, open, toggle }
   if (!git.branch) return null
   if (worktree)
     return (
-      <span class="branch-btn worktree" title="This conversation will work in its own git worktree of this branch">
-        <FolderGit2 size={14} /> {worktree} <small>new worktree</small>
-        <button class="icon-btn" title="Work in the project folder instead" onClick={() => setWorktree?.(null)}>
+      <span class="branch-btn worktree" title={t('This conversation will work in its own git worktree of this branch')}>
+        <FolderGit2 size={14} /> {worktree} <small>{t('new worktree')}</small>
+        <button class="icon-btn" title={t('Work in the project folder instead')} onClick={() => setWorktree?.(null)}>
           <X size={13} />
         </button>
       </span>
@@ -953,7 +951,8 @@ function BranchPicker({ project, threadId, worktree, setWorktree, open, toggle }
     }
   }
   const newWorktree = () => {
-    const name = prompt('Branch name for the new worktree', '')?.trim()
+    const name = prompt(t('Branch name for the new worktree'), '')
+?.trim()
     if (!name) return
     setWorktree?.(name)
     toggle()
@@ -965,7 +964,7 @@ function BranchPicker({ project, threadId, worktree, setWorktree, open, toggle }
       </button>
       {open && (
         <div class="menu up">
-          <div class="menu-label">Switch branch</div>
+          <div class="menu-label">{t('Switch branch')}</div>
           {git.branches.map((b) => (
             <button key={b} class={b === git.branch ? 'selected' : ''} onClick={() => change(b)}>
               <GitBranch size={14} /> {b}
@@ -973,7 +972,7 @@ function BranchPicker({ project, threadId, worktree, setWorktree, open, toggle }
           ))}
           {setWorktree && (
             <button onClick={newWorktree}>
-              <FolderGit2 size={14} /> New worktree…
+              <FolderGit2 size={14} /> {t('New worktree…')}
             </button>
           )}
           {error && <div class="error-text">{error}</div>}

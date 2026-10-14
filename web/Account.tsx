@@ -10,6 +10,7 @@ import { qr, RELAY_LABEL, type DeviceRow, type RelayState } from './Settings'
 import { forgetProfile, loadProfile, loadProfiles, switchProfile } from './transport'
 import { megabytes, type VoiceModels } from './voice'
 import { resetLayout } from './Layout'
+import { langPref, plural, setLang, t, type LangPref } from './i18n'
 
 const REPO = 'https://github.com/robinchoice/savor'
 
@@ -18,8 +19,9 @@ function openIssue(text: string, details: string) {
   window.open(`${REPO}/issues/new?${new URLSearchParams({ title: text.trim().split('\n')[0].slice(0, 80), body: `${text.trim()}\n\n---\n${details}` })}`, '_blank', 'noreferrer')
 }
 
-const THEMES: [Theme, string][] = [['system', 'System'], ['light', 'Light'], ['dark', 'Dark']]
-const SHOWN: [keyof Prefs['show'], string][] = [['label', 'Label'], ['agent', 'Agent'], ['date', 'Date'], ['count', 'Message count']]
+const THEMES: [Theme, string][] = [['system', t('System')], ['light', t('Light')], ['dark', t('Dark')]]
+const LANGS: [LangPref, string][] = [['system', t('System')], ['en', 'English'], ['de', 'Deutsch']]
+const SHOWN: [keyof Prefs['show'], string][] = [['label', t('Label')], ['agent', t('Agent')], ['date', t('Date')], ['count', t('Message count')]]
 
 function DensityPicker({ name, value, onChange }: { name: string; value: Density; onChange: (d: Density) => void }) {
   return (
@@ -32,7 +34,7 @@ function DensityPicker({ name, value, onChange }: { name: string; value: Density
             <i />
           </span>
           <span>
-            {cap(d)} <input type="radio" name={name} checked={value === d} onChange={() => onChange(d)} />
+            {t(cap(d))} <input type="radio" name={name} checked={value === d} onChange={() => onChange(d)} />
           </span>
         </label>
       ))}
@@ -51,8 +53,8 @@ export function AppearanceMenu({ close }: { close: () => void }) {
   return (
     <div class="menu right appearance" ref={ref}>
       <div class="panel-head">
-        <b>Appearance</b>
-        <button class="icon-btn" title="Close" onClick={close}>
+        <b>{t('Appearance')}</b>
+        <button class="icon-btn" title={t('Close')} onClick={close}>
           <X size={16} />
         </button>
       </div>
@@ -63,17 +65,26 @@ export function AppearanceMenu({ close }: { close: () => void }) {
           {prefs.theme === id && <Check size={15} />}
         </button>
       ))}
-      <div class="menu-label">Conversations</div>
+      <div class="menu-label">{t('Language')}</div>
+      <div class="segmented">
+        {LANGS.map(([id, label]) => (
+          <button key={id} class={langPref === id ? 'selected' : ''} onClick={() => langPref !== id && setLang(id)}>
+            {label}
+          </button>
+        ))}
+      </div>
+      <div class="menu-label">{t('Conversations')}</div>
       <DensityPicker name="conversations" value={prefs.conversations} onChange={(conversations) => setPrefs({ conversations })} />
       <details>
-        <summary>Choose what to show</summary>
+        <summary>{t('Choose what to show')}</summary>
         {SHOWN.map(([key, label]) => (
           <label key={key} class="check">
             <input type="checkbox" checked={prefs.show[key]} onChange={(e) => setPrefs({ show: { ...prefs.show, [key]: e.currentTarget.checked } })} /> {label}
+
           </label>
         ))}
       </details>
-      <div class="menu-label">Messages</div>
+      <div class="menu-label">{t('Messages')}</div>
       <DensityPicker name="messages" value={prefs.messages} onChange={(messages) => setPrefs({ messages })} />
     </div>
   )
@@ -92,22 +103,22 @@ export function FeedbackDialog({ me, onClose }: { me: Me; onClose: () => void })
         <header class="dialog-head">
           <MessageSquare size={18} />
           <div class="dialog-title">
-            <b>Send feedback</b>
+            <b>{t('Send feedback')}</b>
           </div>
-          <button class="icon-btn" title="Close" onClick={onClose}>
+          <button class="icon-btn" title={t('Close')} onClick={onClose}>
             <X size={16} />
           </button>
         </header>
         {opened ? (
-          <p class="dialog-body">The issue form is open in your browser with your text filled in. Add screenshots there and submit.</p>
+          <p class="dialog-body">{t('The issue form is open in your browser with your text filled in. Add screenshots there and submit.')}</p>
         ) : (
           <div class="dialog-body form">
             <label>
-              Your feedback
-              <textarea rows={6} maxLength={4000} autoFocus placeholder="What could be better?" value={text} onInput={(e) => setText(e.currentTarget.value)} />
+              {t('Your feedback')}
+              <textarea rows={6} maxLength={4000} autoFocus placeholder={t('What could be better?')} value={text} onInput={(e) => setText(e.currentTarget.value)} />
             </label>
             <span class="muted small">
-              Opens a GitHub issue in your browser. Savor {me.version} · {me.system} is added to the text.
+              {t('Opens a GitHub issue in your browser. Savor {version} · {system} is added to the text.', { version: me.version, system: me.system })}
             </span>
           </div>
         )}
@@ -115,11 +126,11 @@ export function FeedbackDialog({ me, onClose }: { me: Me; onClose: () => void })
           <span />
           {opened ? (
             <button class="primary" onClick={onClose}>
-              Done
+              {t('Done')}
             </button>
           ) : (
             <button class="primary" disabled={!text.trim()} onClick={open}>
-              Continue on GitHub <ArrowUpRight size={15} />
+              {t('Continue on GitHub')} <ArrowUpRight size={15} />
             </button>
           )}
         </footer>
@@ -133,11 +144,11 @@ interface Pairing { code: string; url: string; relayUrl: string | null; expiresA
 function MyDevices({ me, projects }: { me: Me; projects: number }) {
   const [devices] = useApi<DeviceRow[]>('/devices', (e) => e.type === 'devices')
   const [pairing, setPairing] = useState<Pairing | null>(null)
-  const revoke = (d: DeviceRow) => confirm(`Revoke access for ${d.name}?`) && api('DELETE', `/devices/${d.id}`)
+  const revoke = (d: DeviceRow) => confirm(t('Revoke access for {name}?', { name: d.name })) && api('DELETE', `/devices/${d.id}`)
   const link = pairing?.relayUrl ?? pairing?.url
   return (
     <section>
-      <h2>My devices</h2>
+      <h2>{t('My devices')}</h2>
       <div class="box">
         <div class="row-item">
           <span class="tile">
@@ -146,7 +157,7 @@ function MyDevices({ me, projects }: { me: Me; projects: number }) {
           <div>
             <b>{me.host}</b>
             <small class="muted">
-              This computer · {projects} project{projects === 1 ? '' : 's'}
+              {t('This computer')} · {plural(projects, '{n} project', '{n} projects')}
             </small>
           </div>
         </div>
@@ -158,11 +169,11 @@ function MyDevices({ me, projects }: { me: Me; projects: number }) {
             <div>
               <b>{d.name}</b>
               <small class="muted">
-                {d.via === 'relay' ? 'Via relay' : 'Direct'} · last seen {d.lastSeenAt ? new Date(d.lastSeenAt).toLocaleString() : 'never'}
+                {d.via === 'relay' ? t('Via relay') : t('Direct')} · {t('last seen {when}', { when: d.lastSeenAt ? new Date(d.lastSeenAt).toLocaleString() : t('never') })}
               </small>
             </div>
             <button class="ghost small danger" onClick={() => revoke(d)}>
-              Revoke
+              {t('Revoke')}
             </button>
           </div>
         ))}
@@ -171,8 +182,8 @@ function MyDevices({ me, projects }: { me: Me; projects: number }) {
             <Plus size={17} />
           </span>
           <div>
-            <b>Connect a personal device</b>
-            <small class="muted">Your phone or a web browser</small>
+            <b>{t('Connect a personal device')}</b>
+            <small class="muted">{t('Your phone or a web browser')}</small>
           </div>
           {pairing ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
         </button>
@@ -180,10 +191,10 @@ function MyDevices({ me, projects }: { me: Me; projects: number }) {
           <div class="pairing">
             <div class="qr" dangerouslySetInnerHTML={{ __html: qr(link) }} />
             <div>
-              <p>Scan the code, or open this link on the device:</p>
+              <p>{t('Scan the code, or open this link on the device:')}</p>
               <p class="mono">{link}</p>
               <p>
-                Code: <b class="mono">{pairing.code}</b> · valid until {new Date(pairing.expiresAt).toLocaleTimeString()}
+                {t('Code:')} <b class="mono">{pairing.code}</b> · {t('valid until {time}', { time: new Date(pairing.expiresAt).toLocaleTimeString() })}
               </p>
             </div>
           </div>
@@ -218,15 +229,15 @@ function Agents() {
         <span class="tile">
           <Bot size={16} />
         </span>
-        Agents <ChevronDown size={16} class="chev" />
+        {t('Agents')} <ChevronDown size={16} class="chev" />
       </summary>
       <div class="box-body" ref={ref}>
         {agent && info && (
           <>
             <div class="setting">
               <span>
-                New projects start with
-                <small class={error ? 'error-text' : 'muted'}>{error || 'Then each project keeps the agent it last used'}</small>
+                {t('New projects start with')}
+                <small class={error ? 'error-text' : 'muted'}>{error || t('Then each project keeps the agent it last used')}</small>
               </span>
               <AgentButton agent={agent} info={info} open={menu} toggle={() => setMenu(!menu)} />
             </div>
@@ -251,7 +262,7 @@ function VoiceInput() {
         <span class="tile">
           <Mic size={16} />
         </span>
-        Voice input <ChevronDown size={16} class="chev" />
+        {t('Voice input')} <ChevronDown size={16} class="chev" />
       </summary>
       <div class="box-body">
         {voice?.models.map((m) => (
@@ -268,11 +279,11 @@ function VoiceInput() {
               <small class="muted">{Math.floor((m.downloaded / m.size) * 100)} %</small>
             ) : m.installed ? (
               <button class="ghost small" onClick={() => api('DELETE', `/voice/models/${m.id}`)}>
-                Remove
+                {t('Remove')}
               </button>
             ) : (
               <button class="ghost small" onClick={() => api('POST', `/voice/models/${m.id}/download`)}>
-                Download
+                {t('Download')}
               </button>
             )}
           </label>
@@ -287,8 +298,8 @@ function RelayRow({ onClose }: { onClose: () => void }) {
   return (
     <a class="setting" href="#/devices" onClick={onClose}>
       <span>
-        Devices & remote access
-        <small class="muted">Relay: {relay ? RELAY_LABEL[relay.state] : '…'}</small>
+        {t('Devices & remote access')}
+        <small class="muted">{t('Relay:')} {relay ? t(RELAY_LABEL[relay.state]) : '…'}</small>
       </span>
       <ChevronRight size={15} />
     </a>
@@ -304,7 +315,7 @@ function UpdateSettings() {
     <>
       {desktop && (
         <div class="setting">
-          <span>Download and install updates automatically</span>
+          <span>{t('Download and install updates automatically')}</span>
           <button class={`switch ${settings.autoUpdate ? 'on' : ''}`} role="switch" aria-checked={settings.autoUpdate} onClick={() => toggle('autoUpdate')}>
             <i />
           </button>
@@ -313,8 +324,8 @@ function UpdateSettings() {
       {settings.service && (
         <div class="setting">
           <span>
-            Restart automatically after updates
-            <small class="muted">Otherwise Savor asks before it restarts</small>
+            {t('Restart automatically after updates')}
+            <small class="muted">{t('Otherwise Savor asks before it restarts')}</small>
           </span>
           <button class={`switch ${settings.autoRestart ? 'on' : ''}`} role="switch" aria-checked={settings.autoRestart} onClick={() => toggle('autoRestart')}>
             <i />
@@ -324,8 +335,8 @@ function UpdateSettings() {
       {settings.usagePing !== null && (
         <div class="setting">
           <span>
-            Count this installation
-            <small class="muted">Once a day, a random ID, the version and the platform, so we know how many people use Savor</small>
+            {t('Count this installation')}
+            <small class="muted">{t('Once a day, a random ID, the version and the platform, so we know how many people use Savor')}</small>
           </span>
           <button class={`switch ${settings.usagePing ? 'on' : ''}`} role="switch" aria-checked={settings.usagePing} onClick={() => toggle('usagePing')}>
             <i />
@@ -343,13 +354,13 @@ function PushDelay() {
   return (
     <div class="setting wrap">
       <span>
-        Phones get a notice after
-        <small class="muted">Unless it was seen on another device first. Questions come after a minute at most, and at once when Savor is open nowhere.</small>
+        {t('Phones get a notice after')}
+        <small class="muted">{t('Unless it was seen on another device first. Questions come after a minute at most, and at once when Savor is open nowhere.')}</small>
       </span>
       <div class="segmented">
         {[0, 1, 3, 5, 15].map((m) => (
           <button key={m} class={settings.pushDelay === m ? 'selected' : ''} onClick={() => api('PATCH', '/settings', { pushDelay: m })}>
-            {m ? `${m} min` : 'At once'}
+            {m ? `${m} min` : t('At once')}
           </button>
         ))}
       </div>
@@ -366,24 +377,24 @@ function Computers() {
         <span class="tile">
           <Laptop size={16} />
         </span>
-        Computers <ChevronDown size={16} class="chev" />
+        {t('Computers')} <ChevronDown size={16} class="chev" />
       </summary>
       <div class="box-body">
         {loadProfiles().map((p) =>
           p.daemonPk === active.daemonPk ? (
             <div key={p.daemonPk} class="setting">
-              <span>{p.host ?? 'This computer'}</span>
-              <span class="muted">Connected</span>
+              <span>{p.host ?? t('This computer')}</span>
+              <span class="muted">{t('Connected')}</span>
             </div>
           ) : (
             <button key={p.daemonPk} class="setting" onClick={() => switchProfile(p)}>
-              <span>{p.host ?? 'Your other computer'}</span>
-              <span class="muted">Switch</span>
+              <span>{p.host ?? t('Your other computer')}</span>
+              <span class="muted">{t('Switch')}</span>
               <ChevronRight size={15} />
             </button>
           ),
         )}
-        <small class="muted">To add a computer, scan the pairing QR code in Savor on it.</small>
+        <small class="muted">{t('To add a computer, scan the pairing QR code in Savor on it.')}</small>
       </div>
     </details>
   )
@@ -397,25 +408,25 @@ export function AccountDialog({ me, projects, toggleAwake, open, onClose }: { me
   const [update, setUpdate] = useState('')
   const [available, setAvailable] = useState(false)
   const checkUpdate = async () => {
-    setUpdate('checking…')
+    setUpdate(t('checking…'))
     const version = await desktop!.checkForUpdates().catch(() => undefined)
-    setUpdate(version ? `${version} is available` : version === null ? 'up to date' : 'could not check for updates')
+    setUpdate(version ? t('{version} is available', { version }) : version === null ? t('up to date') : t('could not check for updates'))
     setAvailable(!!version)
   }
   const installUpdate = () => {
-    setUpdate('installing, Savor restarts…')
-    desktop!.installUpdate().catch(() => setUpdate('could not install the update'))
+    setUpdate(t('installing, Savor restarts…'))
+    desktop!.installUpdate().catch(() => setUpdate(t('could not install the update')))
   }
-  const forget = () => confirm('Forget this computer on this device? You will need to pair again.') && forgetProfile().then(() => location.replace('/'))
+  const forget = () => confirm(t('Forget this computer on this device? You will need to pair again.')) && forgetProfile().then(() => location.replace('/'))
   return (
     <div class="overlay" onClick={onClose}>
       <div class="dialog account-dialog" onClick={(e) => e.stopPropagation()}>
         <header class="dialog-head">
           {local ? <Laptop size={18} /> : <Smartphone size={18} />}
           <div class="dialog-title">
-            <b>{local ? 'This computer' : 'This device'}</b>
+            <b>{local ? t('This computer') : t('This device')}</b>
           </div>
-          <button class="icon-btn" title="Close" onClick={onClose}>
+          <button class="icon-btn" title={t('Close')} onClick={onClose}>
             <X size={16} />
           </button>
         </header>
@@ -432,7 +443,7 @@ export function AccountDialog({ me, projects, toggleAwake, open, onClose }: { me
               </div>
               {desktop && (
                 <button class="ghost small" onClick={available ? installUpdate : checkUpdate}>
-                  {available ? 'Install and restart' : 'Check for updates'}
+                  {available ? t('Install and restart') : t('Check for updates')}
                 </button>
               )}
             </div>
@@ -444,8 +455,8 @@ export function AccountDialog({ me, projects, toggleAwake, open, onClose }: { me
               <div>
                 <b>{me.device}</b>
                 <small class="muted">
-                  Remote device · connected to {me.host}
-                  {loadProfile() ? ' via relay' : ''}
+                  {t('Remote device · connected to {host}', { host: me.host })}
+                  {loadProfile() ? ` ${t('via relay')}` : ''}
                 </small>
               </div>
             </div>
@@ -459,12 +470,12 @@ export function AccountDialog({ me, projects, toggleAwake, open, onClose }: { me
               <span class="tile">
                 <SlidersHorizontal size={16} />
               </span>
-              App settings <ChevronDown size={16} class="chev" />
+              {t('App settings')} <ChevronDown size={16} class="chev" />
             </summary>
             <div class="box-body">
               {local && (
                 <div class="setting">
-                  <span>Keep this computer awake</span>
+                  <span>{t('Keep this computer awake')}</span>
                   <button class={`switch ${me.awake ? 'on' : ''}`} role="switch" aria-checked={me.awake} onClick={toggleAwake}>
                     <i />
                   </button>
@@ -473,7 +484,7 @@ export function AccountDialog({ me, projects, toggleAwake, open, onClose }: { me
               {local && <UpdateSettings />}
               {canNotify && (
                 <div class="setting">
-                  <span>Notifications</span>
+                  <span>{t('Notifications')}</span>
                   <button class={`switch ${notifyOn ? 'on' : ''}`} role="switch" aria-checked={notifyOn} onClick={toggleNotify}>
                     <i />
                   </button>
@@ -482,8 +493,8 @@ export function AccountDialog({ me, projects, toggleAwake, open, onClose }: { me
               {local && <PushDelay />}
               <div class="setting">
                 <span>
-                  Bug button
-                  <small class="muted">Reports a bug with a screenshot of the screen</small>
+                  {t('Bug button')}
+                  <small class="muted">{t('Reports a bug with a screenshot of the screen')}</small>
                 </span>
                 <button class={`switch ${prefs.bugButton ? 'on' : ''}`} role="switch" aria-checked={prefs.bugButton} onClick={() => setPrefs({ bugButton: !prefs.bugButton })}>
                   <i />
@@ -491,8 +502,8 @@ export function AccountDialog({ me, projects, toggleAwake, open, onClose }: { me
               </div>
               <div class="setting wide-only">
                 <span>
-                  Free windows
-                  <small class="muted">Expert mode: move and resize panels anywhere, they may overlap</small>
+                  {t('Free windows')}
+                  <small class="muted">{t('Expert mode: move and resize panels anywhere, they may overlap')}</small>
                 </span>
                 <button class={`switch ${prefs.freeWindows ? 'on' : ''}`} role="switch" aria-checked={prefs.freeWindows} onClick={() => setPrefs({ freeWindows: !prefs.freeWindows })}>
                   <i />
@@ -500,21 +511,21 @@ export function AccountDialog({ me, projects, toggleAwake, open, onClose }: { me
               </div>
               <div class="setting wide-only">
                 <span>
-                  Layout
-                  <small class="muted">Puts every panel back in its place and size</small>
+                  {t('Layout')}
+                  <small class="muted">{t('Puts every panel back in its place and size')}</small>
                 </span>
                 <button class="ghost" disabled={!prefs.layout && !prefs.windows} onClick={resetLayout}>
-                  Reset
+                  {t('Reset')}
                 </button>
               </div>
               <button class="setting" onClick={() => open('appearance')}>
-                <span>Appearance</span>
-                <span class="muted">{cap(prefs.theme)}</span>
+                <span>{t('Appearance')}</span>
+                <span class="muted">{THEMES.find(([id]) => id === prefs.theme)?.[1]}</span>
                 <ChevronRight size={15} />
               </button>
               <button class="setting wide-only" onClick={() => open('shortcuts')}>
-                <span>Keyboard shortcuts</span>
-                <span class="muted">{Object.keys(prefs.shortcuts).length || 'None'} set</span>
+                <span>{t('Keyboard shortcuts')}</span>
+                <span class="muted">{Object.keys(prefs.shortcuts).length ? t('{n} set', { n: Object.keys(prefs.shortcuts).length }) : t('None set')}</span>
                 <ChevronRight size={15} />
               </button>
               {local && <RelayRow onClose={onClose} />}
@@ -525,21 +536,21 @@ export function AccountDialog({ me, projects, toggleAwake, open, onClose }: { me
               <span class="tile">
                 <MessageSquare size={16} />
               </span>
-              Community <ChevronDown size={16} class="chev" />
+              {t('Community')} <ChevronDown size={16} class="chev" />
             </summary>
             <div class="box-body">
               <button class="ghost wide" onClick={() => open('feedback')}>
-                <MessageSquare size={15} /> Send feedback
+                <MessageSquare size={15} /> {t('Send feedback')}
               </button>
               <label class="check wide-only">
-                <input type="checkbox" checked={prefs.feedbackButton} onChange={(e) => setPrefs({ feedbackButton: e.currentTarget.checked })} /> Show feedback in toolbar
+                <input type="checkbox" checked={prefs.feedbackButton} onChange={(e) => setPrefs({ feedbackButton: e.currentTarget.checked })} /> {t('Show feedback in toolbar')}
               </label>
               <div class="row">
                 <a class="ghost" href={REPO} target="_blank" rel="noreferrer">
-                  GitHub <ArrowUpRight size={14} />
+                  {t('GitHub')} <ArrowUpRight size={14} />
                 </a>
                 <a class="ghost" href={`${REPO}/issues`} target="_blank" rel="noreferrer">
-                  Report an issue <ArrowUpRight size={14} />
+                  {t('Report an issue')} <ArrowUpRight size={14} />
                 </a>
               </div>
             </div>
@@ -550,11 +561,11 @@ export function AccountDialog({ me, projects, toggleAwake, open, onClose }: { me
           <div class="row">
             {loadProfile() && (
               <button class="ghost danger" onClick={forget}>
-                Forget this computer
+                {t('Forget this computer')}
               </button>
             )}
             <button class="primary" onClick={onClose}>
-              Done
+              {t('Done')}
             </button>
           </div>
         </footer>

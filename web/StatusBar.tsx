@@ -3,6 +3,7 @@ import { TriangleAlert, X } from 'lucide-preact'
 import { api, go, useApi } from './api'
 import { notifyHealth } from './notify'
 import { UsageStatus } from './Usage'
+import { t, tx } from './i18n'
 
 interface Warning { code: string; severity: 'high' | 'medium' | 'low'; title: string; text: string; action: { label: string; command?: string; href?: string; post?: string; account?: true } }
 
@@ -42,7 +43,7 @@ function HealthStatus() {
   useEffect(() => {
     if (!list) return
     const high = list.filter((w) => w.severity === 'high')
-    if (notified) for (const w of high) if (!notified.has(w.code)) notifyHealth(w.title, w.text, w.code)
+    if (notified) for (const w of high) if (!notified.has(w.code)) notifyHealth(tx(w.title), tx(w.text), w.code)
     notified = new Set(high.map((w) => w.code))
   }, [list])
   useEffect(() => {
@@ -63,7 +64,7 @@ function HealthStatus() {
   }
   return (
     <div class="menu-anchor" ref={ref}>
-      <button class={`status-health ${warnings[0].severity}`} aria-label="Warnings" title={warnings.map((w) => w.title).join('\n')} onClick={() => setOpen(!open)}>
+      <button class={`status-health ${warnings[0].severity}`} aria-label={t('Warnings')} title={warnings.map((w) => tx(w.title)).join('\n')} onClick={() => setOpen(!open)}>
         <TriangleAlert size={13} />
         {warnings.length > 1 && <span>{warnings.length}</span>}
       </button>
@@ -71,11 +72,11 @@ function HealthStatus() {
         <div class="menu up health">
           {warnings.map((w) => (
             <div key={w.code} class={`health-row ${w.severity}`}>
-              <b>{w.title}</b>
-              <small>{w.text}</small>
+              <b>{tx(w.title)}</b>
+              <small>{tx(w.text)}</small>
               {w.action.command && <code>{w.action.command}</code>}
               <button class="ghost small" onClick={() => act(w)}>
-                {w.action.command ? (copied === w.code ? 'Copied' : 'Copy command') : w.action.label}
+                {w.action.command ? (copied === w.code ? t('Copied') : t('Copy command')) : tx(w.action.label)}
               </button>
             </div>
           ))}
@@ -126,20 +127,21 @@ function CiStatus() {
       return (
         <span key={r.id} class={`ci-run ${r.failed ? 'failed' : ''}`}>
           {i > 0 && runs[i - 1].project === r.project ? <span class="muted">·</span> : <span>{r.project}</span>}
-          <a href={r.url} target="_blank" rel="noreferrer" title={`${r.workflow} #${r.number}: ${r.failed ? 'failed' : r.status.replace('_', ' ')}. Open on GitHub`}>
+          <a href={r.url} target="_blank" rel="noreferrer" title={`${r.workflow} #${r.number}: ${r.failed ? t('failed') : r.status.replace('_', ' ')}. ${t('Open on GitHub')}`}
+>
             #{r.number} <span class="muted">{r.workflow}</span>
             {r.failed ? (
-              ' failed'
+              t(' failed')
             ) : (
               <>
                 {r.total > 0 && <span class="muted"> {r.done}/{r.total}</span>}
                 <span class="elapsed"> +{clock(elapsed)}</span>
-                {rest !== null && rest > 0 && <span class="muted" title="Left, after the median of the last successful runs"> ~{clock(rest)}</span>}
+                {rest !== null && rest > 0 && <span class="muted" title={t('Left, after the median of the last successful runs')}> ~{clock(rest)}</span>}
               </>
             )}
           </a>
           {r.failed && (
-            <button class="ci-dismiss" title="Dismiss" onClick={() => api('POST', '/ci/dismiss', { id: r.id })}>
+            <button class="ci-dismiss" title={t('Dismiss')} onClick={() => api('POST', '/ci/dismiss', { id: r.id })}>
               <X size={12} />
             </button>
           )}
@@ -148,7 +150,7 @@ function CiStatus() {
     })
   return (
     <div class="status-ci">
-      <span class="muted">CI</span>
+      <span class="muted">{t('CI')}</span>
       <div class="ci-ticker" ref={box}>
         <div class={`ci-track ${secs ? 'moving' : ''}`} style={{ '--ticker-s': `${secs}s` }}>
           <div class="ci-runs" ref={copy}>{items()}</div>

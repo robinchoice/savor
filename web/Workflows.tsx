@@ -3,22 +3,24 @@ import { ArrowLeft, Play, Plus, Clock, Link2, Pencil, Trash2, LayoutGrid, Sparkl
 import { api, duration, go, runTrigger, useApi, type Project, type Run, type SavorEvent, type Thread, type Workflow } from './api'
 import { CATEGORIES, RECIPES, recipe, type Recipe } from './recipes'
 import { describeCron } from './cron'
+import { t } from './i18n'
 
 const SCHEDULES: [string, string][] = [
-  ['', 'Manual: run it yourself'],
-  ['0 9 * * 1-5', 'Every weekday at 9:00'],
-  ['0 9 * * *', 'Every day at 9:00'],
-  ['0 9 * * 1', 'Every Monday at 9:00'],
-  ['0 * * * *', 'Every hour'],
+  ['', t('Manual: run it yourself')],
+  ['0 9 * * 1-5', t('Every weekday at 9:00')],
+  ['0 9 * * *', t('Every day at 9:00')],
+  ['0 9 * * 1', t('Every Monday at 9:00')],
+  ['0 * * * *', t('Every hour')],
+
 ]
 
-export const STATUS: Record<Run['status'], [ring: string, label: string]> = { working: ['busy', 'Working'], needs: ['needs', 'Your turn'], stopped: ['', 'Stopped'], budget: ['error', 'Budget reached'], failed: ['error', 'Failed'], finished: ['done', 'Finished'], skipped: ['skipped', 'Skipped'] }
+export const STATUS: Record<Run['status'], [ring: string, label: string]> = { working: ['busy', t('Working')], needs: ['needs', t('Your turn')], stopped: ['', t('Stopped')], budget: ['error', t('Budget reached')], failed: ['error', t('Failed')], finished: ['done', t('Finished')], skipped: ['skipped', t('Skipped')] }
 export const when = (iso: string) => new Date(iso).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
 const cronLabel = (w: Workflow) => (w.cron ? w.scheduleLabel || describeCron(w.cron) : '')
-export const schedule = (w: Workflow) => [cronLabel(w), w.onModelChange && 'On a model change'].filter(Boolean).join(' · ') || 'Manual'
+export const schedule = (w: Workflow) => [cronLabel(w), w.onModelChange && t('On a model change')].filter(Boolean).join(' · ') || t('Manual')
 // What runs used, as their agents report it: cost in USD, or tokens.
 const usage = (u: { usd?: number; tokens?: number }) =>
-  [u.usd != null && `$${u.usd.toFixed(2)}`, u.tokens && `${new Intl.NumberFormat(undefined, { notation: 'compact' }).format(u.tokens)} tokens`].filter(Boolean).join(' · ')
+  [u.usd != null && `$${u.usd.toFixed(2)}`, u.tokens && `${new Intl.NumberFormat(undefined, { notation: 'compact' }).format(u.tokens)} ${t('tokens')}`].filter(Boolean).join(' · ')
 // A run changes with its conversation, so the runs follow the project's conversations too.
 const runsChanged = (project: Project) => (e: SavorEvent) => (e.type === 'workflows' || e.type === 'thread' || e.type === 'status') && e.projectId === project.id
 
@@ -41,8 +43,9 @@ export function WorkflowButtons() {
   return (
     <>
       {buttons?.map((b) => (
-        <button key={b.id} class={`pill wf-button ${armed === b.id ? 'armed' : ''}`} title={replaces(b) ? `Run “${b.name}” now, in place of the run at ${when(b.nextRunAt!)}` : `Run “${b.name}” now`} onClick={() => run(b)}>
-          <Play size={14} /> {armed === b.id ? `Run ${b.name} now?` : b.name}
+        <button key={b.id} class={`pill wf-button ${armed === b.id ? 'armed' : ''}`} title={replaces(b) ? t('Run “{name}” now, in place of the run at {when}', { name: b.name, when: when(b.nextRunAt!) }) : t('Run “{name}” now', { name: b.name })} onClick={() => run(b)}>
+          <Play size={14} /> {armed === b.id ? t('Run {name} now?', { name: b.name }) : b.name}
+
         </button>
       ))}
     </>
@@ -68,26 +71,26 @@ export function Workflows({ project, rest }: { project: Project; rest: string[] 
     <div class="split-page">
       <aside class="side-list">
         <div class="side-head">
-          <h2>Workflows</h2>
-          <a class="new-btn" href={`#/p/${project.id}/workflows/new`} title="New workflow">
+          <h2>{t('Workflows')}</h2>
+          <a class="new-btn" href={`#/p/${project.id}/workflows/new`} title={t('New workflow')}>
             <Plus size={18} />
           </a>
         </div>
         <a href={`#/p/${project.id}/workflows/gallery`} class={`gallery-link ${workflowId === 'gallery' ? 'active' : ''}`}>
-          <LayoutGrid size={15} /> Gallery <small class="muted">{RECIPES.length} ready-made workflows</small>
+          <LayoutGrid size={15} /> {t('Gallery')} <small class="muted">{t('{n} ready-made workflows', { n: RECIPES.length })}</small>
         </a>
-        {project.paused && <div class="banner">Project paused — scheduled runs are skipped.</div>}
+        {project.paused && <div class="banner">{t('Project paused — scheduled runs are skipped.')}</div>}
         {collections.flatMap((c) => [
           c && (
             <div key={`collection ${c}`} class="menu-label">
-              {c}
+              {t(c)}
             </div>
           ),
           ...workflows!
             .filter((w) => w.collection === c)
             .map((w) => (
               <a key={w.id} href={`#/p/${project.id}/workflows/${w.id}`} class={`card ${w.id === workflowId ? 'active' : ''}`}>
-                <div class="card-title">{w.name}</div>
+                <div class="card-title">{t(w.name)}</div>
                 <div class="card-meta">
                   <span>
                     <Clock size={12} /> {schedule(w)}
@@ -98,26 +101,26 @@ export function Workflows({ project, rest }: { project: Project; rest: string[] 
                       </>
                     ) : null}
                   </span>
-                  <span class={w.enabled ? 'on-badge' : 'off-badge'}>{w.enabled ? 'On' : 'Off'}</span>
+                  <span class={w.enabled ? 'on-badge' : 'off-badge'}>{w.enabled ? t('On') : t('Off')}</span>
                 </div>
                 {w.lastRun && (
                   <div class={`last-run ${w.lastRun.status}`}>
                     <span class={`ring ${STATUS[w.lastRun.status][0]}`} /> {STATUS[w.lastRun.status][1]} · {when(w.lastRun.at)}
                   </div>
                 )}
-                {w.nextRunAt && <small class="muted">Next run {new Date(w.nextRunAt).toLocaleString()}</small>}
+                {w.nextRunAt && <small class="muted">{t('Next run {when}', { when: when(w.nextRunAt) })}</small>}
                 <div class="row" onClick={(e) => e.preventDefault()}>
                   <button class="ghost small" onClick={() => run(w)}>
-                    <Play size={13} /> Run now
+                    <Play size={13} /> {t('Run now')}
                   </button>
                   <button class="ghost small" onClick={() => toggle(w)}>
-                    {w.enabled ? 'Pause' : 'Enable'}
+                    {w.enabled ? t('Pause') : t('Enable')}
                   </button>
                 </div>
               </a>
             )),
         ])}
-        {workflows && !workflows.length && <p class="muted pad">Save repeatable work as a workflow. Give it a schedule and Savor runs it for you, or start from the gallery.</p>}
+        {workflows && !workflows.length && <p class="muted pad">{t('Save repeatable work as a workflow. Give it a schedule and Savor runs it for you, or start from the gallery.')}</p>}
       </aside>
       <section class="detail">
         {workflowId === 'gallery' ? (
@@ -128,8 +131,8 @@ export function Workflows({ project, rest }: { project: Project; rest: string[] 
           <Overview key={current.id} base={base} project={project} workflow={current} onRun={() => run(current)} />
         ) : (
           <div class="empty-state">
-            <h2>Workflows</h2>
-            <p class="muted">Pick a workflow, create a new one, or start from the gallery.</p>
+            <h2>{t('Workflows')}</h2>
+            <p class="muted">{t('Pick a workflow, create a new one, or start from the gallery.')}</p>
           </div>
         )}
       </section>
@@ -142,7 +145,7 @@ function Overview({ base, project, workflow: w, onRun }: { base: string; project
   const [runs] = useApi<Run[]>(`${base}/${w.id}/runs`, runsChanged(project))
   const blocker = (r: Run) => runs?.find((x) => x.threadId === r.threadId && x.status !== 'skipped')
   const remove = async () => {
-    if (!confirm(`Delete “${w.name}”?`)) return
+    if (!confirm(t('Delete “{name}”?', { name: w.name }))) return
     await api('DELETE', `${base}/${w.id}`)
     go(`/p/${project.id}/workflows`)
   }
@@ -150,42 +153,42 @@ function Overview({ base, project, workflow: w, onRun }: { base: string; project
     <div class="wf-over">
       <div class="wf-head">
         <div>
-          <h1>{w.name}</h1>
+          <h1>{t(w.name)}</h1>
           <div class="wf-sub">
             <span>
               <Clock size={12} /> {schedule(w)}
             </span>
-            {w.nextRunAt && <span>Next run {new Date(w.nextRunAt).toLocaleString()}</span>}
-            <span class={w.enabled ? 'on-badge' : 'off-badge'}>{w.enabled ? 'On' : 'Off'}</span>
-            {w.collection && <span>{w.collection}</span>}
-            {w.lastRun && usage(w.lastRun) && <span>Last run {usage(w.lastRun)}</span>}
+            {w.nextRunAt && <span>{t('Next run {when}', { when: when(w.nextRunAt) })}</span>}
+            <span class={w.enabled ? 'on-badge' : 'off-badge'}>{w.enabled ? t('On') : t('Off')}</span>
+            {w.collection && <span>{t(w.collection)}</span>}
+            {w.lastRun && usage(w.lastRun) && <span>{t('Last run {usage}', { usage: usage(w.lastRun) })}</span>}
             {w.month && (w.month.usd || w.month.tokens || w.monthlyBudgetUsd) ? (
               <span class={w.monthlyBudgetUsd && w.month.usd >= w.monthlyBudgetUsd ? 'danger' : ''}>
-                This month {usage({ usd: w.month.usd || w.monthlyBudgetUsd ? w.month.usd : undefined, tokens: w.month.tokens })}
-                {w.monthlyBudgetUsd ? ` of $${w.monthlyBudgetUsd}` : ''}
+                {t('This month {usage}', { usage: usage({ usd: w.month.usd || w.monthlyBudgetUsd ? w.month.usd : undefined, tokens: w.month.tokens }) })}
+                {w.monthlyBudgetUsd ? ` ${t('of')} $${w.monthlyBudgetUsd}` : ''}
               </span>
             ) : null}
             {w.thread && (
               <a href={`#/p/${project.id}/t/${w.thread.id}`}>
-                <MessageSquare size={12} /> Saved in “{w.thread.title}”
+                <MessageSquare size={12} /> {t('Saved in “{title}”', { title: w.thread.title })}
               </a>
             )}
           </div>
         </div>
         <div class="wf-actions">
           <button class="ghost" onClick={onRun}>
-            <Play size={14} /> Run now
+            <Play size={14} /> {t('Run now')}
           </button>
           <a class="ghost" href={`#/p/${project.id}/workflows/${w.id}/edit`}>
-            <Pencil size={14} /> Edit
+            <Pencil size={14} /> {t('Edit')}
           </a>
           <button class="ghost danger" onClick={remove}>
-            <Trash2 size={14} /> Delete
+            <Trash2 size={14} /> {t('Delete')}
           </button>
         </div>
       </div>
       <div class="runs">
-        <div class="runs-head">Runs</div>
+        <div class="runs-head">{t('Runs')}</div>
         {runs?.map((r) => (
           <a key={`${r.at} ${r.threadId}`} href={`#/p/${project.id}/t/${r.threadId}`} class={`run ${r.status}`}>
             <span class={`ring ${STATUS[r.status][0]}`} title={STATUS[r.status][1]} />
@@ -195,11 +198,11 @@ function Overview({ base, project, workflow: w, onRun }: { base: string; project
                 {STATUS[r.status][1]} · {runTrigger(r)}
               </small>
             </span>
-            <span class="sum">{r.status === 'skipped' ? `The run from ${blocker(r) ? when(blocker(r)!.at) : 'before'} was still open.` : r.status === 'working' ? 'Working…' : r.summary}</span>
+            <span class="sum">{r.status === 'skipped' ? (blocker(r) ? t('The run from {when} was still open.', { when: when(blocker(r)!.at) }) : t('The run before was still open.')) : r.status === 'working' ? t('Working…') : r.summary}</span>
             <span class="dur">{[r.workedMs ? duration(r.workedMs) : '', usage(r)].filter(Boolean).join(' · ')}</span>
           </a>
         ))}
-        {runs && !runs.length && <p class="muted pad">No runs yet. {w.cron && w.enabled ? 'The first one starts on schedule.' : 'Start one with “Run now”.'}</p>}
+        {runs && !runs.length && <p class="muted pad">{t('No runs yet.')} {w.cron && w.enabled ? t('The first one starts on schedule.') : t('Start one with “Run now”.')}</p>}
       </div>
     </div>
   )
@@ -210,20 +213,20 @@ function Gallery({ project }: { project: Project }) {
     <div class="gallery">
       <div class="gallery-head">
         <h1>
-          <Sparkles size={20} /> Workflow gallery
+          <Sparkles size={20} /> {t('Workflow gallery')}
         </h1>
-        <p class="muted">Ready-made workflows. Pick one, adjust the instructions and schedule, and save it to this project.</p>
+        <p class="muted">{t('Ready-made workflows. Pick one, adjust the instructions and schedule, and save it to this project.')}</p>
       </div>
       {CATEGORIES.map((cat) => (
         <section key={cat}>
-          <h2>{cat}</h2>
+          <h2>{t(cat)}</h2>
           <div class="recipe-grid">
             {RECIPES.filter((r) => r.category === cat).map((r) => (
               <a key={r.slug} class="recipe" href={`#/p/${project.id}/workflows/new/${r.slug}`}>
-                <b>{r.title}</b>
-                <span>{r.blurb}</span>
+                <b>{t(r.title)}</b>
+                <span>{t(r.blurb)}</span>
                 <small class="muted">
-                  <Clock size={11} /> {[r.schedule && describeCron(r.schedule), r.onModelChange && 'On a model change'].filter(Boolean).join(' · ') || 'Manual'}
+                  <Clock size={11} /> {[r.schedule && describeCron(r.schedule), r.onModelChange && t('On a model change')].filter(Boolean).join(' · ') || t('Manual')}
                 </small>
               </a>
             ))}
@@ -238,7 +241,7 @@ const tz = Intl.DateTimeFormat().resolvedOptions().timeZone
 
 function WorkflowForm({ base, projectId, workflow, recipe, all }: { base: string; projectId: string; workflow: Workflow | null; recipe?: Recipe; all: Workflow[] }) {
   const [draft, setDraft] = useState({
-    name: recipe?.title ?? '',
+    name: recipe ? t(recipe.title) : '',
     prompt: recipe?.prompt ?? '',
     collection: '',
     timezone: tz,
@@ -270,7 +273,7 @@ function WorkflowForm({ base, projectId, workflow, recipe, all }: { base: string
     }
   }
   const remove = async () => {
-    if (!workflow || !confirm(`Delete “${workflow.name}”?`)) return
+    if (!workflow || !confirm(t('Delete “{name}”?', { name: workflow.name }))) return
     await api('DELETE', `${base}/${workflow.id}`)
     go(`/p/${projectId}/workflows`)
   }
@@ -278,16 +281,16 @@ function WorkflowForm({ base, projectId, workflow, recipe, all }: { base: string
     <form class="form" onSubmit={save}>
       {workflow && (
         <a class="back-link" href={`#/p/${projectId}/workflows/${workflow.id}`}>
-          <ArrowLeft size={14} /> Runs
+          <ArrowLeft size={14} /> {t('Runs')}
         </a>
       )}
-      <h1>{workflow ? workflow.name : recipe ? `New workflow from “${recipe.title}”` : 'New workflow'}</h1>
+      <h1>{workflow ? workflow.name : recipe ? t('New workflow from “{title}”', { title: t(recipe.title) }) : t('New workflow')}</h1>
       <label>
-        Name
+        {t('Name')}
         <input required value={draft.name} onInput={field('name')} />
       </label>
       <label>
-        Collection <small class="muted">optional, groups the list</small>
+        {t('Collection')} <small class="muted">{t('optional, groups the list')}</small>
         <input list="workflow-collections" value={draft.collection} onInput={field('collection')} />
         <datalist id="workflow-collections">
           {collections.map((c) => (
@@ -296,12 +299,12 @@ function WorkflowForm({ base, projectId, workflow, recipe, all }: { base: string
         </datalist>
       </label>
       <label>
-        Instructions
-        <textarea required rows={10} value={draft.prompt} onInput={field('prompt')} placeholder="What should the agent do each time this runs?" />
+        {t('Instructions')}
+        <textarea required rows={10} value={draft.prompt} onInput={field('prompt')} placeholder={t('What should the agent do each time this runs?')} />
       </label>
       <div class="row wide">
         <label>
-          Schedule
+          {t('Schedule')}
           <select
             value={custom ? 'custom' : draft.cron}
             onChange={(e) => {
@@ -315,18 +318,18 @@ function WorkflowForm({ base, projectId, workflow, recipe, all }: { base: string
                 {label}
               </option>
             ))}
-            <option value="custom">Custom cron…</option>
+            <option value="custom">{t('Custom cron…')}</option>
           </select>
         </label>
         {custom && (
           <label>
-            Cron expression <small class="muted">minute hour day month weekday</small>
+            {t('Cron expression')} <small class="muted">{t('minute hour day month weekday')}</small>
             <input placeholder="0 9 * * 1-5" value={draft.cron} onInput={field('cron')} />
           </label>
         )}
         {(custom || draft.cron) && (
           <label>
-            Timezone
+            {t('Timezone')}
             <input value={draft.timezone} onInput={field('timezone')} />
           </label>
         )}
@@ -335,41 +338,42 @@ function WorkflowForm({ base, projectId, workflow, recipe, all }: { base: string
         <label class="check with-hint">
           <input type="checkbox" checked={draft.catchUp} onChange={(e) => setDraft({ ...draft, catchUp: e.currentTarget.checked })} />
           <span>
-            Catch up a missed run when Savor starts
-            <small class="muted">If Savor was not running at the scheduled time, the workflow runs once at the next start.</small>
+            {t('Catch up a missed run when Savor starts')}
+            <small class="muted">{t('If Savor was not running at the scheduled time, the workflow runs once at the next start.')}</small>
           </span>
         </label>
       )}
       <label class="check with-hint">
         <input type="checkbox" checked={draft.onModelChange} onChange={(e) => setDraft({ ...draft, onModelChange: e.currentTarget.checked })} />
         <span>
-          Run when the model changes
-          <small class="muted">Runs once each time the project’s agent runs on a new model, then waits for the next one. Setting it only notes the current model.</small>
+          {t('Run when the model changes')}
+          <small class="muted">{t('Runs once each time the project’s agent runs on a new model, then waits for the next one. Setting it only notes the current model.')}</small>
         </span>
       </label>
       <label class="check with-hint">
         <input type="checkbox" checked={draft.button} onChange={(e) => setDraft({ ...draft, button: e.currentTarget.checked })} />
         <span>
-          Show a button in the top bar
-          <small class="muted">One click runs the workflow now. When it is scheduled within the next 12 hours, this run takes the place of that one.</small>
+          {t('Show a button in the top bar')}
+          <small class="muted">{t('One click runs the workflow now. When it is scheduled within the next 12 hours, this run takes the place of that one.')}</small>
         </span>
       </label>
       <div class="row wide">
         <label>
-          Budget per run <small class="muted">USD, optional</small>
+          {t('Budget per run')} <small class="muted">{t('USD, optional')}</small>
           <input type="number" min="0.01" step="0.01" value={draft.budgetUsd ?? ''} onInput={usd('budgetUsd')} />
-          <small class="muted">Claude Code stops the run there. Other agents have no budget.</small>
+          <small class="muted">{t('Claude Code stops the run there. Other agents have no budget.')}</small>
         </label>
         <label>
-          Monthly budget <small class="muted">USD, optional</small>
+          {t('Monthly budget')} <small
+ class="muted">{t('USD, optional')}</small>
           <input type="number" min="0.01" step="0.01" value={draft.monthlyBudgetUsd ?? ''} onInput={usd('monthlyBudgetUsd')} />
-          <small class="muted">Warns at 80 % and pauses the workflow at 100 % of what its runs cost this month.</small>
+          <small class="muted">{t('Warns at 80 % and pauses the workflow at 100 % of what its runs cost this month.')}</small>
         </label>
       </div>
       {others.length > 0 && (
         <fieldset class="chain">
           <legend>
-            <Link2 size={14} /> Continue with (chain)
+            <Link2 size={14} /> {t('Continue with (chain)')}
           </legend>
           {others.map((w) => (
             <label key={w.id} class="check">
@@ -378,7 +382,7 @@ function WorkflowForm({ base, projectId, workflow, recipe, all }: { base: string
                 checked={draft.next.includes(w.id)}
                 onChange={(e) => setDraft({ ...draft, next: e.currentTarget.checked ? [...draft.next, w.id] : draft.next.filter((id) => id !== w.id) })}
               />
-              {w.name}
+              {t(w.name)}
             </label>
           ))}
         </fieldset>
@@ -386,11 +390,11 @@ function WorkflowForm({ base, projectId, workflow, recipe, all }: { base: string
       {error && <div class="error-text">{error}</div>}
       <div class="row">
         <button class="primary" type="submit">
-          Save
+          {t('Save')}
         </button>
         {workflow && (
           <button type="button" class="ghost danger" onClick={remove}>
-            <Trash2 size={14} /> Delete
+            <Trash2 size={14} /> {t('Delete')}
           </button>
         )}
       </div>

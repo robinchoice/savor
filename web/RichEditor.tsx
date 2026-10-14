@@ -3,6 +3,7 @@ import { Editor } from '@tiptap/core'
 import StarterKit from '@tiptap/starter-kit'
 import { Markdown } from '@tiptap/markdown'
 import { Bold, Code, Heading1, Heading2, Italic, Link as LinkIcon, List, ListOrdered, Quote } from 'lucide-preact'
+import { t } from './i18n'
 
 // Rich markdown editing for documents and .md files: TipTap with markdown in and out, styled like
 // rendered messages. Loaded as its own chunk (see Files.tsx).
@@ -33,7 +34,7 @@ export default function RichEditor({ value, onChange, onSave, autoFocus }: { val
 
   const link = () => {
     if (!editor) return
-    const url = prompt('Link URL', editor.getAttributes('link').href ?? '')
+    const url = prompt(t('Link URL'), editor.getAttributes('link').href ?? '')
     if (url === null) return
     if (url) editor.chain().focus().extendMarkRange('link').setLink({ href: url }).run()
     else editor.chain().focus().unsetLink().run()
@@ -56,15 +57,16 @@ export default function RichEditor({ value, onChange, onSave, autoFocus }: { val
     >
       {editor && (
         <div class="rich-toolbar">
-          {tool('Heading', Heading1, editor.isActive('heading', { level: 1 }), () => editor.chain().focus().toggleHeading({ level: 1 }).run())}
-          {tool('Subheading', Heading2, editor.isActive('heading', { level: 2 }), () => editor.chain().focus().toggleHeading({ level: 2 }).run())}
-          {tool('Bold (Ctrl+B)', Bold, editor.isActive('bold'), () => editor.chain().focus().toggleBold().run())}
-          {tool('Italic (Ctrl+I)', Italic, editor.isActive('italic'), () => editor.chain().focus().toggleItalic().run())}
-          {tool('Bullet list', List, editor.isActive('bulletList'), () => editor.chain().focus().toggleBulletList().run())}
-          {tool('Numbered list', ListOrdered, editor.isActive('orderedList'), () => editor.chain().focus().toggleOrderedList().run())}
-          {tool('Quote', Quote, editor.isActive('blockquote'), () => editor.chain().focus().toggleBlockquote().run())}
-          {tool('Code block', Code, editor.isActive('codeBlock'), () => editor.chain().focus().toggleCodeBlock().run())}
-          {tool('Link', LinkIcon, editor.isActive('link'), link)}
+          {tool(t('Heading'), Heading1, editor.isActive('heading', { level: 1 }), () => editor.chain().focus().toggleHeading({ level: 1 }).run())}
+          {tool(t('Subheading'), Heading2, editor.isActive('heading', { level: 2 }), () => editor.chain().focus().toggleHeading({ level: 2 }).run())}
+          {tool(t('Bold (Ctrl+B)'), Bold, editor.isActive('bold'), () => editor.chain().focus().toggleBold().run())}
+          {tool(t('Italic (Ctrl+I)'), Italic, editor.isActive('italic'), () => editor.chain().focus().toggleItalic().run())}
+          {tool(t('Bullet list'), List, editor.isActive('bulletList'), () => editor.chain().focus().toggleBulletList().run())}
+          {tool(t('Numbered list'), ListOrdered, editor.isActive('orderedList'), () => editor.chain().focus().toggleOrderedList().run())}
+          {tool(t('Quote'), Quote, editor.isActive('blockquote'), () => editor.chain().focus().toggleBlockquote().run())}
+          {tool(t('Code block'), Code, editor.isActive('codeBlock'), () => editor.chain().focus().toggleCodeBlock().run())}
+          {tool(t('Link'),
+ LinkIcon, editor.isActive('link'), link)}
         </div>
       )}
       <div ref={host} />

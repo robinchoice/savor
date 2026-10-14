@@ -7,7 +7,7 @@ import {
   CircleAlert, ArrowUp, ArrowLeft, Pencil, MessageSquarePlus, Brain, Terminal, Wrench, ArrowRight, Smartphone, Monitor, Bot, ShieldQuestion, X, ChevronUp, ChevronDown, ChevronRight, Paperclip, GitBranch, GitFork, GitMerge, Trash2, Copy, FileDiff, Split, SquareArrowOutUpRight, Workflow as WorkflowIcon, Mail, MailOpen, SquareTerminal, RotateCcw,
 } from 'lucide-preact'
 import {
-  api, avatarStyle, cap, desktop, duration, formatStamp, formatTime, go, initial, lastThreadKey, PROVIDER_NAMES, runTrigger, useApi, kindOf, noticeOf, NOTICES, RINGS, type ActivityEvent, type AgentConfig, type Approval, type ApprovalOption, type Attachment, type Decision, type Message, type Plan, type PlanAgent, type PlanStep, type Proc, type Project, type Reason, type Thread, type Workflow, type Worktree,
+  api, avatarStyle, cap, desktop, duration, effortLabel, formatStamp, formatTime, go, initial, lastThreadKey, PROVIDER_NAMES, runTrigger, useApi, kindOf, noticeOf, NOTICES, RINGS, type ActivityEvent, type AgentConfig, type Approval, type ApprovalOption, type Attachment, type Decision, type Message, type Plan, type PlanAgent, type PlanStep, type Proc, type Project, type Reason, type Thread, type Workflow, type Worktree,
 } from './api'
 import { Composer, quoteInComposer, type Picked } from './Composer'
 import { transport } from './transport'
@@ -21,6 +21,7 @@ import { keyLabel, useKey, useShortcut } from './Shortcuts'
 import { runInTerminal, setTerminalHome, showTerminal } from './Terminal'
 import { offerUndo, resetWalk, swipeToFinish, ThumbBar, UndoToast } from './Swipe'
 import { Panel, useHidePanel, useNarrow } from './Layout'
+import { plural, t } from './i18n'
 
 const SHELL = /\blanguage-(bash|sh|shell|zsh)\b/
 
@@ -86,8 +87,8 @@ export function Markdown({ text }: { text: string }) {
       row.append(pre, slot)
       slots.push(slot)
       render(
-        <button class="ghost small" title="Run in the terminal below" onClick={() => runInTerminal(code.textContent!.trimEnd())}>
-          <SquareTerminal size={13} /> Run in terminal
+        <button class="ghost small" title={t('Run in the terminal below')} onClick={() => runInTerminal(code.textContent!.trimEnd())}>
+          <SquareTerminal size={13} /> {t('Run in terminal')}
         </button>,
         slot,
       )
@@ -156,15 +157,15 @@ export function NextButton({ paths }: { paths: string[] }) {
   return (
     <>
       {trail.length > 0 && (
-        <button class="prev-btn" title="Back to the conversation before the last Next" onClick={back}>
+        <button class="prev-btn" title={t('Back to the conversation before the last Next')} onClick={back}>
           <ArrowLeft size={15} />
-          <span>Previous</span> {previousKey && <kbd>{keyLabel(previousKey)}</kbd>}
+          <span>{t('Previous')}</span> {previousKey && <kbd>{keyLabel(previousKey)}</kbd>}
         </button>
       )}
       {paths.some((p) => `#${p}` !== location.hash) && (
-        <button class="next-btn" title="Open the next conversation that needs you" onClick={open}>
+        <button class="next-btn" title={t('Open the next conversation that needs you')} onClick={open}>
           <ArrowRight size={15} />
-          <span>Next</span> {nextKey && <kbd>{keyLabel(nextKey)}</kbd>}
+          <span>{t('Next')}</span> {nextKey && <kbd>{keyLabel(nextKey)}</kbd>}
         </button>
       )}
     </>
@@ -237,44 +238,44 @@ export function Conversations({ project, threadId, fanoutId, isNew }: { project:
       <Panel id="list">
         <aside class="conv-list">
           <div class="conv-head">
-            <h2>Conversations</h2>
+            <h2>{t('Conversations')}</h2>
             <NextButton paths={nextPaths} />
-            <a class="new-btn" href={`#/p/${project.id}/new`} title="New conversation">
+            <a class="new-btn" href={`#/p/${project.id}/new`} title={t('New conversation')}>
               <Plus size={18} />
             </a>
           </div>
           <label class="search">
             <Search size={15} />
-            <input placeholder="Search conversations..." value={query} onInput={(e) => setQuery(e.currentTarget.value)} />
+            <input placeholder={t('Search conversations...')} value={query} onInput={(e) => setQuery(e.currentTarget.value)} />
           </label>
           <div class="filters">
-            {tab('all', 'All')}
-            {tab('you', 'For you')}
-            {tab('working', 'Working')}
+            {tab('all', t('All'))}
+            {tab('you', t('For you'))}
+            {tab('working', t('Working'))}
           </div>
           {filter !== 'all' ? (
             <div class="cards">
               {filtered[filter].map((t) => <ThreadCard key={t.id} project={project} thread={t} active={t.id === threadId} />)}
-              {threads && !filtered[filter].length && <p class="muted center">{q ? 'No matching conversations.' : 'No conversations in this filter.'}</p>}
+              {threads && !filtered[filter].length && <p class="muted center">{q ? t('No matching conversations.') : t('No conversations in this filter.')}</p>}
             </div>
           ) : (
             <div class="cards">
-              {section('for-you', 'For you', forYou)}
-              {section('working', 'Working', working)}
-              {section('open', 'Open', rest)}
+              {section('for-you', t('For you'), forYou)}
+              {section('working', t('Working'), working)}
+              {section('open', t('Open'), rest)}
               {(fanouts.size > 0 || plainWorktrees.length > 0) && (
                 <div class={`sec worktrees ${closed.includes('worktrees') ? 'closed' : ''}`}>
                   <button class="sec-head" onClick={() => toggle('worktrees')}>
-                    Worktrees <span class="sec-count">{fanouts.size + plainWorktrees.length}</span>
+                    {t('Worktrees')} <span class="sec-count">{fanouts.size + plainWorktrees.length}</span>
                     <ChevronDown size={13} />
                   </button>
                   {!closed.includes('worktrees') && (
                     <>
                       {[...fanouts].map(([id, list]) => (
-                        <a key={id} class={`fan-head ${id === fanoutId ? 'active' : ''}`} href={`#/p/${project.id}/fan/${id}`} title="Compare the results">
+                        <a key={id} class={`fan-head ${id === fanoutId ? 'active' : ''}`} href={`#/p/${project.id}/fan/${id}`} title={t('Compare the results')}>
                           <Split size={14} />
                           <span class="fan-title">{list[0].title}</span>
-                          <span class="muted small">{list.some((t) => t.busy || t.waiting) ? `${list.filter((t) => !t.busy && !t.waiting).length} of ${list.length} finished` : 'Compare'}</span>
+                          <span class="muted small">{list.some((t) => t.busy || t.waiting) ? t('{done} of {n} finished', { done: list.filter((th) => !th.busy && !th.waiting).length, n: list.length }) : t('Compare')}</span>
                         </a>
                       ))}
                       {plainWorktrees.map((w) => (
@@ -284,8 +285,8 @@ export function Conversations({ project, threadId, fanoutId, isNew }: { project:
                   )}
                 </div>
               )}
-              {section('finished', 'Finished', finished)}
-              {threads && !visible.length && <p class="muted center">{q ? 'No matching conversations.' : 'No conversations yet.'}</p>}
+              {section('finished', t('Finished'), finished)}
+              {threads && !visible.length && <p class="muted center">{q ? t('No matching conversations.') : t('No conversations yet.')}</p>}
             </div>
           )}
           <footer class="list-foot">
@@ -296,11 +297,11 @@ export function Conversations({ project, threadId, fanoutId, isNew }: { project:
       {threadId ? (
         <ThreadView key={threadId} project={project} threadId={threadId} next={nextPaths} siblings={siblings} />
       ) : fanoutId ? (
-        <Panel id="main" title="Comparison">
+        <Panel id="main" title={t('Comparison')}>
           <Fanout key={fanoutId} project={project} id={fanoutId} />
         </Panel>
       ) : (
-        <Panel id="main" title="New conversation">
+        <Panel id="main" title={t('New conversation')}>
           <NewConversation project={project} />
         </Panel>
       )}
@@ -324,10 +325,10 @@ function WorktreeHead({ project, branch, path, info }: { project: Project; branc
       setBusy('')
     }
   }
-  const merge = () => run('Merging…', () => api('POST', `/projects/${project.id}/worktrees/merge`, { path }))
+  const merge = () => run(t('Merging…'), () => api('POST', `/projects/${project.id}/worktrees/merge`, { path }))
   const remove = () => {
-    if (!confirm(`Delete the worktree and branch “${branch}”? Unmerged changes are lost. Its conversations stay and continue in the project folder.`)) return
-    run('Deleting…', () => api('DELETE', `/projects/${project.id}/worktrees?path=${encodeURIComponent(path)}`))
+    if (!confirm(t('Delete the worktree and branch “{branch}”? Unmerged changes are lost. Its conversations stay and continue in the project folder.', { branch }))) return
+    run(t('Deleting…'), () => api('DELETE', `/projects/${project.id}/worktrees?path=${encodeURIComponent(path)}`))
   }
   return (
     <div class="wt-head">
@@ -335,19 +336,19 @@ function WorktreeHead({ project, branch, path, info }: { project: Project; branc
       <span class="wt-name" title={path}>
         {branch}
       </span>
-      <span class="muted small">{busy || (info ? `${info.ahead ? `${info.ahead} commit${info.ahead === 1 ? '' : 's'} ahead` : 'nothing to merge'}${info.dirty ? ' · uncommitted changes' : ''}` : 'removed')}</span>
+      <span class="muted small">{busy || (info ? `${info.ahead ? plural(info.ahead, '{n} commit ahead', '{n} commits ahead') : t('nothing to merge')}${info.dirty ? ` · ${t('uncommitted changes')}` : ''}` : t('removed'))}</span>
       {info && (
         <div class="menu-anchor">
-          <button class="icon-btn" title="Worktree actions" onClick={() => setMenu(!menu)}>
+          <button class="icon-btn" title={t('Worktree actions')} onClick={() => setMenu(!menu)}>
             <MoreHorizontal size={15} />
           </button>
           {menu && (
             <div class="menu right" onClick={() => setMenu(false)}>
               <button disabled={!info.ahead} onClick={merge}>
-                <GitMerge size={14} /> Merge into the project
+                <GitMerge size={14} /> {t('Merge into the project')}
               </button>
               <button class="danger" onClick={remove}>
-                <Trash2 size={14} /> Delete worktree and branch
+                <Trash2 size={14} /> {t('Delete worktree and branch')}
               </button>
             </div>
           )}
@@ -358,7 +359,7 @@ function WorktreeHead({ project, branch, path, info }: { project: Project; branc
   )
 }
 
-const REASONS: Record<Reason, string> = { approval: 'Approval', question: 'Question', failed: 'Failed', new: 'New result', result: 'Result' }
+const REASONS: Record<Reason, string> = { approval: t('Approval'), question: t('Question'), failed: t('Failed'), new: t('New result'), result: t('Result') }
 // Markdown of a result as one plain line.
 export const plain = (md: string) => md.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1').replace(/[*_`#>|]+/g, '').replace(/\s+/g, ' ').trim()
 const short = (ms: number) => {
@@ -387,20 +388,20 @@ function ProjectTag({ project }: { project: Project }) {
   )
 }
 
-export function ThreadCard({ project, thread: t, active, href = `#/p/${project.id}/t/${t.id}`, badge, children }: { project: Project; thread: Thread; active: boolean; href?: string; badge?: boolean; children?: JSX.Element | null }) {
+export function ThreadCard({ project, thread: th, active, href = `#/p/${project.id}/t/${th.id}`, badge, children }: { project: Project; thread: Thread; active: boolean; href?: string; badge?: boolean; children?: JSX.Element | null }) {
   const { conversations, show } = usePrefs()
   const avatar = badge && <ProjectTag project={project} />
-  const w = t.waitsFor
-  const kind = kindOf(t)
+  const w = th.waitsFor
+  const kind = kindOf(th)
   const finish = (e: Event) => {
     e.preventDefault()
-    api('PATCH', `/projects/${project.id}/threads/${t.id}`, { completed: true })
+    api('PATCH', `/projects/${project.id}/threads/${th.id}`, { completed: true })
   }
   // A result can be finished with a swipe to the right, and taken back right after.
   const swipe = (e: PointerEvent) =>
     swipeToFinish(e, () =>
-      api('PATCH', `/projects/${project.id}/threads/${t.id}`, { completed: true }).then(() =>
-        offerUndo(`Finished: ${t.summary ?? t.title}`, () => api('PATCH', `/projects/${project.id}/threads/${t.id}`, { completed: false })),
+      api('PATCH', `/projects/${project.id}/threads/${th.id}`, { completed: true }).then(() =>
+        offerUndo(t('Finished: {title}', { title: th.summary ?? th.title }), () => api('PATCH', `/projects/${project.id}/threads/${th.id}`, { completed: false })),
       ),
     )
   const swipeable = (card: JSX.Element) => (w?.reason === 'result' ? <div class="swipe-row">{card}</div> : card)
@@ -409,21 +410,21 @@ export function ThreadCard({ project, thread: t, active, href = `#/p/${project.i
     e.preventDefault()
     setMenu({ x: e.clientX, y: e.clientY })
   }
-  const contextMenu = menu && <CardMenu project={project} thread={t} active={active} href={href} at={menu} close={() => setMenu(null)} />
-  const notice = badge && noticeOf(t)
+  const contextMenu = menu && <CardMenu project={project} thread={th} active={active} href={href} at={menu} close={() => setMenu(null)} />
+  const notice = badge && noticeOf(th)
   const chip = notice ? (
-    <span class={`chip notice n-${notice} ${t.unread || t.needsYou ? 'fresh' : ''}`}>
-      {w?.reason === 'question' && w.more ? `${w.more + 1} questions` : NOTICES[notice].label}
-      {t.notice && ['run', 'message'].includes(notice) && <span class="notice-actor"> · {t.notice.actor}</span>}
+    <span class={`chip notice n-${notice} ${th.unread || th.needsYou ? 'fresh' : ''}`}>
+      {w?.reason === 'question' && w.more ? t('{n} questions', { n: w.more + 1 }) : NOTICES[notice].label}
+      {th.notice && ['run', 'message'].includes(notice) && <span class="notice-actor"> · {th.notice.actor}</span>}
     </span>
   ) : (
-    w && <span class={`chip ${kind}`}>{w.reason === 'question' && w.more ? `${w.more + 1} questions` : REASONS[w.reason]}</span>
+    w && <span class={`chip ${kind}`}>{w.reason === 'question' && w.more ? t('{n} questions', { n: w.more + 1 }) : REASONS[w.reason]}</span>
   )
-  const ring = <span class={`ring ${RINGS[kind]}`} title={w ? REASONS[w.reason] : kind === 'working' ? 'Working' : kind === 'done' ? 'Finished' : t.error === STOPPED ? 'Stopped' : 'Ready'} />
-  const when = kind === 'working' ? t.startedAt && <Elapsed since={t.startedAt} /> : show.date && formatStamp(w?.since ?? t.updatedAt)
-  const branch = t.worktree && (
-    <span class="branch-tag" title={t.worktree.path}>
-      <GitBranch size={11} /> {t.worktree.branch}
+  const ring = <span class={`ring ${RINGS[kind]}`} title={w ? REASONS[w.reason] : kind === 'working' ? t('Working') : kind === 'done' ? t('Finished') : th.error === STOPPED ? t('Stopped') : t('Ready')} />
+  const when = kind === 'working' ? th.startedAt && <Elapsed since={th.startedAt} /> : show.date && formatStamp(w?.since ?? th.updatedAt)
+  const branch = th.worktree && (
+    <span class="branch-tag" title={th.worktree.path}>
+      <GitBranch size={11} /> {th.worktree.branch}
     </span>
   )
   // Open and finished conversations take one line, in the compact density all do.
@@ -433,9 +434,9 @@ export function ThreadCard({ project, thread: t, active, href = `#/p/${project.i
         {swipeable(<a href={href} class={`card compact ${kind} ${active ? 'active' : ''}`} onContextMenu={onContextMenu} onPointerDown={w?.reason === 'result' ? swipe : undefined}>
           {ring}
           {avatar}
-          <div class="card-title" title={t.title}>{t.summary ?? t.title}</div>
+          <div class="card-title" title={th.title}>{th.summary ?? th.title}</div>
           <span class="card-meta">
-            {conversations !== 'compact' && show.label && <Label label={t.label} />}
+            {conversations !== 'compact' && show.label && <Label label={th.label} />}
             {chip}
             {when}
           </span>
@@ -449,31 +450,31 @@ export function ThreadCard({ project, thread: t, active, href = `#/p/${project.i
         <div class="card-top">
           {avatar}
           {chip}
-          {show.label && <Label label={t.label} />}
+          {show.label && <Label label={th.label} />}
           {branch}
           <span class="card-when">
             {show.agent && (
-              <span title={PROVIDER_NAMES[t.agent.provider] ?? t.agent.provider}>
-                <ProviderIcon provider={t.agent.provider} size={12} />
+              <span title={PROVIDER_NAMES[th.agent.provider] ?? th.agent.provider}>
+                <ProviderIcon provider={th.agent.provider} size={12} />
               </span>
             )}
             {show.count && (
               <span>
-                <MessageSquare size={12} /> {t.messageCount}
+                <MessageSquare size={12} /> {th.messageCount}
               </span>
             )}
             {when}
           </span>
         </div>
-        <div class="card-title" title={t.title}>{t.summary ?? t.title}</div>
+        <div class="card-title" title={th.title}>{th.summary ?? th.title}</div>
         {kind === 'working' ? (
           <div class="card-step">
-            <span class="ring busy" /> <span>{t.waiting && !t.busy ? waitingFor(t) : t.step ?? 'Working'}</span>
+            <span class="ring busy" /> <span>{th.waiting && !th.busy ? waitingFor(th) : th.step ?? t('Working')}</span>
           </div>
         ) : w?.reason === 'approval' || w?.reason === 'question' ? (
           <div class="card-ask">
             <span>{w.text}</span>
-            {!children && <span class="respond">{w.reason === 'approval' ? 'Review' : 'Answer'}</span>}
+            {!children && <span class="respond">{w.reason === 'approval' ? t('Review') : t('Answer')}</span>}
           </div>
         ) : w ? (
           <div class="card-text">{plain(w.text)}</div>
@@ -482,7 +483,7 @@ export function ThreadCard({ project, thread: t, active, href = `#/p/${project.i
         {w?.reason === 'result' && (
           <div class="card-actions">
             <button class="ghost small" onClick={finish}>
-              <Check size={12} /> Finish
+              <Check size={12} /> {t('Finish')}
             </button>
           </div>
         )}
@@ -494,7 +495,7 @@ export function ThreadCard({ project, thread: t, active, href = `#/p/${project.i
 
 // Right-clicking a conversation marks it unread again, or read, and finishes or reopens it. Marking the open
 // one unread leaves it, since showing it would mark it read at once.
-function CardMenu({ project, thread: t, active, href, at, close }: { project: Project; thread: Thread; active: boolean; href: string; at: { x: number; y: number }; close: () => void }) {
+function CardMenu({ project, thread: th, active, href, at, close }: { project: Project; thread: Thread; active: boolean; href: string; at: { x: number; y: number }; close: () => void }) {
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
     const on = (e: MouseEvent) => !e.composedPath().includes(ref.current!) && close()
@@ -510,31 +511,31 @@ function CardMenu({ project, thread: t, active, href, at, close }: { project: Pr
   const mark = (unread: boolean) => {
     close()
     // A finished conversation marked unread comes back among the open ones.
-    api('PATCH', `/projects/${project.id}/threads/${t.id}`, { unread, ...(unread && t.completed && { completed: false }) })
+    api('PATCH', `/projects/${project.id}/threads/${th.id}`, { unread, ...(unread && th.completed && { completed: false }) })
     if (unread && active) go(href.slice(1).replace(/\/t\/[^/]+$|\/[^/]+\/[^/]+$/, ''))
   }
   const complete = (completed: boolean) => {
     close()
-    api('PATCH', `/projects/${project.id}/threads/${t.id}`, { completed })
+    api('PATCH', `/projects/${project.id}/threads/${th.id}`, { completed })
   }
   return (
     <div ref={ref} class="menu" style={{ position: 'fixed', left: at.x, top: at.y }}>
-      {t.unread ? (
+      {th.unread ? (
         <button onClick={() => mark(false)}>
-          <MailOpen size={14} /> Mark as read
+          <MailOpen size={14} /> {t('Mark as read')}
         </button>
       ) : (
         <button onClick={() => mark(true)}>
-          <Mail size={14} /> Mark as unread
+          <Mail size={14} /> {t('Mark as unread')}
         </button>
       )}
-      {t.completed ? (
+      {th.completed ? (
         <button onClick={() => complete(false)}>
-          <RotateCcw size={14} /> Reopen
+          <RotateCcw size={14} /> {t('Reopen')}
         </button>
       ) : (
         <button onClick={() => complete(true)}>
-          <Check size={14} /> Finish
+          <Check size={14} /> {t('Finish')}
         </button>
       )}
     </div>
@@ -595,16 +596,16 @@ export function RunElsewhereDialog({ projects, from, threadId, text: selected, o
         <header class="dialog-head">
           <SquareArrowOutUpRight size={18} />
           <div class="dialog-title">
-            <b>Run in another project</b>
+            <b>{t('Run in another project')}</b>
           </div>
-          <button class="icon-btn" title="Close" onClick={onClose}>
+          <button class="icon-btn" title={t('Close')} onClick={onClose}>
             <X size={16} />
           </button>
         </header>
         {sent ? (
-          <p class="dialog-body">{tid ? `Sent to “${threads?.find((t) => t.id === tid)?.title}” in ${target?.name}.` : `Started a new conversation in ${target?.name}.`}</p>
+          <p class="dialog-body">{tid ? t('Sent to “{title}” in {project}.', { title: threads?.find((th) => th.id === tid)?.title ?? '', project: target?.name ?? '' }) : t('Started a new conversation in {project}.', { project: target?.name ?? '' })}</p>
         ) : !others.length ? (
-          <p class="dialog-body">There is no other project yet.</p>
+          <p class="dialog-body">{t('There is no other project yet.')}</p>
         ) : (
           <form
             class="dialog-body form"
@@ -614,7 +615,7 @@ export function RunElsewhereDialog({ projects, from, threadId, text: selected, o
             }}
           >
             <label>
-              Project
+              {t('Project')}
               <select value={pid} onChange={(e) => (setPid(e.currentTarget.value), setTid(''))}>
                 {others.map((p) => (
                   <option key={p.id} value={p.id}>
@@ -624,9 +625,9 @@ export function RunElsewhereDialog({ projects, from, threadId, text: selected, o
               </select>
             </label>
             <label>
-              Conversation
+              {t('Conversation')}
               <select value={tid} onChange={(e) => setTid(e.currentTarget.value)}>
-                <option value="">New conversation</option>
+                <option value="">{t('New conversation')}</option>
                 {threads
                   ?.filter((t) => !t.completed)
                   .map((t) => (
@@ -637,7 +638,7 @@ export function RunElsewhereDialog({ projects, from, threadId, text: selected, o
               </select>
             </label>
             <label>
-              Message
+              {t('Message')}
               <textarea
                 rows={6}
                 autoFocus
@@ -648,7 +649,7 @@ export function RunElsewhereDialog({ projects, from, threadId, text: selected, o
             </label>
             {origin && (
               <label class="check">
-                <input type="checkbox" checked={withSource} onChange={(e) => setWithSource(e.currentTarget.checked)} /> Say where it comes from, so the agent can read this conversation
+                <input type="checkbox" checked={withSource} onChange={(e) => setWithSource(e.currentTarget.checked)} /> {t('Say where it comes from, so the agent can read this conversation')}
               </label>
             )}
             {error && <div class="error-text">{error}</div>}
@@ -659,16 +660,16 @@ export function RunElsewhereDialog({ projects, from, threadId, text: selected, o
           {sent ? (
             <div class="pick-actions">
               <button class="ghost" onClick={onClose}>
-                Done
+                {t('Done')}
               </button>
               <button class="primary" onClick={() => (onClose(), go(sent))}>
-                Open conversation <ArrowRight size={15} />
+                {t('Open conversation')} <ArrowRight size={15} />
               </button>
             </div>
           ) : (
             others.length > 0 && (
               <button class="primary" disabled={busy || !text.trim() || !pid} onClick={send}>
-                <ArrowUp size={15} /> {busy ? 'Sending…' : tid ? 'Send' : 'Start'}
+                <ArrowUp size={15} /> {busy ? t('Sending…') : tid ? t('Send') : t('Start')}
               </button>
             )
           )}
@@ -707,20 +708,20 @@ function NewConversation({ project }: { project: Project }) {
   return (
     <section class="thread new-thread">
       <div class="new-hero">
-        <h1>What do you want to build?</h1>
+        <h1>{t('What do you want to build?')}</h1>
         <p class="muted">
-          Start a conversation in <b>{project.name}</b>. Each conversation gets its own agent session.
+          {t('Start a conversation in {name}. Each conversation gets its own agent session.', { name: project.name })}
         </p>
       </div>
-      <Composer project={project} agent={agent} setAgent={setAgent} onSend={send} placeholder="Describe what you want…" worktree={worktree} setWorktree={setWorktree} fanout={fanout} setFanout={setFanout} voice={voice} autoFocus />
+      <Composer project={project} agent={agent} setAgent={setAgent} onSend={send} placeholder={t('Describe what you want…')} worktree={worktree} setWorktree={setWorktree} fanout={fanout} setFanout={setFanout} voice={voice} autoFocus />
     </section>
   )
 }
 
 // Between turns: the agent ended its turn without a conclusion and continues when its background work
 // or CI is done, or Savor continues the turn once the usage limit it stopped at resets.
-const waitingFor = (t: Thread) =>
-  t.resumeAt ? `Usage limit · continues ${formatStamp(t.resumeAt)}` : t.ciWatch ? `Waiting for CI · ${t.ciWatch.sha.slice(0, 7)}` : 'Waiting for background work'
+const waitingFor = (th: Thread) =>
+  th.resumeAt ? t('Usage limit · continues {when}', { when: formatStamp(th.resumeAt) }) : th.ciWatch ? t('Waiting for CI · {sha}', { sha: th.ciWatch.sha.slice(0, 7) }) : t('Waiting for background work')
 // What the daemon records as the error of a turn the user stopped. That is not a failure.
 const STOPPED = 'Turn stopped.'
 
@@ -730,8 +731,8 @@ interface ThreadData { thread: Thread; busy: boolean; waiting: boolean; backgrou
 function ContextUse({ context: c }: { context: NonNullable<Thread['context']> }) {
   const share = c.window ? c.tokens / c.window : 0
   return (
-    <span class={`status context${share >= 0.8 ? ' full' : ''}`} title={`${c.tokens.toLocaleString()}${c.window ? ` of ${c.window.toLocaleString()}` : ''} tokens in the agent's context window`}>
-      Context {c.window ? `${Math.round(share * 100)}%` : `${Math.round(c.tokens / 1000)}k`}
+    <span class={`status context${share >= 0.8 ? ' full' : ''}`} title={c.window ? t('{n} of {window} tokens in the agent\'s context window', { n: c.tokens.toLocaleString(), window: c.window.toLocaleString() }) : t('{n} tokens in the agent\'s context window', { n: c.tokens.toLocaleString() })}>
+      {t('Context')} {c.window ? `${Math.round(share * 100)}%` : `${Math.round(c.tokens / 1000)}k`}
     </span>
   )
 }
@@ -849,11 +850,11 @@ export function ThreadView({ project, threadId, back, next, siblings }: { projec
   useShortcut('browser', () => setView(mode === 'browser' ? 'chat' : 'browser'))
 
   if (!data) return (
-    <Panel id="main" title="Chat">
+    <Panel id="main" title={t('Chat')}>
       <section class="thread">
         <div class="empty-state" role="status">
-          <p>{loadError ? `Could not load this conversation: ${loadError.message}` : 'Loading conversation…'}</p>
-          {loadError && <button class="ghost" onClick={reload}>Try again</button>}
+          <p>{loadError ? t('Could not load this conversation: {error}', { error: loadError.message }) : t('Loading conversation…')}</p>
+          {loadError && <button class="ghost" onClick={reload}>{t('Try again')}</button>}
         </div>
       </section>
     </Panel>
@@ -917,21 +918,21 @@ export function ThreadView({ project, threadId, back, next, siblings }: { projec
   }
   const planCard = (id: string, live: boolean) => <PlanCard key={`plan-${id}`} plan={plans![id]} live={live} stop={(aid) => api('POST', `${base}/plans/agents/${encodeURIComponent(aid)}/stop`)} />
   const status = busy || waiting
-    ? { icon: <span class="ring busy" />, text: busy ? 'Working' : waitingFor(thread), cls: 'working' }
+    ? { icon: <span class="ring busy" />, text: busy ? t('Working') : waitingFor(thread), cls: 'working' }
     : thread.needsYou
-      ? { icon: <span class="ring needs" />, text: 'Your turn', cls: 'needs' }
+      ? { icon: <span class="ring needs" />, text: t('Your turn'), cls: 'needs' }
       : thread.error === STOPPED
-        ? { icon: <span class="ring" />, text: 'Stopped', cls: '' }
+        ? { icon: <span class="ring" />, text: t('Stopped'), cls: '' }
       : thread.error
-        ? { icon: <CircleAlert size={13} />, text: 'Error', cls: 'error' }
+        ? { icon: <CircleAlert size={13} />, text: t('Error'), cls: 'error' }
         : thread.completed
-          ? { icon: <span class="ring done" />, text: 'Finished', cls: 'done' }
-          : { icon: <span class="ring" />, text: 'Ready', cls: '' }
+          ? { icon: <span class="ring done" />, text: t('Finished'), cls: 'done' }
+          : { icon: <span class="ring" />, text: t('Ready'), cls: '' }
   const running = activity?.filter((a) => !a.finishedAt && (!data.startedAt || a.time >= data.startedAt)).at(-1)
-  const workingLabel = running ? { thinking: 'Thinking', command: 'Running a command', edit: 'Editing files', note: 'Working' }[running.type] : 'Working'
+  const workingLabel = running ? { thinking: t('Thinking'), command: t('Running a command'), edit: t('Editing files'), note: t('Working') }[running.type] : t('Working')
 
   const rename = () => {
-    const name = prompt('Label', thread.label?.name ?? '')
+    const name = prompt(t('Label'), thread.label?.name ?? '')
     if (name !== null) patch({ label: name })
   }
   const fork = async () => {
@@ -942,7 +943,7 @@ export function ThreadView({ project, threadId, back, next, siblings }: { projec
   const inTerminal = ['claude', 'codex', 'opencode', 'antigravity'].includes(thread.agent.provider) && thread.agentSessions.some((s) => s.provider === thread.agent.provider)
   const openInTerminal = async () => showTerminal((await api<{ id: string }>('POST', `${base}/terminal`)).id)
   const remove = async () => {
-    if (!confirm('Delete this conversation and its history?')) return
+    if (!confirm(t('Delete this conversation and its history?'))) return
     await api('DELETE', base)
     go(back ?? `/p/${project.id}`)
   }
@@ -959,14 +960,14 @@ export function ThreadView({ project, threadId, back, next, siblings }: { projec
   }
   // On a phone and beside the preview, the header keeps only the menu and the switch.
   const compactHead = browserMode || narrow
-  const said = thread.needsYou ? 'Your turn' : last && last.kind !== 'user' && messages.length > seen ? last.text : ''
+  const said = thread.needsYou ? t('Your turn') : last && last.kind !== 'user' && messages.length > seen ? last.text : ''
   const bubble = busy || waiting ? (
-    <button class="bubble" title="Show the conversation" onClick={showChat}>
+    <button class="bubble" title={t('Show the conversation')} onClick={showChat}>
       <span class="spinner" /> {busy ? workingLabel : waitingFor(thread)}
       {elapsed && <span class="muted"> · {elapsed}</span>}
     </button>
   ) : said ? (
-    <button class="bubble" title="Show the conversation" onClick={showChat}>
+    <button class="bubble" title={t('Show the conversation')} onClick={showChat}>
       <ProviderIcon provider={last?.modelInfo?.provider ?? thread.agent.provider} size={15} /> <span>{said}</span>
     </button>
   ) : null
@@ -980,7 +981,7 @@ export function ThreadView({ project, threadId, back, next, siblings }: { projec
       onSteer={['claude', 'codex'].includes(thread.agent.provider) ? steer : undefined}
       busy={busy}
       onStop={stoppable ? stop : undefined}
-      placeholder={floating ? 'Tell the agent what to change…' : busy ? 'Add a follow-up (queued until the agent is done)…' : 'Add a follow-up...'}
+      placeholder={floating ? t('Tell the agent what to change…') : busy ? t('Add a follow-up (queued until the agent is done)…') : t('Add a follow-up...')}
       draft={draft}
       picked={picked}
       clearPicked={(i) => setPicked(i < 0 ? [] : picked.filter((_, j) => j !== i))}
@@ -999,14 +1000,14 @@ export function ThreadView({ project, threadId, back, next, siblings }: { projec
   return (
     <div class={`thread-layout ${browserMode ? 'browser' : ''}`}>
       {!(browserMode && chatHidden && !narrow) && (
-        <Panel id="main" title="Chat" class={`thread-layout ${browserMode ? 'browser' : ''}`}>
+        <Panel id="main" title={t('Chat')} class={`thread-layout ${browserMode ? 'browser' : ''}`}>
           <section class="thread">
             <header class="thread-head">
-              <a class="square back" href={`#${back ?? `/p/${project.id}`}`} title="All conversations">
+              <a class="square back" href={`#${back ?? `/p/${project.id}`}`} title={t('All conversations')}>
                 <ArrowLeft size={17} />
               </a>
               {browserMode && (
-                <button class="square list" title="Show conversations" onClick={() => setView('chat')}>
+                <button class="square list" title={t('Show conversations')} onClick={() => setView('chat')}>
                   <PanelLeft size={17} />
                 </button>
               )}
@@ -1014,7 +1015,7 @@ export function ThreadView({ project, threadId, back, next, siblings }: { projec
                 <h1>{thread.summary ?? thread.title}</h1>
                 <div class="thread-sub">
                   {back && (
-                    <a href={`#/p/${project.id}/t/${threadId}`} title={`Open in ${project.name}`}>
+                    <a href={`#/p/${project.id}/t/${threadId}`} title={t('Open in {name}', { name: project.name })}>
                       <ProjectTag project={project} />
                     </a>
                   )}
@@ -1022,22 +1023,22 @@ export function ThreadView({ project, threadId, back, next, siblings }: { projec
                   <span class={`status ${status.cls}`}>
                     {status.icon} {status.text}{busy && elapsed ? ` · ${elapsed}` : ''}
                   </span>
-                  {data.background && !busy && !waiting && <span class="status">Background work running</span>}
-                  {stoppable && <button class="status stop-work" onClick={stop}>Stop</button>}
-                  {queued > 0 && <span class="status">{queued} queued</span>}
+                  {data.background && !busy && !waiting && <span class="status">{t('Background work running')}</span>}
+                  {stoppable && <button class="status stop-work" onClick={stop}>{t('Stop')}</button>}
+                  {queued > 0 && <span class="status">{t('{n} queued', { n: queued })}</span>}
                   {thread.worktree && (
                     <span class="status worktree" title={thread.worktree.path}>
                       <GitBranch size={12} /> {thread.worktree.branch}
                     </span>
                   )}
                   {thread.fanout && (
-                    <a class="status" href={`#/p/${project.id}/fan/${thread.fanout.id}`} title="Compare with the other agents">
-                      <Split size={12} /> Comparison
+                    <a class="status" href={`#/p/${project.id}/fan/${thread.fanout.id}`} title={t('Compare with the other agents')}>
+                      <Split size={12} /> {t('Comparison')}
                     </a>
                   )}
                   {thread.fork && (
-                    <a class="status fork" href={`#/p/${project.id}/t/${thread.parentId}`} title="Open the conversation this one branches off">
-                      <GitFork size={12} /> Fork
+                    <a class="status fork" href={`#/p/${project.id}/t/${thread.parentId}`} title={t('Open the conversation this one branches off')}>
+                      <GitFork size={12} /> {t('Fork')}
                     </a>
                   )}
                   {thread.context && <ContextUse context={thread.context} />}
@@ -1045,56 +1046,56 @@ export function ThreadView({ project, threadId, back, next, siblings }: { projec
               </div>
               <div class="head-actions">
                 {back && (
-                  <a class="square" href={`#/p/${project.id}/t/${threadId}`} title={`Open in ${project.name}`}>
+                  <a class="square" href={`#/p/${project.id}/t/${threadId}`} title={t('Open in {name}', { name: project.name })}>
                     <SquareArrowOutUpRight size={16} />
                   </a>
                 )}
                 {!compactHead && (
-                  <button class={`square ${thread.completed ? 'on' : ''}`} title={thread.completed ? 'Reopen' : 'Finish'} onClick={() => patch({ completed: !thread.completed })}>
+                  <button class={`square ${thread.completed ? 'on' : ''}`} title={thread.completed ? t('Reopen') : t('Finish')} onClick={() => patch({ completed: !thread.completed })}>
                     <Check size={17} />
                   </button>
                 )}
                 <div class="group">
                   {!compactHead && (
-                    <button class={`square ${find.open ? 'on' : ''}`} title="Find in conversation (Ctrl+F)" onClick={() => setFind({ ...find, open: !find.open })}>
+                    <button class={`square ${find.open ? 'on' : ''}`} title={t('Find in conversation (Ctrl+F)')} onClick={() => setFind({ ...find, open: !find.open })}>
                       <Search size={17} />
                     </button>
                   )}
                   <div class="menu-anchor">
-                    <button class="square" title="More" onClick={() => setMenu(!menu)}>
+                    <button class="square" title={t('More')} onClick={() => setMenu(!menu)}>
                       <MoreHorizontal size={17} />
                     </button>
                     {menu && (
                       <div class="menu right" onClick={() => setMenu(false)}>
-                        {compactHead && <button onClick={() => patch({ completed: !thread.completed })}>{thread.completed ? 'Reopen' : 'Finish'}</button>}
-                        {compactHead && <button onClick={openFind}>Find in conversation</button>}
-                        {compactHead && <button onClick={showActivity}>Show activity</button>}
-                        <button onClick={rename}>Rename label</button>
-                        {!busy && <button onClick={fork}>Fork conversation</button>}
-                        {!busy && inTerminal && <button onClick={openInTerminal}>Open in terminal</button>}
-                        <button onClick={() => navigator.clipboard.writeText(`${project.path}/.savor/threads/${thread.id}/messages.jsonl`)}>Copy file path</button>
-                        {stoppable && <button onClick={stop}>Stop agent</button>}
+                        {compactHead && <button onClick={() => patch({ completed: !thread.completed })}>{thread.completed ? t('Reopen') : t('Finish')}</button>}
+                        {compactHead && <button onClick={openFind}>{t('Find in conversation')}</button>}
+                        {compactHead && <button onClick={showActivity}>{t('Show activity')}</button>}
+                        <button onClick={rename}>{t('Rename label')}</button>
+                        {!busy && <button onClick={fork}>{t('Fork conversation')}</button>}
+                        {!busy && inTerminal && <button onClick={openInTerminal}>{t('Open in terminal')}</button>}
+                        <button onClick={() => navigator.clipboard.writeText(`${project.path}/.savor/threads/${thread.id}/messages.jsonl`)}>{t('Copy file path')}</button>
+                        {stoppable && <button onClick={stop}>{t('Stop agent')}</button>}
                         <button class="danger" onClick={remove}>
-                          Delete conversation
+                          {t('Delete conversation')}
                         </button>
                       </div>
                     )}
                   </div>
                   {!compactHead && (
-                    <button class={`square ${activityOpen ? 'on' : ''}`} title="Activity" onClick={() => setActivityOpen(!activityOpen)}>
+                    <button class={`square ${activityOpen ? 'on' : ''}`} title={t('Activity')} onClick={() => setActivityOpen(!activityOpen)}>
                       <PanelRight size={17} />
                     </button>
                   )}
                 </div>
                 <div class="modes">
-                  <button class={mode === 'chat' ? 'on' : ''} aria-pressed={mode === 'chat'} title="Chat" onClick={() => setView('chat')}>
-                    <MessageSquare size={15} /> <span>Chat</span>
+                  <button class={mode === 'chat' ? 'on' : ''} aria-pressed={mode === 'chat'} title={t('Chat')} onClick={() => setView('chat')}>
+                    <MessageSquare size={15} /> <span>{t('Chat')}</span>
                   </button>
-                  <button class={mode === 'browser' ? 'on' : ''} aria-pressed={mode === 'browser'} title="Browser" onClick={() => setView('browser')}>
-                    <Globe size={15} /> <span>Browser</span>
+                  <button class={mode === 'browser' ? 'on' : ''} aria-pressed={mode === 'browser'} title={t('Browser')} onClick={() => setView('browser')}>
+                    <Globe size={15} /> <span>{t('Browser')}</span>
                   </button>
-                  <button class={mode === 'changes' ? 'on' : ''} aria-pressed={mode === 'changes'} title="Changes" onClick={() => setView('changes')}>
-                    <FileDiff size={15} /> <span>Changes</span>
+                  <button class={mode === 'changes' ? 'on' : ''} aria-pressed={mode === 'changes'} title={t('Changes')} onClick={() => setView('changes')}>
+                    <FileDiff size={15} /> <span>{t('Changes')}</span>
                     {review?.length ? <i class="mode-count">{review.length}</i> : null}
                   </button>
                 </div>
@@ -1102,7 +1103,7 @@ export function ThreadView({ project, threadId, back, next, siblings }: { projec
             </header>
             {links && (links.source || links.targets.length > 0) && (
               <div class="routing-links">
-                {links.source && <a href={`#/all/inbox/${links.source.project.id}/${links.source.thread.id}`}>← Inbox · {links.source.thread.summary ?? links.source.thread.title}</a>}
+                {links.source && <a href={`#/all/inbox/${links.source.project.id}/${links.source.thread.id}`}>← {t('Inbox')} · {links.source.thread.summary ?? links.source.thread.title}</a>}
                 {links.targets.map(({ project: target, thread: t }) => <a key={t.id} href={`#/all/inbox/${target.id}/${t.id}`}><span class={`ring ${RINGS[kindOf(t)]}`} />{target.name} · {t.summary ?? t.title}</a>)}
               </div>
             )}
@@ -1115,7 +1116,7 @@ export function ThreadView({ project, threadId, back, next, siblings }: { projec
                     <input
                       ref={findRef}
                       autoFocus
-                      placeholder="Find in conversation…"
+                      placeholder={t('Find in conversation…')}
                       value={find.q}
                       onInput={(e) => setFind({ open: true, q: e.currentTarget.value, at: 0 })}
                       onKeyDown={(e) => {
@@ -1123,14 +1124,14 @@ export function ThreadView({ project, threadId, back, next, siblings }: { projec
                         if (e.key === 'Escape') setFind({ open: false, q: '', at: 0 })
                       }}
                     />
-                    <span class="count">{find.q.trim() ? (matches.length ? `${matches.indexOf(currentMatch!) + 1} of ${matches.length}` : 'No matches') : ''}</span>
-                    <button class="icon-btn" title="Older match (Shift+Enter)" disabled={!matches.length} onClick={() => step(-1)}>
+                    <span class="count">{find.q.trim() ? (matches.length ? t('{n} of {total}', { n: matches.indexOf(currentMatch!) + 1, total: matches.length }) : t('No matches')) : ''}</span>
+                    <button class="icon-btn" title={t('Older match (Shift+Enter)')} disabled={!matches.length} onClick={() => step(-1)}>
                       <ChevronUp size={16} />
                     </button>
-                    <button class="icon-btn" title="Newer match (Enter)" disabled={!matches.length} onClick={() => step(1)}>
+                    <button class="icon-btn" title={t('Newer match (Enter)')} disabled={!matches.length} onClick={() => step(1)}>
                       <ChevronDown size={16} />
                     </button>
-                    <button class="icon-btn" title="Close (Esc)" onClick={() => setFind({ open: false, q: '', at: 0 })}>
+                    <button class="icon-btn" title={t('Close (Esc)')} onClick={() => setFind({ open: false, q: '', at: 0 })}>
                       <X size={16} />
                     </button>
                   </div>
@@ -1160,20 +1161,20 @@ export function ThreadView({ project, threadId, back, next, siblings }: { projec
                       />
                       {m.compacted && (
                         <div class="compacted-row">
-                          Context compacted while idle · {Math.round(m.compacted.from / 1000)}k → {Math.round(m.compacted.to / 1000)}k tokens
+                          {t('Context compacted while idle · {from}k → {to}k tokens', { from: Math.round(m.compacted.from / 1000), to: Math.round(m.compacted.to / 1000) })}
                         </div>
                       )}
                     </Fragment>
                   ))}
                   {openPlan && planCard(openPlan, busy || waiting)}
                   {(busy || waiting) && (
-                    <button class="working-row" title="Show activity" onClick={showActivity}>
+                    <button class="working-row" title={t('Show activity')} onClick={showActivity}>
                       <span class="spinner" /> {busy ? workingLabel : waitingFor(thread)}{elapsed && <span class="muted"> · {elapsed}</span>} <ChevronRight size={13} />
                     </button>
                   )}
                   {showNext && lastConclusion ? (
                     <div class="next-actions">
-                      <div class="next-head">Next steps</div>
+                      <div class="next-head">{t('Next steps')}</div>
                       {lastConclusion.suggestions!.map((s) => (
                         <div class="next-row" key={s}>
                           <button class="next-text" onClick={() => send(s)}>
@@ -1182,10 +1183,10 @@ export function ThreadView({ project, threadId, back, next, siblings }: { projec
                               <ArrowUp size={14} />
                             </span>
                           </button>
-                          <button class="next-edit" title="Edit before sending" onClick={() => setDraft(s)}>
+                          <button class="next-edit" title={t('Edit before sending')} onClick={() => setDraft(s)}>
                             <Pencil size={15} />
                           </button>
-                          <button class="next-new" title="Start in a new conversation" onClick={() => sendNew(s)}>
+                          <button class="next-new" title={t('Start in a new conversation')} onClick={() => sendNew(s)}>
                             <MessageSquarePlus size={15} />
                           </button>
                         </div>
@@ -1200,28 +1201,28 @@ export function ThreadView({ project, threadId, back, next, siblings }: { projec
                       <span>
                         <Check size={16} />
                       </span>
-                      Finish
+                      {t('Finish')}
                     </button>
                     {nextPath && (
                       <button class="mark-complete" onClick={() => patch({ completed: true }).then(() => go(nextPath))}>
                         <span>
                           <ArrowRight size={16} />
                         </span>
-                        Finish & next
+                        {t('Finish & next')}
                       </button>
                     )}
                   </div>
                 )}
                 {busy && nextPath && (
                   <div class="complete-actions">
-                    <button class="mark-complete" title="Open the next conversation that needs you" onClick={() => {
+                    <button class="mark-complete" title={t('Open the next conversation that needs you')} onClick={() => {
                       trail.push(location.hash.slice(1))
                       go(nextPath)
                     }}>
                       <span>
                         <ArrowRight size={16} />
                       </span>
-                      Next
+                      {t('Next')}
                     </button>
                   </div>
                 )}
@@ -1233,8 +1234,8 @@ export function ThreadView({ project, threadId, back, next, siblings }: { projec
           {!browserMode && activityOpen && (
             <aside class="side-panel">
               <div class="panel-title">
-                Activity
-                <button class="icon-btn" title="Close" onClick={() => setActivityOpen(false)}>
+                {t('Activity')}
+                <button class="icon-btn" title={t('Close')} onClick={() => setActivityOpen(false)}>
                   <X size={15} />
                 </button>
               </div>
@@ -1244,7 +1245,7 @@ export function ThreadView({ project, threadId, back, next, siblings }: { projec
         </Panel>
       )}
       {browserMode && (
-        <Panel id="stage" title={mode === 'changes' ? 'Changes' : 'Preview'}>
+        <Panel id="stage" title={mode === 'changes' ? t('Changes') : t('Preview')}>
           <section class="stage">
             {mode === 'changes' ? (
               <Changes
@@ -1286,24 +1287,24 @@ function ThreadWorkflows({ project, threadId }: { project: Project; threadId: st
   const [workflows] = useApi<Workflow[]>(base, (e) => e.type === 'workflows' && e.projectId === project.id)
   const mine = workflows?.filter((w) => w.threadId === threadId)
   if (!mine?.length) return null
-  const remove = (w: Workflow) => confirm(`Delete “${w.name}”?`) && api('DELETE', `${base}/${w.id}`)
+  const remove = (w: Workflow) => confirm(t('Delete “{name}”?', { name: w.name })) && api('DELETE', `${base}/${w.id}`)
   return (
     <div class="thread-workflows">
       {mine.map((w) => (
         <div key={w.id} class="thread-wf">
           <a href={`#/p/${project.id}/workflows/${w.id}`}>
-            <WorkflowIcon size={14} /> <b>{w.name}</b>
+            <WorkflowIcon size={14} /> <b>{t(w.name)}</b>
           </a>
           <span class="muted">
             {schedule(w)}
-            {w.nextRunAt && ` · Next run ${when(w.nextRunAt)}`}
+            {w.nextRunAt && ` · ${t('Next run {when}', { when: when(w.nextRunAt) })}`}
           </span>
-          {!w.enabled && <span class="off-badge">Paused</span>}
+          {!w.enabled && <span class="off-badge">{t('Paused')}</span>}
           <span class="thread-wf-actions">
             <button class="ghost small" onClick={() => api('PUT', `${base}/${w.id}`, { enabled: !w.enabled })}>
-              {w.enabled ? 'Pause' : 'Resume'}
+              {w.enabled ? t('Pause') : t('Resume')}
             </button>
-            <button class="ghost small danger" title="Delete workflow" onClick={() => remove(w)}>
+            <button class="ghost small danger" title={t('Delete workflow')} onClick={() => remove(w)}>
               <Trash2 size={13} />
             </button>
           </span>
@@ -1407,12 +1408,12 @@ function MessageItem({ m, thread, workflow, decisions, active, answers, setAnswe
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(m.text ?? '')
-      setCopyState('Copied')
+      setCopyState(t('Copied'))
     } catch {
-      setCopyState('Could not copy')
+      setCopyState(t('Could not copy'))
     }
   }
-  const who = m.kind === 'user' ? (m.origin === 'remote' ? `You · ${m.device ?? 'remote device'}` : 'You') : PROVIDER_NAMES[m.modelInfo?.provider ?? thread.agent.provider]
+  const who = m.kind === 'user' ? (m.origin === 'remote' ? `${t('You')} · ${m.device ?? t('remote device')}` : t('You')) : PROVIDER_NAMES[m.modelInfo?.provider ?? thread.agent.provider]
   const worked = m.workTiming && Date.parse(m.workTiming.finishedAt) - Date.parse(m.workTiming.startedAt)
   const queued = m.kind === 'user' && m.delivered === false
   const [open, setOpen] = useState(false)
@@ -1432,7 +1433,7 @@ function MessageItem({ m, thread, workflow, decisions, active, answers, setAnswe
           <div class="wf-chip-body">
             <div class="plain"><Highlighted text={m.text ?? ''} q={highlight} /></div>
             <a href={workflow.href}>
-              <WorkflowIcon size={14} /> Open workflow
+              <WorkflowIcon size={14} /> {t('Open workflow')}
             </a>
           </div>
         )}
@@ -1449,7 +1450,7 @@ function MessageItem({ m, thread, workflow, decisions, active, answers, setAnswe
         </div>
         <div class="msg-card approval">
           <div class="approval-title">
-            <ShieldQuestion size={16} /> {a.title ?? 'Permission request'}
+            <ShieldQuestion size={16} /> {a.title ?? t('Permission request')}
           </div>
           {a.detail && <pre>{a.detail.slice(0, 1500)}</pre>}
           {a.url && (
@@ -1468,7 +1469,7 @@ function MessageItem({ m, thread, workflow, decisions, active, answers, setAnswe
               ))}
             </div>
           ) : (
-            <div class="muted">{a.expired ? 'Expired: the agent stopped waiting for an answer' : (a.options?.find((o) => o.id === a.choice)?.label ?? cap(a.status))}</div>
+            <div class="muted">{a.expired ? t('Expired: the agent stopped waiting for an answer') : (a.options?.find((o) => o.id === a.choice)?.label ?? cap(a.status))}</div>
           )}
         </div>
       </div>
@@ -1480,17 +1481,17 @@ function MessageItem({ m, thread, workflow, decisions, active, answers, setAnswe
       <div class="msg-head">
         <Avatar m={m} thread={thread} />{' '}
         {m.from ? (
-          <a class="from-agent-link" href={`#/p/${m.from.projectId}/t/${m.from.threadId}`} title="Open the conversation that sent this">
-            <b>Agent · {m.from.label}</b> ({m.from.project})
+          <a class="from-agent-link" href={`#/p/${m.from.projectId}/t/${m.from.threadId}`} title={t('Open the conversation that sent this')}>
+            <b>{t('Agent')} · {m.from.label}</b> ({m.from.project})
           </a>
         ) : (
           <b>{who}</b>
         )}{' '}
         <span class="muted">{formatTime(m.ts)}</span>
-        {worked ? <span class="muted">Worked for {duration(worked)}</span> : null}
-        {m.kind === 'question' && <span class="muted">Your turn</span>}
-        {m.modelInfo?.model && <span class="muted">{m.modelInfo.model}{m.modelInfo.reasoning && ` · ${cap(m.modelInfo.reasoning)} effort`}</span>}
-        {m.text && <button class="icon-btn copy-message" title={copyState || 'Copy message'} aria-label={copyState || 'Copy message'} onClick={copy}>{copyState === 'Copied' ? <Check size={13} /> : <Copy size={13} />}</button>}
+        {worked ? <span class="muted">{t('Worked for {time}', { time: duration(worked) })}</span> : null}
+        {m.kind === 'question' && <span class="muted">{t('Your turn')}</span>}
+        {m.modelInfo?.model && <span class="muted">{m.modelInfo.model}{m.modelInfo.reasoning && ` · ${t('{level} effort', { level: effortLabel(m.modelInfo.reasoning) })}`}</span>}
+        {m.text && <button class="icon-btn copy-message" title={copyState || t('Copy message')} aria-label={copyState || t('Copy message')} onClick={copy}>{copyState === 'Copied' ? <Check size={13} /> : <Copy size={13} />}</button>}
         {copyState && <span class="muted" role="status">{copyState}</span>}
       </div>
       {(m.text || m.images?.length || m.files?.length) && (
@@ -1515,7 +1516,7 @@ function MessageItem({ m, thread, workflow, decisions, active, answers, setAnswe
           {m.commits?.length ? (
             <div class="commits">
               {m.commits.map((c) => (
-                <button key={c} class="commit" title={`Show what ${c} changed`} onClick={() => onCommit(c)}>
+                <button key={c} class="commit" title={t('Show what {commit} changed', { commit: c })} onClick={() => onCommit(c)}>
                   <GitBranch size={12} /> {c.slice(0, 7)}
                 </button>
               ))}
@@ -1527,11 +1528,11 @@ function MessageItem({ m, thread, workflow, decisions, active, answers, setAnswe
                 <Globe size={16} />
               </span>
               <span>
-                <b>Preview</b>
+                <b>{t('Preview')}</b>
                 <small>{preview.replace(/^https?:\/\//, '')}</small>
               </span>
               <span class="preview-open">
-                Open browser <ArrowRight size={14} />
+                {t('Open browser')} <ArrowRight size={14} />
               </span>
             </button>
           )}
@@ -1539,11 +1540,11 @@ function MessageItem({ m, thread, workflow, decisions, active, answers, setAnswe
       )}
       {queued && (
         <div class="queued-row">
-          <b>Queued</b> <span>Sent after the current turn</span>
-          {['claude', 'codex'].includes(thread.agent.provider) && <button onClick={() => api('POST', `${base}/messages/${m.id}/steer`)}>Add to this turn</button>}
-          <button onClick={() => api('POST', `${base}/send-now`)}>Stop work and send now</button>
+          <b>{t('Queued')}</b> <span>{t('Sent after the current turn')}</span>
+          {['claude', 'codex'].includes(thread.agent.provider) && <button onClick={() => api('POST', `${base}/messages/${m.id}/steer`)}>{t('Add to this turn')}</button>}
+          <button onClick={() => api('POST', `${base}/send-now`)}>{t('Stop work and send now')}</button>
           <button class="danger" onClick={() => api('DELETE', `${base}/messages/${m.id}`)}>
-            Remove
+            {t('Remove')}
           </button>
         </div>
       )}
@@ -1608,7 +1609,7 @@ function Questions({ decisions, active, answers, setAnswer }: { decisions: Decis
                     <label key={oi} class={`option ${oi === d.recommended ? 'recommended' : ''} ${a.selected === oi ? 'selected' : ''}`}>
                       <input type="radio" name={d.id} checked={a.selected === oi} onChange={() => setAnswer(d.id, { ...a, selected: oi })} />
                       <span>{o}</span>
-                      {oi === d.recommended && <span class="recommended-pill">Recommended</span>}
+                      {oi === d.recommended && <span class="recommended-pill">{t('Recommended')}</span>}
                     </label>
                   ))}
                 <label class={`option other ${other ? 'selected' : ''}`}>
@@ -1617,7 +1618,7 @@ function Questions({ decisions, active, answers, setAnswer }: { decisions: Decis
                     class="other-answer"
                     rows={1}
                     ref={growToFit}
-                    placeholder={d.options.length ? 'Something else…' : 'Your answer…'}
+                    placeholder={d.options.length ? t('Something else…') : t('Your answer…')}
                     value={a.answer ?? ''}
                     onFocus={() => a.answer?.trim() && setAnswer(d.id, { answer: a.answer })}
                     onInput={(e) => {
@@ -1634,16 +1635,16 @@ function Questions({ decisions, active, answers, setAnswer }: { decisions: Decis
                     <Check size={14} /> {d.selected != null ? d.options[d.selected] : d.answer}
                   </>
                 ) : d.resolved ? (
-                  <span class="muted">Skipped</span>
+                  <span class="muted">{t('Skipped')}</span>
                 ) : (
-                  <span class="muted">Not answered</span>
+                  <span class="muted">{t('Not answered')}</span>
                 )}
               </div>
             )}
           </div>
         )
       })}
-      {open && <div class="q-hint">Pick an answer {n === 1 ? '' : 'for each question '}and send from the box below. You can add a comment there.</div>}
+      {open && <div class="q-hint">{n === 1 ? t('Pick an answer and send from the box below. You can add a comment there.') : t('Pick an answer for each question and send from the box below. You can add a comment there.')}</div>}
     </div>
   )
 }
@@ -1664,7 +1665,7 @@ function StepRows({ steps }: { steps: PlanStep[] }) {
   )
 }
 
-const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
+
 
 // The agent's todo list and the subagents and background commands it runs. While the agent works it is a
 // card with the open steps, done ones folded away; afterwards a single line that opens it again. What still
@@ -1675,12 +1676,12 @@ function PlanCard({ plan, live, stop }: { plan: Plan; live: boolean; stop: (id: 
   const subagents = plan.agents.filter((a) => a.kind === 'agent').length
   const commands = plan.agents.length - subagents
   const running = plan.agents.filter((a) => a.status === 'running').length
-  const agentNote = [subagents && plural(subagents, 'agent'), commands && plural(commands, 'background command'), running && `${running} running`].filter(Boolean).join(' · ')
+  const agentNote = [subagents && plural(subagents, '{n} agent', '{n} agents'), commands && plural(commands, '{n} background command', '{n} background commands'), running && t('{n} running', { n: running })].filter(Boolean).join(' · ')
   const agents = plan.agents.length > 0 && (
     <>
-      {plan.steps.length > 0 && <div class="plan-sub">Agents & background work</div>}
+      {plan.steps.length > 0 && <div class="plan-sub">{t('Agents & background work')}</div>}
       {plan.agents.map((a) => {
-        const what = [a.kind === 'command' ? 'Background command' : a.type || 'Agent', a.status === 'running' ? a.doing !== a.name && a.doing : cap(a.status)].filter(Boolean).join(' · ')
+        const what = [a.kind === 'command' ? t('Background command') : a.type || t('Agent'), a.status === 'running' ? a.doing !== a.name && a.doing : t(cap(a.status))].filter(Boolean).join(' · ')
         return (
           <div key={a.id} class={`plan-agent s-${a.status}`}>
             <span class="plan-icon">{stepIcon(a.status)}</span>
@@ -1690,8 +1691,8 @@ function PlanCard({ plan, live, stop }: { plan: Plan; live: boolean; stop: (id: 
             </span>
             <span class="plan-time">{a.finishedAt ? short(Date.parse(a.finishedAt) - Date.parse(a.startedAt)) : a.status === 'running' && <Elapsed since={a.startedAt} />}</span>
             {a.status === 'running' && a.stoppable && (
-              <button class="plan-stop" title={`Stop ${a.name}`} onClick={() => stop(a.id)}>
-                Stop
+              <button class="plan-stop" title={t('Stop {name}', { name: a.name })} onClick={() => stop(a.id)}>
+                {t('Stop')}
               </button>
             )}
           </div>
@@ -1700,7 +1701,7 @@ function PlanCard({ plan, live, stop }: { plan: Plan; live: boolean; stop: (id: 
     </>
   )
   if (!live) {
-    const summary = plan.steps.length > 0 && `Plan · ${done.length === plan.steps.length ? plural(done.length, 'step') : `${done.length} of ${plan.steps.length} steps`} done`
+    const summary = plan.steps.length > 0 && (done.length === plan.steps.length ? plural(done.length, 'Plan · {n} step done', 'Plan · {n} steps done') : t('Plan · {done} of {n} steps done', { done: done.length, n: plan.steps.length }))
     return (
       <div class="plan-done-line">
         <button class="plan-fold" aria-expanded={open} onClick={() => setOpen(!open)}>
@@ -1720,8 +1721,8 @@ function PlanCard({ plan, live, stop }: { plan: Plan; live: boolean; stop: (id: 
   return (
     <div class="plan-card">
       <div class="plan-head">
-        <b>{plan.steps.length ? 'Plan' : 'Agents & background work'}</b>
-        {plan.steps.length > 0 && <span>{done.length} of {plan.steps.length}</span>}
+        <b>{plan.steps.length ? t('Plan') : t('Agents & background work')}</b>
+        {plan.steps.length > 0 && <span>{t('{n} of {total}', { n: done.length, total: plan.steps.length })}</span>}
       </div>
       {plan.steps.length > 0 && (
         <div class="plan-bar">
@@ -1731,7 +1732,8 @@ function PlanCard({ plan, live, stop }: { plan: Plan; live: boolean; stop: (id: 
       {done.length > 0 && (
         <button class="plan-fold" aria-expanded={open} onClick={() => setOpen(!open)}>
           <span class="plan-icon">{!open && stepIcon('done')}</span>
-          <span>{done.length} done</span>
+          <span>{t('{n} done', { n: done.length })}</span>
+
           <ChevronRight size={13} />
         </button>
       )}
@@ -1746,7 +1748,7 @@ const ACTIVITY_ICONS = { thinking: Brain, command: Terminal, edit: Pencil, note:
 function ActivityLog({ events }: { events: ActivityEvent[] }) {
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => ref.current?.scrollTo({ top: ref.current.scrollHeight }), [events.length])
-  if (!events.length) return <p class="muted center">No activity yet.</p>
+  if (!events.length) return <p class="muted center">{t('No activity yet.')}</p>
   return (
     <div class="activity" ref={ref}>
       {events.map((e) => {

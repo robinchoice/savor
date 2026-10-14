@@ -2,6 +2,7 @@ import { Fragment } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
 import { api, type Usage } from './api'
 import { ProviderIcon } from './Conversations'
+import { t, tx } from './i18n'
 
 // The last answer, so a menu shows the limits as soon as it opens.
 let last: Usage[] = []
@@ -28,7 +29,7 @@ export function useUsage() {
   return usage
 }
 
-const UPDATING = 'Updating, the values shown are from earlier'
+const UPDATING = t('Updating, the values shown are from earlier')
 
 // What is left of a limit, in percent.
 const left = (w: Usage['windows'][number]) => Math.max(0, 100 - w.percent)
@@ -39,15 +40,15 @@ export function UsageBars({ usage }: { usage: Usage }) {
     <div class={`usage-bars ${usage.stale ? 'stale' : ''}`} title={usage.stale ? UPDATING : undefined}>
       {usage.stale && (
         <div class="row muted">
-          <span class="spinner small" /> Updating…
+          <span class="spinner small" /> {t('Updating…')}
         </div>
       )}
       {usage.windows.map((w) => (
-        <div key={w.label} title={w.resets ? `Resets ${w.resets}` : undefined}>
+        <div key={w.label} title={w.resets ? t('Resets {when}', { when: w.resets }) : undefined}>
           <div class="row">
-            <span>{w.label}</span>
+            <span>{tx(w.label)}</span>
             <span class="spacer" />
-            <span class="muted">{left(w)}% left</span>
+            <span class="muted">{t('{n}% left', { n: left(w) })}</span>
           </div>
           <div class={`segments ${left(w) <= 10 ? 'low' : ''}`}>
             {Array.from({ length: 20 }, (_, i) => (
@@ -62,7 +63,7 @@ export function UsageBars({ usage }: { usage: Usage }) {
 
 // "Weekly · Fable" → "Fable", "5 hours" → "5h": short enough for the status bar.
 const short = (label: string) =>
-  label.replace(/^Weekly · /, '').replace(/^Weekly$/, 'week').replace(/^(\d+) (h|d|m)\w*$/, '$1$2')
+  label.replace(/^Weekly · /, '').replace(/^Weekly$/, t('week')).replace(/^(\d+) (h|d|m)\w*$/, '$1$2')
 
 // The limits in the status bar: per agent the least that is left as a bar, then what is left of each limit.
 // A click shows when they reset.
@@ -81,7 +82,7 @@ export function UsageStatus() {
   const least = (u: Usage) => Math.min(...u.windows.map(left))
   return (
     <div class="menu-anchor" ref={ref}>
-      <button class={`status-usage ${stale ? 'stale' : ''}`} title={stale ? UPDATING : 'What is left of the subscription limits: when they reset'} onClick={() => setOpen(!open)}>
+      <button class={`status-usage ${stale ? 'stale' : ''}`} title={stale ? UPDATING : t('What is left of the subscription limits: when they reset')} onClick={() => setOpen(!open)}>
         {stale && <span class="spinner small" />}
         {usage.map((u) => (
           <span key={u.provider} class="status-agent">
@@ -104,19 +105,20 @@ export function UsageStatus() {
             <Fragment key={u.provider}>
               <div class="menu-label">
                 {u.name}
-                {u.stale && <span class="muted"> · Updating…</span>}
+                {u.stale && <span class="muted"> {t('· Updating…')}</span>}
               </div>
               {u.windows.map((w) => (
                 <div key={w.label} class={`usage-row ${u.stale ? 'stale' : ''}`}>
                   <div class="row">
-                    <span>{w.label}</span>
+                    <span>{tx(w.label)}</span>
                     <span class="spacer" />
-                    <b>{left(w)}% left</b>
+                    <b>{t('{n}% left', { n: left(w) })}</b>
                   </div>
                   <div class="usage-bar">
                     <i class={left(w) <= 10 ? 'low' : ''} style={{ width: `${left(w)}%` }} />
                   </div>
-                  {w.resets && <small>Resets {w.resets}</small>}
+                  {w.resets && <small>{t('Resets {when}', { when: w.resets })}</small>}
+
                 </div>
               ))}
             </Fragment>

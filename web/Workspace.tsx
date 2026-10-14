@@ -1,6 +1,7 @@
 import { useState } from 'preact/hooks'
 import { Check, Download, Plus, X } from 'lucide-preact'
 import { api, go, useApi, type Project, type Workflow } from './api'
+import { plural, t, tx } from './i18n'
 
 // The workspaces of the project types: Export for academic writing, Today for a Kontor. What they show
 // is computed from the project's files; only the briefing comes from an agent.
@@ -78,9 +79,9 @@ export function ExportView({ project }: { project: Project }) {
         <div class="workspace-grid">
           <section class="ws-card">
             <h3>
-              Settings <small class="muted mono">pandoc.yaml</small>
+              {t('Settings')} <small class="muted mono">pandoc.yaml</small>
             </h3>
-            <div class="field-label">Format</div>
+            <div class="field-label">{t('Format')}</div>
             <div class="ws-chips">
               {FORMATS.map(([id, l]) => (
                 <button key={id} class={`ws-chip ${state.format === id ? 'on' : ''}`} disabled={!!busy} onClick={() => set({ format: id })}>
@@ -88,31 +89,31 @@ export function ExportView({ project }: { project: Project }) {
                 </button>
               ))}
             </div>
-            <div class="field-label">Citation style</div>
+            <div class="field-label">{t('Citation style')}</div>
             <div class="ws-chips">
               {STYLES.map(([id, l]) => (
                 <button key={id} class={`ws-chip ${state.style === id ? 'on' : ''}`} disabled={!!busy} onClick={() => set({ style: id })}>
-                  {busy === id ? 'Fetching…' : l}
+                  {busy === id ? t('Fetching…') : l}
                 </button>
               ))}
               {state.style && !STYLES.some(([id]) => id === state.style) && <span class="ws-chip on">{state.style}</span>}
             </div>
             {state.template && (
               <>
-                <div class="field-label">Template</div>
+                <div class="field-label">{t('Template')}</div>
                 <span class="mono small">{state.template}</span>
               </>
             )}
-            <div class="field-label">Chapters</div>
-            <span class="mono small muted">{state.chapters.length ? `${state.chapters.length} files in manuscript/, in name order` : 'none yet'}</span>
+            <div class="field-label">{t('Chapters')}</div>
+            <span class="mono small muted">{state.chapters.length ? t('{n} files in manuscript/, in name order', { n: state.chapters.length }) : t('none yet')}</span>
           </section>
           <section class="ws-card">
-            <h3>Before export</h3>
+            <h3>{t('Before export')}</h3>
             {state.checks.map((c, i) => (
               <div key={i} class={`ws-check lvl-${c.level}`}>
                 <i>{MARK[c.level]}</i>
                 <span>
-                  {c.text}
+                  {tx(c.text)}
                   {c.file && (
                     <>
                       {' · '}
@@ -129,40 +130,41 @@ export function ExportView({ project }: { project: Project }) {
               <div class="ws-check lvl-info">
                 <i>·</i>
                 <span>
-                  Check citations, {when(check.lastRun.at)}: <a href={`#/p/${project.id}/t/${check.lastRun.threadId}`}>{check.lastRun.summary || 'open the result'}</a>
+                  {t('Check citations')}, {when(check.lastRun.at)}: <a href={`#/p/${project.id}/t/${check.lastRun.threadId}`}>{check.lastRun.summary || t('open the result')}</a>
                 </span>
               </div>
             )}
             {problems && (
               <button class="ghost" onClick={fix}>
-                Let the agent fix it
+                {t('Let the agent fix it')}
               </button>
             )}
           </section>
         </div>
         {state.missingTools.length > 0 && (
           <div class="ws-card missing">
-            <b>{state.missingTools.join(' and ')} {state.missingTools.length > 1 ? 'are' : 'is'} not installed.</b>
-            <span class="muted">The export needs {state.missingTools.join(' and ')} on this computer. The agent can install {state.missingTools.length > 1 ? 'them' : 'it'} for you.</span>
+            <b>{t('{tools} not installed.', { tools: state.missingTools.join(t(' and ')) })}</b>
+            <span class="muted">{t('The export needs {tools} on this computer. The agent can install it for you.', { tools: state.missingTools.join(t(' and ')) })}</span>
             <button class="ghost" onClick={install}>
-              Let the agent install {state.missingTools.length > 1 ? 'them' : 'it'}
+              {t('Let the agent install it')}
             </button>
           </div>
         )}
         <div class="row">
           <button class="primary" disabled={!!busy || state.missingTools.length > 0 || !state.chapters.length} onClick={run}>
-            <Download size={15} /> {busy === 'export' ? 'Exporting…' : `Export ${label}`}
+            <Download size={15} /> {busy === 'export' ? t('Exporting…') : t('Export {format}', { format: label })
+}
           </button>
-          <small class="muted">pandoc with pandoc.yaml → export/</small>
+          <small class="muted">{t('pandoc with pandoc.yaml → export/')}</small>
         </div>
         {error && <div class="error-text">{error}</div>}
         {result && (
           <div class="ws-card done">
             <div class="row">
-              <Check size={15} /> <b>Exported</b> <span class="mono small">{result.path}</span> <span class="muted small">{result.words} words</span>
+              <Check size={15} /> <b>{t('Exported')}</b> <span class="mono small">{result.path}</span> <span class="muted small">{t('{n} words', { n: result.words })}</span>
               <span class="spacer" />
               <a class="ghost" href={`/api${base}/${encodeURIComponent(result.path.replace(/^export\//, ''))}`} download>
-                Download
+                {t('Download')}
               </a>
             </div>
             {result.warnings && <pre class="ws-warnings">{result.warnings}</pre>}
@@ -170,7 +172,7 @@ export function ExportView({ project }: { project: Project }) {
         )}
         {state.exports.length > 0 && (
           <section class="ws-card">
-            <h3>Earlier exports</h3>
+            <h3>{t('Earlier exports')}</h3>
             {state.exports.map((e) => (
               <a key={e.path} class="ws-file" href={`/api${base}/${encodeURIComponent(e.path.replace(/^export\//, ''))}`} download>
                 <span class="mono small">{e.path}</span>
@@ -237,47 +239,48 @@ export function TodayView({ project }: { project: Project }) {
           <div class="ws-col">
             <section class="ws-card">
               <h3>
-                Due in the next 14 days <small class="muted">tasks.md</small>
+                {t('Due in the next 14 days')} <small class="muted">tasks.md</small>
               </h3>
-              {today.due.length ? today.due.map(task) : <span class="muted small">Nothing due.</span>}
+              {today.due.length ? today.due.map(task) : <span class="muted small">{t('Nothing due.')}</span>}
             </section>
             <section class="ws-card">
-              <h3>Open tasks</h3>
+              <h3>{t('Open tasks')}</h3>
               {today.open.map(task)}
               <form class="ws-add" onSubmit={add}>
                 <Plus size={14} />
-                <input placeholder="Add a task, e.g. 2026-10-30 Cancel the car insurance" value={adding} onInput={(e) => setAdding(e.currentTarget.value)} />
+                <input placeholder={t('Add a task, e.g. 2026-10-30 Cancel the car insurance')} value={adding} onInput={(e) => setAdding(e.currentTarget.value)} />
               </form>
             </section>
           </div>
           <div class="ws-col">
             <section class="ws-card">
               <h3>
-                Briefing {briefing?.lastRun && <small class="muted">{when(briefing.lastRun.at)}</small>}
+                {t('Briefing')} {briefing?.lastRun && <small class="muted">{when(briefing.lastRun.at)}</small>}
               </h3>
               {briefing?.lastRun ? (
                 <>
                   <p class="ws-text">{briefing.lastRun.summary}</p>
-                  <a href={`#/p/${project.id}/t/${briefing.lastRun.threadId}`}>Open the conversation →</a>
+                  <a href={`#/p/${project.id}/t/${briefing.lastRun.threadId}`}>{t('Open the conversation →')}</a>
                 </>
               ) : (
-                <span class="muted small">{briefing ? 'The Kontor briefing has not run yet.' : 'There is no workflow named “Kontor briefing” in this project.'}</span>
+                <span class="muted small">{briefing ? t('The Kontor briefing has not run yet.') : t('There is no workflow named “Kontor briefing” in this project.')}</span>
               )}
             </section>
             <section class="ws-card">
               <h3>
-                inbox/ <small class="muted">{fresh ? `${fresh} new since yesterday` : `${today.inbox.length} files`}</small>
+                inbox/ <small class="muted">{fresh ? t('{n} new since yesterday', { n: fresh }) : plural(today.inbox.length, '{n} file', '{n} files')}
+</small>
               </h3>
               {today.inbox.map((f) => (
                 <a key={f.path} class="ws-file" href={`#/p/${project.id}/files/f/${encodeURIComponent(f.path)}`}>
                   <span class="mono small">{f.path.replace(/^inbox\//, '')}</span>
-                  {f.isNew && <span class="chip new">new</span>}
+                  {f.isNew && <span class="chip new">{t('new')}</span>}
                 </a>
               ))}
-              {!today.inbox.length && <span class="muted small">Empty.</span>}
+              {!today.inbox.length && <span class="muted small">{t('Empty.')}</span>}
               {triage && today.inbox.length > 0 && (
                 <button class="ghost" onClick={runTriage}>
-                  Triage now
+                  {t('Triage now')}
                 </button>
               )}
             </section>
@@ -286,7 +289,7 @@ export function TodayView({ project }: { project: Project }) {
         {error && (
           <div class="error-text">
             {error}{' '}
-            <button class="icon-btn" title="Dismiss" onClick={() => (setError(''), setDone({}), reload())}>
+            <button class="icon-btn" title={t('Dismiss')} onClick={() => (setError(''), setDone({}), reload())}>
               <X size={14} />
             </button>
           </div>

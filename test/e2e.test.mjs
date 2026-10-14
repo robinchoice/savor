@@ -1211,7 +1211,7 @@ test('pages on other ports of this host cannot use the login cookie', async (t) 
   // Same host, other port counts as the same site, so the browser sends the SameSite=Strict cookie along.
   const other = http.createServer((_, res) => res.writeHead(200, { 'content-type': 'text/html' }).end('<!doctype html><title>Other app</title>'))
   await new Promise((resolve) => other.listen(0, '127.0.0.1', resolve))
-  const context = await browser.newContext()
+  const context = await browser.newContext({ locale: 'en-US' })
   t.after(async () => {
     await context.close()
     other.close()

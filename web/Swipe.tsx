@@ -1,6 +1,7 @@
 import type { ComponentChildren } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
 import { go, type Project, type Thread } from './api'
+import { t } from './i18n'
 
 type Axis = 'x' | 'y'
 
@@ -145,7 +146,7 @@ export function ThumbBar({ project, threadId, siblings, children }: { project: P
         <button class="thumb-prev" disabled={!prev} onClick={() => step(-1)} title={prev && (prev.summary ?? prev.title)}>
           {prev && `‹ ${prev.summary ?? prev.title}`}
         </button>
-        <button class="thumb-grab" title="All conversations of the project" onClick={() => setSheet(true)}>
+        <button class="thumb-grab" title={t('All conversations of the project')} onClick={() => setSheet(true)}>
           <i />
           {at + 1} / {walk.length}
         </button>
@@ -155,7 +156,7 @@ export function ThumbBar({ project, threadId, siblings, children }: { project: P
       </div>
       {sheet && (
         <div class="thumb-sheet-wrap" onClick={(e) => e.target === e.currentTarget && setSheet(false)}>
-          <div class="thumb-sheet" ref={sheetRef} role="dialog" aria-label="Conversations">
+          <div class="thumb-sheet" ref={sheetRef} role="dialog" aria-label={t('Conversations')}>
             <div class="thumb-grabber" onPointerDown={onGrabber}>
               <i />
             </div>
@@ -220,7 +221,7 @@ export function UndoToast() {
             setUndo(null)
           }}
         >
-          Undo
+          {t('Undo')}
         </button>
       </div>
     )

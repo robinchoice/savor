@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'preact/hooks'
 import { lazy, Suspense } from 'preact/compat'
 import { ChevronDown, ChevronRight, File, FileText, Folder, Plus, Smartphone, Trash2 } from 'lucide-preact'
 import { api, go, useApi, type Doc, type Project } from './api'
+import { t } from './i18n'
 
 // The editors are big: they load when a file or document opens.
 const CodeEditor = lazy(() => import('./CodeEditor'))
@@ -22,17 +23,17 @@ export function FilesView({ project, rest }: { project: Project; rest: string[] 
     <div class="files">
       <aside class="file-tree">
         <div class="tree-head">
-          <span>Documents</span>
-          <button class="icon-btn" title="New document" onClick={newDoc}>
+          <span>{t('Documents')}</span>
+          <button class="icon-btn" title={t('New document')} onClick={newDoc}>
             <Plus size={15} />
           </button>
         </div>
         {docs?.map((d) => (
           <a key={d.id} class={`tree-item ${kind === 'doc' && id === d.id ? 'active' : ''}`} href={`#/p/${project.id}/files/doc/${d.id}`}>
-            <FileText size={14} /> {d.title} {d.origin === 'remote' && <span class="muted" title="Last changed from a paired device"><Smartphone size={12} /></span>}
+            <FileText size={14} /> {d.title} {d.origin === 'remote' && <span class="muted" title={t('Last changed from a paired device')}><Smartphone size={12} /></span>}
           </a>
         ))}
-        {docs && !docs.length && <p class="muted small pad">No documents yet.</p>}
+        {docs && !docs.length && <p class="muted small pad">{t('No documents yet.')}</p>}
         <div class="tree-head">
           <span>{project.name}</span>
         </div>
@@ -45,8 +46,8 @@ export function FilesView({ project, rest }: { project: Project; rest: string[] 
           <FileEditor key={id} base={base} path={id} line={Number(line) || undefined} />
         ) : (
           <div class="empty-state">
-            <h2>Files</h2>
-            <p class="muted">Documents you and your agents write, plus everything in {project.path}.</p>
+            <h2>{t('Files')}</h2>
+            <p class="muted">{t('Documents you and your agents write, plus everything in {path}.', { path: project.path })}</p>
           </div>
         )}
       </section>
@@ -98,15 +99,15 @@ function useMarkdownMode() {
 const ModeToggle = ({ rich, setRich }: { rich: boolean; setRich: (b: boolean) => void }) => (
   <div class="segmented">
     <button type="button" class={rich ? 'selected' : ''} onClick={() => setRich(true)}>
-      Rich
+      {t('Rich')}
     </button>
     <button type="button" class={!rich ? 'selected' : ''} onClick={() => setRich(false)}>
-      Markdown
+      {t('Markdown')}
     </button>
   </div>
 )
 
-const Loading = () => <p class="muted pad">Loading editor…</p>
+const Loading = () => <p class="muted pad">{t('Loading editor…')}</p>
 
 function FileEditor({ base, path, line }: { base: string; path: string; line?: number }) {
   const [file, setFile] = useState<{ dir?: boolean; content: string; binary: boolean; truncated: boolean; size: number } | null>(null)
@@ -131,7 +132,7 @@ function FileEditor({ base, path, line }: { base: string; path: string; line?: n
     return (
       <div class="empty-state">
         <h2 class="mono">{path}</h2>
-        <p class="muted">A folder: its files are in the tree.</p>
+        <p class="muted">{t('A folder: its files are in the tree.')}</p>
       </div>
     )
   const md = isMarkdown(path)
@@ -141,20 +142,20 @@ function FileEditor({ base, path, line }: { base: string; path: string; line?: n
         <h1 class="mono">{path}</h1>
         <div class="row">
           {md && !file.binary && <ModeToggle rich={rich} setRich={setRich} />}
-          {dirty && <span class="muted small">Unsaved changes</span>}
+          {dirty && <span class="muted small">{t('Unsaved changes')}</span>}
           {!file.binary && !file.truncated && (
-            <button class="primary" disabled={!dirty} onClick={save} title="Save (Ctrl+S)">
-              Save
+            <button class="primary" disabled={!dirty} onClick={save} title={t('Save (Ctrl+S)')}>
+              {t('Save')}
             </button>
           )}
         </div>
       </div>
       {error && <div class="error-text">{error}</div>}
       {file.binary ? (
-        <p class="muted">Binary file · {file.size} bytes</p>
+        <p class="muted">{t('Binary file · {n} bytes', { n: file.size })}</p>
       ) : file.truncated ? (
         <>
-          <p class="muted">Showing the first 512 KB. Files this large can't be edited here.</p>
+          <p class="muted">{t('Showing the first 512 KB. Files this large can\'t be edited here.')}</p>
           <pre class="code">{file.content}</pre>
         </>
       ) : (
@@ -205,7 +206,7 @@ function DocEditor({ base, id, projectId }: { base: string; id: string; projectI
   }
   useEffect(() => () => clearTimeout(timer.current), [])
   const remove = async () => {
-    if (!doc || !confirm(`Delete “${doc.title}”?`)) return
+    if (!doc || !confirm(t('Delete “{title}”?', { title: doc.title }))) return
     await api('DELETE', `${base}/docs/${id}`)
     go(`/p/${projectId}/files`)
   }
@@ -217,7 +218,7 @@ function DocEditor({ base, id, projectId }: { base: string; id: string; projectI
         <input
           class="title-input"
           value={title}
-          placeholder="Title"
+          placeholder={t('Title')}
           onInput={(e) => {
             setTitle(e.currentTarget.value)
             schedule({ title: e.currentTarget.value })
@@ -225,8 +226,9 @@ function DocEditor({ base, id, projectId }: { base: string; id: string; projectI
         />
         <div class="row">
           <ModeToggle rich={rich} setRich={setRich} />
-          <span class={`muted small ${state === 'error' ? 'error-text' : ''}`}>{{ saved: 'Saved', unsaved: 'Unsaved', saving: 'Saving…', error: 'Could not save' }[state]}</span>
-          <button class="ghost danger" title="Delete document" onClick={remove}>
+          <span class={`muted small ${state === 'error' ? 'error-text' : ''}`}>{{ saved: t('Saved'), unsaved: t('Unsaved'), saving: t('Saving…'), error: t('Could not save') }[state]}
+</span>
+          <button class="ghost danger" title={t('Delete document')} onClick={remove}>
             <Trash2 size={14} />
           </button>
         </div>

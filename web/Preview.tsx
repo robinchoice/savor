@@ -4,14 +4,16 @@ import { api, useEvent } from './api'
 import { transport } from './transport'
 import { setPrefs, usePrefs, type Device } from './prefs'
 import type { Picked } from './Composer'
+import { t } from './i18n'
 
 // Shortcuts with Ctrl or Cmd that edit the page; the rest stay with Savor and the browser.
 const EDITING = new Set(['a', 'z', 'y'])
 const KEYS = new Set(['Enter', 'Backspace', 'Delete', 'Tab', 'Escape', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'PageUp', 'PageDown'])
 const DEVICES: [Device, typeof Scan, string, string][] = [
-  ['fit', Scan, 'Fit', 'Draw the page in the size of this space'],
-  ['desktop', Monitor, '1280', 'Desktop layout, scaled down where the space is narrower'],
-  ['phone', Smartphone, '390', 'Phone layout'],
+  ['fit', Scan, t('Fit'), t('Draw the page in the size of this space')],
+  ['desktop', Monitor, '1280', t('Desktop layout, scaled down where the space is narrower')],
+  ['phone', Smartphone, '390', t('Phone layout')],
+
 ]
 
 // Shows the same headless page the agent drives, drawn in the size of the space it gets here.
@@ -125,17 +127,17 @@ export function Preview({ base, threadId, url, onPick, narrow, chatHidden, onTog
     <div class="preview">
       <form class="preview-bar" onSubmit={open}>
         {!narrow && (
-          <button type="button" class="icon-btn" title={chatHidden ? 'Show chat' : 'Hide chat'} onClick={onToggleChat}>
+          <button type="button" class="icon-btn" title={chatHidden ? t('Show chat') : t('Hide chat')} onClick={onToggleChat}>
             {chatHidden ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
           </button>
         )}
-        <button type="button" class="icon-btn" title="Back" onClick={() => input({ type: 'back' })}>
+        <button type="button" class="icon-btn" title={t('Back')} onClick={() => input({ type: 'back' })}>
           <ArrowLeft size={15} />
         </button>
-        <button type="button" class="icon-btn" title="Forward" onClick={() => input({ type: 'forward' })}>
+        <button type="button" class="icon-btn" title={t('Forward')} onClick={() => input({ type: 'forward' })}>
           <ArrowRight size={15} />
         </button>
-        <button type="button" class="icon-btn" title="Reload" onClick={() => input({ type: 'reload' })}>
+        <button type="button" class="icon-btn" title={t('Reload')} onClick={() => input({ type: 'reload' })}>
           <RotateCw size={15} />
         </button>
         <input value={address} placeholder="http://localhost:3000" onInput={(e) => setAddress(e.currentTarget.value)} />
@@ -151,11 +153,11 @@ export function Preview({ base, threadId, url, onPick, narrow, chatHidden, onTog
             </div>
           </>
         )}
-        <button type="button" class={`icon-btn ${picking ? 'on' : ''}`} title="Select an element to point the agent at" disabled={!frame} onClick={() => setPicking(!picking)}>
+        <button type="button" class={`icon-btn ${picking ? 'on' : ''}`} title={t('Select an element to point the agent at')} disabled={!frame} onClick={() => setPicking(!picking)}>
           <Crosshair size={15} />
         </button>
         {url && (
-          <a class="icon-btn" href={url} target="_blank" rel="noreferrer" title="Open in browser">
+          <a class="icon-btn" href={url} target="_blank" rel="noreferrer" title={t('Open in browser')}>
             <ExternalLink size={15} />
           </a>
         )}
@@ -168,7 +170,7 @@ export function Preview({ base, threadId, url, onPick, narrow, chatHidden, onTog
             class={`screen ${picking ? 'picking' : ''} ${device === 'phone' ? 'phone' : ''}`}
             style={{ ...(shown.width && { width: shown.width * scale, height: shown.height * scale }), ...(!picking && { cursor }) }}
             src={`data:image/jpeg;base64,${frame}`}
-            alt="Preview"
+            alt={t('Preview')}
             tabIndex={0}
             draggable={false}
             onLoad={(e) => {
@@ -201,7 +203,7 @@ export function Preview({ base, threadId, url, onPick, narrow, chatHidden, onTog
             }}
           />
         ) : (
-          <p class="muted center">{url ? 'Connecting…' : 'Enter a URL, or let the agent open the app it built.'}</p>
+          <p class="muted center">{url ? t('Connecting…') : t('Enter a URL, or let the agent open the app it built.')}</p>
         )}
       </div>
     </div>

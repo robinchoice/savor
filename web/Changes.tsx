@@ -2,6 +2,7 @@ import { Fragment } from 'preact'
 import { useState } from 'preact/hooks'
 import { GitBranch, MessageSquare, PanelLeftClose, PanelLeftOpen, RotateCw } from 'lucide-preact'
 import { useApi, type Commit, type CommitFile, type Project, type Thread } from './api'
+import { plural, t } from './i18n'
 
 // A line of a diff, named by the side it is on: removed lines by their old number, all others by their new one.
 interface Anchor { side: 'old' | 'new'; line: number }
@@ -36,7 +37,7 @@ const span = (n: number[]) => (n.length > 1 ? `${n[0]}-${n[n.length - 1]}` : `${
 // Lines as the agent reads them: new line numbers where there are any, old ones for removed code only.
 function linesOf(picked: Row[]) {
   const now = picked.flatMap((r) => r.new ?? [])
-  return now.length ? span(now) : `${span(picked.map((r) => r.old!))} (removed)`
+  return now.length ? span(now) : `${span(picked.map((r) => r.old!))} ${t('(removed)')}`
 }
 
 // The comments as one message, with the code each one is about.
@@ -74,15 +75,15 @@ export function Changes({ project, thread, commits, source, setSource, comments,
   const deleted = files?.reduce((n, f) => n + (f.deletions ?? 0), 0) ?? 0
   const options: [Source, string][] = [
     ...(thread.worktree ? [['base', `${thread.worktree.branch} vs ${projectGit?.branch ?? 'project'}`] as [Source, string]] : []),
-    ['uncommitted', 'Uncommitted changes'],
-    ...[...new Set([...(commit ? [source] : []), ...commits])].map((h): [Source, string] => [h, `Commit ${h.slice(0, 7)}`]),
+    ['uncommitted', t('Uncommitted changes')],
+    ...[...new Set([...(commit ? [source] : []), ...commits])].map((h): [Source, string] => [h, t('Commit {hash}', { hash: h.slice(0, 7) })]),
   ]
 
   return (
     <div class="changes">
       <div class="changes-bar">
         {!narrow && (
-          <button class="icon-btn" title={chatHidden ? 'Show chat' : 'Hide chat'} onClick={onToggleChat}>
+          <button class="icon-btn" title={chatHidden ? t('Show chat') : t('Hide chat')} onClick={onToggleChat}>
             {chatHidden ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
           </button>
         )}
@@ -98,11 +99,11 @@ export function Changes({ project, thread, commits, source, setSource, comments,
         </label>
         {files && (
           <span class="muted small">
-            {files.length} file{files.length === 1 ? '' : 's'} <span class="add">+{added}</span> <span class="del">−{deleted}</span>
+            {plural(files.length, '{n} file', '{n} files')} <span class="add">+{added}</span> <span class="del">−{deleted}</span>
           </span>
         )}
         {!commit && (
-          <button class="icon-btn" title="Reload" onClick={reload}>
+          <button class="icon-btn" title={t('Reload')} onClick={reload}>
             <RotateCw size={15} />
           </button>
         )}
@@ -126,7 +127,7 @@ export function Changes({ project, thread, commits, source, setSource, comments,
       )}
       <div class={`changes-list ${chatHidden && !narrow ? 'floating' : ''}`}>
         {error && <div class="error-text pad">{error.message}</div>}
-        {files?.length === 0 && <p class="muted center">No changes.</p>}
+        {files?.length === 0 && <p class="muted center">{t('No changes.')}</p>}
         {files?.map((f, i) => (
           <DiffFile key={`${source}:${f.path}`} id={`diff-${i}`} file={f} source={source} comments={comments} saveComments={saveComments} />
         ))}
@@ -190,12 +191,13 @@ function DiffFile({ id, file, source, comments, saveComments }: { id: string; fi
   const editor = (
     <div class="review-box">
       <div class="review-head">
-        <MessageSquare size={12} /> {sel && !sel.editing && hi > lo ? `Lines ${linesOf(list.slice(lo, hi + 1).filter((r) => r.kind !== 'hunk'))}` : 'Comment'}
-        {sel && !sel.editing && <span class="faint">· click another line to extend</span>}
+        <MessageSquare size={12} /> {sel && !sel.editing && hi > lo ? t('Lines {n}', { n: linesOf(list.slice(lo, hi + 1).filter((r) => r.kind !== 'hunk')) }) :
+ t('Comment')}
+        {sel && !sel.editing && <span class="faint">{t('· click another line to extend')}</span>}
       </div>
       <textarea
         autoFocus
-        placeholder="What should the agent change here?"
+        placeholder={t('What should the agent change here?')}
         value={draft}
         onInput={(e) => setDraft(e.currentTarget.value)}
         onKeyDown={(e) => {
@@ -205,10 +207,10 @@ function DiffFile({ id, file, source, comments, saveComments }: { id: string; fi
       />
       <div class="review-actions">
         <button class="ghost small" onClick={close}>
-          Cancel
+          {t('Cancel')}
         </button>
         <button class="primary small" disabled={!draft.trim()} onClick={save}>
-          {sel?.editing ? 'Update' : 'Add comment'}
+          {sel?.editing ? t('Update') : t('Add comment')}
         </button>
       </div>
     </div>
@@ -216,11 +218,11 @@ function DiffFile({ id, file, source, comments, saveComments }: { id: string; fi
   const card = (c: ReviewComment, lostLines = false) => (
     <div key={c.id} class="review-box">
       <div class="review-head">
-        <MessageSquare size={12} /> Line {c.lines}
-        {lostLines && <span class="faint">· no longer in the diff</span>}
+        <MessageSquare size={12} /> {t('Line {n}', { n: c.lines })}
+        {lostLines && <span class="faint">{t('· no longer in the diff')}</span>}
         <span class="spacer" />
-        {!lostLines && <button onClick={() => edit(c)}>Edit</button>}
-        <button onClick={() => remove(c)}>Delete</button>
+        {!lostLines && <button onClick={() => edit(c)}>{t('Edit')}</button>}
+        <button onClick={() => remove(c)}>{t('Delete')}</button>
       </div>
       {lostLines && <pre class="review-code">{c.code}</pre>}
       <div class="review-text">{c.text}</div>
@@ -236,7 +238,7 @@ function DiffFile({ id, file, source, comments, saveComments }: { id: string; fi
             <MessageSquare size={12} /> {mine.length}
           </span>
         )}
-        <span class="muted small">{file.additions === null ? 'binary' : <><span class="add">+{file.additions}</span> <span class="del">−{file.deletions}</span></>}</span>
+        <span class="muted small">{file.additions === null ? t('binary') : <><span class="add">+{file.additions}</span> <span class="del">−{file.deletions}</span></>}</span>
       </header>
       {lost.map((c) => card(c, true))}
       <div class="diff-rows">
@@ -247,7 +249,7 @@ function DiffFile({ id, file, source, comments, saveComments }: { id: string; fi
           return (
             <Fragment key={i}>
               <div class={`diff-row ${r.kind} ${i >= lo && i <= hi ? 'selected' : ''} ${commented.has(i) ? 'commented' : ''}`}>
-                <button class="gutter" title="Comment on this line" onClick={() => pick(i)}>
+                <button class="gutter" title={t('Comment on this line')} onClick={() => pick(i)}>
                   <span class="old">{r.old}</span>
                   <span class="new">{r.new}</span>
                 </button>

@@ -7,13 +7,14 @@ import { recipe } from './recipes'
 import { setPrefs, usePrefs } from './prefs'
 import { STANDARD } from './Shortcuts'
 import { CODE, TEMPLATES } from './templates'
+import { lang, t } from './i18n'
 
 // The mode a provider works best in for most people; the others still show.
 const RECOMMENDED: Record<string, string> = { claude: 'auto', codex: 'auto-review' }
 // Plan modes are chosen per conversation, not as a default.
 const HIDDEN_MODES = ['plan', 'dontAsk']
 
-export const agentStatus = (a: ProviderInfo) => (!a.installed ? 'Not installed' : a.signedIn ? 'Signed in' : a.signedIn === false ? 'Signed out' : 'Installed')
+export const agentStatus = (a: ProviderInfo) => (!a.installed ? t('Not installed') : a.signedIn ? t('Signed in') : a.signedIn === false ? t('Signed out') : t('Installed'))
 
 // One agent CLI on this computer, with what to run when it is not signed in.
 export function AgentStatusRow({ agent: a }: { agent: ProviderInfo }) {
@@ -25,7 +26,7 @@ export function AgentStatusRow({ agent: a }: { agent: ProviderInfo }) {
         <small class="muted">
           {a.installed && a.signedIn === false ? (
             <>
-              Sign in: <code>{a.signIn}</code>
+              {t('Sign in:')} <code>{a.signIn}</code>
             </>
           ) : (
             [a.version, a.account].filter(Boolean).join(' · ')
@@ -43,7 +44,7 @@ function CopyLine({ text }: { text: string }) {
   return (
     <div class="copy-line">
       <code>{text}</code>
-      <button class="icon-btn" title="Copy" aria-label="Copy" onClick={copy}>
+      <button class="icon-btn" title={t('Copy')} aria-label={t('Copy')} onClick={copy}>
         {copied ? <Check size={14} /> : <Copy size={14} />}
       </button>
     </div>
@@ -57,25 +58,25 @@ function InstallHelp({ system, claude, onCheck }: { system: string; claude?: Pro
   const check = async () => (setChecking(true), await onCheck(), setChecking(false))
   return (
     <div class="box install-help">
-      <b>Get Claude Code</b>
+      <b>{t('Get Claude Code')}</b>
       <small class="muted">
-        It needs a Claude Pro or Max plan; the free plan does not include it. You use the terminal only for these two steps.
+        {t('It needs a Claude Pro or Max plan; the free plan does not include it. You use the terminal only for these two steps.')}
       </small>
       {!claude?.installed && (
         <>
-          <span>1. Open {win ? 'PowerShell' : 'Terminal'} and run:</span>
+          <span>{t('1. Open {app} and run:', { app: win ? 'PowerShell' : 'Terminal' })}</span>
           <CopyLine text={win ? 'winget install Anthropic.ClaudeCode' : 'curl -fsSL https://claude.ai/install.sh | bash'} />
         </>
       )}
-      <span>{claude?.installed ? 'Sign in in a terminal' : `2. Then sign in, in a new ${win ? 'PowerShell' : 'Terminal'} window`}. Your browser opens for the login:</span>
+      <span>{claude?.installed ? t('Sign in in a terminal. Your browser opens for the login:') : t('2. Then sign in, in a new {app} window. Your browser opens for the login:', { app: win ? 'PowerShell' : 'Terminal' })}</span>
       <CopyLine text={!win && !claude?.installed ? '~/.local/bin/claude auth login' : (claude?.signIn ?? 'claude auth login')} />
       <div class="row">
         <button class="ghost" disabled={checking} onClick={check}>
-          <RefreshCw size={14} /> {checking ? 'Looking…' : 'Check again'}
+          <RefreshCw size={14} /> {checking ? t('Looking…') : t('Check again')}
         </button>
         <span class="spacer" />
         <a class="small" href="https://code.claude.com/docs/en/setup" target="_blank" rel="noreferrer">
-          Other ways to install
+          {t('Other ways to install')}
         </a>
       </div>
     </div>
@@ -87,13 +88,13 @@ export function ModeCards({ agent, info, onPick }: { agent: AgentConfig; info: P
   const modes = info.modes.filter((m) => !HIDDEN_MODES.includes(m.id))
   if (modes.length < 2) return null
   return (
-    <div class="mode-cards" role="radiogroup" aria-label="Permissions">
+    <div class="mode-cards" role="radiogroup" aria-label={t('Permissions')}>
       {modes.map((m) => (
         <button key={m.id} role="radio" aria-checked={agent.permissionMode === m.id} class={`mode-card ${agent.permissionMode === m.id ? 'selected' : ''}`} onClick={() => onPick(m.id)}>
-          {RECOMMENDED[info.id] === m.id && <span class="ap-tag">Recommended</span>}
-          {m.unsafe && <span class="ap-tag unsafe">Isolated machines only</span>}
-          <b>{m.label}</b>
-          <small>{m.detail}</small>
+          {RECOMMENDED[info.id] === m.id && <span class="ap-tag">{t('Recommended')}</span>}
+          {m.unsafe && <span class="ap-tag unsafe">{t('Isolated machines only')}</span>}
+          <b>{t(m.label)}</b>
+          <small>{t(m.detail)}</small>
         </button>
       ))}
     </div>
@@ -120,8 +121,9 @@ export function AddProject({ me, setMe, onAdded }: { me: Me; setMe: (m: Me) => v
         await api('PATCH', `/projects/${p.id}`, { ...(template.role && { role: template.role }), ...(template !== CODE && { type: template.slug }) })
         for (const r of template.workflows.map((slug) => recipe(slug)!))
           await api('POST', `/projects/${p.id}/workflows`, { name: r.title, prompt: r.prompt, collection: template.title, cron: r.schedule || null, onModelChange: r.onModelChange, enabled: !template.paused })
-        // The setup prompt is English; the agent talks in the computer's language instead.
-        const text = `${template.setup}\n\nTalk to me in the language of this computer (${navigator.language}) unless I write in another one.`
+        // The prompt shows as the first message: in German when Savor is, otherwise in English with a note
+        // that the agent talks in the computer's language.
+        const text = lang === 'de' && template.setupDe ? template.setupDe : `${template.setup}\n\nTalk to me in the language of this computer (${navigator.language}) unless I write in another one.`
         const t = await api<{ id: string }>('POST', `/projects/${p.id}/threads`, { text })
         onAdded()
         return go(`/p/${p.id}/t/${t.id}`)
@@ -154,40 +156,40 @@ export function AddProject({ me, setMe, onAdded }: { me: Me; setMe: (m: Me) => v
       {step === 'new' ? (
         <form onSubmit={create}>
           <div class="project-types">
-            {[CODE, ...TEMPLATES].map((t) => {
-              const Icon = TYPE_ICONS[t.slug] ?? Folder
+            {[CODE, ...TEMPLATES].map((tpl) => {
+              const Icon = TYPE_ICONS[tpl.slug] ?? Folder
               return (
-                <button type="button" key={t.slug} class={`project-type ${t === template ? 'active' : ''}`} onClick={() => setTemplate(t)}>
+                <button type="button" key={tpl.slug} class={`project-type ${tpl === template ? 'active' : ''}`} onClick={() => setTemplate(tpl)}>
                   <Icon size={16} />
-                  <b>{t.title}</b>
-                  <small>{t.blurb}</small>
+                  <b>{t(tpl.title)}</b>
+                  <small>{t(tpl.blurb)}</small>
                 </button>
               )
             })}
           </div>
-          <small class="muted">{template.creates}</small>
-          <input autoFocus placeholder="Name of the new project" value={name} onInput={(e) => setName(e.currentTarget.value)} />
+          <small class="muted">{t(template.creates)}</small>
+          <input autoFocus placeholder={t('Name of the new project')} value={name} onInput={(e) => setName(e.currentTarget.value)} />
           {editDir ? (
-            <input placeholder="Folder for new projects" value={dir} onInput={(e) => setDir(e.currentTarget.value)} />
+            <input placeholder={t('Folder for new projects')} value={dir} onInput={(e) => setDir(e.currentTarget.value)} />
           ) : (
             <small>
-              Creates{' '}
+              {t('Creates')}{' '}
               <b class="mono">
                 {dir}/{folder || '…'}
               </b>{' '}
               ·{' '}
               <button type="button" class="link" onClick={changeDir}>
-                Change folder
+                {t('Change folder')}
               </button>
             </small>
           )}
           <div class="row">
             <span class="spacer" />
             <button type="button" class="ghost" onClick={() => setStep(null)}>
-              Cancel
+              {t('Cancel')}
             </button>
             <button class="primary" disabled={!folder || !dir.trim()}>
-              Create project
+              {t('Create project')}
             </button>
           </div>
         </form>
@@ -195,16 +197,16 @@ export function AddProject({ me, setMe, onAdded }: { me: Me; setMe: (m: Me) => v
         <form class="menu-form" onSubmit={(e) => (e.preventDefault(), add({ path }))}>
           <input autoFocus placeholder="/path/to/project" value={path} onInput={(e) => setPath(e.currentTarget.value)} />
           <button class="primary" disabled={!path.trim()}>
-            <Plus size={15} /> Add
+            <Plus size={15} /> {t('Add')}
           </button>
         </form>
       ) : (
         <>
           <button class="ghost wide" onClick={() => setStep('new')}>
-            <Plus size={16} /> Start new project
+            <Plus size={16} /> {t('Start new project')}
           </button>
           <button class="ghost wide" onClick={openFolder}>
-            <Folder size={16} /> Open any folder
+            <Folder size={16} /> {t('Open any folder')}
           </button>
         </>
       )}
@@ -213,7 +215,7 @@ export function AddProject({ me, setMe, onAdded }: { me: Me; setMe: (m: Me) => v
   )
 }
 
-const STEPS = ['Agents', 'Default agent', 'Permissions', 'Shortcuts', 'First project']
+const STEPS = [t('Agents'), t('Default agent'), t('Permissions'), t('Shortcuts'), t('First project')]
 
 // First start on this computer: finds the agents, then asks which one new projects start with, how much
 // it may do alone, whether to start with keyboard shortcuts, and where to begin. Skipping keeps Savor's
@@ -255,13 +257,13 @@ export function SetupWizard({ me, setMe }: { me: Me; setMe: (m: Me) => void }) {
             ))}
           </div>
           <div class="setup-eyebrow">
-            Step {step + 1} of {STEPS.length} · {STEPS[step]}
+            {t('Step {n} of {total}', { n: step + 1, total: STEPS.length })} · {STEPS[step]}
           </div>
           {step === 0 && (
             <>
-              <h2>Welcome to Savor</h2>
-              <p class="muted">Savor runs the coding agents already on this computer. This is what it found:</p>
-              {!agents && <p class="muted">Looking for agents…</p>}
+              <h2>{t('Welcome to Savor')}</h2>
+              <p class="muted">{t('Savor runs the coding agents already on this computer. This is what it found:')}</p>
+              {!agents && <p class="muted">{t('Looking for agents…')}</p>}
               <div class="setup-list">
                 {[...installed, ...(agents ?? []).filter((a) => !a.installed)].map((a) => (
                   <AgentStatusRow key={a.id} agent={a} />
@@ -274,8 +276,8 @@ export function SetupWizard({ me, setMe }: { me: Me; setMe: (m: Me) => void }) {
           )}
           {step === 1 && agent && info && (
             <>
-              <h2>Which agent should start?</h2>
-              <p class="muted">New projects start with it. You can switch in any conversation.</p>
+              <h2>{t('Which agent should start?')}</h2>
+              <p class="muted">{t('New projects start with it. You can switch in any conversation.')}</p>
               <div class="setup-list">
                 {installed.map((a) => (
                   <button key={a.id} class={`setting agent-status pick ${agent.provider === a.id ? 'selected' : ''}`} onClick={() => a.id !== agent.provider && setDraft(fresh(a))}>
@@ -290,12 +292,12 @@ export function SetupWizard({ me, setMe }: { me: Me; setMe: (m: Me) => void }) {
               </div>
               {info.models.length > 0 && (
                 <label class="setting">
-                  <span>Model</span>
+                  <span>{t('Model')}</span>
                   <select value={agent.model} onChange={(e) => set({ model: e.currentTarget.value })}>
-                    {!info.models.some((m) => m.id === '') && <option value="">Default</option>}
+                    {!info.models.some((m) => m.id === '') && <option value="">{t('Default')}</option>}
                     {info.models.map((m) => (
                       <option key={m.id} value={m.id}>
-                        {m.id ? describeModel(m).name : m.label}
+                        {m.id ? describeModel(m).name : t(m.label)}
                       </option>
                     ))}
                   </select>
@@ -304,10 +306,10 @@ export function SetupWizard({ me, setMe }: { me: Me; setMe: (m: Me) => void }) {
               {efforts.length > 0 && (
                 <div class="setting">
                   <span>
-                    Effort
-                    <small class="muted">Higher thinks longer and uses your limits faster</small>
+                    {t('Effort')}
+                    <small class="muted">{t('Higher thinks longer and uses your limits faster')}</small>
                   </span>
-                  <div class="ap-effort" role="radiogroup" aria-label="Reasoning effort">
+                  <div class="ap-effort" role="radiogroup" aria-label={t('Reasoning effort')}>
                     {efforts.map((e) => (
                       <button key={e} role="radio" aria-checked={agent.reasoning === e} class={agent.reasoning === e ? 'selected' : ''} onClick={() => set({ reasoning: e })}>
                         {effortLabel(e)}
@@ -320,10 +322,10 @@ export function SetupWizard({ me, setMe }: { me: Me; setMe: (m: Me) => void }) {
           )}
           {step === 2 && agent && info && (
             <>
-              <h2>How much may the agent do on its own?</h2>
-              <p class="muted">Fewer questions mean faster work, but less control. Each conversation can still switch.</p>
+              <h2>{t('How much may the agent do on its own?')}</h2>
+              <p class="muted">{t('Fewer questions mean faster work, but less control. Each conversation can still switch.')}</p>
               {info.modes.filter((m) => !HIDDEN_MODES.includes(m.id)).length < 2 ? (
-                <p class="muted">{info.name} takes its permissions from its own settings.</p>
+                <p class="muted">{t('{name} takes its permissions from its own settings.', { name: info.name })}</p>
               ) : (
                 <ModeCards agent={agent} info={info} onPick={(permissionMode) => set({ permissionMode })} />
               )}
@@ -331,40 +333,40 @@ export function SetupWizard({ me, setMe }: { me: Me; setMe: (m: Me) => void }) {
           )}
           {step === 3 && (
             <>
-              <h2>Keyboard shortcuts?</h2>
-              <p class="muted">Savor starts without any, so you can choose your own. This computer › App settings › Keyboard shortcuts changes them any time.</p>
-              <div class="mode-cards" role="radiogroup" aria-label="Keyboard shortcuts">
+              <h2>{t('Keyboard shortcuts?')}</h2>
+              <p class="muted">{t('Savor starts without any, so you can choose your own. This computer › App settings › Keyboard shortcuts changes them any time.')}</p>
+              <div class="mode-cards" role="radiogroup" aria-label={t('Keyboard shortcuts')}>
                 <button role="radio" aria-checked={!suggested} class={`mode-card ${suggested ? '' : 'selected'}`} onClick={() => setPrefs({ shortcuts: {} })}>
-                  <b>Start without</b>
-                  <small>Set the keys you want yourself.</small>
+                  <b>{t('Start without')}</b>
+                  <small>{t('Set the keys you want yourself.')}</small>
                 </button>
                 <button role="radio" aria-checked={suggested} class={`mode-card ${suggested ? 'selected' : ''}`} onClick={() => setPrefs({ shortcuts: STANDARD })}>
-                  <b>Use Savor's suggestions</b>
-                  <small>J and K for next and back, C for a new conversation, / for the composer, ? shows them all.</small>
+                  <b>{t('Use Savor\'s suggestions')}</b>
+                  <small>{t('J and K for next and back, C for a new conversation, / for the composer, ? shows them all.')}</small>
                 </button>
               </div>
             </>
           )}
           {step === 4 && agent && info && (
             <>
-              <h2>Where do you want to start?</h2>
+              <h2>{t('Where do you want to start?')}</h2>
               <p class="muted">
-                A project is a folder. Conversations, documents and workflows live in its <code>.savor/</code> directory.
+                {t('A project is a folder. Conversations, documents and workflows live in its .savor/ directory.')}
               </p>
               <div class="setup-project">
                 <AddProject me={me} setMe={setMe} onAdded={() => setMe({ ...me, setup: false })} />
               </div>
               <div class="box setup-summary">
                 <div class="setting">
-                  <span class="muted">Agent</span>
+                  <span class="muted">{t('Agent')}</span>
                   <b>
                     {info.name} · {modelName(agent, info)}
                     {agent.reasoning && ` · ${effortLabel(agent.reasoning)}`}
                   </b>
                 </div>
                 <div class="setting">
-                  <span class="muted">Permissions</span>
-                  <b>{info.modes.find((m) => m.id === agent.permissionMode)?.label}</b>
+                  <span class="muted">{t('Permissions')}</span>
+                  <b>{t(info.modes.find((m) => m.id === agent.permissionMode)?.label ?? "")}</b>
                 </div>
               </div>
             </>
@@ -373,17 +375,18 @@ export function SetupWizard({ me, setMe }: { me: Me; setMe: (m: Me) => void }) {
         </div>
         <div class="dialog-foot">
           <button class="ghost" onClick={step === 4 ? () => setMe({ ...me, setup: false }) : skip}>
-            {step === 4 ? 'Later' : 'Skip setup'}
+            {step === 4 ? t('Later') : t('Skip setup')}
+
           </button>
           <span class="spacer" />
           {step > 0 && (
             <button class="ghost" onClick={() => setStep(step - 1)}>
-              Back
+              {t('Back')}
             </button>
           )}
           {step < 4 && (
             <button class="primary" disabled={!agent || !installed.length} onClick={next}>
-              Continue
+              {t('Continue')}
             </button>
           )}
         </div>

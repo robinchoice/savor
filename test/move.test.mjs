@@ -135,7 +135,7 @@ test('a project folder moves, archives or follows its symlink, and its conversat
 
     // In the settings: check, then point the project at the real folder without keeping the symlink.
     browser = await chromium.launch({ executablePath: process.env.SAVOR_CHROMIUM })
-    const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
+    const page = await browser.newPage({ viewport: { width: 390, height: 844 }, locale: 'en-US' })
     await page.goto(`${base}/?token=${token}#/p/${beta.id}/settings`)
     await page.click('text=Skip setup').catch(() => {})
     await page.waitForSelector('.move-section')
