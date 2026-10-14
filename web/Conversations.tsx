@@ -377,13 +377,19 @@ export function Elapsed({ since }: { since: string }) {
 
 // Lists outside the project link elsewhere and name the project on each card.
 // The inbox names the type of the latest notice instead of the state, and who raised it when that is not the agent.
-export function ThreadCard({ project, thread: t, active, href = `#/p/${project.id}/t/${t.id}`, badge, children }: { project: Project; thread: Thread; active: boolean; href?: string; badge?: boolean; children?: JSX.Element | null }) {
-  const { conversations, show } = usePrefs()
-  const avatar = badge && (
-    <span class="avatar small" style={avatarStyle(project.tint)} title={project.name}>
-      {initial(project.name)}
+// Outside its project, a conversation names the project it belongs to.
+function ProjectTag({ project }: { project: Project }) {
+  return (
+    <span class="project-tag" title={project.name}>
+      <span class="avatar small" style={avatarStyle(project.tint)}>{initial(project.name)}</span>
+      <span class="project-tag-name">{project.name}</span>
     </span>
   )
+}
+
+export function ThreadCard({ project, thread: t, active, href = `#/p/${project.id}/t/${t.id}`, badge, children }: { project: Project; thread: Thread; active: boolean; href?: string; badge?: boolean; children?: JSX.Element | null }) {
+  const { conversations, show } = usePrefs()
+  const avatar = badge && <ProjectTag project={project} />
   const w = t.waitsFor
   const kind = kindOf(t)
   const finish = (e: Event) => {
@@ -1007,6 +1013,11 @@ export function ThreadView({ project, threadId, back, next, siblings }: { projec
               <div class="thread-head-text">
                 <h1>{thread.summary ?? thread.title}</h1>
                 <div class="thread-sub">
+                  {back && (
+                    <a href={`#/p/${project.id}/t/${threadId}`} title={`Open in ${project.name}`}>
+                      <ProjectTag project={project} />
+                    </a>
+                  )}
                   <Label label={thread.label} />
                   <span class={`status ${status.cls}`}>
                     {status.icon} {status.text}{busy && elapsed ? ` · ${elapsed}` : ''}
