@@ -873,6 +873,14 @@ route('GET', '/projects/:pid/export/:name', (params, _, ctx) => {
   ctx.res.writeHead(200, { 'content-type': 'application/octet-stream', 'content-disposition': `attachment; filename="${encodeURIComponent(path.basename(file))}"` })
   fs.createReadStream(file).pipe(ctx.res)
 })
+// The answers of the new-project form become the type's folders and files.
+route('POST', '/projects/:pid/setup', async (params, b) => {
+  const p = project(params)
+  if (b.type === 'academic-writing') await asBadRequest(() => workspace.setUpAcademic(p, b.answers))
+  else if (b.type === 'kontor') await asBadRequest(() => workspace.setUpKontor(p, b.answers))
+  else throw new BadRequest(`Unknown project type ${b.type}`)
+  return {}
+})
 route('GET', '/projects/:pid/today', (params) => workspace.today(project(params)))
 route('PATCH', '/projects/:pid/today/tasks', (params, b) => asBadRequest(() => workspace.setTask(project(params), Number(b.line), String(b.raw), !!b.done)))
 route('POST', '/projects/:pid/today/tasks', (params, b) => {

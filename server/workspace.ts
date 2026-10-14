@@ -90,6 +90,7 @@ export function exportState(p: Project) {
   const checks: Check[] = []
   const cited = new Set<string>()
   const missing = new Map<string, { file: string; line: number }>()
+  const empty: typeof chaps = []
   let total = 0
   for (const c of chaps) {
     const text = read(p, c.path)
@@ -102,12 +103,14 @@ export function exportState(p: Project) {
     })
     const n = words(text)
     total += n
-    if (!n) checks.push({ level: 'warn', text: `${c.name} is empty`, file: c.path })
+    if (!n) empty.push(c)
   }
+  // A manuscript without any text yet is just new, not a problem.
+  if (total) for (const c of empty) checks.push({ level: 'warn', text: `${c.name} is empty`, file: c.path })
   if (!chaps.length) checks.push({ level: 'error', text: 'No chapters in manuscript/' })
   if (cited.size) checks.unshift({ level: missing.size ? 'info' : 'ok', text: `${cited.size - missing.size} of ${cited.size} cited sources are in ${bibliography}` })
   for (const [key, at] of missing) checks.push({ level: 'error', text: `[@${key}] has no entry in ${bibliography}`, ...at })
-  const target = Number(read(p, 'PROJECT.md').match(/target length:\D*([\d.,]+)\s*words/i)?.[1].replace(/[.,]/g, '') ?? 0)
+  const target = Number(read(p, 'PROJECT.md').match(/(?:target length|umfang):\D*([\d.,]+)\s*(?:words|wörter)/i)?.[1].replace(/[.,]/g, '') ?? 0)
   const n = (x: number) => x.toLocaleString('en')
   checks.push({ level: 'info', text: target ? `${n(total)} of ${n(target)} words (${Math.round((total / target) * 100)} %)` : `${n(total)} words` })
 
@@ -213,4 +216,105 @@ export function setTask(p: Project, line: number, raw: string, done: boolean) {
 export function addTask(p: Project, text: string) {
   const current = read(p, 'tasks.md')
   fs.writeFileSync(path.join(p.path, 'tasks.md'), `${current}${current && !current.endsWith('\n') ? '\n' : ''}- [ ] ${text.trim()}\n`)
+}
+
+// ---- setup ----
+
+// A new project of a type gets its folders and files from the answers in the new-project form, so it
+// starts the same every time and without an agent.
+const write = (p: Project, rel: string, text: string) => {
+  fs.mkdirSync(path.dirname(path.join(p.path, rel)), { recursive: true })
+  if (!fs.existsSync(path.join(p.path, rel))) fs.writeFileSync(path.join(p.path, rel), text)
+}
+const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+
+export interface AcademicAnswers { title: string; author: string; question: string; kind: string; language: string; style: string; format: string; length: string; deadline: string }
+
+// PROJECT.md and the chapters are in the language of the work, which the Export tab and the agents read.
+const WORK_LANGS = {
+  de: {
+    lang: 'de-DE',
+    references: 'Literaturverzeichnis',
+    short: ['Einleitung', 'Hauptteil', 'Fazit'],
+    thesis: ['Einleitung', 'Grundlagen', 'Methode', 'Ergebnisse', 'Diskussion', 'Fazit'],
+    kinds: { 'term-paper': 'Hausarbeit', bachelor: 'Bachelorarbeit', master: 'Masterarbeit', article: 'Artikel', other: 'Anderes' } as Record<string, string>,
+    labels: ['Art der Arbeit', 'Forschungsfrage', 'Autor', 'Sprache', 'Zitierstil', 'Abgabe als', 'Umfang', 'Abgabetermin', 'Quellen'],
+    name: 'Deutsch',
+    words: 'Wörter',
+    sources: 'PDFs in sources/, Einträge in references.bib',
+  },
+  en: {
+    lang: 'en-US',
+    references: 'References',
+    short: ['Introduction', 'Main part', 'Conclusion'],
+    thesis: ['Introduction', 'Background', 'Method', 'Results', 'Discussion', 'Conclusion'],
+    kinds: { 'term-paper': 'Term paper', bachelor: "Bachelor's thesis", master: "Master's thesis", article: 'Article', other: 'Other' } as Record<string, string>,
+    labels: ['Kind of work', 'Research question', 'Author', 'Language', 'Citation style', 'Output format', 'Target length', 'Deadline', 'Sources'],
+    name: 'English',
+    words: 'words',
+    sources: 'PDFs in sources/, entries in references.bib',
+  },
+}
+
+export async function setUpAcademic(p: Project, a: AcademicAnswers) {
+  const work = WORK_LANGS[a.language as keyof typeof WORK_LANGS]
+  if (!work || !work.kinds[a.kind] || !FORMATS[a.format] || !STYLES[a.style]) throw new Error('Unknown kind, language, format or citation style.')
+  const outline = a.kind === 'bachelor' || a.kind === 'master' ? work.thesis : work.short
+  outline.forEach((h, i) => write(p, `manuscript/${String(i + 1).padStart(2, '0')}-${slug(h)}.md`, `# ${h}\n`))
+  write(p, 'sources/.gitkeep', '')
+  write(p, 'notes/ai-use.md', '# AI use\n')
+  write(p, 'references.bib', '')
+  write(p, '.gitignore', 'export/\n')
+  // The first number counts, so "8.000–10.000" is 8000.
+  const length = Number(a.length.match(/\d[\d.,]*/)?.[0].replace(/[.,]/g, '') ?? 0)
+  const values = [
+    work.kinds[a.kind],
+    a.question.trim(),
+    a.author.trim(),
+    work.name,
+    STYLES[a.style],
+    a.format === 'docx' ? 'DOCX' : `PDF (${a.format === 'latex' ? 'LaTeX' : 'typst'})`,
+    length ? `${length} ${work.words}` : '',
+    a.deadline,
+    work.sources,
+  ]
+  write(p, 'PROJECT.md', `# ${a.title.trim()}\n\n${work.labels.flatMap((k, i) => (values[i] ? [`- ${k}: ${values[i]}`] : [])).join('\n')}\n`)
+  if (!fs.existsSync(path.join(p.path, 'pandoc.yaml'))) {
+    fs.writeFileSync(path.join(p.path, 'pandoc.yaml'), 'bibliography: references.bib\nciteproc: true\n')
+    await setExport(p, { format: a.format })
+    // Without a connection the style is missing; the Export tab fetches it on the next click.
+    await setExport(p, { style: a.style }).catch(() => {})
+    const meta = { title: a.title.trim(), author: a.author.trim(), lang: work.lang, 'reference-section-title': work.references }
+    fs.appendFileSync(path.join(p.path, 'pandoc.yaml'), `metadata:\n${Object.entries(meta).filter(([, v]) => v).map(([k, v]) => `  ${k}: ${JSON.stringify(v)}`).join('\n')}\n`)
+  }
+}
+
+export interface KontorAnswers { covers: string; areas: string[]; language: string }
+
+export const COVERS: Record<string, [string, string]> = {
+  household: ['a private household', 'einen privaten Haushalt'],
+  business: ['a business', 'ein Unternehmen'],
+  club: ['a club or association', 'einen Verein'],
+  other: ['notes and administration', 'Notizen und Verwaltung'],
+}
+export const AREAS: Record<string, [string, string]> = {
+  contacts: ['contacts', 'kontakte'],
+  finance: ['finance', 'finanzen'],
+  contracts: ['contracts', 'vertraege'],
+  insurance: ['insurance', 'versicherungen'],
+  health: ['health', 'gesundheit'],
+  car: ['car', 'auto'],
+  projects: ['projects', 'projekte'],
+}
+
+export function setUpKontor(p: Project, a: KontorAnswers) {
+  const de = a.language === 'de' ? 1 : 0
+  if (!COVERS[a.covers] || a.areas.some((x) => !AREAS[x])) throw new Error('Unknown kind of Kontor or area.')
+  const areas = a.areas.map((x) => AREAS[x][de])
+  for (const dir of ['inbox', 'notes', ...areas]) write(p, `${dir}/.gitkeep`, '')
+  write(p, 'tasks.md', de ? '# Aufgaben\n\n' : '# Tasks\n\n')
+  const folders = de
+    ? ['- inbox/: Neues, das noch einsortiert wird', '- notes/: Notizen', ...areas.map((d) => `- ${d}/`), '- tasks.md: Aufgaben und Fristen, `- [ ] JJJJ-MM-TT was`']
+    : ['- inbox/: new things to file', '- notes/: notes', ...areas.map((d) => `- ${d}/`), '- tasks.md: to-dos and deadlines, `- [ ] YYYY-MM-DD what`']
+  write(p, 'README.md', `# ${p.name}\n\n${de ? `Kontor für ${COVERS[a.covers][1]}.` : `Kontor for ${COVERS[a.covers][0]}.`}\n\n${folders.join('\n')}\n`)
 }

@@ -9,12 +9,12 @@ import { plural, t, tx } from './i18n'
 interface Check { level: 'ok' | 'error' | 'warn' | 'info'; text: string; file?: string; line?: number }
 interface ExportState { format: string; style: string | null; template: string | null; chapters: string[]; checks: Check[]; missingTools: string[]; exports: { path: string; at: string }[] }
 
-const FORMATS: [string, string][] = [
+export const FORMATS: [string, string][] = [
   ['docx', 'DOCX'],
   ['latex', 'PDF (LaTeX)'],
   ['typst', 'PDF (Typst)'],
 ]
-const STYLES: [string, string][] = [
+export const STYLES: [string, string][] = [
   ['apa', 'APA 7'],
   ['iso690-author-date-de', 'DIN ISO 690'],
   ['harvard-cite-them-right', 'Harvard'],
@@ -263,7 +263,7 @@ export function TodayView({ project }: { project: Project }) {
                   <a href={`#/p/${project.id}/t/${briefing.lastRun.threadId}`}>{t('Open the conversation →')}</a>
                 </>
               ) : (
-                <span class="muted small">{briefing ? t('The Kontor briefing has not run yet.') : t('There is no workflow named “Kontor briefing” in this project.')}</span>
+                <span class="muted small">{!briefing ? t('There is no workflow named “Kontor briefing” in this project.') : briefing.enabled ? t('The Kontor briefing has not run yet.') : t('The Kontor briefing is off. Turn it on under Workflows.')}</span>
               )}
             </section>
             <section class="ws-card">
