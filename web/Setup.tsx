@@ -11,7 +11,7 @@ import { lang, t } from './i18n'
 import { FORMATS, STYLES } from './Workspace'
 
 // The mode a provider works best in for most people; the others still show.
-const RECOMMENDED: Record<string, string> = { claude: 'auto', codex: 'auto-review' }
+const RECOMMENDED: Record<string, string> = { claude: 'auto', codex: 'auto-review', antigravity: 'accept-edits' }
 // Plan modes are chosen per conversation, not as a default.
 const HIDDEN_MODES = ['plan', 'dontAsk']
 

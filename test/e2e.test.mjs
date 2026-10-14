@@ -693,6 +693,17 @@ test('Antigravity continues its conversation with the chosen model, effort and m
   assert.equal((await api('POST', `${t}/btw`, { text: 'which file?' })).body.text, 'Antigravity aside: which file?')
   await until(async () => (await api('GET', '/usage')).body.some((u) => u.provider === 'antigravity'))
   assert.deepEqual((await api('GET', '/usage')).body.find((u) => u.provider === 'antigravity').windows.map((w) => [w.label, w.percent]), [['Weekly · Gemini Models', 25]])
+  // An academic project lets agy run the few commands its setup and export need.
+  const dir = path.join(TMP, 'agy-thesis')
+  fs.mkdirSync(dir, { recursive: true })
+  const thesis = (await api('POST', '/projects', { path: dir })).body
+  await api('PATCH', `/projects/${thesis.id}`, { type: 'academic-writing' })
+  const run = (await api('POST', `/projects/${thesis.id}/threads`, { text: 'set up', agent: { provider: 'antigravity' } })).body
+  await until(async () => (await api('GET', `/projects/${thesis.id}/threads/${run.id}`)).body.messages.some((m) => m.text === 'Antigravity echo: set up'))
+  const { allow, deny } = JSON.parse(fs.readFileSync(path.join(TMP, 'agy', 'antigravity-cli', 'settings.json'), 'utf8')).permissions
+  assert.ok(allow.includes('command(pandoc)') && allow.includes('command(git)') && !allow.some((r) => /\brm\b/.test(r)))
+  assert.ok(deny.includes('command(git reset)') && deny.includes('command(git clean)'))
+  await api('DELETE', `/projects/${thesis.id}`)
   await api('PATCH', `/projects/${project.id}`, { agent: project.agent })
 })
 

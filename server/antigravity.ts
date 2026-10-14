@@ -37,8 +37,14 @@ function update(file: string, change: (config: any) => boolean) {
 
 // Headless agy cannot ask before it calls an MCP tool either, so Savor's own tools are allowed in its settings.
 const ALLOW = 'mcp(savor/*)'
+// Its rules hold for every project and match a command by its first words. Academic writing needs a few
+// commands to set up, check and export a manuscript, so its projects allow these and deny the git commands
+// that throw work away. A denied command only fails; one without a rule ends the turn.
+const ACADEMIC_COMMANDS = ['ls', 'pwd', 'which', 'cat', 'head', 'tail', 'wc', 'grep', 'sort', 'echo', 'date', 'mkdir', 'touch', 'cp', 'pandoc', 'curl', 'git', 'winget install --exact --id JohnMacFarlane.Pandoc', 'brew install pandoc']
+const ACADEMIC = ACADEMIC_COMMANDS.map((c) => `command(${c})`)
+const DENY = ['git push', 'git reset', 'git clean', 'git restore', 'git checkout', 'git rm', 'git stash', 'git rebase'].map((c) => `command(${c})`)
 
-function ensureMcp() {
+function ensureMcp(academic: boolean) {
   update(path.join(HOME, 'config', 'mcp_config.json'), (config) => {
     const savor = config.mcpServers?.savor
     if (savor?.command === 'sh' && savor.args?.[1] === BRIDGE && !savor.disabled) return false
@@ -47,8 +53,11 @@ function ensureMcp() {
   })
   update(path.join(HOME, 'antigravity-cli', 'settings.json'), (settings) => {
     const allow: string[] = settings.permissions?.allow ?? []
-    if (allow.includes(ALLOW)) return false
-    settings.permissions = { ...settings.permissions, allow: [...allow, ALLOW] }
+    const deny: string[] = settings.permissions?.deny ?? []
+    const allowing = [ALLOW, ...(academic ? ACADEMIC : [])].filter((rule) => !allow.includes(rule))
+    const denying = (academic ? DENY : []).filter((rule) => !deny.includes(rule))
+    if (!allowing.length && !denying.length) return false
+    settings.permissions = { ...settings.permissions, allow: [...allow, ...allowing], ...(deny.length || denying.length ? { deny: [...deny, ...denying] } : {}) }
     return true
   })
 }
@@ -80,7 +89,10 @@ export class AntigravitySession implements Session {
     const sid = sessionIdOf(thread, 'antigravity')
     const resume = sid && sid !== 'command' ? sid : undefined
     const attached = images.length ? `\n\nAttached images (open them with view_file):\n${images.join('\n')}` : ''
-    const prompt = `${resume ? '' : `${systemPrompt(p, thread)}\n\n`}${context}${input}${attached}`
+    // agy ends the turn at the first command it may not run, so the agent learns which ones it may.
+    const academic = p.type === 'academic-writing' && a.permissionMode !== 'bypass'
+    const allowed = academic ? `\n\nShell commands run here only if they start with one of these, each part of a chained command too: ${ACADEMIC_COMMANDS.join(', ')}; git push, reset, clean, restore, checkout, rm, stash and rebase are not allowed. Any other command ends your turn without an answer, so never run one: use your file tools instead (also to list, find and read files) and ask me to run what you cannot.` : ''
+    const prompt = `${resume ? '' : `${systemPrompt(p, thread)}${allowed}\n\n`}${context}${input}${attached}`
     const args = ['--output-format', 'stream-json']
     if (resume) args.push('--conversation', resume)
     if (a.model) args.push('--model', a.model)
@@ -89,7 +101,7 @@ export class AntigravitySession implements Session {
     if (a.permissionMode === 'bypass') args.push('--dangerously-skip-permissions')
     args.push('--print', prompt)
     try {
-      ensureMcp()
+      ensureMcp(p.type === 'academic-writing')
     } catch (e) {
       return this.host.ended({ error: `Savor could not add its MCP server to agy's settings in ${HOME}: ${(e as Error).message}` })
     }
