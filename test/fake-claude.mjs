@@ -26,6 +26,8 @@
 // - "plan: <text>" → acknowledges, plans three tasks (TaskCreate, TaskUpdate) and starts a subagent and a background
 //   command; stop_task stops either. Once the test's release file names the input, it finishes the plan and concludes
 // - a last text block of its own that starts with "/" → "Skill <name and arguments>", the way Claude Code runs slash commands
+// - "/compact" alone, as Savor's idle compaction sends it → logs it, waits for the test's release file to say "/compact",
+//   then compacts the context of 38,000 tokens to 4,000
 // - anything else → acknowledgement plus a conclusion echoing the input with one suggestion
 // While the test's outdated file exists it refuses to start, like a release that lacks an option.
 // `--version`, `auth status` and `-p /usage` answer like the real CLI, so Savor lists the fake as installed.
@@ -245,6 +247,16 @@ async function turn(text, command) {
   else out({ type: 'result', subtype: 'success', is_error: false, result: 'done', total_cost_usd: cost, modelUsage: { 'fake-fable': { contextWindow: 200000 } } })
 }
 
+async function compact() {
+  if (!started) out({ type: 'system', subtype: 'init', session_id: sessionId })
+  started = true
+  fs.appendFileSync(process.env.FAKE_AGENT_LOG, JSON.stringify({ agent: 'claude', compact: sessionId }) + '\n')
+  await released('/compact')
+  out({ type: 'system', subtype: 'compact_boundary', compact_metadata: { trigger: 'manual', pre_tokens: 38000, post_tokens: 4000 } })
+  cost += 0.05
+  out({ type: 'result', subtype: 'success', is_error: false, result: '', total_cost_usd: cost })
+}
+
 const rl = readline.createInterface({ input: process.stdin })
 rl.on('line', (line) => {
   const msg = JSON.parse(line)
@@ -256,6 +268,7 @@ rl.on('line', (line) => {
   }
   if (msg.type === 'user') {
     const texts = msg.message.content.filter((c) => c.type === 'text').map((c) => c.text)
+    if (texts.length === 1 && texts[0] === '/compact') return compact()
     if (texts[0].startsWith('The user adds this to the current request while you work:\n')) return added.push(texts[0].split('\n')[1])
     turn(texts[0], texts.length > 1 && texts.at(-1).startsWith('/') ? texts.at(-1) : null)
   }

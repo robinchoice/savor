@@ -61,6 +61,8 @@ export interface Message {
   delivered?: boolean
   // The idempotency key of an update, so that a retry is still recognized after a restart.
   key?: string
+  // Savor compacted the agent's context after this message while the conversation was idle: tokens before and after.
+  compacted?: { from: number; to: number }
 }
 // What a notice about a conversation is: a question or approval, a result, a workflow run, an error,
 // failed CI or a message from another project.
