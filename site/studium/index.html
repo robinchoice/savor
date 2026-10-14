@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Savor fürs Studium: Anleitung</title>
+    <meta name="description" content="Schritt für Schritt: Savor und Claude einrichten und die erste wissenschaftliche Arbeit anlegen, ohne Vorwissen." />
+    <meta name="robots" content="noindex" />
+    <meta name="theme-color" content="#f4f4f1" />
+    <link rel="icon" href="../img/savor-tile.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="../style.css" />
+    <style>
+      main.wrap { max-width: 50rem; padding-block: 3rem 6rem; }
+      main h1 { font-size: clamp(2.5rem, 7vw, 4.5rem); margin-bottom: 1.2rem; }
+      main h2 { font-size: clamp(1.8rem, 4vw, 2.6rem); margin: 3.5rem 0 1rem; }
+      main h3 { font-size: 1.3rem; margin: 1.6rem 0 0.5rem; }
+      main p, main li { margin-bottom: 0.7rem; }
+      main ol { list-style: decimal; padding-left: 1.4rem; }
+      main ul { list-style: disc; padding-left: 1.4rem; }
+      main pre { font: 500 0.95rem/1.5 var(--mono); background: var(--tile); color: #f2f0ea; padding: 0.9rem 1.1rem; border-radius: 10px; overflow-x: auto; margin: 0.4rem 0 1rem; }
+      details { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 0.8rem 1.1rem; margin-bottom: 0.7rem; }
+      summary { font-weight: 650; cursor: pointer; }
+      details[open] summary { margin-bottom: 0.6rem; }
+      .note { background: var(--surface); border-left: 4px solid var(--accent); padding: 0.9rem 1.1rem; border-radius: 8px; margin: 1rem 0; }
+      .lede { color: var(--muted); font-size: 1.15rem; }
+    </style>
+  </head>
+  <body>
+    <header class="wrap nav">
+      <a class="brand" href="../"><img src="../img/savor-tile.svg" width="34" height="34" alt="" /><b>Savor</b></a>
+    </header>
+
+    <main class="wrap">
+      <p class="eyebrow">Anleitung fürs Studium</p>
+      <h1>Hausarbeit und Abschlussarbeit mit Savor</h1>
+      <p class="lede">
+        Savor ist ein Programm, in dem eine KI (Claude) mit dir an deiner Arbeit schreibt: Quellen suchen, Zitate prüfen,
+        Kapitel gliedern, am Ende eine fertige Word-Datei im richtigen Zitierstil. Diese Anleitung braucht kein Vorwissen.
+        Rechne mit etwa 20 Minuten.
+      </p>
+
+      <h2>Was du brauchst</h2>
+      <ul>
+        <li>Einen Laptop mit Windows 10 oder neuer, macOS 13 oder neuer oder Linux.</li>
+        <li>
+          Ein <b>Claude-Abo</b> (Claude Pro, rund 20 € im Monat) auf <a href="https://claude.ai">claude.ai</a>. Die
+          kostenlose Version reicht nicht. Wer schon ChatGPT Plus hat, kann stattdessen Codex nutzen, diese Anleitung
+          beschreibt Claude.
+        </li>
+        <li>Einmal ein „Terminal“ für ein paar Befehle. Wie das geht, steht unten, du musst dich damit nicht auskennen.</li>
+      </ul>
+
+      <h2>Warum nicht einfach im Browser-Chat?</h2>
+      <p>
+        Der Weg über ein Terminal-Programm kostet dich einmal 20 Minuten Einrichtung. Dafür arbeitest du anders als in
+        ChatGPT oder claude.ai:
+      </p>
+      <ul>
+        <li><b>Deine Daten gehören dir.</b> Kapitel, Quellen, Notizen und die Gespräche mit Claude liegen als normale Dateien auf deinem Laptop, nicht in einem Chatverlauf beim Anbieter. Du kannst sie jederzeit mitnehmen, sichern oder löschen.</li>
+        <li><b>Claude erinnert sich.</b> Thema, Forschungsfrage, Zitierstil, deine Notizen und Quellen stehen in deinem Projekt. Claude liest sie bei jeder Aufgabe, du fängst nie wieder bei null an.</li>
+        <li><b>Abläufe laufen von selbst.</b> Zitate prüfen oder den Wochenstand zusammenfassen erledigt Savor nach Zeitplan, ohne dass du daran denken musst.</li>
+        <li><b>Claude arbeitet direkt mit deinen Dateien.</b> Es liest deine PDFs, sucht in Literaturdatenbanken, pflegt das Literaturverzeichnis und baut die Word-Datei. Kein Kopieren und Einfügen, keine Grenze bei Dateigröße oder Anzahl der Quellen.</li>
+        <li><b>Du bist an keinen Anbieter gebunden.</b> Savor ist Open Source und kostenlos. Es läuft mit Claude (Anthropic), Codex (OpenAI) und OpenCode (viele Modelle, auch offene). Wechselst du den Anbieter, bleibt dein Projekt, wie es ist.</li>
+      </ul>
+
+      <h2>1. Savor installieren</h2>
+      <p>
+        Lade Savor auf <a href="../#install">savor.pleasance.org</a> herunter und installiere es wie jedes Programm.
+      </p>
+      <ul>
+        <li><b>Windows:</b> Windows warnt einmal („Der Computer wurde durch Windows geschützt“). Klicke auf <b>Weitere Informationen</b> und dann auf <b>Trotzdem ausführen</b>.</li>
+        <li><b>Mac:</b> Beim ersten Öffnen blockiert macOS die App. Öffne <b>Systemeinstellungen → Datenschutz &amp; Sicherheit</b> und klicke unten auf <b>Dennoch öffnen</b>.</li>
+      </ul>
+      <p>Öffne Savor noch nicht, erst kommt Claude.</p>
+
+      <h2>2. Claude und pandoc installieren</h2>
+      <p>
+        Savor arbeitet mit dem Programm „Claude Code“. Dazu kommt „pandoc“, das am Ende deine Word-Datei baut. Beides
+        installierst du mit Befehlen, die du ins Terminal kopierst.
+      </p>
+
+      <details>
+        <summary>Windows</summary>
+        <ol>
+          <li>Drücke die Windows-Taste, tippe <b>PowerShell</b> und öffne es. Es erscheint ein Fenster mit <code>PS C:\Users\…&gt;</code>.</li>
+          <li>Kopiere diese Zeile, füge sie mit Rechtsklick ein und drücke Enter:
+            <pre>winget install Anthropic.ClaudeCode</pre>
+            Fragt es, ob du den Bedingungen zustimmst, tippe <code>Y</code> und Enter.
+          </li>
+          <li>Danach genauso:
+            <pre>winget install --exact --id JohnMacFarlane.Pandoc</pre>
+          </li>
+          <li>Schließe das Fenster und öffne PowerShell neu.</li>
+        </ol>
+      </details>
+      <details>
+        <summary>Mac</summary>
+        <ol>
+          <li>Drücke <b>Cmd + Leertaste</b>, tippe <b>Terminal</b> und drücke Enter.</li>
+          <li>Kopiere diese Zeile, füge sie mit Cmd + V ein und drücke Enter. Es dauert etwa eine Minute, ohne dass sich etwas tut:
+            <pre>curl -fsSL https://claude.ai/install.sh | bash</pre>
+          </li>
+          <li>Damit dein Mac das Programm findet, danach noch diese Zeile:
+            <pre>echo 'export PATH="$HOME/.local/bin:$PATH"' &gt;&gt; ~/.zshrc</pre>
+          </li>
+          <li>Schließe das Terminal-Fenster (Cmd + Q) und öffne es neu.</li>
+          <li>pandoc: Lade auf <a href="https://github.com/jgm/pandoc/releases/latest">der Download-Seite von pandoc</a> die Datei mit <code>arm64-macOS.pkg</code> im Namen herunter (bei älteren Intel-Macs <code>x86_64-macOS.pkg</code>) und installiere sie per Doppelklick.</li>
+        </ol>
+      </details>
+      <details>
+        <summary>Linux</summary>
+        <ol>
+          <li>Öffne ein Terminal (meist Strg + Alt + T) und führe nacheinander aus:
+            <pre>curl -fsSL https://claude.ai/install.sh | bash
+echo 'export PATH="$HOME/.local/bin:$PATH"' &gt;&gt; ~/.bashrc
+sudo apt install pandoc</pre>
+          </li>
+          <li>Öffne danach ein neues Terminal.</li>
+        </ol>
+      </details>
+
+      <h2>3. Bei Claude anmelden</h2>
+      <ol>
+        <li>Tippe im neuen Terminal-Fenster <code>claude</code> und drücke Enter.</li>
+        <li>Folge den Fragen mit den Pfeiltasten und Enter. Bei der Anmeldung wählst du dein Claude-Abo, dann öffnet sich der Browser. Melde dich dort an.</li>
+        <li>Zurück im Terminal tippst du <code>/exit</code> und Enter. Das Terminal brauchst du ab jetzt nicht mehr.</li>
+      </ol>
+      <p class="note">
+        Kommt <b>„claude“ wurde nicht gefunden</b> oder <b>command not found</b>? Dann hast du das Terminal nach Schritt 2
+        nicht neu geöffnet, oder auf dem Mac fehlt die <code>echo</code>-Zeile. Hole das nach, öffne das Terminal neu und
+        versuche es noch einmal.
+      </p>
+
+      <h2>4. Savor einrichten</h2>
+      <ol>
+        <li>Öffne Savor. Ein Assistent zeigt <b>Claude Code: Signed in</b>. Klicke auf <b>Continue</b>.</li>
+        <li>Bei Agent, Modell und „Permissions“ kannst du die Vorschläge lassen und jeweils <b>Continue</b> klicken.</li>
+        <li>Im letzten Schritt: <b>Start new project</b> → <b>Academic writing</b>, einen Namen eingeben (z. B. „Hausarbeit Soziologie“) → <b>Create project</b>.</li>
+      </ol>
+      <p>Die Oberfläche von Savor ist auf Englisch, mit Claude schreibst du ganz normal auf Deutsch.</p>
+
+      <h2>5. Die Arbeit anlegen</h2>
+      <p>
+        Claude legt jetzt die Ordner an und stellt dir ein paar Fragen: Thema, Art der Arbeit, Zitierstil, Abgabeformat,
+        Umfang und Abgabetermin. Antworte einfach unten im Eingabefeld. Hilfreich ist, gleich dazuzuschreiben:
+      </p>
+      <pre>Bitte antworte auf Deutsch und erkläre Fachbegriffe kurz. Ich gebe als Word-Datei (DOCX) ab. Meine Quellen lege ich als PDFs in den Ordner sources.</pre>
+      <ul>
+        <li><b>Zitierstil:</b> Was dein Institut verlangt (oft APA oder DIN ISO 690). Hat deine Uni eine eigene Vorlage, sag es Claude.</li>
+        <li><b>Zotero:</b> Wenn du Zotero nicht kennst, brauchst du es nicht. Sag einfach „ohne Zotero“.</li>
+        <li><b>Eine PDF</b> verlangt zusätzliche Programme. Gib als Word-Datei ab oder speichere sie am Ende in Word als PDF.</li>
+      </ul>
+
+      <h2>6. Arbeiten</h2>
+      <h3>Mit Claude schreiben</h3>
+      <p>
+        Jede Aufgabe ist eine eigene Unterhaltung: „Gliedere die Einleitung“, „Fasse das PDF von Müller 2021 zusammen“,
+        „Formuliere Abschnitt 2.1 akademischer“. Claude meldet sich mit einem Ergebnis und fragt nach, wenn es dich braucht.
+        Deine Kapitel liegen unter <b>Files</b> im Ordner <code>manuscript</code> und lassen sich dort auch selbst bearbeiten.
+      </p>
+      <h3>Fertige Abläufe (Workflows)</h3>
+      <ul>
+        <li><b>Literature search:</b> sucht echte Paper zu einer Frage, prüft jede Quelle und trägt sie ins Literaturverzeichnis ein.</li>
+        <li><b>Check citations:</b> prüft, ob jede Quelle existiert und das Zitat stimmt. Läuft jede Nacht, wenn der Laptop an ist.</li>
+        <li><b>Writing progress:</b> freitags ein kurzer Stand: Wörter pro Kapitel, was als Nächstes kommt.</li>
+      </ul>
+      <p>Du findest sie unter <b>Workflows</b>. Mit dem Schalter pausierst du einen, wenn er dir zu viel von deinem Abo-Kontingent verbraucht.</p>
+      <h3>Abgabe-Datei</h3>
+      <p>
+        Im Tab <b>Export</b> wählst du Format und Zitierstil, siehst, ob alle Zitate auflösbar sind, und klickst auf
+        <b>Export DOCX</b>. Meldet die Prüfung Fehler, klicke auf <b>Let the agent fix it</b>. Aus der Word-Datei
+        machst du bei Bedarf in Word ein PDF.
+      </p>
+
+      <h2>Wichtig</h2>
+      <ul>
+        <li><b>Prüfe jede Quelle selbst.</b> Claude ist angewiesen, nichts zu erfinden, und prüft DOIs. Verantwortlich für deine Arbeit bist trotzdem du.</li>
+        <li><b>KI-Nutzung angeben:</b> Claude führt in <code>notes/ai-use.md</code> eine Liste, wo es geholfen hat. Kläre mit deiner Prüfungsordnung oder Betreuung, was erlaubt ist und wie du es angibst.</li>
+        <li>Deine Arbeit bleibt auf deinem Laptop. Savor hat kein Konto und keine Cloud, nur Claude bekommt die Texte zu sehen, an denen es arbeitet.</li>
+      </ul>
+
+      <h2>Etwas klappt nicht?</h2>
+      <p>
+        Klicke in Savor auf den <b>Käfer-Knopf</b> und beschreibe kurz, was passiert ist. Die Meldung geht direkt an uns,
+        auf Deutsch ist völlig in Ordnung.
+      </p>
+    </main>
+  </body>
+</html>
