@@ -302,7 +302,8 @@ route('GET', '/projects', () =>
         working: threads.filter(working).length,
         // Questions, approvals and errors block the agent; unread results only wait to be read.
         blocked: threads.filter((t) => !t.completed && (t.needsYou || failed(t))).length,
-        unread: threads.filter((t) => !t.completed && t.unread && !t.needsYou && !failed(t)).length,
+        // A conversation still working shows as working, even when a message from another one marked it unread.
+        unread: threads.filter((t) => !t.completed && t.unread && !t.needsYou && !failed(t) && !working(t)).length,
         // Read but not finished yet.
         open: threads.filter((t) => !t.completed && !t.unread && !t.needsYou && !failed(t) && !working(t)).length,
       },
