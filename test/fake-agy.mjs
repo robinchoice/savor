@@ -46,6 +46,15 @@ if (input === 'run a command') {
   out({ event: 'result', result: { conversation_id: conversation, status: 'SUCCESS', response: '', denied_actions: [{ action: 'command', display_name: 'RunCommand' }] } })
   process.exit(0)
 }
+// A slow turn runs until it is stopped and then reports itself interrupted, like agy does on SIGTERM.
+if (input.startsWith('slow:')) {
+  process.on('SIGTERM', () => {
+    out({ event: 'result', result: { conversation_id: conversation, status: 'ERROR', response: '', error: 'interrupted' } })
+    process.exit(1)
+  })
+  setInterval(() => {}, 1000)
+  await new Promise(() => {})
+}
 step(1, { state: 'ACTIVE', step_type: 'tool', tool_name: 'run_command', tool_info: { name: 'run_command', parameters: { CommandLine: 'ls' } } })
 step(1, { state: 'DONE', step_type: 'tool', tool_name: 'run_command' })
 step(2, { state: 'DONE', step_type: 'agent_response', usage: { input_tokens: 12000, output_tokens: 10, thinking_tokens: 0, cache_read_tokens: 0 } })

@@ -676,6 +676,12 @@ test('Antigravity continues its conversation with the chosen model, effort and m
   await until(async () => !(await api('GET', t)).body.busy)
   await api('POST', `${t}/messages`, { text: 'run a command' })
   await until(async () => (await api('GET', t)).body.messages.some((m) => m.kind === 'error' && /RunCommand/.test(m.text)))
+  // A stopped turn reads as stopped, although agy reports it as an "interrupted" error.
+  await until(async () => !(await api('GET', t)).body.busy)
+  await api('POST', `${t}/messages`, { text: 'slow: stop me' })
+  await until(async () => (await api('GET', t)).body.busy)
+  await api('POST', `${t}/stop`)
+  await until(async () => (await api('GET', t)).body.messages.at(-1).text === 'Turn stopped.')
   const runs = agentRuns().filter((r) => r.agent === 'antigravity')
   const flag = (r, name) => r.argv[r.argv.indexOf(name) + 1]
   assert.deepEqual([flag(runs[0], '--model'), flag(runs[0], '--effort'), flag(runs[0], '--mode')], ['fake-claude', 'high', 'plan'])

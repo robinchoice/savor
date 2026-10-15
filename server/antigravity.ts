@@ -76,6 +76,7 @@ function describe(tool: string, input: any) {
 export class AntigravitySession implements Session {
   readonly config: string
   private child?: ChildProcess
+  private stopping = false
 
   constructor(private host: Host, thread: Thread) {
     this.config = configKey(thread.agent)
@@ -108,6 +109,7 @@ export class AntigravitySession implements Session {
 
     let result: any = null
     let stderr = ''
+    this.stopping = false
     const child = spawn(...command(BIN.antigravity, args), { cwd: this.host.cwd, env: env(p.id, tid), stdio: ['ignore', 'pipe', 'pipe'] })
     this.child = child
     readline.createInterface({ input: child.stdout! }).on('line', (line) => {
@@ -137,7 +139,8 @@ export class AntigravitySession implements Session {
       this.child = undefined
       const denied = (result?.denied_actions ?? []).map((d: any) => d.display_name ?? d.action)
       if (denied.length) activity.instant('note', `Denied: ${denied.join(', ')}. Antigravity cannot ask for approval here; allow it in agy's settings or pick another mode.`)
-      if (signal) return this.host.ended({ error: 'Turn stopped.' })
+      // agy catches SIGTERM and reports the turn as an "interrupted" error.
+      if (signal || this.stopping) return this.host.ended({ error: 'Turn stopped.' })
       // Headless agy ends a turn at the first action it may not take, often without a word.
       if (result?.status === 'SUCCESS' && !result.response && denied.length) return this.host.ended({ error: `Antigravity stopped: it needed permission for ${denied.join(', ')} and cannot ask for it in Savor. Allow it in agy's settings (permissions.allow in ~/.gemini/antigravity-cli/settings.json) or choose another mode or agent.` })
       if (result?.status === 'SUCCESS') return this.host.ended({ text: result.response ?? '' })
@@ -147,15 +150,21 @@ export class AntigravitySession implements Session {
   }
 
   interrupt() {
-    this.child?.kill('SIGTERM')
+    this.stop()
   }
 
   end() {
-    this.child?.kill('SIGTERM')
+    this.stop()
   }
 
   kill() {
-    this.child?.kill('SIGTERM')
+    this.stop()
+  }
+
+  private stop() {
+    if (!this.child) return
+    this.stopping = true
+    this.child.kill('SIGTERM')
   }
 }
 
