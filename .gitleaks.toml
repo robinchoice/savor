@@ -1,0 +1,4 @@
+# Secret scan in .github/workflows/secrets.yml: the gitleaks default rules, no
+# exceptions by path. Single false positives go into .gitleaksignore by fingerprint.
+[extend]
+useDefault = true

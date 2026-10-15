@@ -17,6 +17,7 @@
 ## Deploy
 
 - A push to `main` runs `ci.yml`. If it touches `site/`, Coolify deploys the landing page through a repo webhook. Verify: `curl -sI https://savor.pleasance.org`.
+- Every push on every branch also runs `secrets.yml`, a gitleaks scan of the new commits. Catch false positives narrowly: by fingerprint in `.gitleaksignore` or by path and rule in `.gitleaks.toml`, never switch off a whole rule. The repo and its CI logs are public, so a real finding is already out: tell Robin to rotate the secret, removing it from code or history is not enough.
 - The app and the relay ship only with a release, see below. `release.yml` builds the desktop app, publishes the GitHub release and deploys the relay image `ghcr.io/robinchoice/savor-relay:<version>`.
 
 ## Pitfalls

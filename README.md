@@ -261,7 +261,7 @@ npm run dev:web     # Vite dev server for the UI, proxies /api to a daemon on :4
 cd desktop && npm run dist   # local installer build (AppImage on Linux)
 ```
 
-CI runs typecheck and the end-to-end tests on every push. Pushing a tag like `v0.2.0` builds the desktop app for Linux, macOS and Windows and publishes it as a GitHub release, which installed apps pick up as an update.
+CI runs typecheck and the end-to-end tests on every push. `secrets.yml` scans every push on every branch and pull requests from forks for secrets with gitleaks (default rules, `--redact` keeps found values out of the public log); single false positives go into `.gitleaksignore` by fingerprint. Pushing a tag like `v0.2.0` builds the desktop app for Linux, macOS and Windows and publishes it as a GitHub release, which installed apps pick up as an update.
 
 ## Status
 

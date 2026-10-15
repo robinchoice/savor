@@ -1,0 +1,3 @@
+# Test vectors, not secrets: the auth secret from RFC 8291 Appendix A and a WebSocket handshake key
+66ed92656715698681567199a6760e2cfe5fccbf:test/push.test.mjs:generic-api-key:36
+a088e39b65b21dbb712d85ea7cc33f74641ea215:test/relay.test.mjs:generic-api-key:249
