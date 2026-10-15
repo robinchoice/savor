@@ -40,3 +40,7 @@
 - Pushed tags are final. If a release fails, delete its draft, fix the cause and release the next patch version. Never delete or move a tag.
 - After each release, `release.yml` pushes fresh screenshots and the landing page's download links to `main`, so fetch before the next push.
 - Release files carry the version in their names. electron-updater overwrites an AppImage without a version in its name in place (like the one Robin's service starts) and renames a versioned one to the new version.
+
+## New features
+
+- Before a feature goes into Savor's code, check whether it works as a workflow, `ROLE.md` instructions, a project type template or a plain file in `.savor/`. Build it into the core only when it doesn't.
