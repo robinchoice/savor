@@ -30,6 +30,7 @@
 - Voice input runs transcribe.cpp (npm `transcribe-cpp` with `koffi`) in `dist/server/voice-worker.mjs`, a process of its own. Its native builds are one npm package per platform, and npm installs only the current machine's: `desktop/package.json` copies the one matching each build, and `release.yml` adds the x64 macOS packages on the arm64 runner. When you bump `transcribe-cpp`, also check the speech model revisions in `server/voice.ts`.
 - Headless `agy` cannot ask for approval: a command without an allow rule ends the turn, a denied one only fails. Its rules in `~/.gemini/antigravity-cli/settings.json` hold for every project and match a command by its first words (`command(git)`, `command(git status)`; no wildcards). Academic writing projects add the commands their setup and export need and deny the git commands that throw work away (`server/antigravity.ts`), and the agent is told the list. The MCP bridge runs through `sh`, so Antigravity in Savor does not work on Windows yet.
 - The web UI speaks English and German. Every text goes through `t('English text')` from `web/i18n.ts` (`plural()` for counts) with its German entry in `web/de.ts`; `test/i18n.test.mjs` fails on a text without one. Texts the daemon sends with values in them (health warnings, export checks) are translated in the UI by `tx()` with the patterns in `de.ts`. Browser tests pin `locale: 'en-US'`, so on a German machine they still see English.
+- `site/llms.txt` is the landing page for agents (llmstxt.org), English and German, written by hand. When the landing page's content changes, update it in the same commit. It links `releases/latest` instead of a version, because `release.yml` rewrites only `site/index.html`. `site/studium/` is `noindex` and stays out of it.
 
 ## Releases
 
@@ -45,3 +46,7 @@
 ## New features
 
 - Before a feature goes into Savor's code, check whether it works as a workflow, `ROLE.md` instructions, a project type template or a plain file in `.savor/`. Build it into the core only when it doesn't.
+
+## Deviations from the standard
+
+- starter builds `/llms.txt`, `/llms-full.txt` and a Markdown version of each page from `publicPages` in its API. `site/` is one static English page on nginx without a build step, so it has only a hand-written `site/llms.txt` that already holds the whole page's content. No `llms-full.txt`, no `.md` pages and no `Accept: text/markdown`.

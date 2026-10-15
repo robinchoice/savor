@@ -1,0 +1,25 @@
+# Savor
+
+> Savor is a free, open-source workspace for the coding agents Claude Code, Codex and OpenCode. Every task ends with one clear result, the questions that need you, and next steps, instead of a wall of terminal output. It runs on your own computer, without an account, for Linux, macOS and Windows. License: AGPL-3.0. Made by Pleasance, Freiburg im Breisgau, Germany.
+
+Deutsch: Savor ist ein freier Open-Source-Arbeitsplatz für die Coding-Agenten Claude Code, Codex und OpenCode. Jede Aufgabe endet mit einem klaren Ergebnis, den Fragen, die dich brauchen, und nächsten Schritten statt einer Wand aus Terminal-Ausgabe. Savor läuft auf dem eigenen Computer, ohne Konto, für Linux, macOS und Windows. Lizenz: AGPL-3.0. Von Pleasance aus Freiburg im Breisgau.
+
+## English
+
+- [Savor website](https://savor.pleasance.org/): What Savor does and who it is for. Reports back: each task gets a short acknowledgement and one result, questions arrive as decisions with options, answered in one reply. Shows the work: what the agent builds runs in a live preview next to the conversation. Works while you're away: saved prompts run on a schedule and can be chained, and a phone paired by QR code answers from anywhere, end-to-end encrypted. One agent session and one git worktree per conversation. Conversations are plain files in `.savor/` inside the project. Savor costs nothing and uses the agent subscription you already have.
+- [Download](https://github.com/robinchoice/savor/releases/latest): AppImage for Linux, .dmg for macOS (Apple Silicon and Intel), installer for Windows. You need one signed-in agent CLI: `claude`, `codex` or `opencode`. From source: Node 22.12 or newer, `git clone https://github.com/robinchoice/savor.git`, `npm install`, `npx playwright-core install chromium`, `npm start`.
+- [README](https://raw.githubusercontent.com/robinchoice/savor/main/README.md): Features, installation, phone access, configuration, architecture, development and known gaps, as Markdown.
+- Privacy: the desktop app sends one anonymous ping a day (a random ID made on your computer, the Savor version and the platform). The relay keeps no IP addresses and deletes IDs it hasn't seen for 90 days. It can be switched off under App settings → Count this installation. The website loads no trackers and nothing from third parties.
+
+## Deutsch
+
+- [Savor-Website](https://savor.pleasance.org/) (auf Englisch): Was Savor macht und für wen. Meldet sich zurück: Jede Aufgabe bekommt eine kurze Bestätigung und ein Ergebnis, Fragen kommen als Entscheidungen mit Optionen und werden in einer Antwort beantwortet. Zeigt die Arbeit: Was der Agent baut, läuft in einer Live-Vorschau neben dem Gespräch. Arbeitet weiter, während du weg bist: Gespeicherte Prompts laufen nach Zeitplan und lassen sich verketten, ein per QR-Code gekoppeltes Handy antwortet von überall, Ende-zu-Ende-verschlüsselt. Pro Gespräch eine Agent-Session und ein eigener Git-Worktree. Gespräche liegen als normale Dateien in `.savor/` im Projekt. Savor kostet nichts und nutzt das Agent-Abo, das du schon hast. Die App selbst gibt es auf Deutsch und Englisch.
+- [Download](https://github.com/robinchoice/savor/releases/latest): AppImage für Linux, .dmg für macOS (Apple Silicon und Intel), Installer für Windows. Nötig ist eine angemeldete Agent-CLI: `claude`, `codex` oder `opencode`. Aus dem Quellcode: Node 22.12 oder neuer, `git clone https://github.com/robinchoice/savor.git`, `npm install`, `npx playwright-core install chromium`, `npm start`.
+- [README](https://raw.githubusercontent.com/robinchoice/savor/main/README.md) (auf Englisch): Funktionen, Installation, Zugriff vom Handy, Konfiguration, Aufbau, Entwicklung und bekannte Lücken, als Markdown.
+- Datenschutz: Die Desktop-App sendet einmal am Tag einen anonymen Ping (eine auf deinem Computer erzeugte Zufalls-ID, die Savor-Version und die Plattform). Das Relay speichert keine IP-Adressen und löscht IDs, die es 90 Tage nicht gesehen hat. Abschalten unter App-Einstellungen → Diese Installation mitzählen. Die Website lädt keine Tracker und nichts von Dritten.
+
+## Optional
+
+- [Source code](https://github.com/robinchoice/savor): GitHub repository / Quellcode
+- [Issues](https://github.com/robinchoice/savor/issues): Report a problem / Problem melden
+- [Imprint / Impressum](https://pleasance.org/impressum.html), [Privacy / Datenschutz](https://pleasance.org/datenschutz.html), [Contact / Kontakt](https://pleasance.org/kontakt.html)
