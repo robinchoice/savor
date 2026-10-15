@@ -32,6 +32,13 @@ const FONT = "'Geist Mono Variable', ui-monospace, 'SF Mono', Menlo, monospace"
 // Links open in the browser; the desktop app hands every new window to the system's.
 const openLink = (_: MouseEvent, uri: string) => window.open(uri, '_blank', 'noreferrer')
 
+// A shell takes the focus when it is opened on request, not when it comes back with its project.
+let focusShell = false
+export function setTerminalOpen(open: boolean) {
+  focusShell = open
+  setPrefs({ terminalOpen: open })
+}
+
 // Terminals in the project folder and its worktrees, in a panel below every view of the project.
 export function TerminalPanel({ project, threadId }: { project: Project; threadId?: string }) {
   const { terminalMax } = usePrefs()
@@ -69,6 +76,7 @@ export function TerminalPanel({ project, threadId }: { project: Project; threadI
 
   const add = async (path: string) => {
     setAdding(false)
+    focusShell = true
     const t = await api<TerminalTab>('POST', base, { path })
     await reload()
     setSelected(t.id)
@@ -91,7 +99,7 @@ export function TerminalPanel({ project, threadId }: { project: Project; threadI
           {!error &&
             terminals.map((th) => (
               <div key={th.id} class={`terminal-place ${th.id === current?.id ? 'on' : ''}`} title={th.path}>
-                <button onClick={() => setSelected(th.id)}>
+                <button onClick={() => ((focusShell = true), setSelected(th.id))}>
                   {places.find((p) => p.path === th.path)?.branch ? <GitBranch size={13} /> : <Folder size={13} />}
                   {label(th)}
                   <i class={th.running ? 'running' : ''} />
@@ -173,7 +181,7 @@ let wanted: string | null = null
 export function showTerminal(id: string) {
   wanted = id
   selector?.(id)
-  setPrefs({ terminalOpen: true })
+  setTerminalOpen(true)
 }
 
 const KEYS: [string, string][] = [
@@ -309,7 +317,8 @@ function Shell({ project, id, restart }: { project: Project; id: string; restart
         } catch {}
       fit.fit()
       observer.observe(ref.current!)
-      term.focus()
+      if (focusShell) term.focus()
+      focusShell = false
       stop = transport.stream(`/api${base}/stream?id=${id}`, onData)
       runner = run
       const command = queued
@@ -350,9 +359,9 @@ function Shell({ project, id, restart }: { project: Project; id: string; restart
 export function TerminalButton({ project }: { project: Project }) {
   const { terminalOpen } = usePrefs()
   const [data] = useApi<Terminals>(`/projects/${project.id}/terminal`, (e) => e.type === 'terminal' && (!e.projectId || e.projectId === project.id))
-  useShortcut('terminal', () => setPrefs({ terminalOpen: !terminalOpen }))
+  useShortcut('terminal', () => setTerminalOpen(!terminalOpen))
   return (
-    <button class={`icon-btn ${terminalOpen ? 'on' : ''}`} title={t('Terminal')} onClick={() => setPrefs({ terminalOpen: !terminalOpen })}>
+    <button class={`icon-btn ${terminalOpen ? 'on' : ''}`} title={t('Terminal')} onClick={() => setTerminalOpen(!terminalOpen)}>
       <SquareTerminal size={16} />
       {data?.terminals.some((t) => t.running) && <i class="terminal-running" />}
     </button>

@@ -1740,9 +1740,15 @@ test('the terminal starts with a shell per folder and worktree, opens and closes
   await page.click('.subbar button[title^="Terminal"]')
   await page.waitForSelector('.terminal-place.on >> text=term/wt')
   await page.waitForFunction(() => document.querySelector('.terminal-screen .xterm-rows')?.textContent.trim())
-  await page.click('.terminal-screen')
+  // Opened on request, the shell takes the focus.
+  await page.waitForFunction(() => document.activeElement?.closest('.terminal-screen'))
   await page.keyboard.type('pwd; echo $((6*7))-terminal\n')
   await page.waitForSelector('.terminal-screen >> text=42-terminal')
+  // Back in the project with the panel still open, the conversation keeps it.
+  await page.reload()
+  await page.waitForFunction(() => document.querySelector('.terminal-screen .xterm-rows')?.textContent.trim())
+  await new Promise((r) => setTimeout(r, 300))
+  assert.equal(await page.evaluate(() => document.activeElement?.matches('.composer textarea')), true)
   assert.ok((await page.textContent('.terminal-screen')).includes(path.basename(thread.worktree.path)))
   const { places, terminals } = (await api('GET', t)).body
   assert.deepEqual(places.map((p) => p.branch), [null, 'term/wt'])

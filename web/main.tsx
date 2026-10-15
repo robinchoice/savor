@@ -11,13 +11,13 @@ import { AllProjects } from './Overview'
 import { Settings, Devices, Pair, PairingRequests, RemotePair } from './Settings'
 import { loadProfile, loadProfiles, rememberHost, remote, setTransport, switchProfile } from './transport'
 import { ProcessesPopover } from './Processes'
-import { TerminalButton, TerminalPanel } from './Terminal'
+import { setTerminalOpen, TerminalButton, TerminalPanel } from './Terminal'
 import { ArrangeButton, Dock, Panel, useNarrow } from './Layout'
 import { useNotifications } from './notify'
 import { AccountDialog, AppearanceMenu, FeedbackDialog } from './Account'
 import { BugButton } from './BugButton'
 import { AddProject, SetupWizard } from './Setup'
-import { setPrefs, usePrefs } from './prefs'
+import { usePrefs } from './prefs'
 import { ShortcutsDialog, useShortcut, type Action } from './Shortcuts'
 import { StatusBar } from './StatusBar'
 import '@fontsource-variable/geist'
@@ -556,7 +556,7 @@ function MoreMenu({ project, procCount, openProcs, close }: { project: Project; 
     <div class="menu right more" ref={ref}>
       {project.type === 'kontor' && <a href={`#/p/${project.id}/today`} onClick={close}><CalendarCheck size={16} /> <span>{t('Today')}</span></a>}
       {project.type === 'academic-writing' && <a href={`#/p/${project.id}/export`} onClick={close}><FileDown size={16} /> <span>{t('Export')}</span></a>}
-      <button onClick={() => (setPrefs({ terminalOpen: !terminalOpen }), close())}>
+      <button onClick={() => (setTerminalOpen(!terminalOpen), close())}>
         <SquareTerminal size={16} /> <span>{terminalOpen ? t('Close terminal') : t('Terminal')}</span>
       </button>
       <button onClick={openProcs}>
