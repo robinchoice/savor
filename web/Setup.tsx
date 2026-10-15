@@ -321,7 +321,12 @@ export function AddProject({ me, setMe, onAdded }: { me: Me; setMe: (m: Me) => v
                   <input type="date" value={academic.deadline} onInput={(e) => setA({ deadline: e.currentTarget.value })} />
                 </label>
               </div>
-              <small class="muted">{t('You can change format and citation style later in the Export tab. Using Zotero? Let Better BibTeX keep references.bib in this folder up to date. Using Citavi? Export the project as BibTeX to references.bib and again after changes; an export template makes that one click.')}</small>
+              <small class="muted">{t('You can change format and citation style later in the Export tab. Using Zotero? Let Better BibTeX keep references.bib in this folder up to date. Using Citavi? Export the project as BibTeX to references.bib and again after changes; an export template makes that one click.')}{' '}
+                {t('Still choosing? We recommend Zotero: free, on every system, and Better BibTeX keeps references.bib current on its own.')}{' '}
+                <a href="https://www.zotero.org/support/kb/import_from_citavi" target="_blank" rel="noreferrer">
+                  {t('Switch from Citavi to Zotero')}
+                </a>
+              </small>
             </>
           )}
           <div class="row">
