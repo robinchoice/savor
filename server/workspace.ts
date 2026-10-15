@@ -65,7 +65,25 @@ function bibKeys(p: Project, bib: string) {
       return new Set<string>()
     }
   }
+  if (bib.endsWith('.ris')) return risKeys(text)
   return new Set([...text.matchAll(/@\w+\s*\{\s*([^,\s]+)\s*,/g)].map((m) => m[1]))
+}
+
+// The keys pandoc's RIS reader gives: a record's ID, else its authors' last names and year
+// (Miara_Ruhl_2023), with a, b, … appended to repeated keys.
+function risKeys(text: string) {
+  const keys = new Set<string>()
+  const seen = new Map<string, number>()
+  for (const record of text.split(/^ER[ \t]+-.*$/m)) {
+    const tags = [...record.matchAll(/^([A-Z0-9]{2})[ \t]+-(.*)$/gm)].map(([, tag, value]) => [tag, value.trim()])
+    if (!tags.length) continue
+    const values = (...names: string[]) => tags.filter(([tag]) => names.includes(tag)).map(([, value]) => value)
+    const id = values('ID')[0] || values('AU', 'A1').map((a) => a.match(/^[^,\s]*/)![0]).join('_') + values('PY', 'Y1').map((y) => `_${y}`).join('')
+    const n = seen.get(id) ?? 0
+    seen.set(id, n + 1)
+    keys.add(n ? id + String.fromCharCode(96 + n) : id)
+  }
+  return keys
 }
 
 const prose = (text: string) =>

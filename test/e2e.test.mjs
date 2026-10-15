@@ -2486,6 +2486,13 @@ test('an academic project checks its citations and exports with pandoc', async (
   const download = await fetch(`${base}/api/projects/${project.id}/export/${path.basename(out)}`, { headers: { cookie: `savor_token=${token}` } })
   assert.equal(download.status, 200)
   await page.waitForSelector(`.ws-file:has-text("${out}")`)
+  // A RIS export (Citavi, EndNote) gets the keys pandoc gives it: the ID, else authors and year.
+  fs.writeFileSync(path.join(dir, 'references.ris'), 'TY  - JOUR\r\nAU  - Ghost, Anna\r\nPY  - 2021\r\nER  - \r\n\r\nTY  - BOOK\r\nID  - miara2023\r\nER  -\r\nTY  - JOUR\r\nAU  - Ghost, Ben\r\nPY  - 2021\r\nER  - \r\n')
+  fs.writeFileSync(path.join(dir, 'manuscript/01-intro.md'), '# Intro\n\nHeat pumps work [@miara2023; @Ghost_2021; @Ghost_2021a; @Ghost_2021b].\n')
+  fs.writeFileSync(path.join(dir, 'pandoc.yaml'), 'to: docx\nbibliography: references.ris\nciteproc: true\n')
+  const ris = (await api('GET', `/projects/${project.id}/export`)).body.checks.map((c) => c.text)
+  assert.ok(ris.includes('3 of 4 cited sources are in references.ris'), ris.join('\n'))
+  assert.ok(ris.includes('[@Ghost_2021b] has no entry in references.ris'))
   await api('DELETE', `/projects/${project.id}`)
 })
 
