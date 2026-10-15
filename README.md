@@ -268,7 +268,7 @@ CI runs typecheck and the end-to-end tests on every push. Pushing a tag like `v0
 Early. Known gaps:
 - There is no public relay instance yet: run your own (see above) or use a direct connection.
 - A browser can pair with several computers but talks to one at a time, and only that one sends it notifications.
-- Grok Build: Savor's Plan mode and effort levels don't reach the CLI yet (it offers neither as an ACP session mode or model variant).
+- Grok Build: Savor's Plan mode doesn't reach the CLI yet: Grok ends its plan with an `_x.ai/exit_plan_mode` request whose answer isn't documented.
 
 ## How Savor is maintained
 

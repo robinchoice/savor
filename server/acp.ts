@@ -75,6 +75,10 @@ export class AcpSession implements Session {
       await this.rpc.request('session/set_mode', { sessionId: this.sessionId, modeId: a.permissionMode }).catch(() => {})
     const model = withEffort(a.provider, a.model || (a.reasoning ? session.models?.currentModelId : ''), a.reasoning)
     if (model) await this.rpc.request('session/set_model', { sessionId: this.sessionId, modelId: model }).catch(() => {})
+    // Grok Build takes the effort as a config option of the session.
+    const effort = session.configOptions?.find((o: any) => o.category === 'thought_level')
+    if (a.reasoning && effort?.currentValue !== a.reasoning && effort?.options?.some((o: any) => o.value === a.reasoning))
+      await this.rpc.request('session/set_config_option', { sessionId: this.sessionId, configId: effort.id, value: a.reasoning }).catch(() => {})
     if (a.model || session.models?.currentModelId) this.host.model(a.model || session.models.currentModelId)
   }
 

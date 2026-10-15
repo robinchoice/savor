@@ -648,8 +648,9 @@ test('OpenCode runs through the Agent Client Protocol', async () => {
   // Savor allows its own MCP tools without asking the user.
   assert.ok(agentRuns().some((r) => r.agent === 'opencode' && r.mcpPermission === 'allow-once'))
   assert.ok((await api('GET', `${t}/activity`)).body.some((a) => a.type === 'command' && a.label === 'ls -la'))
-  // The effort is a variant of the model, and the context the agent reports is shown.
+  // The effort is a variant of the model or a config option of the session, and the context the agent reports is shown.
   assert.ok(agentRuns().some((r) => r.agent === 'opencode' && r['session/set_model'] === 'fake/model/high'))
+  assert.ok(agentRuns().some((r) => r.agent === 'opencode' && r['session/set_config_option'] === 'reasoning_effort=high'))
   await until(async () => (await api('GET', t)).body.thread.context?.tokens === 4200)
   assert.equal((await api('GET', t)).body.thread.context.window, 100000)
   // A side question goes to a fork of the session.
