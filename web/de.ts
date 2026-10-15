@@ -942,7 +942,7 @@ const de: Record<string, string> = {
   'Target length in words': 'Umfang in Wörtern',
   'optional': 'optional',
   'Deadline': 'Abgabetermin',
-  'You can change format and citation style later in the Export tab. Using Zotero? Let Better BibTeX keep references.bib in this folder up to date.': 'Format und Zitierstil lassen sich später im Tab Export ändern. Du nutzt Zotero? Lass Better BibTeX die references.bib in diesem Ordner aktuell halten.',
+  'You can change format and citation style later in the Export tab. Using Zotero? Let Better BibTeX keep references.bib in this folder up to date. Using Citavi? Export the project as BibTeX to references.bib and again after changes; an export template makes that one click.': 'Format und Zitierstil lassen sich später im Tab Export ändern. Du nutzt Zotero? Lass Better BibTeX die references.bib in diesem Ordner aktuell halten. Du nutzt Citavi? Exportiere das Projekt als BibTeX nach references.bib und nach Änderungen erneut; mit einer Exportvorlage geht das mit einem Klick.',
   'Two maintenance workflows, paused. The first conversation asks whether they should run.': 'Zwei Wartungs-Workflows, pausiert. Das erste Gespräch fragt, ob sie laufen sollen.',
   'Accept edits': 'Änderungen annehmen',
   'File edits run without asking. Commands and other actions ask first.': 'Dateiänderungen laufen ohne Rückfrage. Befehle und andere Aktionen fragen vorher.',

@@ -321,7 +321,7 @@ export function AddProject({ me, setMe, onAdded }: { me: Me; setMe: (m: Me) => v
                   <input type="date" value={academic.deadline} onInput={(e) => setA({ deadline: e.currentTarget.value })} />
                 </label>
               </div>
-              <small class="muted">{t('You can change format and citation style later in the Export tab. Using Zotero? Let Better BibTeX keep references.bib in this folder up to date.')}</small>
+              <small class="muted">{t('You can change format and citation style later in the Export tab. Using Zotero? Let Better BibTeX keep references.bib in this folder up to date. Using Citavi? Export the project as BibTeX to references.bib and again after changes; an export template makes that one click.')}</small>
             </>
           )}
           <div class="row">
