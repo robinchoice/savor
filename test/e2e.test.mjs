@@ -645,6 +645,9 @@ test('OpenCode runs through the Agent Client Protocol', async () => {
   const thread = (await api('POST', `/projects/${project.id}/threads`, { text: 'hello acp', agent: { provider: 'opencode', model: 'fake/model', reasoning: 'high', permissionMode: 'plan' } })).body
   const t = `/projects/${project.id}/threads/${thread.id}`
   await until(async () => (await api('GET', t)).body.messages.some((m) => m.text === 'ACP echo: hello acp'))
+  // Savor allows its own MCP tools without asking the user.
+  assert.ok(agentRuns().some((r) => r.agent === 'opencode' && r.mcpPermission === 'allow-once'))
+  assert.ok((await api('GET', `${t}/activity`)).body.some((a) => a.type === 'command' && a.label === 'ls -la'))
   // The effort is a variant of the model, and the context the agent reports is shown.
   assert.ok(agentRuns().some((r) => r.agent === 'opencode' && r['session/set_model'] === 'fake/model/high'))
   await until(async () => (await api('GET', t)).body.thread.context?.tokens === 4200)

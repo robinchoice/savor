@@ -22,7 +22,8 @@ const AGENTS = [
   { provider: 'claude', pkg: '@anthropic-ai/claude-code', bin: 'claude', env: 'SAVOR_CLAUDE_BIN', agent: { model: 'haiku', reasoning: '', permissionMode: 'manual' } },
   { provider: 'codex', pkg: '@openai/codex', bin: 'codex', env: 'SAVOR_CODEX_BIN', agent: { model: '', reasoning: 'low', permissionMode: 'read-only' } },
   { provider: 'opencode', pkg: 'opencode-ai', bin: 'opencode', env: 'SAVOR_OPENCODE_BIN', agent: { model: '', reasoning: '', permissionMode: 'build' } },
-  { provider: 'grok', pkg: '@xai-official/grok', bin: 'grok', env: 'SAVOR_GROK_BIN', agent: { model: '', reasoning: 'low', permissionMode: 'default' } },
+  // Grok creates files in the project without asking; rm is one of the commands it always asks about.
+  { provider: 'grok', pkg: '@xai-official/grok', bin: 'grok', env: 'SAVOR_GROK_BIN', agent: { model: '', reasoning: 'low', permissionMode: 'default' }, removes: true },
   // Headless agy cannot ask: its default mode denies the command, and the rest runs with permissions bypassed.
   { provider: 'antigravity', bin: 'agy', env: 'SAVOR_ANTIGRAVITY_BIN', agent: { model: '', reasoning: 'low', permissionMode: 'bypass' }, denies: { permissionMode: 'default' } },
 ]
@@ -133,14 +134,16 @@ async function check(a) {
   const p = await api('POST', '/projects', { path: dir, name: a.provider, create: true })
   // OpenCode runs commands without asking unless its config says otherwise.
   if (a.provider === 'opencode') fs.writeFileSync(path.join(dir, 'opencode.json'), JSON.stringify({ permission: { bash: 'ask' } }))
-  const text = 'This is an automated compatibility check. Run exactly this shell command and nothing else: touch savor-check.txt. Then reply with "check ok".'
+  const marker = path.join(dir, 'savor-check.txt')
+  if (a.removes) fs.writeFileSync(marker, '')
+  const text = `This is an automated compatibility check. Run exactly this shell command and nothing else: ${a.removes ? 'rm' : 'touch'} savor-check.txt. Then reply with "check ok".`
 
   // An agent that cannot ask: the command is denied, and Savor says so instead of ending silently.
   if (a.denies) {
     const d = await api('POST', `/projects/${p.id}/threads`, { text, agent: { provider: a.provider, ...a.agent, ...a.denies } })
     const messages = await settled(p.id, d.id, 180_000)
     const activity = await api('GET', `/projects/${p.id}/threads/${d.id}/activity`)
-    if (fs.existsSync(path.join(dir, 'savor-check.txt'))) throw new Error('the command ran although the mode does not allow it')
+    if (fs.existsSync(marker)) throw new Error('the command ran although the mode does not allow it')
     if (!activity.some((e) => /Denied:/.test(JSON.stringify(e))) && !messages.some((m) => m.kind === 'error' && /permission/.test(m.text))) throw new Error('the denied command left no trace in the conversation')
   }
 
@@ -149,7 +152,7 @@ async function check(a) {
   const first = (await api('GET', `/projects/${p.id}/threads/${t.id}`)).messages.find((m) => m.kind === 'user')
   if (!a.denies) await approve(p.id, t.id, await until('a permission request', () => pendingApproval(p.id, t.id), 180_000))
   await answered(p.id, t.id, first.id, 180_000)
-  if (!fs.existsSync(path.join(dir, 'savor-check.txt'))) throw new Error('the allowed command did not run')
+  if (fs.existsSync(marker) === !!a.removes) throw new Error('the allowed command did not run')
 
   // An interrupt: "Send now" stops a long command, and the queued message gets its answer.
   const long = await api('POST', `/projects/${p.id}/threads/${t.id}/messages`, { text: 'Run exactly this shell command in the foreground, not in the background: sleep 600. It is not a timer: this check stops it to test interrupting a running command. Then reply with "slept".' })

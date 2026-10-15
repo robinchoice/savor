@@ -118,8 +118,10 @@ export class AcpSession implements Session {
       if (!this.thinking) activity.instant('thinking', 'Thinking')
       this.thinking = true
     } else if (kind === 'tool_call') {
-      const type = u.kind === 'execute' ? 'command' : u.kind === 'edit' ? 'edit' : 'note'
-      activity.start(u.toolCallId, type, u.title ?? summarize(u.rawInput))
+      // Grok Build titles a call with its tool's name; the kind and the command or MCP tool come in its _meta and input.
+      const grok = u._meta?.['x.ai/tool']
+      if (grok) activity.tool(u.toolCallId, grok.kind === 'execute' ? 'command' : grok.kind === 'edit' ? 'edit' : String(u.rawInput?.tool_name ?? grok.name).replace(/^savor__/, ''), u.rawInput?.tool_input ?? u.rawInput)
+      else activity.start(u.toolCallId, u.kind === 'execute' ? 'command' : u.kind === 'edit' ? 'edit' : 'note', u.title ?? summarize(u.rawInput))
       if (['completed', 'failed', 'cancelled'].includes(u.status)) activity.finish(u.toolCallId)
     } else if (kind === 'tool_call_update') {
       if (['completed', 'failed', 'cancelled'].includes(u.status)) activity.finish(u.toolCallId)
@@ -136,6 +138,9 @@ export class AcpSession implements Session {
     if (method === 'session/request_permission') {
       const options = (params.options ?? []).map((o: any) => ({ id: o.optionId, label: o.name, kind: String(o.kind).startsWith('allow') ? 'allow' : 'deny' }))
       const call = params.toolCall ?? {}
+      // Grok Build asks before every MCP tool, Savor's own included; those never need the user.
+      const once = (params.options ?? []).find((o: any) => o.kind === 'allow_once')
+      if (once && call.rawInput?.variant === 'UseTool' && String(call.rawInput.tool_name).startsWith('savor__')) return { outcome: { outcome: 'selected', optionId: once.optionId } }
       const choice = await this.host.approve({ title: call.title ?? 'Allow this action?', detail: summarize(call.rawInput ?? call.content ?? ''), options })
       return { outcome: { outcome: 'selected', optionId: choice } }
     }

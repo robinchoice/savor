@@ -3,6 +3,7 @@
 // finds Savor's MCP server in OPENCODE_CONFIG_CONTENT and in the session's mcpServers.
 // - "approve: <anything>" → session/request_permission with Allow once / Reject, then "ACP permission: <optionId>"
 // - anything else → "ACP echo: <input>"
+// Like Grok Build, it asks with session/request_permission before it calls a Savor tool.
 // `--version` and `models` answer like the real CLI, so Savor lists the fake as installed.
 import fs from 'node:fs'
 import readline from 'node:readline'
@@ -42,7 +43,17 @@ async function conclude(text) {
     await c.connect(new StreamableHTTPClientTransport(new URL(mcp.url), { requestInit: { headers: Object.fromEntries(mcp.headers.map((h) => [h.name, h.value])) } }))
     return c
   })()
-  await client.callTool({ name: 'send_conclusion_message', arguments: { text } })
+  const r = await agentRequest('session/request_permission', {
+    sessionId,
+    toolCall: { toolCallId: 'mcp', title: 'savor__send_conclusion_message', kind: 'other', status: 'pending', rawInput: { variant: 'UseTool', tool_name: 'savor__send_conclusion_message', tool_input: { text } } },
+    options: [
+      { optionId: 'always-allow', name: 'always allow', kind: 'allow_always' },
+      { optionId: 'allow-once', name: 'allow once', kind: 'allow_once' },
+      { optionId: 'reject-once', name: 'reject once', kind: 'reject_once' },
+    ],
+  })
+  log({ mcpPermission: r.outcome.optionId })
+  if (r.outcome.optionId !== 'reject-once') await client.callTool({ name: 'send_conclusion_message', arguments: { text } })
 }
 
 const sessionId = 'fake-acp-session'
@@ -55,6 +66,9 @@ async function prompt(params, reply) {
   const input = at < 0 ? '' : text.slice(at + 'New input:\n'.length).trim()
   notify('session/update', { sessionId, update: { sessionUpdate: 'tool_call', toolCallId: 'call1', title: 'Reading files', kind: 'read', status: 'in_progress' } })
   notify('session/update', { sessionId, update: { sessionUpdate: 'tool_call_update', toolCallId: 'call1', status: 'completed' } })
+  // Grok Build names only the tool in the title.
+  notify('session/update', { sessionId, update: { sessionUpdate: 'tool_call', toolCallId: 'call3', title: 'run_terminal_command', rawInput: { command: 'ls -la' }, _meta: { 'x.ai/tool': { name: 'run_terminal_command', kind: 'execute' } } } })
+  notify('session/update', { sessionId, update: { sessionUpdate: 'tool_call_update', toolCallId: 'call3', status: 'completed' } })
   let answer
   if (!input) {
     // A side question carries no Savor envelope.
