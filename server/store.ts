@@ -91,6 +91,9 @@ export interface Thread {
   workingSince?: string | null
   // When Savor continues a turn that stopped at a usage limit: shortly after the limit resets.
   resumeAt?: string | null
+  // Set while Claude Code goes on with API credit after its usage limit (agents.ts): when that limit resets (ms),
+  // what the session cost before and the USD it may spend on top.
+  apiCredit?: { resetsAt: number; fromUsd: number; budgetUsd: number } | null
   // A pushed commit whose GitHub Actions runs the agent waits for, and the input it waits with: Savor
   // continues that request with their result.
   ciWatch?: { sha: string; since: string; inputId: string } | null
@@ -218,6 +221,9 @@ interface State {
   internal?: boolean
   // The agent new projects start with, else defaultAgent().
   agent?: AgentConfig
+  // Where Claude Code finds an API key when an unattended run reaches its usage limit (README, "API credit"): an env
+  // file and the variable in it, never the key itself, and the USD each takeover may spend.
+  apiCredit?: { envFile: string; variable: string; headers?: string; budgetUsd?: number }
   // The daemon's long-term X25519 key for the relay tunnel (base64url secret key).
   identity: string
   relayToken: string

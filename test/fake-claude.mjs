@@ -17,7 +17,7 @@
 // - "note: <text>" → concludes with the note Savor put between that context and the input, or "none"
 // - "limit: <text>" → acknowledges, waits for the test's release file, then stops at a usage limit that reset
 //   58 seconds ago ("limit-later: <text>" right away, at one that resets in an hour); continued once the limit
-//   reset, it concludes
+//   reset, it concludes. With an API key it concludes on API credit ("… credit-empty" fails there instead)
 // - "ci: <text>" → acknowledges and asks Savor to watch CI for HEAD; concludes with what watch_ci returned when
 //   the runs had finished or the call failed, else ends the turn, and concludes with the result Savor continues
 //   the request with ("ci-done: <text>" concludes right after asking)
@@ -88,7 +88,7 @@ if (fs.existsSync(process.env.FAKE_AGENT_LOG + '.outdated')) {
 }
 const config = args[args.indexOf('--mcp-config') + 1]
 const mcp = JSON.parse(fs.readFileSync(config, 'utf8')).mcpServers.savor
-if (process.env.FAKE_AGENT_LOG) fs.appendFileSync(process.env.FAKE_AGENT_LOG, JSON.stringify({ agent: 'claude', argv: process.argv, cwd: process.cwd(), configMode: fs.statSync(config).mode & 0o777 }) + '\n')
+if (process.env.FAKE_AGENT_LOG) fs.appendFileSync(process.env.FAKE_AGENT_LOG, JSON.stringify({ agent: 'claude', argv: process.argv, cwd: process.cwd(), configMode: fs.statSync(config).mode & 0o777, apiKey: process.env.ANTHROPIC_API_KEY, headers: process.env.ANTHROPIC_CUSTOM_HEADERS }) + '\n')
 // A fork resumes one session and continues under the ID given for the new one.
 const sessionId = args.includes('--resume') && !args.includes('--fork-session') ? args[args.indexOf('--resume') + 1] : args[args.indexOf('--session-id') + 1] ?? crypto.randomUUID()
 const out = (e) => process.stdout.write(JSON.stringify(e) + '\n')
@@ -182,7 +182,12 @@ async function turn(text, command) {
   } else if (input.startsWith('context:')) {
     await call('send_conclusion_message', { text: `Context: ${text.match(/Savor context:\n(.*)\n/)[1]}` })
   } else if (input.startsWith('limit:') || input.startsWith('limit-later:')) {
-    if (text.includes('You stopped at a usage limit')) {
+    if (process.env.ANTHROPIC_API_KEY && input.includes('credit-empty')) {
+      out({ type: 'result', subtype: 'success', is_error: true, result: 'Credit balance is too low' })
+      return
+    } else if (process.env.ANTHROPIC_API_KEY) {
+      await call('send_conclusion_message', { text: `Echo: ${input} (on API credit)` })
+    } else if (text.includes('You stopped at a usage limit')) {
       out({ type: 'rate_limit_event', rate_limit_info: { status: 'allowed' } })
       await call('send_conclusion_message', { text: `Echo: ${input} (after the limit)` })
     } else {

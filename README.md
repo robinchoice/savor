@@ -184,6 +184,16 @@ To mark an installation as internal, set `"internal": true` in `~/.savor/state.j
 | `SAVOR_CLAUDE_BIN`, `SAVOR_CODEX_BIN`, `SAVOR_OPENCODE_BIN`, `SAVOR_GROK_BIN`, `SAVOR_ANTIGRAVITY_BIN` | `claude`, `codex`, `opencode`, `grok`, `agy` | Agent binaries |
 | `SAVOR_ANTIGRAVITY_HOME` | `~/.gemini` | Where agy keeps its settings |
 
+### API credit for unattended runs
+
+Workflow runs and the conversations they start don't wait at a usage limit: they go on with the next agent (Codex, Antigravity, OpenCode). With API credit, Claude Code can go on with that first. Name an env file and the variable in it that holds the key in `~/.savor/state.json`, never the key itself:
+
+```json
+"apiCredit": { "envFile": "~/.secrets", "variable": "ANTHROPIC_API_KEY", "headers": "anthropic-workspace-id: wrkspc_…", "budgetUsd": 15 }
+```
+
+Savor reads the key from the file (`NAME=value` or `export NAME=value` lines) each time it starts Claude Code on API credit and puts it only into that process's environment, with `headers` as `ANTHROPIC_CUSTOM_HEADERS` when set. Each takeover may spend `budgetUsd` (default 15); when the credit is used up, the budget reached or the key refused, the next agent takes over. The user's own conversations keep waiting for the reset.
+
 Antigravity runs `agy --print` once per turn and continues the conversation with `--conversation`. agy reads MCP servers only from its own settings, so Savor adds a `savor` stdio server to `~/.gemini/config/mcp_config.json` that forwards to the conversation it runs for, and allows its tools with `mcp(savor/*)` in `~/.gemini/antigravity-cli/settings.json`. Headless agy cannot ask for approval: whatever the chosen mode doesn't allow is denied, and the activity log names it.
 
 ## How it works

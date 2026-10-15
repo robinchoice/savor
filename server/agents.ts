@@ -7,7 +7,7 @@ import type { AgentConfig, Message, NoticeType, Origin, Project, Provider, Quest
 import { emit } from './events.js'
 import { appUrl } from './config.js'
 import { Activity, PlanTracker, configKey, forkOf, sessionIdOf, type Answer, type ApprovalRequest, type Host, type Session, type TurnInput } from './session.js'
-import { ClaudeSession, idleCompaction } from './claude.js'
+import { ClaudeSession, creditEnv, idleCompaction } from './claude.js'
 import { CodexSession } from './codex.js'
 import { AcpSession } from './acp.js'
 import { AntigravitySession } from './antigravity.js'
@@ -35,6 +35,8 @@ export interface RequestState {
   updates: Map<string, { text: string; id: string }>
   // The agents that stopped at a usage limit on this request, with when it resets (ms).
   limited?: Map<Provider, number>
+  // Whether Claude Code went on with API credit on this request.
+  credit?: boolean
 }
 
 const requests = new Map<string, RequestState>()
@@ -218,7 +220,8 @@ export function tidyWorktree(p: Project, dir: string | undefined) {
 function deliver(p: Project, tid: string, msg: Message) {
   const startedAt = store.now()
   leaveRemovedWorktree(p, tid)
-  const thread = store.updateThread(p, tid, { needsYou: false, workingSince: startedAt })
+  // A new request starts on the subscription again.
+  const thread = store.updateThread(p, tid, { needsYou: false, workingSince: startedAt, apiCredit: null })
   store.updateMessage(p, tid, msg.id, { delivered: true })
   requests.set(tid, { inputId: msg.id, startedAt, updates: new Map() })
   const setup = git.setupOf(thread.worktree?.path)
@@ -343,7 +346,11 @@ function endTurn(p: Project, tid: string, result: { text?: string; error?: strin
     setResume(p, tid, resumeAt)
     setCi(p, tid, null)
     post(p, tid, { kind: 'error', text: result.error, modelInfo: agent })
-    if (resumeAt && unattended(store.getThread(p, tid))) void fallBack(p, tid, agent.provider, result.resetsAt!, result.error)
+    const thread = store.getThread(p, tid)
+    const credit = thread.apiCredit
+    if (resumeAt && unattended(thread)) void fallBack(p, tid, agent.provider, result.resetsAt!, result.error)
+    // Whatever stops Claude Code on API credit (no credit left, its budget, the key) hands the request on.
+    else if (credit && unattended(thread) && result.error !== 'Turn stopped.' && !request(p, tid).conclusion) void fallBack(p, tid, 'claude', credit.resetsAt, result.error)
     else if (resumeAt) notify(p, tid, 'error', result.error, 'Waits for a usage limit')
     else if (result.error !== 'Turn stopped.') notify(p, tid, 'error', result.error, 'Stopped with an error')
   } else {
@@ -417,7 +424,7 @@ function sessionFor(p: Project, thread: Thread): Session {
   const tid = thread.id
   let s = sessions.get(tid)
   // New agent, model, effort or permission settings need a fresh process.
-  if (s && s.session.config !== configKey(thread.agent)) {
+  if (s && s.session.config !== configKey(thread.agent, !!thread.apiCredit)) {
     sessions.delete(tid)
     clearTimeout(s.idleTimer)
     s.session.end()
@@ -606,9 +613,11 @@ const FALLBACK: [Provider, string][] = [['claude', 'auto'], ['codex', 'auto-revi
 export const unattended = (t: Thread) => !!t.workflow || !!t.unattended
 
 const takeOver = (from: string) => `${from} stopped at a usage limit while working on the input below, and you take over. Check what is already done before you repeat anything, then finish the work. This is still the same request: do not acknowledge it again.\n\n`
+const ON_CREDIT = `You stopped at a usage limit while working on the input below, and go on with API credit now. Check what is already done before you repeat anything, then finish the work. This is still the same request: do not acknowledge it again.\n\n`
 
-// The next agent is installed, signed in, has not stopped at a limit on this request yet and is not at 100 % of
-// any window. With none left, the request waits for the earliest reset; if that is another agent's, the current one
+// Claude Code first goes on with API credit, once per request and where Savor has a key for it (state.json `apiCredit`).
+// After that, the next agent is installed, signed in, has not stopped at a limit on this request yet and is not at 100 %
+// of any window. With none left, the request waits for the earliest reset; if that is another agent's, the current one
 // stops at its limit again then, and the switch follows.
 async function fallBack(p: Project, tid: string, provider: Provider, resetsAt: number, error: string) {
   const r = request(p, tid)
@@ -621,6 +630,17 @@ async function fallBack(p: Project, tid: string, provider: Provider, resetsAt: n
   const input = inputOf(p, tid)
   // New input or a stop while the agents were asked.
   if (thread.resumeAt !== waits || requests.get(tid) !== r || busy.has(tid) || !input) return
+  const credit = thread.apiCredit
+  const budgetUsd = store.state().apiCredit?.budgetUsd ?? 15
+  if (provider === 'claude' && !credit && !r.credit && budgetUsd > 0 && creditEnv()) {
+    r.credit = true
+    const fromUsd = thread.spent?.find((s) => s.provider === 'claude')?.usd ?? 0
+    setResume(p, tid, null)
+    store.updateThread(p, tid, { apiCredit: { resetsAt, fromUsd, budgetUsd } })
+    post(p, tid, { kind: 'update', text: `Claude Code reached its usage limit and goes on through the API credit, up to $${budgetUsd}.` })
+    return continueRequest(p, store.getThread(p, tid), input, ON_CREDIT)
+  }
+  if (credit) store.updateThread(p, tid, { apiCredit: null })
   const full = (id: Provider) =>
     limited.has(id) || !installed.some((a) => a.id === id && a.installed && a.signedIn) || usage.some((u) => u.provider === id && u.windows.some((w) => w.percent >= 100))
   const i = FALLBACK.findIndex(([id]) => id === provider)
@@ -634,7 +654,8 @@ async function fallBack(p: Project, tid: string, provider: Provider, resetsAt: n
   setResume(p, tid, null)
   store.updateThread(p, tid, { agent })
   // The switch shows in the conversation, so it is clear which agent did what.
-  post(p, tid, { kind: 'update', text: `${STATIC[provider].name} reached its usage limit. ${STATIC[to].name} takes over.`, modelInfo: agent })
+  const why = credit ? `${STATIC[provider].name} stopped on the API credit too.` : `${STATIC[provider].name} reached its usage limit.`
+  post(p, tid, { kind: 'update', text: `${why} ${STATIC[to].name} takes over.`, modelInfo: agent })
   continueRequest(p, store.getThread(p, tid), input, takeOver(STATIC[provider].name))
 }
 

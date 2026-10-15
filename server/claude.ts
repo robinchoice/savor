@@ -64,6 +64,23 @@ export function idleCompaction(cwd: string) {
 const describe = (tool: string, input: any) =>
   tool === 'Bash' ? String(input?.command ?? '') : /^(Edit|Write|MultiEdit|NotebookEdit)$/.test(tool) ? String(input?.file_path ?? '') : JSON.stringify(input, null, 2).slice(0, 1500)
 
+// The API key for Claude Code on API credit (state.json `apiCredit`), read from its env file for each process that
+// goes on with it: the key stays out of Savor's own environment and out of everything Savor stores or logs.
+export function creditEnv(): Record<string, string> | null {
+  const c = store.state().apiCredit
+  if (!c?.envFile || !c.variable) return null
+  let key = ''
+  try {
+    for (const line of fs.readFileSync(c.envFile.replace(/^~(?=\/)/, os.homedir()), 'utf8').split('\n')) {
+      const m = line.match(/^\s*(?:export\s+)?([A-Za-z_]\w*)=(.*)$/)
+      if (m?.[1] === c.variable) key = m[2].trim().replace(/^(['"])(.*)\1$/, '$2')
+    }
+  } catch {
+    return null
+  }
+  return key ? { ANTHROPIC_API_KEY: key, ...(c.headers && { ANTHROPIC_CUSTOM_HEADERS: c.headers }) } : null
+}
+
 export class ClaudeSession implements Session {
   readonly config: string
   private child: ChildProcess
@@ -76,8 +93,10 @@ export class ClaudeSession implements Session {
   private model = ''
   // When the usage limit Claude ran into resets (ms), while it holds.
   private limit: number | null = null
-  // USD the conversation may cost, for a workflow run with a budget.
+  // USD the conversation may cost, for a workflow run with a budget or on API credit.
   private budget = 0
+  // The USD the takeover on API credit may spend, when that is the budget the session holds to.
+  private credit = 0
   // The todo list by task id, and the tasks TaskCreate calls are about to create, by tool use id.
   private todos = new Map<string, PlanStep>()
   private creates = new Map<string, PlanStep>()
@@ -87,7 +106,7 @@ export class ClaudeSession implements Session {
   constructor(private host: Host, thread: Thread) {
     const { p } = host
     const a = thread.agent
-    this.config = configKey(a)
+    this.config = configKey(a, !!thread.apiCredit)
     // The MCP config holds the token, so it goes into a file only this user can read.
     const mcpConfig = path.join(store.HOME, 'mcp', `${crypto.randomUUID()}.json`)
     fs.mkdirSync(path.dirname(mcpConfig), { recursive: true, mode: 0o700 })
@@ -112,9 +131,12 @@ export class ClaudeSession implements Session {
     ]
     if (a.model) args.push('--model', a.model)
     if (EFFORTS.includes(a.reasoning)) args.push('--effort', a.reasoning)
-    // Claude Code keeps a session's cost across resumes, so the budget holds for the whole run.
-    const budget = thread.workflow?.budgetUsd
-    if (budget) args.push('--max-budget-usd', String((this.budget = budget)))
+    // Claude Code keeps a session's cost across resumes and forks, so the budget holds for the whole run, and
+    // a takeover on API credit counts from what the session cost before it.
+    const credit = thread.apiCredit
+    const budget = Math.min(thread.workflow?.budgetUsd || Infinity, credit ? credit.fromUsd + credit.budgetUsd : Infinity)
+    if (budget < Infinity) args.push('--max-budget-usd', String((this.budget = budget)))
+    if (credit && budget === credit.fromUsd + credit.budgetUsd) this.credit = credit.budgetUsd
     const sid = sessionIdOf(thread, 'claude')
     const fork = forkOf(p, thread, 'claude')
     if (sid) args.push('--resume', sid)
@@ -124,7 +146,7 @@ export class ClaudeSession implements Session {
     this.child = spawn(...command(BIN.claude, args), {
       cwd: host.cwd,
       // Claude Code keeps its todo tools for older models only; Savor shows the list as the agent's plan.
-      env: { ...process.env, MCP_TOOL_TIMEOUT: String(24 * 3600_000), CLAUDE_CODE_ENABLE_TODO_TOOLS: '1' },
+      env: { ...process.env, MCP_TOOL_TIMEOUT: String(24 * 3600_000), CLAUDE_CODE_ENABLE_TODO_TOOLS: '1', ...(credit && creditEnv()) },
       stdio: ['pipe', 'pipe', 'pipe'],
     })
     const removeConfig = () => fs.rmSync(mcpConfig, { force: true })
@@ -235,7 +257,7 @@ export class ClaudeSession implements Session {
       if (typeof ev.total_cost_usd === 'number') this.host.spent({ usd: ev.total_cost_usd })
       const interrupted = this.interrupted
       this.interrupted = false
-      if (ev.subtype === 'error_max_budget_usd') return this.host.ended({ error: budgetReached(this.budget) })
+      if (ev.subtype === 'error_max_budget_usd') return this.host.ended({ error: this.credit ? `Claude Code used the $${this.credit} of API credit it may spend on this takeover.` : budgetReached(this.budget) })
       this.host.ended(ev.is_error && !interrupted ? { error: ev.result || ev.subtype, resetsAt: this.limit } : { text: ev.is_error ? '' : ev.result ?? '' })
     }
   }

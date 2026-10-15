@@ -1,5 +1,6 @@
 // Unattended runs at a usage limit: a conversation a workflow run started goes on with the next agent, and
-// waits like the user's own conversations only when every agent is used up.
+// waits like the user's own conversations only when every agent is used up. With a key for API credit, Claude
+// Code goes on with that first.
 import { test, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
@@ -132,4 +133,43 @@ test('unattended conversations switch agents at a usage limit, and wait when all
   r = await read(own)
   assert.equal(r.thread.agent.provider, 'claude')
   assert.ok(!r.messages.some((m) => m.kind === 'update'))
+
+  // With a key for API credit, Claude Code goes on with it first, up to the budget of a takeover, and the key
+  // reaches only its process.
+  server.kill()
+  await new Promise((resolve) => server.on('exit', resolve))
+  const KEY = 'sk-ant-test-0123456789'
+  fs.writeFileSync(path.join(TMP, 'secrets'), `# Claude API credit\nexport OTHER=1\nexport FAKE_CREDIT_KEY=${KEY}\n`)
+  const state = JSON.parse(fs.readFileSync(path.join(HOME, 'state.json'), 'utf8'))
+  fs.writeFileSync(path.join(HOME, 'state.json'), JSON.stringify({ ...state, apiCredit: { envFile: path.join(TMP, 'secrets'), variable: 'FAKE_CREDIT_KEY', headers: 'anthropic-workspace-id: wrkspc_test', budgetUsd: 5 } }))
+  fs.writeFileSync(AGENT_LOG, '')
+  await startDaemon()
+  const credit = await start('limit-later: credit')
+  await until(async () => (await read(credit)).messages.some((m) => m.kind === 'conclusion'))
+  r = await read(credit)
+  assert.equal(r.messages.find((m) => m.kind === 'conclusion').text, 'Echo: limit-later: credit (on API credit)')
+  assert.deepEqual(r.messages.filter((m) => m.kind === 'update').map((m) => m.text), ['Claude Code reached its usage limit and goes on through the API credit, up to $5.'])
+  assert.equal(r.thread.agent.provider, 'claude')
+  const runs = fs.readFileSync(AGENT_LOG, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((l) => l.agent === 'claude' && l.argv)
+  const onCredit = runs.filter((l) => l.apiKey)
+  assert.equal(onCredit.length, 1)
+  assert.equal(onCredit[0].apiKey, KEY)
+  assert.equal(onCredit[0].headers, 'anthropic-workspace-id: wrkspc_test')
+  assert.equal(onCredit[0].argv[onCredit[0].argv.indexOf('--max-budget-usd') + 1], '5')
+  assert.ok(runs.some((l) => !l.apiKey && !l.argv.includes('--max-budget-usd')))
+
+  // When the credit doesn't carry it either, Codex takes over.
+  const empty = await start('limit-later: credit-empty')
+  await until(async () => (await read(empty)).messages.some((m) => m.kind === 'conclusion'))
+  r = await read(empty)
+  assert.equal(r.messages.find((m) => m.kind === 'conclusion').text, 'Codex echo: limit-later: credit-empty (took over)')
+  assert.deepEqual(r.messages.filter((m) => m.kind === 'update').map((m) => m.text), ['Claude Code reached its usage limit and goes on through the API credit, up to $5.', 'Claude Code stopped on the API credit too. Codex takes over.'])
+  assert.deepEqual([r.thread.agent.provider, r.thread.apiCredit, r.thread.error], ['codex', null, null])
+
+  // The user's own conversation still waits, and the key is nowhere in what Savor keeps.
+  const mine = (await api('POST', t, { text: 'limit-later: still mine' })).id
+  await until(async () => (await read(mine)).thread.resumeAt)
+  assert.ok(!(await read(mine)).messages.some((m) => m.kind === 'update'))
+  const files = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? files(path.join(dir, e.name)) : [path.join(dir, e.name)]))
+  for (const f of [...files(HOME), ...files(path.join(TMP, 'app'))]) assert.ok(!fs.readFileSync(f, 'utf8').includes(KEY), f)
 })

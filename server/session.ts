@@ -94,7 +94,8 @@ export interface Session {
   stopTask?(id: string): void
 }
 
-export const configKey = (a: AgentConfig) => JSON.stringify([a.provider, a.model, a.reasoning, a.fast, a.ultracode, a.permissionMode])
+// Claude Code on API credit (agents.ts) runs in a process of its own.
+export const configKey = (a: AgentConfig, credit = false) => JSON.stringify([a.provider, a.model, a.reasoning, a.fast, a.ultracode, a.permissionMode, credit])
 
 export const sessionIdOf = (thread: Thread, provider: Provider) => thread.agentSessions.find((s) => s.provider === provider)?.sessionId
 
