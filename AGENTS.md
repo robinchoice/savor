@@ -12,7 +12,7 @@
 
 `npm run build && npm run typecheck && npm test`
 
-`node scripts/upstream-check.mjs` runs Savor against the newest Claude Code, Codex and OpenCode with this computer's logins, nightly as the Savor workflow "Upstream check". It is not part of the checks above: each run costs a few real agent turns.
+`node scripts/upstream-check.mjs` runs Savor against the newest Claude Code, Codex, OpenCode, Grok Build and Antigravity with this computer's logins, nightly as the Savor workflow "Upstream check"; agents not signed in are skipped, and names as arguments (`… upstream-check.mjs grok`) check only those. It is not part of the checks above: each run costs a few real agent turns.
 
 ## Deploy
 

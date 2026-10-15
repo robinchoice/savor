@@ -1,8 +1,9 @@
-// Checks this checkout against the newest agent CLIs: installs the latest Claude Code, Codex and
-// OpenCode (standing in for the ACP agents) into ~/.cache/savor-upstream-check, starts a daemon with
-// them and runs one real conversation per agent: a prompt, a permission request, an interrupt. It
-// uses the agents' logins on this computer, so it runs as a nightly Savor workflow on the maintainer's
-// computer, not in CI. Exits 1 when an agent broke.
+// Checks this checkout against the newest agent CLIs: installs the latest Claude Code, Codex, OpenCode
+// and Grok Build into ~/.cache/savor-upstream-check and updates agy (it only installs itself), starts a
+// daemon with them and runs one real conversation per agent: a prompt, a permission request, an
+// interrupt. It uses the agents' logins on this computer, so it runs as a nightly Savor workflow on the
+// maintainer's computer, not in CI. An agent that is not signed in here is skipped. Exits 1 when an
+// agent broke.
 import { execFileSync, spawn } from 'node:child_process'
 import fs from 'node:fs'
 import net from 'node:net'
@@ -21,7 +22,13 @@ const AGENTS = [
   { provider: 'claude', pkg: '@anthropic-ai/claude-code', bin: 'claude', env: 'SAVOR_CLAUDE_BIN', agent: { model: 'haiku', reasoning: '', permissionMode: 'manual' } },
   { provider: 'codex', pkg: '@openai/codex', bin: 'codex', env: 'SAVOR_CODEX_BIN', agent: { model: '', reasoning: 'low', permissionMode: 'read-only' } },
   { provider: 'opencode', pkg: 'opencode-ai', bin: 'opencode', env: 'SAVOR_OPENCODE_BIN', agent: { model: '', reasoning: '', permissionMode: 'build' } },
+  { provider: 'grok', pkg: '@xai-official/grok', bin: 'grok', env: 'SAVOR_GROK_BIN', agent: { model: '', reasoning: 'low', permissionMode: 'default' } },
+  // Headless agy cannot ask: its default mode denies the command, and the rest runs with permissions bypassed.
+  { provider: 'antigravity', bin: 'agy', env: 'SAVOR_ANTIGRAVITY_BIN', agent: { model: '', reasoning: 'low', permissionMode: 'bypass' }, denies: { permissionMode: 'default' } },
 ]
+// Agents named on the command line, e.g. `node scripts/upstream-check.mjs grok`, are the only ones checked.
+const only = process.argv.slice(2)
+if (only.length) AGENTS.splice(0, AGENTS.length, ...AGENTS.filter((a) => only.includes(a.provider)))
 
 const freePort = () =>
   new Promise((resolve) => {
@@ -43,9 +50,20 @@ async function until(what, fn, ms) {
 
 console.log(`Installing the latest CLIs into ${CACHE}`)
 fs.mkdirSync(CACHE, { recursive: true })
-execFileSync('npm', ['install', '--prefix', CACHE, '--no-audit', '--no-fund', '--loglevel=error', ...AGENTS.map((a) => `${a.pkg}@latest`)], { stdio: 'inherit' })
-const bin = (a) => path.join(CACHE, 'node_modules', '.bin', a.bin)
-for (const a of AGENTS) a.version = execFileSync(bin(a), ['--version']).toString().trim()
+if (AGENTS.some((a) => a.pkg)) execFileSync('npm', ['install', '--prefix', CACHE, '--no-audit', '--no-fund', '--loglevel=error', ...AGENTS.filter((a) => a.pkg).map((a) => `${a.pkg}@latest`)], { stdio: 'inherit' })
+const bin = (a) => (a.pkg ? path.join(CACHE, 'node_modules', '.bin', a.bin) : a.bin)
+if (AGENTS.some((a) => a.provider === 'antigravity')) {
+  try {
+    execFileSync('agy', ['update'], { stdio: ['ignore', 'inherit', 'inherit'] })
+  } catch {}
+}
+for (const a of AGENTS) {
+  try {
+    a.version = execFileSync(bin(a), ['--version']).toString().trim()
+  } catch {
+    a.version = 'not installed'
+  }
+}
 
 const port = await freePort()
 const base = `http://127.0.0.1:${port}`
@@ -77,9 +95,22 @@ async function answered(pid, tid, mid, ms) {
     async () => {
       const t = await api('GET', `/projects/${pid}/threads/${tid}`)
       const after = t.messages.slice(t.messages.findIndex((m) => m.id === mid) + 1)
-      const error = after.find((m) => m.kind === 'error')
+      // Antigravity reports the turn "Send now" stopped as an error.
+      const error = after.find((m) => m.kind === 'error' && m.text !== 'Turn stopped.')
       if (error) throw new Error(`error: ${error.text}`)
       return !t.busy && after.some((m) => m.kind === 'conclusion') && after
+    },
+    ms,
+  )
+}
+
+// The first message of a new thread, once its request has ended, whether with an answer or an error.
+async function settled(pid, tid, ms) {
+  return until(
+    'the end of the turn',
+    async () => {
+      const t = await api('GET', `/projects/${pid}/threads/${tid}`)
+      return !t.busy && t.messages.some((m) => m.kind === 'conclusion' || m.kind === 'error') && t.messages
     },
     ms,
   )
@@ -102,20 +133,27 @@ async function check(a) {
   const p = await api('POST', '/projects', { path: dir, name: a.provider, create: true })
   // OpenCode runs commands without asking unless its config says otherwise.
   if (a.provider === 'opencode') fs.writeFileSync(path.join(dir, 'opencode.json'), JSON.stringify({ permission: { bash: 'ask' } }))
+  const text = 'This is an automated compatibility check. Run exactly this shell command and nothing else: touch savor-check.txt. Then reply with "check ok".'
+
+  // An agent that cannot ask: the command is denied, and Savor says so instead of ending silently.
+  if (a.denies) {
+    const d = await api('POST', `/projects/${p.id}/threads`, { text, agent: { provider: a.provider, ...a.agent, ...a.denies } })
+    const messages = await settled(p.id, d.id, 180_000)
+    const activity = await api('GET', `/projects/${p.id}/threads/${d.id}/activity`)
+    if (fs.existsSync(path.join(dir, 'savor-check.txt'))) throw new Error('the command ran although the mode does not allow it')
+    if (!activity.some((e) => /Denied:/.test(JSON.stringify(e))) && !messages.some((m) => m.kind === 'error' && /permission/.test(m.text))) throw new Error('the denied command left no trace in the conversation')
+  }
 
   // A prompt that needs a permission: the approval reaches Savor, and the command runs once allowed.
-  const t = await api('POST', `/projects/${p.id}/threads`, {
-    text: 'This is an automated compatibility check. Run exactly this shell command and nothing else: touch savor-check.txt. Then reply with "check ok".',
-    agent: { provider: a.provider, ...a.agent },
-  })
+  const t = await api('POST', `/projects/${p.id}/threads`, { text, agent: { provider: a.provider, ...a.agent } })
   const first = (await api('GET', `/projects/${p.id}/threads/${t.id}`)).messages.find((m) => m.kind === 'user')
-  await approve(p.id, t.id, await until('a permission request', () => pendingApproval(p.id, t.id), 180_000))
+  if (!a.denies) await approve(p.id, t.id, await until('a permission request', () => pendingApproval(p.id, t.id), 180_000))
   await answered(p.id, t.id, first.id, 180_000)
   if (!fs.existsSync(path.join(dir, 'savor-check.txt'))) throw new Error('the allowed command did not run')
 
   // An interrupt: "Send now" stops a long command, and the queued message gets its answer.
-  const long = await api('POST', `/projects/${p.id}/threads/${t.id}/messages`, { text: 'Run exactly this shell command in the foreground, not in the background: sleep 600. Then reply with "slept".' })
-  const asked = await until('the long command', async () => (await pendingApproval(p.id, t.id)) || ((await api('GET', `/projects/${p.id}/threads/${t.id}/activity`)).some((e) => /sleep 600/.test(JSON.stringify(e))) && 'running'), 180_000)
+  const long = await api('POST', `/projects/${p.id}/threads/${t.id}/messages`, { text: 'Run exactly this shell command in the foreground, not in the background: sleep 600. It is not a timer: this check stops it to test interrupting a running command. Then reply with "slept".' })
+  const asked = await until('the long command', async () => (await pendingApproval(p.id, t.id)) || ((await api('GET', `/projects/${p.id}/threads/${t.id}/activity`)).some((e) => e.type === 'command' && /sleep 600/.test(e.label)) && 'running'), 180_000)
   if (asked !== 'running') await approve(p.id, t.id, asked)
   await new Promise((r) => setTimeout(r, 5000))
   const next = await api('POST', `/projects/${p.id}/threads/${t.id}/messages`, { text: 'Stop waiting and reply with just "interrupted".' })
@@ -124,8 +162,13 @@ async function check(a) {
 }
 
 const failed = []
+const info = Object.fromEntries((await api('GET', '/agents?refresh')).map((i) => [i.id, i]))
 for (const a of AGENTS) {
   const started = Date.now()
+  if (!info[a.provider]?.installed || !info[a.provider].signedIn) {
+    console.log(`skip  ${a.provider} ${a.version}: ${info[a.provider]?.installed ? `not signed in, run ${info[a.provider].signIn}` : 'not installed'}`)
+    continue
+  }
   try {
     await check(a)
     console.log(`ok    ${a.provider} ${a.version} (${Math.round((Date.now() - started) / 1000)}s)`)
