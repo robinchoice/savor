@@ -156,7 +156,7 @@ try {
 
   const desktop = { viewport: { width: 1600, height: 1000 } }
   let page = await open('dark', desktop)
-  const conversation = await shoot(page, `/p/${project.id}/t/${bakery.id}`, '.stage .screen', 'conversation.png')
+  await shoot(page, `/p/${project.id}/t/${bakery.id}`, '.stage .screen', 'conversation.png')
   page = await open('light', desktop)
   await shoot(page, `/p/${project.id}/t/${checklist.id}`, '.option', 'questions.png')
   await shoot(page, `/p/${project.id}/workflows/${check.id}/edit`, 'textarea', 'workflows.png')
@@ -170,8 +170,34 @@ try {
   await page.setContent(`<body style="margin:0;display:flex;gap:60px;background:#fff"><img src="${src(list)}" width="780"><img src="${src(chat)}" width="780"></body>`)
   await page.screenshot({ path: path.join(DOCS, 'mobile.png') })
 
-  // The landing page gets WebP in full and half width, and the conversation as its social preview image.
-  fs.writeFileSync(path.join(SITE, 'og.png'), conversation)
+  // The social preview shows the end of the bakery conversation enlarged next to the headline, so the
+  // UI stays readable at the few hundred pixels a link preview gets.
+  page = await open('dark', { ...desktop, deviceScaleFactor: 2 })
+  await page.goto(`${base}/#/p/${project.id}/t/${bakery.id}`)
+  await page.waitForSelector('.complete-actions')
+  await page.evaluate(() => document.fonts.ready)
+  await page.waitForTimeout(500)
+  const clip = await page.evaluate(() => {
+    const box = (el) => el.getBoundingClientRect()
+    const list = box(document.querySelector('.messages'))
+    const top = box([...document.querySelectorAll('.messages .msg')].at(-2)).top
+    return { x: list.left, y: top - 8, width: list.width, height: box(document.querySelector('.complete-actions')).bottom - top + 12 }
+  })
+  const ending = await page.screenshot({ clip })
+  page = await browser.newPage({ viewport: { width: 1200, height: 630 } })
+  await page.setContent(`<style>
+@font-face { font-family: Bricolage; src: url(data:font/woff2;base64,${FONT.toString('base64')}) format('woff2'); font-weight: 200 800; }
+body { margin: 0; width: 1200px; height: 630px; overflow: hidden; display: flex; align-items: center; justify-content: space-between; gap: 44px; padding: 0 56px; box-sizing: border-box; background: #f4f4f1; color: #17171a; font-family: Bricolage, sans-serif; }
+.brand { display: flex; align-items: center; gap: 14px; font-size: 36px; font-weight: 700; }
+h1 { margin: 40px 0 0; font-size: 64px; line-height: 1.02; font-weight: 700; letter-spacing: -0.02em; }
+p { margin: 24px 0 0; font-size: 22px; white-space: nowrap; color: #5e5e66; }
+img.ui { width: 640px; flex: none; border-radius: 20px; border: 1px solid #2b2a33; box-shadow: 0 24px 60px rgb(23 23 26 / 0.3); }
+</style><div><div class="brand">${fs.readFileSync(path.join(SITE, 'savor-tile.svg'), 'utf8').replace('<svg', '<svg width="56" height="56"')}Savor</div>
+<h1>Coding agents that report back.</h1><p>Open source · runs on your machine</p></div><img class="ui" src="${src(ending)}">`)
+  await page.evaluate(() => document.fonts.ready)
+  await page.screenshot({ path: path.join(SITE, 'og.png') })
+
+  // The landing page gets WebP in full and half width.
   const webp = (file, width) =>
     page.evaluate(
       async ({ data, width }) => {
