@@ -1,5 +1,5 @@
 import { useState } from 'preact/hooks'
-import { Check, Download, Plus, X } from 'lucide-preact'
+import { Check, Download, Info, Plus, X } from 'lucide-preact'
 import { api, go, useApi, type Project, type Workflow } from './api'
 import { plural, t, tx } from './i18n'
 
@@ -35,6 +35,7 @@ export function ExportView({ project }: { project: Project }) {
   const check = useWorkflow(project, 'Check citations')
   const [busy, setBusy] = useState<string | null>(null)
   const [result, setResult] = useState<{ path: string; words: number; warnings: string } | null>(null)
+  const [aboutPandoc, setAboutPandoc] = useState(false)
   const [error, setError] = useState('')
   const set = async (body: { format?: string; style?: string }) => {
     setBusy(body.format ?? body.style!)
@@ -145,9 +146,27 @@ export function ExportView({ project }: { project: Project }) {
           <div class="ws-card missing">
             <b>{t('{tools} not installed.', { tools: state.missingTools.join(t(' and ')) })}</b>
             <span class="muted">{t('The export needs {tools} on this computer. The agent can install it for you.', { tools: state.missingTools.join(t(' and ')) })}</span>
-            <button class="ghost" onClick={install}>
-              {t('Let the agent install it')}
-            </button>
+            <div class="row">
+              <button class="ghost" onClick={install}>
+                {t('Let the agent install it')}
+              </button>
+              {state.missingTools.includes('pandoc') && (
+                <button class="ghost" aria-expanded={aboutPandoc} onClick={() => setAboutPandoc(!aboutPandoc)}>
+                  <Info size={15} /> {t('What is pandoc?')}
+                </button>
+              )}
+            </div>
+            {aboutPandoc && (
+              <>
+                <p class="ws-text">{t('pandoc turns your chapters, which are plain text files, into a Word or PDF file: with title page and numbered headings, and every citation and the bibliography in your citation style. You write, pandoc does the formatting, and you never fix references by hand again.')}</p>
+                <p class="ws-text">
+                  {t('pandoc is free and open source, like Savor: written since 2006 by the philosopher John MacFarlane, improved by hundreds of people and used at universities and publishers around the world. No company can lock your work in or take it away. Your text stays in plain files that any program can still read in twenty years.')}{' '}
+                  <a href="https://pandoc.org" target="_blank" rel="noreferrer">
+                    pandoc.org
+                  </a>
+                </p>
+              </>
+            )}
           </div>
         )}
         <div class="row">
