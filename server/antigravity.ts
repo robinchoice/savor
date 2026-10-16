@@ -93,7 +93,8 @@ export class AntigravitySession implements Session {
     // agy ends the turn at the first command it may not run, so the agent learns which ones it may.
     const academic = p.type === 'academic-writing' && a.permissionMode !== 'bypass'
     const allowed = academic ? `\n\nShell commands run here only if they start with one of these, each part of a chained command too: ${ACADEMIC_COMMANDS.join(', ')}; git push, reset, clean, restore, checkout, rm, stash and rebase are not allowed. Any other command ends your turn without an answer, so never run one: use your file tools instead (also to list, find and read files) and ask me to run what you cannot.` : ''
-    const prompt = `${resume ? '' : `${systemPrompt(p, thread)}${allowed}\n\n`}${context}${input}${attached}`
+    // agy runs a slash command only at the very start of a prompt, so in a running conversation one goes alone.
+    const prompt = resume && input.startsWith('/') ? `${input}${attached}` : `${resume ? '' : `${systemPrompt(p, thread)}${allowed}\n\n`}${context}${input}${attached}`
     const args = ['--output-format', 'stream-json']
     if (resume) args.push('--conversation', resume)
     if (a.model) args.push('--model', a.model)
@@ -191,7 +192,11 @@ export async function probeAntigravity(): Promise<{ signedIn: boolean; account: 
   return { signedIn: models.length > 0, account, models: models.length ? [{ id: '', label: 'Default' }, ...models] : [] }
 }
 
-export const antigravitySkills = async (cwd: string): Promise<SkillInfo[]> => ((await slash('skills', cwd))?.skills ?? []).map((s: any) => ({ name: s.name, description: s.description ?? '' }))
+// /skills lists only skills; agy's own commands that run headless come after them.
+export const antigravitySkills = async (cwd: string): Promise<SkillInfo[]> => [
+  ...((await slash('skills', cwd))?.skills ?? []).map((s: any) => ({ name: s.name, description: s.description ?? '' })),
+  { name: 'compact', description: 'Summarize the conversation so far to free up context' },
+]
 
 // Weekly limits per group of models, e.g. "Gemini Models" and "Claude and GPT models".
 export async function antigravityUsage(): Promise<{ label: string; percent: number; resetsAt: number | null }[]> {

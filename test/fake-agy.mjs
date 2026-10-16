@@ -2,7 +2,7 @@
 // Stand-in for the Antigravity CLI (`agy`) used by the end-to-end tests. A turn (`--print <prompt>` with
 // stream-json output) reaches Savor's MCP server through the "savor" stdio server Savor put into
 // mcp_config.json, answers "Antigravity echo: <input>" there and reports a tool step and the result.
-// `--version`, `models` and the slash commands /skills and /usage answer like the real CLI; /usage says the limit is
+// `--version`, `models` and the slash commands /skills and /usage answer like the real CLI, other slash commands say they ran; /usage says the limit is
 // used up while the test's full file exists.
 import fs from 'node:fs'
 import path from 'node:path'
@@ -38,6 +38,12 @@ if (flag('--output-format') === 'json') {
 if (process.env.FAKE_AGENT_LOG) fs.appendFileSync(process.env.FAKE_AGENT_LOG, JSON.stringify({ agent: 'antigravity', argv: process.argv.slice(0, -1) }) + '\n')
 
 const conversation = flag('--conversation') ?? 'fake-agy-conversation'
+// A slash command answers without a model turn.
+if (prompt.startsWith('/')) {
+  out({ event: 'init', conversation_id: conversation })
+  out({ event: 'result', result: { conversation_id: conversation, status: 'SUCCESS', response: `Antigravity ran ${prompt}` } })
+  process.exit(0)
+}
 const input = prompt.slice(prompt.indexOf('New input:\n') + 'New input:\n'.length).trim()
 const step = (i, s) => out({ event: 'step_update', step_update: { conversation_id: conversation, step_index: i, ...s } })
 out({ event: 'init', conversation_id: conversation, init: { model: flag('--model') ?? 'fake-gemini-high', cwd: process.cwd() } })

@@ -682,6 +682,10 @@ test('Antigravity continues its conversation with the chosen model, effort and m
   await until(async () => !(await api('GET', t)).body.busy)
   await api('POST', `${t}/messages`, { text: 'again' })
   await until(async () => (await api('GET', t)).body.messages.some((m) => m.text === 'Antigravity echo: again'))
+  // In a running conversation a slash command goes alone, so agy runs it.
+  await until(async () => !(await api('GET', t)).body.busy)
+  await api('POST', `${t}/messages`, { text: '/compact' })
+  await until(async () => (await api('GET', t)).body.messages.some((m) => m.text === 'Antigravity ran /compact'))
   // A turn that stops at an action agy cannot ask for says so, instead of ending without a word.
   await until(async () => !(await api('GET', t)).body.busy)
   await api('POST', `${t}/messages`, { text: 'run a command' })
@@ -2177,7 +2181,7 @@ test('typing / lists the skills of the agent and runs the one picked', async () 
   assert.deepEqual(await skills('codex'), ['greet', 'review', 'compact', 'goal', 'mcp', 'btw'])
   assert.deepEqual(await skills('grok'), [])
   assert.deepEqual(await skills('opencode'), ['review', 'btw'])
-  assert.deepEqual(await skills('antigravity'), ['fake-skill', 'btw'])
+  assert.deepEqual(await skills('antigravity'), ['fake-skill', 'compact', 'btw'])
 
   await page.goto(`${base}/#/p/${project.id}/new`)
   await page.waitForSelector('text=What do you want to build?')
