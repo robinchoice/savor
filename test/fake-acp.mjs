@@ -2,6 +2,7 @@
 // Stand-in for an Agent Client Protocol agent (`opencode acp`) used by the end-to-end tests. It
 // finds Savor's MCP server in OPENCODE_CONFIG_CONTENT and in the session's mcpServers.
 // - "approve: <anything>" → session/request_permission with Allow once / Reject, then "ACP permission: <optionId>"
+// - a prompt that starts with a slash command → "ACP command: <prompt>"
 // - anything else → "ACP echo: <input>"
 // Like Grok Build, it asks with session/request_permission before it calls a Savor tool.
 // `--version` and `models` answer like the real CLI, so Savor lists the fake as installed.
@@ -70,7 +71,9 @@ async function prompt(params, reply) {
   notify('session/update', { sessionId, update: { sessionUpdate: 'tool_call', toolCallId: 'call3', title: 'run_terminal_command', rawInput: { command: 'ls -la' }, _meta: { 'x.ai/tool': { name: 'run_terminal_command', kind: 'execute' } } } })
   notify('session/update', { sessionId, update: { sessionUpdate: 'tool_call_update', toolCallId: 'call3', status: 'completed' } })
   let answer
-  if (!input) {
+  if (text.startsWith('/')) {
+    answer = `ACP command: ${text}`
+  } else if (!input) {
     // A side question carries no Savor envelope.
     answer = `ACP aside: ${text.slice(text.lastIndexOf('Question: ') + 'Question: '.length)}`
     notify('session/update', { sessionId: params.sessionId, update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: answer } } })

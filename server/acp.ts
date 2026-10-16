@@ -89,8 +89,9 @@ export class AcpSession implements Session {
     const images64 = images.map((file) => ({ type: 'image', data: fs.readFileSync(file).toString('base64'), mimeType: MIME[path.extname(file).slice(1).toLowerCase()] ?? 'image/png' }))
     this.ready
       .then(() => {
-        // ACP has no system prompt: the protocol goes in front of the first prompt of a session.
-        const text = this.fresh ? `${systemPrompt(this.host.p, store.getThread(this.host.p, this.host.tid))}\n\n${context}${input}` : context + input
+        // ACP has no system prompt: the protocol goes in front of the first prompt of a session. Later a slash
+        // command goes alone, since the agent runs one only at the very start of a prompt.
+        const text = this.fresh ? `${systemPrompt(this.host.p, store.getThread(this.host.p, this.host.tid))}\n\n${context}${input}` : input.startsWith('/') ? input : context + input
         this.fresh = false
         return this.rpc.request('session/prompt', { sessionId: this.sessionId, prompt: [{ type: 'text', text }, ...images64] })
       })

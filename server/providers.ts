@@ -252,6 +252,8 @@ const skillProbes: Record<string, (cwd: string) => Promise<SkillInfo[]>> = {
   claude: (cwd) => probeClaude(cwd).then((r) => r.skills),
   codex: (cwd) => codexSkills(cwd).catch(() => []),
   opencode: (cwd) => acpSkills('opencode', cwd).catch(() => []),
+  // Savor sets Grok Build's permission mode itself.
+  grok: (cwd) => acpSkills('grok', cwd).then((l) => l.filter((s) => s.name !== 'always-approve')).catch(() => []),
   antigravity: (cwd) => antigravitySkills(cwd).catch(() => []),
 }
 const skillCache = new Map<string, { at: number; list: Promise<SkillInfo[]> }>()
