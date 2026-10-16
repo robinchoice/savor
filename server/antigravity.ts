@@ -98,7 +98,7 @@ export class AntigravitySession implements Session {
     if (resume) args.push('--conversation', resume)
     if (a.model) args.push('--model', a.model)
     if (a.reasoning) args.push('--effort', a.reasoning)
-    if (a.permissionMode === 'accept-edits' || a.permissionMode === 'plan') args.push('--mode', a.permissionMode)
+    if (['accept-edits', 'auto', 'plan'].includes(a.permissionMode)) args.push('--mode', a.permissionMode)
     if (a.permissionMode === 'bypass') args.push('--dangerously-skip-permissions')
     args.push('--print', prompt)
     try {

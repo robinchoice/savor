@@ -114,6 +114,7 @@ export const STATIC: Record<Provider, Static> = {
     modes: [
       { id: 'default', label: 'Default', detail: "Commands and edits run as agy's settings allow; Antigravity cannot ask here, so the rest is denied." },
       { id: 'accept-edits', label: 'Accept edits', detail: "File edits run without asking. Commands run only with an allow rule in agy's settings." },
+      { id: 'auto', label: 'Auto', detail: 'File edits and safe commands run without asking, another agent reviews commands that leave the sandbox. What Antigravity would ask about is denied.' },
       { id: 'plan', label: 'Plan', detail: 'Explore and plan without changing files.' },
       { id: 'bypass', label: 'Bypass permissions', detail: 'Run every action without asking, commands included. Use only in an isolated environment you trust.', unsafe: true },
     ],

@@ -972,6 +972,7 @@ const de: Record<string, string> = {
   'Explore and plan without changing files.': 'Erkundet und plant, ohne Dateien zu ändern.',
   'Commands and edits run as agy\'s settings allow; Antigravity cannot ask here, so the rest is denied.': 'Befehle und Änderungen laufen, soweit es die Einstellungen von agy erlauben; Antigravity kann hier nicht fragen, der Rest wird abgelehnt.',
   'File edits run without asking. Commands run only with an allow rule in agy\'s settings.': 'Dateiänderungen laufen ohne Rückfrage. Befehle nur mit einer Erlaubnisregel in den Einstellungen von agy.',
+  'File edits and safe commands run without asking, another agent reviews commands that leave the sandbox. What Antigravity would ask about is denied.': 'Dateiänderungen und sichere Befehle laufen ohne Rückfrage, Befehle, die die Sandbox verlassen, prüft ein weiterer Agent. Was Antigravity fragen würde, wird abgelehnt.',
   'Run every action without asking, commands included. Use only in an isolated environment you trust.': 'Führt jede Aktion ohne Rückfrage aus, auch Befehle. Nur in einer isolierten Umgebung nutzen, der du vertraust.',
   'Low': 'Niedrig',
   'High': 'Hoch',

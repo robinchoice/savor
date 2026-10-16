@@ -709,6 +709,10 @@ test('Antigravity continues its conversation with the chosen model, effort and m
   assert.equal((await api('POST', `${t}/btw`, { text: 'which file?' })).body.text, 'Antigravity aside: which file?')
   await until(async () => (await api('GET', '/usage')).body.some((u) => u.provider === 'antigravity'))
   assert.deepEqual((await api('GET', '/usage')).body.find((u) => u.provider === 'antigravity').windows.map((w) => [w.label, w.percent]), [['Weekly · Gemini Models', 25]])
+  // Auto mode is one of agy's own modes.
+  const auto = (await api('POST', `/projects/${project.id}/threads`, { text: 'hello auto', agent: { provider: 'antigravity', permissionMode: 'auto' } })).body
+  await until(async () => (await api('GET', `/projects/${project.id}/threads/${auto.id}`)).body.messages.some((m) => m.text === 'Antigravity echo: hello auto'))
+  assert.equal(flag(agentRuns().findLast((r) => r.agent === 'antigravity'), '--mode'), 'auto')
   // An academic project lets agy run the few commands its setup and export need.
   const dir = path.join(TMP, 'agy-thesis')
   fs.mkdirSync(dir, { recursive: true })
