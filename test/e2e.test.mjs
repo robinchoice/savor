@@ -651,6 +651,8 @@ test('OpenCode runs through the Agent Client Protocol', async () => {
   // The effort is a variant of the model or a config option of the session, and the context the agent reports is shown.
   assert.ok(agentRuns().some((r) => r.agent === 'opencode' && r['session/set_model'] === 'fake/model/high'))
   assert.ok(agentRuns().some((r) => r.agent === 'opencode' && r['session/set_config_option'] === 'reasoning_effort=high'))
+  // The mode is set also when the agent does not announce its modes, as Grok Build does.
+  assert.ok(agentRuns().some((r) => r.agent === 'opencode' && r['session/set_mode'] === 'plan'))
   await until(async () => (await api('GET', t)).body.thread.context?.tokens === 4200)
   assert.equal((await api('GET', t)).body.thread.context.window, 100000)
   // A side question goes to a fork of the session.

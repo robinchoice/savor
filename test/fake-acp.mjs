@@ -105,8 +105,8 @@ rl.on('line', (line) => {
       return reply({ protocolVersion: 1, agentCapabilities: { loadSession: true, promptCapabilities: { image: true }, sessionCapabilities: { fork: {} } }, authMethods: [] })
     case 'session/new':
       mcp = msg.params.mcpServers.find((s) => s.name === 'savor')
-      // Like Grok Build, it offers the effort as a config option.
-      reply({ sessionId, modes: { currentModeId: 'build', availableModes: [{ id: 'build', name: 'Build' }, { id: 'plan', name: 'Plan' }] }, configOptions: [{ id: 'reasoning_effort', category: 'thought_level', type: 'select', currentValue: 'medium', options: [{ value: 'low' }, { value: 'medium' }, { value: 'high' }] }] })
+      // Like Grok Build, it offers the effort as a config option and does not announce its modes.
+      reply({ sessionId, configOptions: [{ id: 'reasoning_effort', category: 'thought_level', type: 'select', currentValue: 'medium', options: [{ value: 'low' }, { value: 'medium' }, { value: 'high' }] }] })
       return notify('session/update', { sessionId, update: { sessionUpdate: 'available_commands_update', availableCommands: [{ name: 'review', description: 'review changes' }] } })
     case 'session/fork':
       log({ fork: msg.params.sessionId })

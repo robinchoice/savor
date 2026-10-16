@@ -71,7 +71,9 @@ export class AcpSession implements Session {
     if (!session) session = await this.rpc.request('session/new', { cwd: this.host.cwd, mcpServers })
     this.sessionId = session.sessionId
     rememberSession(p, tid, a.provider, this.sessionId)
-    if (a.permissionMode && session.modes?.availableModes?.some((m: any) => m.id === a.permissionMode) && session.modes.currentModeId !== a.permissionMode)
+    // Grok Build takes a mode without announcing its modes.
+    const modes = session.modes
+    if (a.permissionMode && (!modes || (modes.currentModeId !== a.permissionMode && modes.availableModes?.some((m: any) => m.id === a.permissionMode))))
       await this.rpc.request('session/set_mode', { sessionId: this.sessionId, modeId: a.permissionMode }).catch(() => {})
     const model = withEffort(a.provider, a.model || (a.reasoning ? session.models?.currentModelId : ''), a.reasoning)
     if (model) await this.rpc.request('session/set_model', { sessionId: this.sessionId, modelId: model }).catch(() => {})
@@ -202,7 +204,7 @@ export function acpAside(provider: Provider, cwd: string, sid: string | undefine
     const forked = sid && init.agentCapabilities?.sessionCapabilities?.fork
     const session = forked ? await rpc.request('session/fork', { sessionId: sid, cwd, mcpServers: [] }) : await rpc.request('session/new', { cwd, mcpServers: [] })
     try {
-      if (session.modes?.availableModes?.some((m: any) => m.id === 'plan')) await rpc.request('session/set_mode', { sessionId: session.sessionId, modeId: 'plan' }).catch(() => {})
+      if (!session.modes || session.modes.availableModes?.some((m: any) => m.id === 'plan')) await rpc.request('session/set_mode', { sessionId: session.sessionId, modeId: 'plan' }).catch(() => {})
       if (model) await rpc.request('session/set_model', { sessionId: session.sessionId, modelId: model }).catch(() => {})
       // A fork replays the history it copied; only the answer counts.
       text = ''
