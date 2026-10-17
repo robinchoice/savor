@@ -487,11 +487,9 @@ function ProjectsMenu({ projects, active, me, setMe, close }: { projects: Projec
           </a>
         ))}
       </div>
-      {me.origin === 'local' && (
-        <div class="panel-actions">
-          <AddProject me={me} setMe={setMe} onAdded={close} />
-        </div>
-      )}
+      <div class="panel-actions">
+        <AddProject me={me} setMe={setMe} onAdded={close} />
+      </div>
       {error && <div class="error-text">{error}</div>}
     </div>
   )

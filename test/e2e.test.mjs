@@ -2474,6 +2474,68 @@ test('a project type brings its role and workflows, and its folders from the ans
   await api('DELETE', `/projects/${thesis.id}`)
 })
 
+test('paired devices create projects only in new folders under the configured projects folder', async () => {
+  const root = path.join(TMP, 'remote projects')
+  const baseline = (await api('POST', '/projects', { path: path.join(root, 'baseline'), create: true })).body
+  const paired = await redeem((await api('POST', '/devices/pairing')).body.code, 'Project creator')
+  const cookie = paired.headers.get('set-cookie').split(';')[0]
+  const create = (body) => api('POST', '/projects', { create: true, ...body }, cookie)
+  for (const folder of ['../escape', 'nested/project', '/absolute', '.', '..', '', 'a\\b']) {
+    assert.equal((await create({ folder })).status, 403, folder)
+  }
+  assert.equal((await create({ path: path.join(root, 'arbitrary'), folder: 'arbitrary' })).status, 403)
+  assert.equal((await create({ folder: 'existing', create: false })).status, 403)
+  const existing = path.join(root, 'existing')
+  fs.mkdirSync(existing)
+  fs.writeFileSync(path.join(existing, 'keep.txt'), 'unchanged')
+  assert.equal((await create({ folder: 'existing' })).status, 400)
+  assert.equal(fs.readFileSync(path.join(existing, 'keep.txt'), 'utf8'), 'unchanged')
+  const link = path.join(root, 'linked')
+  fs.symlinkSync(path.join(TMP, 'missing-target'), link)
+  assert.equal((await create({ folder: 'linked' })).status, 400, 'dangling symlinks cannot be taken over')
+  fs.unlinkSync(link)
+  assert.equal((await create({ folder: 'unknown-type', type: 'toString' })).status, 400)
+  assert.equal(fs.existsSync(path.join(root, 'unknown-type')), false)
+
+  const remote = await browser.newContext({ locale: 'en-US' })
+  const [cookieName, cookieValue] = cookie.split('=')
+  await remote.addCookies([{ name: cookieName, value: cookieValue, url: base }])
+  const devicePage = await remote.newPage()
+  try {
+    for (const [width, height, name] of [[1400, 900, 'Remote Desktop Thesis'], [390, 844, 'Remote Mobile Thesis']]) {
+      await devicePage.setViewportSize({ width, height })
+      await devicePage.goto(base)
+      await devicePage.getByRole('button', { name: 'Projects', exact: true }).click()
+      assert.equal(await devicePage.getByText('Open any folder', { exact: true }).count(), 0)
+      await devicePage.click('text=Start new project')
+      assert.equal(await devicePage.getByText('Change folder', { exact: true }).count(), 0)
+      await devicePage.click('.project-type:has-text("Academic writing")')
+      await devicePage.fill('input[placeholder="Name of the new project"]', name)
+      await devicePage.click('button:has-text("Next")')
+      await devicePage.fill('.type-form label:has-text("Your name") input', 'Remote Author')
+      await devicePage.click('.type-form button:has-text("Create project")')
+      await devicePage.waitForURL(/#\/p\/[^/]+\/export$/)
+      const thesis = (await api('GET', '/projects')).body.find((p) => p.name === name)
+      assert.equal(path.dirname(thesis.path), root)
+      assert.equal(thesis.type, 'academic-writing')
+      assert.match((await api('GET', `/projects/${thesis.id}/role`)).body.role, /This project is a piece of academic writing/)
+      assert.ok(fs.existsSync(path.join(thesis.path, 'manuscript')))
+      const workflows = (await api('GET', `/projects/${thesis.id}/workflows`)).body
+      assert.equal(workflows.length, 4)
+      assert.ok(workflows.every((w) => w.origin === 'remote'))
+      assert.equal((await api('PATCH', `/projects/${thesis.id}`, { role: 'Arbitrary instructions' }, cookie)).status, 403)
+      assert.equal((await create({ folder: path.basename(thesis.path) })).status, 400)
+      assert.equal((await api('GET', '/me')).body.projectsDir, root)
+      await api('DELETE', `/projects/${thesis.id}`)
+    }
+  } finally {
+    await remote.close()
+    const device = (await api('GET', '/devices')).body.find((d) => d.name === 'Project creator')
+    await api('DELETE', `/devices/${device.id}`)
+    await api('DELETE', `/projects/${baseline.id}`)
+  }
+})
+
 test('an academic project checks its citations and exports with pandoc', async () => {
   const dir = path.join(TMP, 'thesis')
   fs.mkdirSync(path.join(dir, 'manuscript'), { recursive: true })

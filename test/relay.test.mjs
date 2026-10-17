@@ -234,15 +234,28 @@ test('the live preview streams through the tunnel', async () => {
   assert.match(await page.getAttribute('img.screen', 'src'), /^data:image\/jpeg;base64,/)
 })
 
-test('remote devices cannot manage devices or add projects', async () => {
+test('remote devices can create projects in the projects folder but cannot manage devices or open other folders', async () => {
   await page.click('.account')
   assert.equal(await page.locator('text=Devices & remote access').count(), 0)
   assert.equal(await page.locator('text=Forget this computer').count(), 1)
   await page.click('.account-dialog >> text=Done')
   await page.click('text=Projects')
   await page.waitForSelector('text=Your projects')
-  assert.equal(await page.locator('text=Start new project').count(), 0)
+  assert.equal(await page.locator('text=Start new project').count(), 1)
   assert.equal(await page.locator('text=Open any folder').count(), 0)
+  await page.click('text=Start new project')
+  assert.equal(await page.locator('text=Change folder').count(), 0)
+  await page.click('.project-type:has-text("Academic writing")')
+  await page.fill('input[placeholder="Name of the new project"]', 'Relay Thesis')
+  await page.click('button:has-text("Next")')
+  await page.click('.type-form button:has-text("Create project")')
+  await page.waitForURL(/#\/p\/[^/]+\/export$/)
+  const thesis = (await local('GET', '/projects')).find((p) => p.name === 'Relay Thesis')
+  assert.equal(thesis.path, path.join(TMP, 'relay-thesis'))
+  assert.equal(thesis.type, 'academic-writing')
+  assert.match((await local('GET', `/projects/${thesis.id}/role`)).role, /This project is a piece of academic writing/)
+  assert.ok((await local('GET', `/projects/${thesis.id}/workflows`)).every((w) => w.origin === 'remote'))
+  await local('DELETE', `/projects/${thesis.id}`)
 })
 
 test('a device pairs with a second computer and switches between both', async () => {

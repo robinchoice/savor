@@ -38,6 +38,10 @@ import { listWarnings } from './health.js'
 
 // dist/web next to the sources in development, ../web next to the bundled dist/server/index.mjs.
 const HERE = path.dirname(fileURLToPath(import.meta.url))
+const projectRoles: Record<string, string> = Object.fromEntries(['academic-writing', 'kontor'].map((type) => {
+  const raw = fs.readFileSync(path.join(HERE, '..', 'templates', `${type}.md`), 'utf8')
+  return [type, raw.replace(/^---\n[\s\S]*?\n---\n/, '').trim() + '\n']
+}))
 const WEB = [path.join(HERE, '..', 'dist', 'web'), path.join(HERE, '..', 'web')].find((d) => fs.existsSync(d)) ?? path.join(HERE, '..', 'dist', 'web')
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -311,9 +315,23 @@ route('GET', '/projects', () =>
   }),
 )
 route('POST', '/projects', (_, b, ctx) => {
-  localOnly(ctx)
-  if (b.create && fs.existsSync(store.expand(String(b.path)))) throw new BadRequest('That folder already exists. Open it with “Open any folder”.')
-  return git.openProject(b.path, b.name, !!b.create)
+  if (b.type !== undefined && (typeof b.type !== 'string' || !Object.hasOwn(projectRoles, b.type))) throw new BadRequest('Unknown project type.')
+  let dir = b.path
+  if (ctx.auth.origin !== 'local') {
+    if (b.create !== true || b.path !== undefined || typeof b.folder !== 'string' || !/^[\p{L}\p{N}]+(?:-[\p{L}\p{N}]+)*$/u.test(b.folder))
+      throw new Forbidden('Remote devices can only create a new folder in the projects folder.')
+    const root = store.expand(store.projectsDir())
+    dir = path.join(root, b.folder)
+    if (fs.lstatSync(dir, { throwIfNoEntry: false })) throw new BadRequest('That folder already exists. Choose another project name.')
+    fs.mkdirSync(root, { recursive: true })
+    fs.mkdirSync(dir)
+  } else if (b.create && fs.existsSync(store.expand(String(dir)))) throw new BadRequest('That folder already exists. Open it with “Open any folder”.')
+  let p = git.openProject(dir, b.name, !!b.create)
+  if (b.create && b.type) {
+    store.saveRole(p, projectRoles[b.type])
+    p = store.updateProject(p.id, { type: b.type })
+  }
+  return p
 })
 route('PUT', '/projects/order', (_, b) => {
   store.fixProjects((b.ids ?? []).map(String))

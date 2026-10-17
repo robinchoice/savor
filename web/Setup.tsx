@@ -137,14 +137,13 @@ export function AddProject({ me, setMe, onAdded }: { me: Me; setMe: (m: Me) => v
   const [editDir, setEditDir] = useState(false)
   const [path, setPath] = useState('')
   const [error, setError] = useState('')
-  const add = async (body: { path: string; name?: string; create?: boolean }) => {
+  const add = async (body: { path?: string; folder?: string; name?: string; create?: boolean; type?: string }) => {
     try {
       const p = await api<Project>('POST', '/projects', body)
       if (body.create) setMe({ ...me, projectsDir: dir })
       // A project type brings its ROLE.md and workflows. Code starts with a conversation, the other types
       // get their folders from the answers in the form and open on their own tab.
       if (body.create) {
-        await api('PATCH', `/projects/${p.id}`, { ...(template.role && { role: template.role }), ...(template !== CODE && { type: template.slug }) })
         for (const r of template.workflows.map((slug) => recipe(slug)!)) {
           const enabled = r.slug === 'kontor-briefing' ? kontor.briefing : !template.paused
           await api('POST', `/projects/${p.id}/workflows`, { name: r.title, prompt: r.prompt, collection: template.title, cron: r.schedule || null, onModelChange: r.onModelChange, enabled })
@@ -175,7 +174,7 @@ export function AddProject({ me, setMe, onAdded }: { me: Me; setMe: (m: Me) => v
   const create = (e: Event) => {
     e.preventDefault()
     if (step === 'new' && !template.setup) return setStep('details')
-    if (folder) add({ path: `${dir.replace(/\/$/, '')}/${folder}`, name: name.trim(), create: true })
+    if (folder) add({ ...(me.origin === 'local' ? { path: `${dir.replace(/\/$/, '')}/${folder}` } : { folder }), name: name.trim(), create: true, ...(template !== CODE && { type: template.slug }) })
   }
   const setA = (patch: Partial<typeof academic>) => setAcademic({ ...academic, ...patch })
   const toggleArea = (id: string) => setKontor({ ...kontor, areas: kontor.areas.includes(id) ? kontor.areas.filter((a) => a !== id) : [...kontor.areas, id] })
@@ -216,10 +215,11 @@ export function AddProject({ me, setMe, onAdded }: { me: Me; setMe: (m: Me) => v
               <b class="mono">
                 {dir}/{folder || '…'}
               </b>{' '}
-              ·{' '}
-              <button type="button" class="link" onClick={changeDir}>
-                {t('Change folder')}
-              </button>
+              {me.origin === 'local' && <>{' '}·{' '}
+                <button type="button" class="link" onClick={changeDir}>
+                  {t('Change folder')}
+                </button>
+              </>}
             </small>
           )}
           <div class="row">
@@ -349,9 +349,9 @@ export function AddProject({ me, setMe, onAdded }: { me: Me; setMe: (m: Me) => v
           <button class="ghost wide" onClick={() => setStep('new')}>
             <Plus size={16} /> {t('Start new project')}
           </button>
-          <button class="ghost wide" onClick={openFolder}>
+          {me.origin === 'local' && <button class="ghost wide" onClick={openFolder}>
             <Folder size={16} /> {t('Open any folder')}
-          </button>
+          </button>}
         </>
       )}
       {error && <div class="error-text">{error}</div>}

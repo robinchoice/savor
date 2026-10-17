@@ -41,7 +41,8 @@
         "to": "savor",
         "filter": [
           "server/**",
-          "web/**"
+          "web/**",
+          "templates/**"
         ]
       },
       {
