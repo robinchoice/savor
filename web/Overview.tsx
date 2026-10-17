@@ -5,7 +5,7 @@ import { api, avatarStyle, formatStamp, go, initial, kindOf, noticeOf, NOTICES, 
 import { Composer } from './Composer'
 import { byUrgency, ContextActions, Elapsed, NextButton, plain, ThreadCard, ThreadView } from './Conversations'
 import { Panel } from './Layout'
-import { STATUS, schedule, when } from './Workflows'
+import { resultLabel, schedule, when } from './Workflows'
 import { setPrefs, usePrefs } from './prefs'
 import { offerUndo, UndoToast } from './Swipe'
 import { plural, t } from './i18n'
@@ -724,7 +724,7 @@ function AllWorkflows({ workflows, byId }: { workflows?: Of<Workflow>[]; byId: M
                     <span class="ov-meta wide-only">
                       <Clock size={12} /> {schedule(w)}
                     </span>
-                    <span class="ov-meta wide-only">{w.lastRun ? `${STATUS[w.lastRun.status][1]} · ${when(w.lastRun.at)}` : t('Never ran')}</span>
+                    <span class="ov-meta wide-only">{w.lastRun ? `${resultLabel(w.lastRun)} · ${when(w.lastRun.at)}` : t('Never ran')}</span>
                     <span class={w.enabled ? 'on-badge' : 'off-badge'}>{w.enabled ? t('On') : t('Off')}</span>
                   </a>
                 )

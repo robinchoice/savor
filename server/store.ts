@@ -116,7 +116,7 @@ export interface Thread {
   // caught up carries the scheduled time it was due, one started early the scheduled time it took the place of,
   // one started by a model change the new model.
   // A run with a budget carries it (USD), for the agents that can hold to one.
-  workflow?: { id: string; name: string; trigger: 'scheduled' | 'manual' | 'caught' | 'early' | 'model'; due?: string; model?: string; budgetUsd?: number }
+  workflow?: { id: string; name: string; trigger: 'scheduled' | 'manual' | 'caught' | 'early' | 'model'; due?: string; lastDue?: string; model?: string; budgetUsd?: number; origin?: Origin; steps?: WorkflowStep[]; activeStep?: string; attempts?: WorkflowAttempt[]; attemptCounts?: Partial<Record<WorkflowAttempt['kind'], number>>; modelStarted?: boolean }
   // Set for a conversation that a workflow run started, directly or through others: like the run, it has no one watching.
   unattended?: boolean
   // What the conversation's agent sessions used so far, per provider, as each reports it: Claude Code and
@@ -146,6 +146,28 @@ export interface Decision {
   origin?: Origin
 }
 export interface Doc extends Partial<Provenance> { id: string; title: string; content: string; updatedAt: string }
+export interface WorkflowResult {
+  status: 'successful' | 'partial' | 'blocked' | 'skipped' | 'waiting' | 'failed'
+  reason: string
+  evidence: string[]
+  followUp: string[]
+}
+export interface WorkflowAttempt {
+  at: string
+  kind: 'start' | 'resume' | 'restart' | 'human' | 'check'
+  stepId?: string
+  check?: WorkflowStep['preflight']
+}
+export interface WorkflowStep {
+  id: string
+  name: string
+  startedAt: string
+  begun?: boolean
+  finishedAt?: string
+  result?: WorkflowResult
+  preflight?: { checkedAt?: string; status: 'ready' | 'skipped' | 'blocked' | 'failed'; reason: string; evidence: string[]; followUp: string[] }
+  delegated?: { projectId: string; threadId: string; evidence?: string }[]
+}
 export interface Workflow {
   id: string
   name: string
@@ -176,6 +198,7 @@ export interface Workflow {
   monthlyBudgetUsd: number | null
   // The conversation in which an agent last created or changed it, so that conversation shows it.
   threadId: string | null
+  preflight?: { file: string; maxAgeSeconds: number } | null
 }
 export interface Proc {
   pid: number
@@ -694,12 +717,12 @@ export function saveWorkflow(p: Project, wf: Partial<Workflow> & { name: string;
     ...prev,
     ...wf,
   }
-  if (by && (!prev || next.prompt !== prev.prompt || String(next.next) !== String(prev.next))) next.origin = by
+  if (by && (!prev || next.prompt !== prev.prompt || String(next.next) !== String(prev.next) || JSON.stringify(next.preflight) !== JSON.stringify(prev.preflight))) next.origin = by
   // A label describes one schedule, so it goes when the schedule changes without it.
   if (prev && next.cron !== prev.cron && next.scheduleLabel === prev.scheduleLabel) next.scheduleLabel = null
   // A run only records its time; anything else is an edit.
   const edited = (['name', 'prompt', 'collection', 'cron', 'timezone', 'scheduleLabel', 'enabled', 'catchUp', 'button', 'onModelChange', 'budgetUsd', 'monthlyBudgetUsd'] as const).some((k) => next[k] !== prev?.[k])
-  if (prev && (edited || String(next.next) !== String(prev.next))) next.updatedAt = now()
+  if (prev && (edited || String(next.next) !== String(prev.next) || JSON.stringify(next.preflight) !== JSON.stringify(prev.preflight))) next.updatedAt = now()
   // A changed or re-enabled schedule counts from now: what it would have run before is not caught up.
   if (prev && (next.cron !== prev.cron || next.timezone !== prev.timezone || next.enabled !== prev.enabled)) next.settledAt = now()
   // Setting the trigger only notes the current model: the next one starts a run.

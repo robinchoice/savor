@@ -27,6 +27,7 @@ import { acpAside } from './acp.js'
 import { antigravityAside } from './antigravity.js'
 import { isUnsafe, listAgents, listSkills, listUsage, mergeAgent } from './providers.js'
 import { month, nextRun, runEarly, runs, runWorkflow, syncSchedules, validateCron } from './scheduler.js'
+import { preflightSchema } from './workflow-results.js'
 import * as git from './git.js'
 import * as ci from './ci.js'
 import * as move from './move.js'
@@ -946,8 +947,10 @@ const saveWorkflowRoute = (params: Params, b: any, ctx: Ctx, id?: string) => {
     throw new BadRequest(`Invalid schedule: ${(e as Error).message}`)
   }
   const { name, prompt, collection, cron, timezone, scheduleLabel, enabled, catchUp, button, onModelChange, next, budgetUsd, monthlyBudgetUsd } = b
+  const check = preflightSchema.optional().safeParse(b.preflight)
+  if (!check.success) throw new BadRequest('Invalid workflow preflight configuration.')
   for (const usd of [budgetUsd, monthlyBudgetUsd]) if (usd != null && !(typeof usd === 'number' && usd > 0 && usd < Infinity)) throw new BadRequest('A budget is an amount in USD above 0, or none.')
-  const fields = Object.fromEntries(Object.entries({ name, prompt, collection, cron, timezone, scheduleLabel, enabled, catchUp, button, onModelChange, next, budgetUsd, monthlyBudgetUsd }).filter(([, v]) => v !== undefined))
+  const fields = Object.fromEntries(Object.entries({ name, prompt, collection, cron, timezone, scheduleLabel, enabled, catchUp, button, onModelChange, next, budgetUsd, monthlyBudgetUsd, preflight: check.data }).filter(([, v]) => v !== undefined))
   const wf = store.saveWorkflow(project(params), { ...(fields as { name: string; prompt: string }), ...(id && { id }) }, ctx.auth.origin)
   syncSchedules()
   emit({ type: 'workflows', projectId: params.pid })

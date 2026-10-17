@@ -3,7 +3,7 @@ import { ArrowLeft, Play, Plus, Clock, Link2, Pencil, Trash2, LayoutGrid, Sparkl
 import { api, duration, go, runTrigger, useApi, type Project, type Run, type SavorEvent, type Thread, type Workflow } from './api'
 import { CATEGORIES, RECIPES, recipe, type Recipe } from './recipes'
 import { describeCron } from './cron'
-import { t } from './i18n'
+import { t, tx } from './i18n'
 
 const SCHEDULES: [string, string][] = [
   ['', t('Manual: run it yourself')],
@@ -15,6 +15,9 @@ const SCHEDULES: [string, string][] = [
 ]
 
 export const STATUS: Record<Run['status'], [ring: string, label: string]> = { working: ['busy', t('Working')], needs: ['needs', t('Your turn')], stopped: ['', t('Stopped')], budget: ['error', t('Budget reached')], failed: ['error', t('Failed')], finished: ['done', t('Finished')], skipped: ['skipped', t('Skipped')] }
+const OUTCOME = { successful: t('Successful'), partial: t('Partial'), blocked: t('Blocked'), skipped: t('Skipped'), waiting: t('Waiting for you'), failed: t('Failed'), unknown: t('Outcome unknown') }
+export const resultLabel = (r: Run) => [r.modelStarted === false ? t('No agent started') : STATUS[r.status][1], r.outcome && OUTCOME[r.outcome]].filter(Boolean).join(' · ')
+const resultRing = (r: Run) => r.status !== 'finished' || !r.outcome ? STATUS[r.status][0] : r.outcome === 'successful' ? 'done' : r.outcome === 'blocked' || r.outcome === 'failed' ? 'error' : r.outcome === 'waiting' ? 'needs' : r.outcome === 'skipped' ? 'skipped' : ''
 export const when = (iso: string) => new Date(iso).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
 const cronLabel = (w: Workflow) => (w.cron ? w.scheduleLabel || describeCron(w.cron) : '')
 export const schedule = (w: Workflow) => [cronLabel(w), w.onModelChange && t('On a model change')].filter(Boolean).join(' · ') || t('Manual')
@@ -105,7 +108,7 @@ export function Workflows({ project, rest }: { project: Project; rest: string[] 
                 </div>
                 {w.lastRun && (
                   <div class={`last-run ${w.lastRun.status}`}>
-                    <span class={`ring ${STATUS[w.lastRun.status][0]}`} /> {STATUS[w.lastRun.status][1]} · {when(w.lastRun.at)}
+                    <span class={`ring ${resultRing(w.lastRun)}`} /> {resultLabel(w.lastRun)} · {when(w.lastRun.at)}
                   </div>
                 )}
                 {w.nextRunAt && <small class="muted">{t('Next run {when}', { when: when(w.nextRunAt) })}</small>}
@@ -163,8 +166,8 @@ function Overview({ base, project, workflow: w, onRun }: { base: string; project
             {w.collection && <span>{t(w.collection)}</span>}
             {w.lastRun && usage(w.lastRun) && <span>{t('Last run {usage}', { usage: usage(w.lastRun) })}</span>}
             {w.month && (w.month.usd || w.month.tokens || w.monthlyBudgetUsd) ? (
-              <span class={w.monthlyBudgetUsd && w.month.usd >= w.monthlyBudgetUsd ? 'danger' : ''}>
-                {t('This month {usage}', { usage: usage({ usd: w.month.usd || w.monthlyBudgetUsd ? w.month.usd : undefined, tokens: w.month.tokens }) })}
+              <span class={w.monthlyBudgetUsd && w.month.usd != null && w.month.usd >= w.monthlyBudgetUsd ? 'danger' : ''}>
+                {t('This month {usage}', { usage: usage(w.month) || t('Usage unknown') })}
                 {w.monthlyBudgetUsd ? ` ${t('of')} $${w.monthlyBudgetUsd}` : ''}
               </span>
             ) : null}
@@ -191,14 +194,14 @@ function Overview({ base, project, workflow: w, onRun }: { base: string; project
         <div class="runs-head">{t('Runs')}</div>
         {runs?.map((r) => (
           <a key={`${r.at} ${r.threadId}`} href={`#/p/${project.id}/t/${r.threadId}`} class={`run ${r.status}`}>
-            <span class={`ring ${STATUS[r.status][0]}`} title={STATUS[r.status][1]} />
+            <span class={`ring ${resultRing(r)}`} title={resultLabel(r)} />
             <span class="when">
               <b>{when(r.at)}</b>
               <small>
-                {STATUS[r.status][1]} · {runTrigger(r)}
+                {resultLabel(r)} · {runTrigger(r)}
               </small>
             </span>
-            <span class="sum">{r.status === 'skipped' ? (blocker(r) ? t('The run from {when} was still open.', { when: when(blocker(r)!.at) }) : t('The run before was still open.')) : r.status === 'working' ? t('Working…') : r.summary}</span>
+            <span class="sum" title={r.steps?.flatMap((s) => s.result ? [s.name, ...s.result.evidence, ...s.result.followUp] : []).join('\n')}>{r.steps?.some((s) => s.result) ? r.steps.filter((s) => s.result).map((s) => `${s.name}: ${tx(s.result!.reason)}${s.result!.followUp.length ? ` · ${s.result!.followUp.map(tx).join(' · ')}` : ''}`).join(' · ') : r.status === 'skipped' ? (blocker(r) ? t('The run from {when} was still open.', { when: when(blocker(r)!.at) }) : t('The run before was still open.')) : r.status === 'working' ? t('Working…') : r.summary}</span>
             <span class="dur">{[r.workedMs ? duration(r.workedMs) : '', usage(r)].filter(Boolean).join(' · ')}</span>
           </a>
         ))}

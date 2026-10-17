@@ -16,6 +16,7 @@ import * as git from './git.js'
 import * as terminal from './terminal.js'
 import * as ci from './ci.js'
 import { modelSeen, spent } from './scheduler.js'
+import { attempt } from './workflow-results.js'
 import { listAgents, listUsage, mergeAgent, STATIC } from './providers.js'
 
 const IDLE_CLOSE_MS = Number(process.env.SAVOR_IDLE_CLOSE_MS ?? 5 * 60_000)
@@ -115,9 +116,10 @@ export function notify(p: Project, tid: string, type: NoticeType, body: string, 
 
 // ---- input and the queue ----
 
-export interface Input { text: string; images?: string[]; files?: string[]; origin: Origin; device?: string; from?: Message['from']; chained?: boolean }
+export interface Input { text: string; images?: string[]; files?: string[]; origin: Origin; device?: string; from?: Message['from']; chained?: boolean; workflowStart?: boolean }
 
 export function send(p: Project, tid: string, input: Input) {
+  if (!input.workflowStart && !input.from) attempt(p, tid, 'human')
   // New input replaces the turn that waits for a usage limit to reset; it may go to another agent.
   setResume(p, tid, null)
   const thread = store.updateThread(p, tid, { completed: false, inputAt: store.now() })
@@ -577,6 +579,7 @@ function cancelPending(p: Project, tid: string) {
 
 // The agent resumes its own session on the input it still owes a conclusion for, and is told why.
 function continueRequest(p: Project, thread: Thread, input: Message, note: string) {
+  attempt(p, thread.id, note === INTERRUPTED ? 'restart' : 'resume')
   const r = request(p, thread.id)
   r.startedAt ??= thread.workingSince ?? store.now()
   store.updateThread(p, thread.id, { workingSince: r.startedAt })

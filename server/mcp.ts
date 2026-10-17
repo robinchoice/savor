@@ -11,7 +11,8 @@ import { appUrl, VERSION } from './config.js'
 import * as agents from './agents.js'
 import * as browser from './browser.js'
 import * as processes from './processes.js'
-import { runWorkflow, syncSchedules, validateCron } from './scheduler.js'
+import { runWorkflow, runs, syncSchedules, validateCron } from './scheduler.js'
+import { beginStep, delegated, preflightSchema, recordResult, resultSchema, saveStep } from './workflow-results.js'
 import { listAgents, mergeAgent, STATIC } from './providers.js'
 import { addWorktree, git, openProject } from './git.js'
 import * as ci from './ci.js'
@@ -154,6 +155,9 @@ function buildServer(p: Project, tid: string) {
         }))
         decisions.forEach((d) => store.saveDecision(p, d))
         store.updateMessage(p, tid, msg.id, { decisionIds: decisions.map((d) => d.id) })
+        const run = store.getThread(p, tid).workflow
+        const step = run?.steps?.find((s) => s.id === run.activeStep)
+        if (step?.begun && (!step.preflight || step.preflight.status === 'ready')) recordResult(p, tid, step.id, { status: 'waiting', reason: 'Waiting for the user’s decision.', evidence: [msg.id], followUp: questions.map((q) => q.title) })
       }
       agents.markConcluded(tid, msg.id)
       store.updateThread(p, tid, { unread: true, needsYou: store.listDecisions(p, tid).some((d) => !d.resolved), ...(summary && { summary }) })
@@ -198,7 +202,7 @@ function buildServer(p: Project, tid: string) {
 
   const wfUrl = (id: string) => appUrl(`/p/${p.id}/workflows/${id}`)
   // A workflow as an agent read it: update_workflow applies only while it is still that.
-  const revisionOf = (wf: store.Workflow) => store.hash(JSON.stringify([wf.name, wf.prompt, wf.collection, wf.cron, wf.timezone, wf.scheduleLabel, wf.enabled, wf.catchUp, wf.button, wf.onModelChange, wf.next]))
+  const revisionOf = (wf: store.Workflow) => store.hash(JSON.stringify([wf.name, wf.prompt, wf.collection, wf.cron, wf.timezone, wf.scheduleLabel, wf.enabled, wf.catchUp, wf.button, wf.onModelChange, wf.next, wf.preflight]))
   const workflowShape = {
     name: z.string().min(1),
     prompt: z.string().min(1).describe('Instructions the agent receives on each run'),
@@ -211,6 +215,7 @@ function buildServer(p: Project, tid: string) {
     button: z.boolean().optional().describe('Whether the top bar shows a button that runs it now, in place of its next scheduled time within 12 hours (default false)'),
     onModelChange: z.boolean().optional().describe('Whether it also runs once each time the project’s agent runs on a new model (default false)'),
     next: z.array(z.string()).optional().describe('IDs of workflows to continue with after this one (a chain)'),
+    preflight: preflightSchema.optional().describe('Read a fresh JSON signal from .workflow-checks/<name>.json before starting the agent. No commands are executed. Null removes it.'),
   }
 
   server.registerTool('list_workflows', { description: 'List workflows (saved prompts, optionally scheduled and chained).' }, async () =>
@@ -266,7 +271,35 @@ function buildServer(p: Project, tid: string) {
 
   change('run_workflow', { description: 'Run a workflow now in a new conversation.', inputSchema: { id: z.string() } }, async ({ id }) => {
     const t = runWorkflow(p.id, id, agents.originOf(p, tid), undefined, agents.chainedOf(p, tid))
+    if (t.id !== tid) delegated(p, tid, p, t.id)
     return ok({ threadId: t.id, url: threadUrl(t.id) })
+  })
+
+  server.registerTool('list_workflow_runs', { description: 'Read workflow run lifecycle, step outcomes, evidence, follow-up, attempts, duration and reported usage. A finished turn is not a successful outcome.', inputSchema: { id: z.string() } }, async ({ id }) => ok(runs(p, store.getWorkflow(p, id))))
+
+  change('begin_workflow_step', { description: 'Before executing a linked workflow in this run, check its preflight. Execute the returned prompt only when run is true. Already settled steps return run false. Paused steps are blocked.', inputSchema: { id: z.string() } }, async ({ id }) => {
+    const t = store.getThread(p, tid)
+    if (!t.workflow?.steps?.some((s) => s.id === id)) throw new Error('The workflow is not a step of this run.')
+    const prev = t.workflow.steps.find((s) => s.id === id)!
+    const wf = store.listWorkflows(p).find((w) => w.id === id)
+    if (!wf || (wf.origin === 'remote' && agents.originOf(p, tid) === 'local')) {
+      const step = saveStep(p, tid, { ...prev, finishedAt: store.now(), result: { status: 'blocked', reason: !wf ? 'The linked workflow is missing.' : 'The linked workflow now has remote instructions.', evidence: [id], followUp: [!wf ? 'Restore the linked workflow or explicitly resolve this run.' : 'Resume the run so its input carries remote origin.'] } })
+      touchThread()
+      return ok({ ...step, run: false })
+    }
+    const step = beginStep(p, tid, wf)
+    touchThread()
+    return ok({ ...step, ...(step.run && { prompt: wf.prompt, next: wf.next }) })
+  })
+
+  change('report_workflow_result', {
+    description: 'Persist the business outcome of one begun workflow step, separately from ending the turn. Delegation is partial until explicitly verified; closing its conversation is insufficient. Include evidence and remaining follow-up. Waiting means an intentional wait for the user; blocked means an unmet prerequisite.',
+    inputSchema: { id: z.string(), result: resultSchema, verifiedDelegations: z.array(z.object({ threadId: z.string(), evidence: z.string().trim().min(1).max(2000) })).max(100).optional() },
+  }, async ({ id, result, verifiedDelegations }) => {
+    const step = recordResult(p, tid, id, result, verifiedDelegations)
+    touchThread()
+    emit({ type: 'workflows', projectId: p.id })
+    return ok(step)
   })
 
   // ---- backlog ----
@@ -416,6 +449,7 @@ function buildServer(p: Project, tid: string) {
         worktree: worktree ? addWorktree(target, worktree) : here ? store.getThread(p, tid).worktree : null,
         unattended: agents.unattended(store.getThread(p, tid)),
       })
+      delegated(p, tid, target, t.id)
       emit({ type: 'thread', projectId: target.id, threadId: t.id })
       const origin = agents.originOf(p, tid)
       const device = agents.deviceOf(p, tid)
@@ -447,6 +481,7 @@ function buildServer(p: Project, tid: string) {
       const target = project ? findProject(project) : p
       return ok({
         busy: agents.isBusy(id),
+        workflow: store.getThread(target, id).workflow,
         messages: store.readMessages(target, id).map(({ kind, text, questions, ts, from }) => ({ kind, text, questions, ts, from })),
       })
     },
@@ -468,6 +503,7 @@ function buildServer(p: Project, tid: string) {
       const origin = agents.originOf(p, tid)
       const device = agents.deviceOf(p, tid)
       const msg = agents.send(target, id, { text, origin, device, chained: true, from: { projectId: p.id, project: p.name, threadId: tid, label: me.label?.name ?? me.title } })
+      delegated(p, tid, target, id)
       // A message set off by a paired device's input is announced in the receiving conversation, wherever it is.
       if (origin === 'remote') {
         store.updateThread(target, id, { unread: true })

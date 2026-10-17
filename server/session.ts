@@ -33,6 +33,7 @@ export function systemPrompt(p: Project, thread: Thread) {
   const wt = thread.worktree
   return [
     PROTOCOL,
+    thread.workflow?.steps && `- This is workflow run ${thread.workflow.id}, active step ${thread.workflow.activeStep}. Persist the business outcome of each step with report_workflow_result (workflow id, status, reason, evidence and followUp). A finished turn or a delegated task is not success. Before executing any linked workflow, call begin_workflow_step and execute its prompt only when run is true. Already settled steps must not run again. Read list_workflow_runs when resuming; verify delegated outcomes explicitly. Use waiting for an intentional wait for the user and blocked for missing prerequisites.`,
     `- ${VERBOSITY[p.verbosity]}`,
     wt && `- This conversation works in its own git worktree of the project at ${wt.path} (branch ${wt.branch}). Do all work there; the project folder ${p.path} is the main checkout, leave it alone.`,
     thread.fanout && `- Other agents got the same prompt in worktrees of their own, and the user compares the results and merges the best one. Commit your work on your branch before you conclude, so it can be merged.`,

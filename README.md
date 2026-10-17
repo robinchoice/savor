@@ -252,6 +252,46 @@ Project layout:
 
 A conversation in a worktree runs its agent there: the agent's working directory, the branch switcher and registered processes all refer to the worktree. Deleting a worktree removes it and its branch; its conversations stay and continue in the project folder with a fresh agent session that gets the visible history handed over.
 
+## Workflow preflights and outcomes
+
+A workflow may set `preflight` through `create_workflow` / `update_workflow` or the workflow REST API:
+
+```json
+{ "preflight": { "file": ".workflow-checks/night.json", "maxAgeSeconds": 60 } }
+```
+
+An existing, independently authorized script writes that project-relative file atomically before the scheduled run. Savor only reads it; it never launches a command, installs a producer or grants permissions. Only `.workflow-checks/<name>.json` is accepted (regular files, no directory/file symlinks or hard links, at most 64 KiB). Keep one overwritten file per check. Removing `preflight` with `null` restores the ordinary start behavior.
+
+```json
+{
+  "checkedAt": "2026-10-17T15:00:00.000Z",
+  "status": "ok",
+  "work": false,
+  "pending": false,
+  "reason": "Versions and relevant commits unchanged; no open counterchecks.",
+  "evidence": ["versions 1.2.3 / 4.5.6, commit abc123, countercheck queue empty"],
+  "followUp": []
+}
+```
+
+All fields are required. `status: "ok"` starts the agent when `work` or `pending` is true; both false document a skipped start without calling a model. `pending: true` must include follow-up work and takes precedence over unchanged versions. A producer must check **both** changed inputs and unresolved work, refresh its signal before each due time, and invalidate it when relevant inputs change. The timestamp is a freshness limit, not a substitute for checking those inputs. Waiting for another batch is an explicit no-work decision with evidence, or `blocked` if a prerequisite is missing. Producer errors use `failed`, never `work: false`. `blocked` and `failed` require `followUp`. Missing, expired or future-dated files block; unreadable or malformed files fail. Neither starts an agent. The same origin rules as workflow prompts apply to changes to the preflight configuration.
+
+Each run keeps step results in its existing conversation metadata. `begin_workflow_step({id})` checks a linked step before its prompt is executed; `run: false` means stop that step. Steps already settled do not run twice, including cycles. Agents use `report_workflow_result({id, result: {status, reason, evidence, followUp}})`:
+
+| Status | Meaning |
+| --- | --- |
+| `successful` | Verified outcome, no follow-up left. |
+| `partial` | Some work done; follow-up remains, including delegation awaiting verification. |
+| `blocked` | A prerequisite is missing; follow-up names what unblocks it. |
+| `skipped` | Deliberately no work, with evidence and no unresolved follow-up. |
+| `waiting` | Intentionally waiting for a user decision; scheduled starts wait too. |
+| `failed` | A check or step failed; follow-up names the repair. |
+| `unknown` | Derived when no business result was reported; a finished turn is insufficient. |
+
+Evidence is required for reported results; unresolved statuses also require follow-up. Starting a conversation, sending it work or starting another workflow records delegation as partial. Closing that conversation cannot settle the step: the parent must provide `verifiedDelegations: [{threadId, evidence}]` with the verified outcome. A conclusion with questions records intentional waiting. Closing the parent conversation does not erase blocked or partial results. Retrying an unresolved run reuses its conversation, rechecks its preflight and preserves remote origin. A no-work signal cannot close work the agent already started. Ordinary workflows without a preflight or an explicit unresolved result continue to start new conversations as before.
+
+`list_workflow_runs({id})`, `read_conversation` and `GET /api/projects/:pid/workflows/:id/runs` expose the data. The existing workflow list shows turn lifecycle and business outcome separately, with reasons and follow-up; evidence is also in the row's tooltip. Runs expose reported `usd` / `tokens`, measured `workedMs` and, when steps have results, wall-clock `elapsedMs`. Missing values are omitted, not zero. Monthly reported sums include counts of runs with unknown USD/token usage. `modelStarted: false` identifies starts avoided by the gate; it makes no claim about hypothetical token or money savings. `attempts` keeps the latest 200 check/start/resume/restart/human-input events with timestamps; `attemptCounts` preserves cumulative counts. A human input is a measurable interaction, not proof of a rescue. Existing restart recovery continues the same request, rather than repeating external commands automatically. Seven-day evaluation can read these fields through existing reporting workflows.
+
 ## Development
 
 ```sh

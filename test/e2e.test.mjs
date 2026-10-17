@@ -1051,7 +1051,10 @@ test('a workflow lists its runs, catches up a missed time and skips one while a 
   assert.equal(all[0].trigger, 'caught')
   assert.ok(Date.parse(all[0].due) < Date.now() - 60_000)
   const caught = all[0].threadId
-  assert.deepEqual((await api('GET', `/projects/${project.id}/threads/${caught}`)).body.thread.workflow, { id: wf.id, name: 'Yearly check', trigger: 'caught', due: all[0].due })
+  const { steps, activeStep, attempts, attemptCounts, modelStarted, origin, ...source } = (await api('GET', `/projects/${project.id}/threads/${caught}`)).body.thread.workflow
+  assert.deepEqual(source, { id: wf.id, name: 'Yearly check', trigger: 'caught', due: all[0].due })
+  assert.equal(steps[0].id, wf.id)
+  assert.equal(all[0].outcome, 'unknown')
 
   // While a run waits for an answer, the next scheduled time is skipped and points at that run.
   patchFile(threadFile(caught), { needsYou: true })
@@ -1247,6 +1250,17 @@ test('what a paired device changes never runs as local', async () => {
   const chain = (await api('POST', `/projects/${pid}/workflows`, { name: 'Local chain', prompt: 'local chain', next: [job.id] })).body
   const run = (await api('POST', `/projects/${pid}/workflows/${chain.id}/run`)).body
   for (const t of [scheduled, run]) assert.equal((await api('GET', `/projects/${pid}/threads/${t.id}`)).body.messages[0].origin, 'remote')
+  // Changing only a preflight also changes provenance; the gate never grants a broader agent mode.
+  const gated = (await api('POST', `/projects/${pid}/workflows`, { name: 'Local gated job', prompt: 'gated job' })).body
+  const dir = path.join(PROJECT, '.workflow-checks')
+  fs.mkdirSync(dir, { recursive: true })
+  fs.writeFileSync(path.join(dir, 'remote.json'), JSON.stringify({ checkedAt: new Date().toISOString(), status: 'ok', work: true, pending: false, reason: 'New work.', evidence: ['new commit'], followUp: [] }))
+  const changed = (await api('PUT', `/projects/${pid}/workflows/${gated.id}`, { preflight: { file: '.workflow-checks/remote.json', maxAgeSeconds: 60 } }, device)).body
+  assert.equal(changed.origin, 'remote')
+  const gatedRun = (await api('POST', `/projects/${pid}/workflows/${gated.id}/run`)).body
+  const gatedThread = (await api('GET', `/projects/${pid}/threads/${gatedRun.id}`)).body
+  assert.equal(gatedThread.messages[0].origin, 'remote')
+  assert.equal(gatedThread.thread.agent.permissionMode, project.agent.permissionMode)
 })
 
 test('pages on other ports of this host cannot use the login cookie', async (t) => {

@@ -4,6 +4,7 @@ import type { Origin, Project, Provider, Thread, Workflow } from './store.js'
 import { emit } from './events.js'
 import * as agents from './agents.js'
 import { BUDGET_REACHED } from './session.js'
+import { attempt, beginStep, saveStep, settled } from './workflow-results.js'
 
 let jobs: Cron[] = []
 // A run that starts this long after its scheduled time was caught up.
@@ -51,10 +52,10 @@ function dueSlot(wf: Workflow) {
 }
 
 // Still at it: in a turn, or waiting for background work it started.
-const working = (p: Project, t: Thread) => agents.isBusy(t.id) || agents.waiting(p, t)
+const working = (p: Project, t: Thread) => agents.isBusy(t.id) || agents.waiting(p, t) || !!t.workingSince
 
 // A run of the workflow that still works or waits for the user.
-const openRun = (p: Project, wf: Workflow) => store.listThreads(p).find((t) => t.workflow?.id === wf.id && !t.completed && (working(p, t) || t.needsYou))
+const openRun = (p: Project, wf: Workflow) => store.listThreads(p).find((t) => t.workflow?.id === wf.id && (working(p, t) || t.needsYou || t.workflow.steps?.some((s) => s.result?.status === 'waiting')))
 
 // A scheduled time has come, now or while Savor was not running. It runs unless the project is paused, the
 // workflow does not catch up what it missed, or a run of it is still open: then the time is skipped.
@@ -66,9 +67,9 @@ function onSchedule(projectId: string, workflowId: string) {
   const late = Date.now() - slot.getTime() > LATE
   const runs = !p.paused && (!late || wf.catchUp)
   const open = runs && openRun(p, wf)
-  store.saveWorkflow(p, { ...wf, settledAt: store.now(), ...(open && { skipped: [...wf.skipped, { at: slot.toISOString(), blockedBy: open.id }].slice(-50) }) })
+  if (!open && runs) runWorkflow(projectId, workflowId, 'local', late ? { trigger: 'caught', due: slot.toISOString() } : { trigger: 'scheduled', due: slot.toISOString() })
+  store.saveWorkflow(p, { ...store.getWorkflow(p, workflowId), settledAt: store.now(), ...(open && { skipped: [...wf.skipped, { at: slot.toISOString(), blockedBy: open.id }].slice(-50) }) })
   if (open) emit({ type: 'workflows', projectId })
-  else if (runs) runWorkflow(projectId, workflowId, 'local', late ? { trigger: 'caught', due: slot.toISOString() } : { trigger: 'scheduled' })
 }
 
 // The project's default agent ran on `model`. Workflows with the model-change trigger run when it is new to
@@ -104,9 +105,41 @@ type Start = Pick<NonNullable<Thread['workflow']>, 'trigger' | 'due' | 'model'>
 export function runWorkflow(projectId: string, workflowId: string, by: Origin, start: Start = { trigger: 'manual' }, chained = false) {
   const p = store.getProject(projectId)
   const wf = store.getWorkflow(p, workflowId)
+  const sameSlot = start.due && store.listThreads(p).find((t) => t.workflow?.id === wf.id && (t.workflow.due === start.due || t.workflow.lastDue === start.due))
+  if (sameSlot) return sameSlot
+  const open = openRun(p, wf)
+  if (open) return open
+  const unfinished = store.listThreads(p).find((t) => t.workflow?.id === wf.id && t.workflow.steps?.some((s) => !settled(s.result) && (!!s.result || !!wf.preflight)))
+  const graph = reachable(p, wf)
+  const origin = by === 'remote' || graph.some((w) => w.origin === 'remote') || unfinished?.workflow?.origin === 'remote' || (unfinished && store.readMessages(p, unfinished.id).some((m) => m.origin === 'remote')) ? 'remote' : 'local'
+  const steps = graph.map((w) => ({ id: w.id, name: w.name, startedAt: store.now() }))
+  for (const w of graph) for (const id of w.next) if (!steps.some((s) => s.id === id)) steps.push({ id, name: id, startedAt: store.now() })
+  const thread = unfinished ?? store.createThread(p, { title: wf.name, label: wf.name, workflow: {
+    id: wf.id, name: wf.name, ...start, origin, ...(wf.budgetUsd && { budgetUsd: wf.budgetUsd }),
+    steps,
+  } })
+  if (unfinished) store.updateThread(p, thread.id, { workflow: { ...thread.workflow!, origin, ...(start.due && { lastDue: start.due }) } })
+  let current: Workflow | undefined
+  for (const pending of thread.workflow!.steps!.filter((s) => !settled(s.result))) {
+    try {
+      current = store.getWorkflow(p, pending.id)
+    } catch {
+      saveStep(p, thread.id, { ...pending, finishedAt: store.now(), result: { status: 'blocked', reason: 'The workflow step is missing.', evidence: [pending.id], followUp: ['Restore the missing workflow or explicitly resolve this run.'] } })
+      current = undefined
+      break
+    }
+    const step = beginStep(p, thread.id, current)
+    if (step.run) break
+    current = undefined
+    if (step.result?.status !== 'skipped') break
+  }
+  store.saveWorkflow(p, { ...wf, lastRunAt: store.now() })
+  emit({ type: 'thread', projectId: p.id, threadId: thread.id })
+  emit({ type: 'workflows', projectId: p.id })
+  if (!current) return store.getThread(p, thread.id)
   // Instructions a paired device wrote run as remote, even when the schedule or a local workflow starts them.
-  const origin = by === 'remote' || reachable(p, wf).some((w) => w.origin === 'remote') ? 'remote' : 'local'
-  const linked = wf.next.flatMap((id) => {
+  const inputOrigin = origin === 'remote' || current.origin === 'remote' ? 'remote' : 'local'
+  const linked = current.next.flatMap((id) => {
     try {
       return [store.getWorkflow(p, id)]
     } catch {
@@ -115,13 +148,12 @@ export function runWorkflow(projectId: string, workflowId: string, by: Origin, s
   })
   const chain = linked.length ? `\n\nWhen this is done, continue with the linked workflows in order: ${linked.map((l) => `“${l.name}” (id ${l.id})`).join(', ')}.` : ''
   const changed = start.model ? `The project's agent runs on a new model now: ${start.model}.\n\n` : ''
-  const prompt = `${changed}Run workflow “${wf.name}”:\n\n${wf.prompt}${chain}`
-  const thread = store.createThread(p, { title: wf.name, label: wf.name, workflow: { id: wf.id, name: wf.name, ...start, ...(wf.budgetUsd && { budgetUsd: wf.budgetUsd }) } })
-  store.saveWorkflow(p, { ...wf, lastRunAt: store.now() })
-  emit({ type: 'thread', projectId: p.id, threadId: thread.id })
-  emit({ type: 'workflows', projectId: p.id })
-  agents.send(p, thread.id, { text: prompt, origin, chained })
-  return thread
+  const prompt = `${changed}${unfinished ? 'Resume the unfinished steps of this run. Check existing results before repeating work.\n\n' : ''}Run workflow “${current.name}”:\n\n${current.prompt}${chain}`
+  attempt(p, thread.id, unfinished ? 'resume' : 'start')
+  const fresh = store.getThread(p, thread.id)
+  store.updateThread(p, thread.id, { completed: false, workflow: { ...fresh.workflow!, modelStarted: true } })
+  agents.send(p, thread.id, { text: prompt, origin: inputOrigin, chained, workflowStart: true })
+  return store.getThread(p, thread.id)
 }
 
 // Runs the workflow now instead of at its next scheduled time, when that comes soon. Without one it is a manual run.
@@ -144,10 +176,16 @@ export interface Run {
   // The run's conversation; for a skipped time, the conversation that was in its way.
   threadId: string
   summary: string
-  workedMs: number
+  workedMs?: number
   // What the run used, as far as its agent reports it.
   usd?: number
   tokens?: number
+  outcome?: 'successful' | 'partial' | 'blocked' | 'skipped' | 'waiting' | 'failed' | 'unknown'
+  steps?: NonNullable<Thread['workflow']>['steps']
+  attempts?: NonNullable<Thread['workflow']>['attempts']
+  attemptCounts?: NonNullable<Thread['workflow']>['attemptCounts']
+  modelStarted?: boolean
+  elapsedMs?: number
 }
 
 // What a conversation's agents used, summed over the ones that report it.
@@ -163,7 +201,9 @@ export function month(p: Project, wf: Workflow, threads = store.listThreads(p)) 
   start.setDate(1)
   start.setHours(0, 0, 0, 0)
   const runs = threads.filter((t) => t.workflow?.id === wf.id && Date.parse(t.createdAt) >= start.getTime()).map(used)
-  return { usd: runs.reduce((n, r) => n + (r.usd ?? 0), 0), tokens: runs.reduce((n, r) => n + (r.tokens ?? 0), 0) }
+  const usd = runs.filter((r) => r.usd != null)
+  const tokens = runs.filter((r) => r.tokens != null)
+  return { ...(usd.length && { usd: usd.reduce((n, r) => n + r.usd!, 0) }), ...(tokens.length && { tokens: tokens.reduce((n, r) => n + r.tokens!, 0) }), unknownUsdRuns: runs.length - usd.length, unknownTokenRuns: runs.length - tokens.length }
 }
 
 // An agent session reported what it used so far. A workflow run counts toward the month: when the runs
@@ -185,7 +225,7 @@ export function spent(p: Project, tid: string, provider: Provider, usage: { usd?
   }
   const limit = wf.monthlyBudgetUsd
   if (!limit) return
-  const after = month(p, wf).usd
+  const after = month(p, wf).usd ?? 0
   const before = after - ((usage.usd ?? 0) - was)
   const crossed = (share: number) => before < share * limit && after >= share * limit
   const total = `$${after.toFixed(2)} of $${limit}`
@@ -218,6 +258,12 @@ export function runs(p: Project, wf: Workflow, threads = store.listThreads(p), l
       if (!t) return { at, trigger: 'scheduled', status: 'skipped', threadId: blockedBy!, summary: '', workedMs: 0 }
       const messages = store.readMessages(p, t.id)
       const last = messages.filter((m) => m.kind === 'conclusion' || m.kind === 'error').at(-1)
+      const steps = t.workflow!.steps
+      const results = steps?.map((s) => s.result)
+      const outcome = !results ? 'unknown' : results.every(settled) ? results.some((r) => r?.status === 'successful') ? 'successful' : 'skipped'
+        : results.some((r) => r?.status === 'failed') ? 'failed' : results.some((r) => r?.status === 'blocked') ? 'blocked'
+        : results.some((r) => r?.status === 'waiting') ? 'waiting' : results.some((r) => r?.status === 'partial' || settled(r)) ? 'partial' : 'unknown'
+      const finished = steps?.length && steps.every((s) => s.finishedAt) ? steps.map((s) => s.finishedAt!).sort().at(-1) : undefined
       return {
         at,
         trigger: t.workflow!.trigger,
@@ -226,8 +272,11 @@ export function runs(p: Project, wf: Workflow, threads = store.listThreads(p), l
         status: working(p, t) ? 'working' : t.needsYou ? 'needs' : t.error === 'Turn stopped.' ? 'stopped' : t.error?.startsWith(BUDGET_REACHED) ? 'budget' : t.error || last?.kind === 'error' ? 'failed' : 'finished',
         threadId: t.id,
         summary: plain(t.error ?? last?.text ?? ''),
-        workedMs: messages.reduce((ms, m) => ms + (m.workTiming ? Date.parse(m.workTiming.finishedAt) - Date.parse(m.workTiming.startedAt) : 0), 0),
+        outcome,
+        ...(messages.some((m) => m.workTiming) ? { workedMs: messages.reduce((ms, m) => ms + (m.workTiming ? Date.parse(m.workTiming.finishedAt) - Date.parse(m.workTiming.startedAt) : 0), 0) } : steps && !t.workflow!.modelStarted ? { workedMs: 0 } : {}),
         ...used(t),
+        ...(steps && { steps, attempts: t.workflow!.attempts ?? [], attemptCounts: t.workflow!.attemptCounts, modelStarted: t.workflow!.modelStarted ?? false,
+          ...(finished && { elapsedMs: Date.parse(finished) - Date.parse(t.createdAt) }) }),
       }
     })
 }
