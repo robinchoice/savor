@@ -5,11 +5,16 @@ import { execFile, spawn } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import * as store from './store.js'
-import type { Provider, Thread } from './store.js'
+import type { ApprovalOption, Provider, Thread } from './store.js'
 import { BIN, command, mcpUrl, VERSION } from './config.js'
 import { Rpc, RpcError } from './jsonrpc.js'
 import { configKey, forkOf, rememberSession, sessionIdOf, summarize, systemPrompt, type Host, type Session, type TurnInput } from './session.js'
 import type { SkillInfo } from './providers.js'
+
+const PLAN_DECISION: ApprovalOption[] = [
+  { id: 'approved', label: 'Approve', kind: 'allow' },
+  { id: 'changes_requested', label: 'Keep planning', kind: 'deny' },
+]
 
 const MIME: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp' }
 
@@ -150,6 +155,11 @@ export class AcpSession implements Session {
       if (once && call.rawInput?.variant === 'UseTool' && String(call.rawInput.tool_name).startsWith('savor__')) return { outcome: { outcome: 'selected', optionId: once.optionId } }
       const choice = await this.host.approve({ title: call.title ?? 'Allow this action?', detail: summarize(call.rawInput ?? call.content ?? ''), options })
       return { outcome: { outcome: 'selected', optionId: choice } }
+    }
+    // Grok Build ends a plan with this. An outcome other than approved or abandoned asks for changes; Grok then asks the user what to change.
+    if (method === '_x.ai/exit_plan_mode') {
+      const choice = await this.host.approve({ title: 'Approve this plan?', detail: String(params.planContent ?? ''), options: PLAN_DECISION })
+      return { outcome: choice }
     }
     throw new RpcError(`Savor does not provide ${method}.`, -32601)
   }

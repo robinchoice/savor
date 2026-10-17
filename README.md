@@ -235,7 +235,7 @@ test/           end-to-end tests with a fake agent
 - Every conversation gets one long-lived agent process. It stays alive while the conversation owns background processes and closes 5 minutes after the last activity. A change of agent, model, effort, fast mode or permissions restarts it and resumes the agent's own session.
 - **Claude Code** runs as `claude -p --input-format stream-json` with `--permission-prompts host --permission-prompt-tool stdio`: permission prompts and `AskUserQuestion` arrive as control requests on stdout and are answered on stdin. "Always allow" writes the rule Claude suggests to `.claude/settings.local.json`.
 - **Codex** runs as `codex app-server` (JSON-RPC over stdio): `thread/start`, `turn/start`, `turn/interrupt`, approvals through `item/commandExecution/requestApproval` and `item/fileChange/requestApproval`, questions through `item/tool/requestUserInput`. The permission modes map to Codex's sandbox and approval policy; models and effort levels come from `model/list`.
-- **OpenCode** (`opencode acp`) and **Grok Build** (`grok agent stdio`) speak the [Agent Client Protocol](https://agentclientprotocol.com): `session/new`, `session/prompt`, progress through `session/update`, approvals through `session/request_permission`, interrupts through `session/cancel`.
+- **OpenCode** (`opencode acp`) and **Grok Build** (`grok agent stdio`) speak the [Agent Client Protocol](https://agentclientprotocol.com): `session/new`, `session/prompt`, progress through `session/update`, approvals through `session/request_permission`, interrupts through `session/cancel`. Grok Build ends a plan with an `_x.ai/exit_plan_mode` request, answered with `{ outcome: "approved" }` or, to keep planning, any other outcome.
 
 Project layout:
 
@@ -268,7 +268,6 @@ CI runs typecheck and the end-to-end tests on every push. `secrets.yml` scans ev
 Early. Known gaps:
 - There is no public relay instance yet: run your own (see above) or use a direct connection.
 - A browser can pair with several computers but talks to one at a time, and only that one sends it notifications.
-- Grok Build: Savor's Plan mode doesn't reach the CLI yet: Grok ends its plan with an `_x.ai/exit_plan_mode` request whose answer isn't documented.
 
 ## How Savor is maintained
 

@@ -664,6 +664,13 @@ test('OpenCode runs through the Agent Client Protocol', async () => {
   assert.deepEqual(approval.approval.options.map((o) => [o.id, o.kind]), [['allow_once', 'allow'], ['reject_once', 'deny']])
   await api('POST', `${t}/approvals/${approval.id}`, { choice: 'allow_once' })
   await until(async () => (await api('GET', t)).body.messages.some((m) => m.text === 'ACP permission: allow_once'))
+  // Grok Build's plan comes for approval.
+  await until(async () => !(await api('GET', t)).body.busy)
+  await api('POST', `${t}/messages`, { text: 'plan: hello' })
+  await until(async () => (approval = (await api('GET', t)).body.messages.find((m) => m.approval?.status === 'pending')))
+  assert.equal(approval.approval.detail, '# Plan\n\nCreate hello.txt.')
+  await api('POST', `${t}/approvals/${approval.id}`, { choice: 'approved' })
+  await until(async () => (await api('GET', t)).body.messages.some((m) => m.text === 'ACP plan: approved'))
   // A slash command goes alone, so the agent runs it.
   await until(async () => !(await api('GET', t)).body.busy)
   await api('POST', `${t}/messages`, { text: '/review now' })

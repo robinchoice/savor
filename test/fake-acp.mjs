@@ -2,6 +2,7 @@
 // Stand-in for an Agent Client Protocol agent (`opencode acp`) used by the end-to-end tests. It
 // finds Savor's MCP server in OPENCODE_CONFIG_CONTENT and in the session's mcpServers.
 // - "approve: <anything>" → session/request_permission with Allow once / Reject, then "ACP permission: <optionId>"
+// - "plan: <anything>" → _x.ai/exit_plan_mode like Grok Build, then "ACP plan: <outcome>"
 // - a prompt that starts with a slash command → "ACP command: <prompt>"
 // - anything else → "ACP echo: <input>"
 // Like Grok Build, it asks with session/request_permission before it calls a Savor tool.
@@ -88,6 +89,9 @@ async function prompt(params, reply) {
       ],
     })
     answer = `ACP permission: ${r.outcome.outcome === 'selected' ? r.outcome.optionId : 'cancelled'}`
+  } else if (input.startsWith('plan:')) {
+    const r = await agentRequest('_x.ai/exit_plan_mode', { sessionId, toolCallId: 'call4', planContent: '# Plan\n\nCreate hello.txt.' })
+    answer = `ACP plan: ${r.outcome}`
   } else {
     answer = `ACP echo: ${input}`
   }
