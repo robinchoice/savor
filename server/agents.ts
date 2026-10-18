@@ -16,7 +16,7 @@ import * as git from './git.js'
 import * as terminal from './terminal.js'
 import * as ci from './ci.js'
 import { modelSeen, spent } from './scheduler.js'
-import { attempt } from './workflow-results.js'
+import { attempt, saveStep } from './workflow-results.js'
 import { listAgents, listUsage, mergeAgent, STATIC } from './providers.js'
 
 const IDLE_CLOSE_MS = Number(process.env.SAVOR_IDLE_CLOSE_MS ?? 5 * 60_000)
@@ -125,6 +125,8 @@ export function send(p: Project, tid: string, input: Input) {
   const thread = store.updateThread(p, tid, { completed: false, inputAt: store.now() })
   const queued = busy.has(tid) || compacting.has(tid)
   const msg = post(p, tid, { kind: 'user', text: input.text, images: input.images, files: input.files, modelInfo: thread.agent, origin: input.origin, device: input.device, from: input.from, chained: input.chained || undefined, delivered: !queued })
+  const step = thread.workflow?.steps?.find((s) => s.id === thread.workflow?.activeStep)
+  if (!input.workflowStart && !input.from && step?.result?.status === 'waiting') saveStep(p, tid, { ...step, result: { ...step.result, status: 'partial', reason: 'User replied; the outcome needs verification.', evidence: [...step.result.evidence, msg.id].slice(-20) } })
   if (!input.from) skipAsked(p, tid)
   stopped.delete(tid)
   if (!queued) deliver(p, tid, msg)

@@ -6,6 +6,8 @@ const de: Record<string, string> = {
   'Outcome unknown': 'Ergebnis unbekannt',
   'Usage unknown': 'Verbrauch unbekannt',
   'No agent started': 'Kein Agent gestartet',
+  'User replied; the outcome needs verification.': 'Der Nutzer hat geantwortet; das Ergebnis muss noch geprüft werden.',
+  'The step was removed from the workflow before execution.': 'Der Schritt wurde vor der Ausführung aus dem Workflow entfernt.',
   'The preflight file is missing.': 'Die Vorprüfungsdatei fehlt.',
   'The preflight is stale or has a future timestamp.': 'Die Vorprüfung ist veraltet oder hat einen Zeitstempel in der Zukunft.',
   'Invalid preflight configuration.': 'Ungültige Konfiguration der Vorprüfung.',

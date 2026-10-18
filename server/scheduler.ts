@@ -55,7 +55,7 @@ function dueSlot(wf: Workflow) {
 const working = (p: Project, t: Thread) => agents.isBusy(t.id) || agents.waiting(p, t) || !!t.workingSince
 
 // A run of the workflow that still works or waits for the user.
-const openRun = (p: Project, wf: Workflow) => store.listThreads(p).find((t) => t.workflow?.id === wf.id && (working(p, t) || t.needsYou || t.workflow.steps?.some((s) => s.result?.status === 'waiting')))
+const openRun = (p: Project, wf: Workflow) => store.listThreads(p).find((t) => t.workflow?.id === wf.id && (!!wf.preflight || !t.completed) && (working(p, t) || t.needsYou || (!!wf.preflight && t.workflow.steps?.some((s) => s.result?.status === 'waiting'))))
 
 // A scheduled time has come, now or while Savor was not running. It runs unless the project is paused, the
 // workflow does not catch up what it missed, or a run of it is still open: then the time is skipped.
@@ -105,11 +105,11 @@ type Start = Pick<NonNullable<Thread['workflow']>, 'trigger' | 'due' | 'model'>
 export function runWorkflow(projectId: string, workflowId: string, by: Origin, start: Start = { trigger: 'manual' }, chained = false) {
   const p = store.getProject(projectId)
   const wf = store.getWorkflow(p, workflowId)
-  const sameSlot = start.due && store.listThreads(p).find((t) => t.workflow?.id === wf.id && (t.workflow.due === start.due || t.workflow.lastDue === start.due))
+  const sameSlot = start.due && store.listThreads(p).find((t) => t.workflow?.id === wf.id && (t.workflow.lastDue === start.due || (t.workflow.due === start.due && (t.workflow.trigger !== 'early' || t.workflow.modelStarted))))
   if (sameSlot) return sameSlot
-  const open = openRun(p, wf)
-  if (open) return open
-  const unfinished = store.listThreads(p).find((t) => t.workflow?.id === wf.id && t.workflow.steps?.some((s) => !settled(s.result) && (!!s.result || !!wf.preflight)))
+  const open = wf.preflight ? openRun(p, wf) : undefined
+  if (open && (working(p, open) || open.needsYou || !['manual', 'early'].includes(start.trigger))) return open
+  const unfinished = wf.preflight ? store.listThreads(p).find((t) => t.workflow?.id === wf.id && t.workflow.steps?.some((s) => !settled(s.result))) : undefined
   const graph = reachable(p, wf)
   const origin = by === 'remote' || graph.some((w) => w.origin === 'remote') || unfinished?.workflow?.origin === 'remote' || (unfinished && store.readMessages(p, unfinished.id).some((m) => m.origin === 'remote')) ? 'remote' : 'local'
   const steps = graph.map((w) => ({ id: w.id, name: w.name, startedAt: store.now() }))
@@ -118,9 +118,13 @@ export function runWorkflow(projectId: string, workflowId: string, by: Origin, s
     id: wf.id, name: wf.name, ...start, origin, ...(wf.budgetUsd && { budgetUsd: wf.budgetUsd }),
     steps,
   } })
-  if (unfinished) store.updateThread(p, thread.id, { workflow: { ...thread.workflow!, origin, ...(start.due && { lastDue: start.due }) } })
+  if (unfinished) store.updateThread(p, thread.id, { workflow: { ...thread.workflow!, origin, ...(start.due && start.trigger !== 'early' && { lastDue: start.due }) } })
   let current: Workflow | undefined
   for (const pending of thread.workflow!.steps!.filter((s) => !settled(s.result))) {
+    if (!pending.begun && !steps.some((s) => s.id === pending.id)) {
+      saveStep(p, thread.id, { ...pending, finishedAt: store.now(), result: { status: 'skipped', reason: 'The step was removed from the workflow before execution.', evidence: [wf.id, wf.updatedAt], followUp: [] } })
+      continue
+    }
     try {
       current = store.getWorkflow(p, pending.id)
     } catch {
@@ -136,7 +140,11 @@ export function runWorkflow(projectId: string, workflowId: string, by: Origin, s
   store.saveWorkflow(p, { ...wf, lastRunAt: store.now() })
   emit({ type: 'thread', projectId: p.id, threadId: thread.id })
   emit({ type: 'workflows', projectId: p.id })
-  if (!current) return store.getThread(p, thread.id)
+  if (!current) {
+    const fresh = store.getThread(p, thread.id)
+    if (!fresh.workflow!.modelStarted && fresh.workflow!.steps!.every((s) => settled(s.result))) store.updateThread(p, thread.id, { completed: true, summary: fresh.workflow!.steps!.map((s) => s.result!.reason).join(' · ') })
+    return store.getThread(p, thread.id)
+  }
   // Instructions a paired device wrote run as remote, even when the schedule or a local workflow starts them.
   const inputOrigin = origin === 'remote' || current.origin === 'remote' ? 'remote' : 'local'
   const linked = current.next.flatMap((id) => {
@@ -151,7 +159,7 @@ export function runWorkflow(projectId: string, workflowId: string, by: Origin, s
   const prompt = `${changed}${unfinished ? 'Resume the unfinished steps of this run. Check existing results before repeating work.\n\n' : ''}Run workflow “${current.name}”:\n\n${current.prompt}${chain}`
   attempt(p, thread.id, unfinished ? 'resume' : 'start')
   const fresh = store.getThread(p, thread.id)
-  store.updateThread(p, thread.id, { completed: false, workflow: { ...fresh.workflow!, modelStarted: true } })
+  store.updateThread(p, thread.id, { completed: false, workflow: { ...fresh.workflow!, modelStarted: true, ...(unfinished && start.due && { lastDue: start.due }) } })
   agents.send(p, thread.id, { text: prompt, origin: inputOrigin, chained, workflowStart: true })
   return store.getThread(p, thread.id)
 }
@@ -161,8 +169,10 @@ export function runEarly(projectId: string, workflowId: string, by: Origin) {
   const p = store.getProject(projectId)
   const next = nextRun(store.getWorkflow(p, workflowId))
   if (!next || Date.parse(next) - Date.now() > EARLY) return runWorkflow(projectId, workflowId, by)
+  const before = new Map(store.listThreads(p).map((t) => [t.id, (t.workflow?.attemptCounts?.start ?? 0) + (t.workflow?.attemptCounts?.resume ?? 0)]))
   const thread = runWorkflow(projectId, workflowId, by, { trigger: 'early', due: next })
-  store.saveWorkflow(p, { ...store.getWorkflow(p, workflowId), settledAt: next })
+  const starts = (thread.workflow?.attemptCounts?.start ?? 0) + (thread.workflow?.attemptCounts?.resume ?? 0)
+  if (starts > (before.get(thread.id) ?? 0)) store.saveWorkflow(p, { ...store.getWorkflow(p, workflowId), settledAt: next })
   emit({ type: 'workflows', projectId })
   return thread
 }

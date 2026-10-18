@@ -12,7 +12,7 @@ import * as agents from './agents.js'
 import * as browser from './browser.js'
 import * as processes from './processes.js'
 import { runWorkflow, runs, syncSchedules, validateCron } from './scheduler.js'
-import { beginStep, delegated, preflightSchema, recordResult, resultSchema, saveStep } from './workflow-results.js'
+import { beginStep, delegated, preflightSchema, recordResult, resultSchema, saveStep, settled } from './workflow-results.js'
 import { listAgents, mergeAgent, STATIC } from './providers.js'
 import { addWorktree, git, openProject } from './git.js'
 import * as ci from './ci.js'
@@ -157,7 +157,7 @@ function buildServer(p: Project, tid: string) {
         store.updateMessage(p, tid, msg.id, { decisionIds: decisions.map((d) => d.id) })
         const run = store.getThread(p, tid).workflow
         const step = run?.steps?.find((s) => s.id === run.activeStep)
-        if (step?.begun && (!step.preflight || step.preflight.status === 'ready')) recordResult(p, tid, step.id, { status: 'waiting', reason: 'Waiting for the user’s decision.', evidence: [msg.id], followUp: questions.map((q) => q.title) })
+        if (step?.begun && !settled(step.result) && (!step.preflight || step.preflight.status === 'ready')) recordResult(p, tid, step.id, { status: 'waiting', reason: 'Waiting for the user’s decision.', evidence: [msg.id], followUp: questions.map((q) => q.title) })
       }
       agents.markConcluded(tid, msg.id)
       store.updateThread(p, tid, { unread: true, needsYou: store.listDecisions(p, tid).some((d) => !d.resolved), ...(summary && { summary }) })

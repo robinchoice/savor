@@ -79,7 +79,7 @@ export function beginStep(p: Project, tid: string, wf: Workflow) {
   if (!t.workflow) throw new Error('This conversation is not a workflow run.')
   const prev = t.workflow.steps?.find((s) => s.id === wf.id)
   if (settled(prev?.result)) return { ...prev!, run: false }
-  const check = wf.enabled ? preflight(p, wf) : { status: 'blocked' as const, reason: 'The linked workflow is paused.', evidence: [wf.id], followUp: ['Wait for the workflow to be enabled.'] }
+  const check = wf.enabled || wf.id === t.workflow.id ? preflight(p, wf) : { status: 'blocked' as const, reason: 'The linked workflow is paused.', evidence: [wf.id], followUp: ['Wait for the workflow to be enabled.'] }
   if (check) attempt(p, tid, 'check', { stepId: wf.id, check })
   const step: WorkflowStep = { ...prev, id: wf.id, name: wf.name, startedAt: prev?.startedAt ?? store.now(), preflight: check }
   if (check && check.status !== 'ready') {
