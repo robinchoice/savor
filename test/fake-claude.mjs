@@ -20,7 +20,7 @@
 //   reset, it concludes. With an API key it concludes on API credit ("… credit-empty" fails there instead)
 // - "ci: <text>" → acknowledges and asks Savor to watch CI for HEAD; concludes with what watch_ci returned when
 //   the runs had finished or the call failed, else ends the turn, and concludes with the result Savor continues
-//   the request with ("ci-done: <text>" concludes right after asking)
+//   the request with ("ci-done: <text>" concludes right after asking, "ci-in: <project>" watches that project's HEAD)
 // - "slow: <text>" → acknowledges, waits for the test's release file or an interrupt, then echoes
 //   (and says so when Savor told it that a restart cut the turn off, and names what the user added meanwhile)
 // - "plan: <text>" → acknowledges, plans three tasks (TaskCreate, TaskUpdate) and starts a subagent and a background
@@ -198,12 +198,12 @@ async function turn(text, command) {
       out({ type: 'result', subtype: 'success', is_error: true, result: "You've hit your limit · resets 3pm" })
       return
     }
-  } else if (input.startsWith('ci:') || input.startsWith('ci-done:')) {
+  } else if (input.startsWith('ci:') || input.startsWith('ci-done:') || input.startsWith('ci-in:')) {
     const finished = text.match(/The CI runs you asked Savor to watch have finished\.\n([\s\S]*?)\n\nThis is still the same request/)
     if (finished) await call('send_conclusion_message', { text: `After CI: ${finished[1]}` })
     else {
       await call('send_acknowledgement_message', { text: 'Pushed.', summary: 'Push and check CI.' })
-      const r = await client.callTool({ name: 'watch_ci', arguments: {} })
+      const r = await client.callTool({ name: 'watch_ci', arguments: input.startsWith('ci-in:') ? { project: input.slice('ci-in:'.length).trim() } : {} })
       const said = r.content[0].text
       if (r.isError || said.startsWith('CI for ')) await call('send_conclusion_message', { text: `Watch: ${said}` })
       else if (input.startsWith('ci-done:')) await call('send_conclusion_message', { text: 'Done without waiting.' })

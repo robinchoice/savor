@@ -96,7 +96,7 @@ export interface Thread {
   apiCredit?: { resetsAt: number; fromUsd: number; budgetUsd: number } | null
   // A pushed commit whose GitHub Actions runs the agent waits for, and the input it waits with: Savor
   // continues that request with their result.
-  ciWatch?: { sha: string; since: string; inputId: string } | null
+  ciWatch?: { sha: string; since: string; inputId: string; projectId?: string } | null
   // How much the agent's last request put into its model's context window, and how large that window
   // is, as far as the agent says.
   context?: { tokens: number; window: number | null } | null

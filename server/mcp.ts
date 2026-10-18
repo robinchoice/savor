@@ -566,15 +566,16 @@ function buildServer(p: Project, tid: string) {
     'watch_ci',
     {
       description:
-        'Wait for the GitHub Actions runs of a pushed commit without holding your turn (uses the GitHub CLI). When they have not all finished yet, Savor checks them every 20 seconds and continues this request with their result once they have: end your turn without a conclusion if your conclusion depends on them, e.g. a deploy to verify. Without `commit` it watches HEAD of your working directory.',
-      inputSchema: { commit: z.string().regex(/^[0-9a-f]{7,40}$/).optional() },
+        'Wait for the GitHub Actions runs of a pushed commit without holding your turn (uses the GitHub CLI). When they have not all finished yet, Savor checks them every 20 seconds and continues this request with their result once they have: end your turn without a conclusion if your conclusion depends on them, e.g. a deploy to verify. Without `commit` it watches HEAD of your working directory, or of the repo of `project` for a commit pushed from another project.',
+      inputSchema: { commit: z.string().regex(/^[0-9a-f]{7,40}$/).optional(), project: PROJECT },
     },
-    async ({ commit }) => {
-      const cwd = store.cwdOf(p, store.getThread(p, tid))
+    async ({ commit, project }) => {
+      const target = project ? findProject(project) : null
+      const cwd = target?.path ?? store.cwdOf(p, store.getThread(p, tid))
       const sha = git(cwd, 'rev-parse', commit ?? 'HEAD')
       const runs = await ci.runsOf(cwd, sha)
       if (ci.finished(runs)) return ok(ci.report(sha, runs))
-      agents.watchCi(p, tid, sha)
+      agents.watchCi(p, tid, sha, target?.id)
       const going = runs.filter((r) => r.status !== 'completed').length
       return ok(`${runs.length ? `${going} of ${runs.length} runs are still going` : 'No runs have shown up yet'}. Savor continues this request with their result when they have finished: end your turn now, without a conclusion if it depends on them.`)
     },

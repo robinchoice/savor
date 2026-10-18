@@ -668,9 +668,10 @@ async function fallBack(p: Project, tid: string, provider: Provider, resetsAt: n
 
 // The agent pushed and ended its turn: Savor looks at the commit's runs until they have all finished
 // and continues the request with their result. A failure after the agent concluded goes to the user.
-export function watchCi(p: Project, tid: string, sha: string) {
-  setCi(p, tid, { sha, since: store.now(), inputId: request(p, tid).inputId })
-  ci.wake(p.id)
+// A commit of another project's repo is watched there, so the watch names that project.
+export function watchCi(p: Project, tid: string, sha: string, projectId?: string) {
+  setCi(p, tid, { sha, since: store.now(), inputId: request(p, tid).inputId, ...(projectId && { projectId }) })
+  ci.wake(projectId ?? p.id)
   emit({ type: 'status', projectId: p.id, threadId: tid })
 }
 
@@ -686,7 +687,7 @@ async function checkCi(p: Project, tid: string, watch: NonNullable<Thread['ciWat
   let runs: ci.Run[] | null = null
   let failure = ''
   try {
-    runs = await ci.runsOf(store.cwdOf(p, store.getThread(p, tid)), watch.sha)
+    runs = await ci.runsOf(watch.projectId ? store.getProject(watch.projectId).path : store.cwdOf(p, store.getThread(p, tid)), watch.sha)
   } catch (e) {
     failure = (e as Error).message
   }

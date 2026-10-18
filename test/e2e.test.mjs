@@ -3007,6 +3007,28 @@ test('agents wait for CI without holding their turn, and Savor continues the req
   const after = await read(concluded.id)
   assert.ok(after.messages.at(-1).kind === 'error' && after.messages.at(-1).text.startsWith(`CI for ${head.slice(0, 7)}: 1 of 1 runs failed.\n- Deploy: cancelled`))
   assert.deepEqual([after.thread.ciWatch, after.messages.filter((m) => m.kind === 'conclusion').length], [null, 1])
+
+  // A conversation in a folder without git watches a commit of another project's repo there, also after a restart.
+  fs.mkdirSync(path.join(TMP, 'admin-folder'))
+  const admin = (await api('POST', '/projects', { path: path.join(TMP, 'admin-folder') })).body
+  const at = `/projects/${admin.id}/threads`
+  const readAdmin = async (id) => (await api('GET', `${at}/${id}`)).body
+  const adminConclusion = async (id) => {
+    await until(async () => (await readAdmin(id)).messages.some((m) => m.kind === 'conclusion'), 40_000)
+    return (await readAdmin(id)).messages.find((m) => m.kind === 'conclusion').text
+  }
+  assert.match(await adminConclusion((await api('POST', at, { text: 'ci-in: /nowhere' })).body.id), /^Watch: Unknown project \/nowhere/)
+  runs([run('in_progress', '')])
+  const elsewhere = (await api('POST', at, { text: `ci-in: ${project.id}` })).body
+  await until(async () => (await readAdmin(elsewhere.id)).waiting)
+  assert.deepEqual((({ sha, projectId }) => ({ sha, projectId }))((await readAdmin(elsewhere.id)).thread.ciWatch), { sha: head, projectId: project.id })
+  server.kill()
+  await new Promise((resolve) => server.on('exit', resolve))
+  runs([run('completed', 'success')])
+  fs.rmSync(AGENT_LOG + '.gh.cwd', { force: true })
+  await startDaemon()
+  assert.equal(await adminConclusion(elsewhere.id), `After CI: CI for ${head.slice(0, 7)}: all 1 runs passed.\n- CI: success https://github.com/acme/app/actions/runs/7`)
+  assert.deepEqual([...new Set(fs.readFileSync(AGENT_LOG + '.gh.cwd', 'utf8').trim().split('\n'))], [fs.realpathSync(PROJECT)])
 })
 
 test('the status bar shows the running CI runs after a push, and a failed run until it is dismissed', { timeout: 90_000 }, async () => {
