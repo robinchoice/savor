@@ -70,7 +70,12 @@ function profile(projectId: string) {
         handleSIGHUP: false,
       })
     })()
-    ctx.catch(() => profiles.delete(projectId))
+    const launched = ctx
+    // A crashed or closed browser launches again on the next open instead of failing for good.
+    launched.then(
+      (c) => c.on('close', () => profiles.get(projectId) === launched && profiles.delete(projectId)),
+      () => profiles.delete(projectId),
+    )
     profiles.set(projectId, ctx)
   }
   return ctx
