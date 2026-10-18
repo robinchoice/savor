@@ -1288,29 +1288,36 @@ function ThreadWorkflows({ project, threadId }: { project: Project; threadId: st
   const mine = workflows?.filter((w) => w.threadId === threadId)
   if (!mine?.length) return null
   const remove = (w: Workflow) => confirm(t('Delete “{name}”?', { name: w.name })) && api('DELETE', `${base}/${w.id}`)
-  return (
-    <div class="thread-workflows">
-      {mine.map((w) => (
-        <div key={w.id} class="thread-wf">
-          <a href={`#/p/${project.id}/workflows/${w.id}`}>
-            <WorkflowIcon size={14} /> <b>{t(w.name)}</b>
-          </a>
-          <span class="muted">
-            {schedule(w)}
-            {w.nextRunAt && ` · ${t('Next run {when}', { when: when(w.nextRunAt) })}`}
-          </span>
-          {!w.enabled && <span class="off-badge">{t('Paused')}</span>}
-          <span class="thread-wf-actions">
-            <button class="ghost small" onClick={() => api('PUT', `${base}/${w.id}`, { enabled: !w.enabled })}>
-              {w.enabled ? t('Pause') : t('Resume')}
-            </button>
-            <button class="ghost small danger" title={t('Delete workflow')} onClick={() => remove(w)}>
-              <Trash2 size={13} />
-            </button>
-          </span>
-        </div>
-      ))}
+  const rows = mine.map((w) => (
+    <div key={w.id} class="thread-wf">
+      <a href={`#/p/${project.id}/workflows/${w.id}`}>
+        <WorkflowIcon size={14} /> <b>{t(w.name)}</b>
+      </a>
+      <span class="muted">
+        {schedule(w)}
+        {w.nextRunAt && ` · ${t('Next run {when}', { when: when(w.nextRunAt) })}`}
+      </span>
+      {!w.enabled && <span class="off-badge">{t('Paused')}</span>}
+      <span class="thread-wf-actions">
+        <button class="ghost small" onClick={() => api('PUT', `${base}/${w.id}`, { enabled: !w.enabled })}>
+          {w.enabled ? t('Pause') : t('Resume')}
+        </button>
+        <button class="ghost small danger" title={t('Delete workflow')} onClick={() => remove(w)}>
+          <Trash2 size={13} />
+        </button>
+      </span>
     </div>
+  ))
+  if (mine.length === 1) return <div class="thread-workflows">{rows}</div>
+  // Several fold into one line, so on a phone they don't push the conversation off the screen.
+  return (
+    <details class="thread-workflows">
+      <summary>
+        <WorkflowIcon size={14} /> {plural(mine.length, '{n} workflow from this conversation', '{n} workflows from this conversation')}
+        <ChevronDown size={14} class="chev" />
+      </summary>
+      {rows}
+    </details>
   )
 }
 

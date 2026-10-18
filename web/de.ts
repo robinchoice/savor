@@ -394,6 +394,8 @@ const de: Record<string, string> = {
   '{n} commits ahead': '{n} Commits voraus',
   '{n} agent': '{n} Agent',
   '{n} agents': '{n} Agenten',
+  '{n} workflow from this conversation': '{n} Workflow aus diesem Gespräch',
+  '{n} workflows from this conversation': '{n} Workflows aus diesem Gespräch',
   '{n} background command': '{n} Hintergrundbefehl',
   '{n} background commands': '{n} Hintergrundbefehle',
   'Plan · {n} step done': 'Plan · {n} Schritt erledigt',

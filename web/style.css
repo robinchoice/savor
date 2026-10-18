@@ -1379,7 +1379,11 @@ details.box[open] > summary .chev { transform: rotate(180deg); }
 }
 .routing-links { display: flex; flex-wrap: wrap; gap: 8px 16px; padding: 10px 20px; border-bottom: 1px solid var(--line); font-size: 12px; }
 .routing-links a { display: flex; align-items: center; gap: 7px; min-width: 0; overflow-wrap: anywhere; }
-.thread-workflows { display: flex; flex-direction: column; gap: 6px; padding: 8px 20px; border-bottom: 1px solid var(--line); font-size: 12px; }
+.thread-workflows { display: flex; flex-direction: column; gap: 6px; max-height: 35dvh; overflow-y: auto; padding: 8px 20px; border-bottom: 1px solid var(--line); font-size: 12px; }
+.thread-workflows > summary { display: flex; align-items: center; gap: 6px; cursor: pointer; list-style: none; }
+.thread-workflows > summary::-webkit-details-marker { display: none; }
+.thread-workflows > summary .chev { color: var(--muted); }
+.thread-workflows[open] > summary .chev { transform: rotate(180deg); }
 .thread-wf { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
 .thread-wf > a { display: flex; align-items: center; gap: 6px; min-width: 0; overflow-wrap: anywhere; }
 .thread-wf-actions { display: flex; gap: 4px; margin-left: auto; }
