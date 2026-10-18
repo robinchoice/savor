@@ -2119,6 +2119,23 @@ test('files open in the code editor, markdown and documents in the rich editor',
   })
   assert.equal(doc.content, '# Plan\n\nShip it\n')
   await page.waitForSelector('.editor-page >> text=Saved')
+
+  // Tables, task lists and a literal & survive an edit in the rich editor.
+  const table = (await api('POST', `/projects/${project.id}/docs`, { title: 'Inventory', content: '### Amps & Effects\n\n| Name | Count |\n| --- | --- |\n| Fender & Co | 2 |\n\n- [x] counted\n\nEnd' })).body
+  await page.goto(`${base}/#/p/${project.id}/files/doc/${table.id}`)
+  await page.click('.rich-content p:text-is("End")')
+  await page.keyboard.press('End')
+  await page.keyboard.type(' of list')
+  await until(async () => (await api('GET', `/projects/${project.id}/docs/${table.id}`)).body.content.includes('End of list'))
+  const saved = (await api('GET', `/projects/${project.id}/docs/${table.id}`)).body.content
+  assert.match(saved, /^### Amps & Effects$/m)
+  assert.match(saved, /^\| Fender & Co +\| 2 +\|$/m)
+  assert.match(saved, /^- \[x\] counted$/m)
+  // Markdown it can't keep, like an image, stays read-only there.
+  const image = (await api('POST', `/projects/${project.id}/docs`, { title: 'Pictures', content: '![Logo](https://example.com/logo.png)\n' })).body
+  await page.goto(`${base}/#/p/${project.id}/files/doc/${image.id}`)
+  await page.waitForSelector('.rich-content[contenteditable=false]')
+  await page.waitForSelector('text=Switch to Markdown to edit it.')
 })
 
 test('unpinned projects leave the tab bar and stay in the Projects menu', async () => {

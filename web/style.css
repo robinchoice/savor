@@ -866,6 +866,10 @@ mark { background: color-mix(in srgb, var(--attn) 50%, transparent); color: inhe
 .rich-content blockquote { border-left: 3px solid var(--line-strong); margin: 8px 0; padding-left: 12px; color: var(--muted); }
 .rich-content hr { border: 0; border-top: 1px solid var(--line-strong); margin: 14px 0; }
 .rich-content ul[data-type='taskList'] { list-style: none; padding-left: 4px; }
+.rich-content ul[data-type='taskList'] li { display: flex; gap: 8px; align-items: baseline; }
+.rich-content ul[data-type='taskList'] li > div { flex: 1; }
+.rich-content .tableWrapper { overflow-x: auto; }
+.rich-content td p, .rich-content th p { margin: 0; }
 
 .gallery { padding: 24px 32px; max-width: 1100px; display: flex; flex-direction: column; gap: 22px; }
 .gallery-head h1 { display: flex; align-items: center; gap: 10px; font-size: 32px; margin-bottom: 6px; }

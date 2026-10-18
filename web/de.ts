@@ -549,6 +549,7 @@ const de: Record<string, string> = {
   'Numbered list': 'Nummerierte Liste',
   'Quote': 'Zitat',
   'Code block': 'Codeblock',
+  'This text holds markdown the Rich view can\'t keep. Switch to Markdown to edit it.': 'Dieser Text enthält Markdown, das die formatierte Ansicht nicht erhalten kann. Zum Bearbeiten auf Markdown umschalten.',
   'Link': 'Link',
   'Remove {name} from Savor? Files stay on disk.': '{name} aus Savor entfernen? Die Dateien bleiben auf der Festplatte.',
   'Project settings': 'Projekteinstellungen',
