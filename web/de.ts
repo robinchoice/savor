@@ -1004,6 +1004,7 @@ const de: Record<string, string> = {
   'Explore and plan using OpenCode’s plan mode.': 'Erkundet und plant im Planmodus von OpenCode.',
   'Grok asks when an action needs approval.': 'Grok fragt, wenn eine Aktion eine Freigabe braucht.',
   'Explore and plan without changing files.': 'Erkundet und plant, ohne Dateien zu ändern.',
+  'Always approve': 'Immer freigeben',
   'Commands and edits run as agy\'s settings allow; Antigravity cannot ask here, so the rest is denied.': 'Befehle und Änderungen laufen, soweit es die Einstellungen von agy erlauben; Antigravity kann hier nicht fragen, der Rest wird abgelehnt.',
   'File edits run without asking. Commands run only with an allow rule in agy\'s settings.': 'Dateiänderungen laufen ohne Rückfrage. Befehle nur mit einer Erlaubnisregel in den Einstellungen von agy.',
   'Run every action without asking, commands included. Use only in an isolated environment you trust.': 'Führt jede Aktion ohne Rückfrage aus, auch Befehle. Nur in einer isolierten Umgebung nutzen, der du vertraust.',

@@ -18,7 +18,7 @@ const PLAN_DECISION: ApprovalOption[] = [
 
 const MIME: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp' }
 
-export function acpCommand(provider: Provider, projectId: string, threadId: string) {
+export function acpCommand(provider: Provider, projectId: string, threadId: string, mode = '') {
   const savor = { url: mcpUrl(projectId, threadId), headers: { Authorization: `Bearer ${store.state().mcpToken}` } }
   if (provider === 'opencode') {
     return {
@@ -27,7 +27,8 @@ export function acpCommand(provider: Provider, projectId: string, threadId: stri
       env: { OPENCODE_CONFIG_CONTENT: JSON.stringify({ autoupdate: false, share: 'disabled', mcp: { savor: { type: 'remote', ...savor, enabled: true } } }) },
     }
   }
-  return { bin: BIN.grok, args: ['--no-auto-update', 'agent', '--no-leader', 'stdio'], env: {} }
+  // Grok Build takes only plan as a mode over ACP; approving everything is a flag of the agent process.
+  return { bin: BIN.grok, args: ['--no-auto-update', 'agent', ...(mode === 'always-approve' ? ['--always-approve'] : []), '--no-leader', 'stdio'], env: {} }
 }
 
 export class AcpSession implements Session {
@@ -45,7 +46,7 @@ export class AcpSession implements Session {
   constructor(private host: Host, private thread: Thread) {
     const { p } = host
     this.config = configKey(thread.agent)
-    const cmd = acpCommand(thread.agent.provider, p.id, thread.id)
+    const cmd = acpCommand(thread.agent.provider, p.id, thread.id, thread.agent.permissionMode)
     const child = spawn(...command(cmd.bin, cmd.args), { cwd: host.cwd, env: { ...process.env, ...cmd.env }, stdio: ['pipe', 'pipe', 'pipe'] })
     this.rpc = new Rpc(child, { notification: (m, params) => this.onNotification(m, params), request: (m, params) => this.onRequest(m, params) })
     this.rpc.exited.then(({ code, signal }) => host.closed(this.stopping || signal === 'SIGTERM' ? 'Turn stopped.' : `${cmd.bin} exited with ${code}: ${this.rpc.stderrTail}`))

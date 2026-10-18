@@ -98,6 +98,7 @@ export const STATIC: Record<Provider, Static> = {
     modes: [
       { id: 'default', label: 'Default', detail: 'Grok asks when an action needs approval.' },
       { id: 'plan', label: 'Plan', detail: 'Explore and plan without changing files.' },
+      { id: 'always-approve', label: 'Always approve', detail: 'Run every action without asking, commands included. Use only in an isolated environment you trust.', unsafe: true },
     ],
     defaultMode: 'default',
     fast: false,
