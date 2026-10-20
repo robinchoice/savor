@@ -94,6 +94,9 @@ export interface Thread {
   // Set while Claude Code goes on with API credit after its usage limit (agents.ts): when that limit resets (ms),
   // what the session cost before and the USD it may spend on top.
   apiCredit?: { resetsAt: number; fromUsd: number; budgetUsd: number } | null
+  // The agent the conversation had before Savor switched it at a usage limit: a later request goes back to it once
+  // that limit has reset.
+  preferred?: AgentConfig | null
   // A pushed commit whose GitHub Actions runs the agent waits for, and the input it waits with: Savor
   // continues that request with their result.
   ciWatch?: { sha: string; since: string; inputId: string; projectId?: string } | null
@@ -247,6 +250,8 @@ interface State {
   // Where Claude Code finds an API key when an unattended run reaches its usage limit (README, "API credit"): an env
   // file and the variable in it, never the key itself, and the USD each takeover may spend.
   apiCredit?: { envFile: string; variable: string; headers?: string; budgetUsd?: number }
+  // The agents every conversation goes on with when one reaches its usage limit, from the top, and whether that is on (agents.ts).
+  fallback?: { on: boolean; agents: AgentConfig[] }
   // The daemon's long-term X25519 key for the relay tunnel (base64url secret key).
   identity: string
   relayToken: string
@@ -307,6 +312,7 @@ export function state(): State {
   }
   if (full.agent) full.agent = upgradeAgent(full.agent)
   full.presets = full.presets.map((x) => ({ ...x, agent: upgradeAgent(x.agent) }))
+  if (full.fallback) full.fallback.agents = full.fallback.agents.map(upgradeAgent)
   if (full.terminalRemote) for (const d of full.devices) d.terminal = true
   if ('terminalRemote' in full) {
     delete full.terminalRemote

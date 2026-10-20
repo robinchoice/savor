@@ -1111,6 +1111,23 @@ details.box[open] > summary .chev { transform: rotate(180deg); }
 .agent-status > span:nth-child(2) { flex: 1; min-width: 0; }
 .agent-status > span:last-child { flex: none; font-size: 12px; font-weight: 600; }
 .agent-status small, .mode-card small { display: block; }
+.fallback { display: flex; flex-direction: column; gap: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
+.fallback.off .fallback-list, .fallback.off .fallback-add { opacity: 0.5; }
+.fallback-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.fallback-list li { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+.fallback-rank { flex: none; display: grid; place-items: center; width: 26px; height: 26px; border-radius: 7px; background: var(--raised); font-weight: 600; }
+.fallback-name { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.fallback-name .ap-tag { white-space: nowrap; }
+.fallback-name small { overflow-wrap: anywhere; }
+.fallback-tools { display: flex; align-items: center; gap: 2px; }
+.fallback-tools .agent-btn { margin-right: 4px; }
+.fallback-add { align-self: flex-start; }
+@media (max-width: 600px) {
+  .fallback-list li { flex-wrap: wrap; }
+  .fallback-name { flex-basis: calc(100% - 40px); }
+  .fallback-tools { width: 100%; }
+  .fallback-tools .agent-btn { min-width: 0; overflow: hidden; margin-right: auto; }
+}
 .mode-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
 .mode-card { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 10px 12px; border-radius: 10px; border: 1.5px solid var(--line); background: var(--card); text-align: left; font-size: 13px; }
 .mode-card small { color: var(--muted); font-size: 12px; }

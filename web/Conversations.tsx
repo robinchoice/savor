@@ -7,7 +7,7 @@ import {
   CircleAlert, ArrowUp, ArrowLeft, Pencil, MessageSquarePlus, Brain, Terminal, Wrench, ArrowRight, Smartphone, Monitor, Bot, ShieldQuestion, X, ChevronUp, ChevronDown, ChevronRight, Paperclip, GitBranch, GitFork, GitMerge, Trash2, Copy, FileDiff, Split, SquareArrowOutUpRight, Workflow as WorkflowIcon, Mail, MailOpen, SquareTerminal, RotateCcw,
 } from 'lucide-preact'
 import {
-  api, avatarStyle, cap, desktop, duration, effortLabel, formatStamp, formatTime, go, initial, lastThreadKey, PROVIDER_NAMES, runTrigger, useApi, kindOf, noticeOf, NOTICES, RINGS, type ActivityEvent, type AgentConfig, type Approval, type ApprovalOption, type Attachment, type Decision, type Message, type Plan, type PlanAgent, type PlanStep, type Proc, type Project, type Reason, type Thread, type Workflow, type Worktree,
+  api, avatarStyle, cap, desktop, duration, effortLabel, formatStamp, formatTime, freeAgent, go, initial, lastThreadKey, PROVIDER_NAMES, runTrigger, useApi, kindOf, noticeOf, NOTICES, RINGS, type ActivityEvent, type AgentConfig, type Approval, type ApprovalOption, type Attachment, type Decision, type Fallback, type Message, type Plan, type PlanAgent, type PlanStep, type Proc, type Project, type Reason, type Thread, type Workflow, type Worktree,
 } from './api'
 import { Composer, quoteInComposer, type Picked } from './Composer'
 import { transport } from './transport'
@@ -680,7 +680,11 @@ export function RunElsewhereDialog({ projects, from, threadId, text: selected, o
 }
 
 function NewConversation({ project }: { project: Project }) {
-  const [agent, setAgent] = useState<AgentConfig>(project.agent)
+  const [chosen, setAgent] = useState<AgentConfig | null>(null)
+  const [fallback] = useApi<Fallback>('/fallback', (e) => e.type === 'settings' || e.type === 'status')
+  // Until the user picks one, the composer shows the agent the request starts on. The project's agent goes along, so
+  // the daemon makes the same switch and the project keeps its agent for when the limit has reset.
+  const agent = chosen ?? freeAgent(project.agent, fallback)
   const [worktree, setWorktree] = useState<string | null>(null)
   const [fanout, setFanout] = useState<AgentConfig[] | null>(null)
   // #/p/<id>/new?voice=1, e.g. from a phone shortcut, starts recording right away, also when this view is open already.
@@ -702,7 +706,7 @@ function NewConversation({ project }: { project: Project }) {
       go(`/p/${project.id}/fan/${first.fanout!.id}`)
       return
     }
-    const t = await api<Thread>('POST', `/projects/${project.id}/threads`, { text, attachments, agent, worktree })
+    const t = await api<Thread>('POST', `/projects/${project.id}/threads`, { text, attachments, agent: chosen ?? project.agent, worktree })
     go(`/p/${project.id}/t/${t.id}`)
   }
   return (

@@ -1,6 +1,6 @@
 // Unattended runs at a usage limit: a conversation a workflow run started goes on with the next agent, and
 // waits like the user's own conversations only when every agent is used up. With a key for API credit, Claude
-// Code goes on with that first.
+// Code goes on with that first. With the fallback set on this computer, the user's conversations switch too.
 import { test, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
@@ -119,6 +119,8 @@ test('unattended conversations switch agents at a usage limit, and wait when all
   await startDaemon()
   const switched = await start('limit-later: switch')
   await until(async () => (await read(switched)).messages.some((m) => m.kind === 'conclusion'))
+  // The turn may still be ending: its error goes once it has.
+  await until(async () => !(await read(switched)).busy)
   r = await read(switched)
   assert.equal(r.messages.find((m) => m.kind === 'conclusion').text, 'Codex echo: limit-later: switch (took over)')
   const update = r.messages.find((m) => m.kind === 'update')
@@ -172,4 +174,53 @@ test('unattended conversations switch agents at a usage limit, and wait when all
   assert.ok(!(await read(mine)).messages.some((m) => m.kind === 'update'))
   const files = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? files(path.join(dir, e.name)) : [path.join(dir, e.name)]))
   for (const f of [...files(HOME), ...files(path.join(TMP, 'app'))]) assert.ok(!fs.readFileSync(f, 'utf8').includes(KEY), f)
+})
+
+test('with the fallback on, every conversation switches at a usage limit, skips known limits and goes back after the reset', { timeout: 120_000 }, async () => {
+  server.kill()
+  await new Promise((resolve) => server.on('exit', resolve))
+  await startDaemon()
+  const { token } = JSON.parse(fs.readFileSync(path.join(HOME, 'state.json'), 'utf8'))
+  const api = async (method, p, body) => {
+    const r = await fetch(`http://127.0.0.1:${port}/api${p}`, { method, headers: { cookie: `savor_token=${token}`, 'content-type': 'application/json' }, body: body && JSON.stringify(body) })
+    return r.json()
+  }
+  const [project] = await api('GET', '/projects')
+  const t = `/projects/${project.id}/threads`
+  const read = (id) => api('GET', `${t}/${id}`)
+  const done = (id, n = 1) => until(async () => (await read(id)).messages.filter((m) => m.kind === 'conclusion').length >= n)
+
+  // Off by default, with the agents workflow runs go on with.
+  let f = await api('GET', '/fallback')
+  assert.deepEqual([f.on, f.agents.map((a) => a.provider)], [false, ['claude', 'codex', 'antigravity', 'opencode']])
+  const codex = { provider: 'codex', model: 'gpt-6.1', reasoning: 'high', fast: false, ultracode: false, permissionMode: 'auto-review' }
+  f = await api('PUT', '/fallback', { on: true, agents: [f.agents[0], codex, f.agents[2]] })
+  assert.deepEqual([f.on, f.agents[1]], [true, codex])
+
+  // The user's own conversation goes on with Codex, as set there, and keeps Claude as the one to go back to.
+  const mine = (await api('POST', t, { text: 'limit-later: with fallback' })).id
+  await done(mine)
+  let r = await read(mine)
+  assert.equal(r.messages.find((m) => m.kind === 'conclusion').text, 'Codex echo: limit-later: with fallback (took over)')
+  assert.deepEqual(r.messages.filter((m) => m.kind === 'update').map((m) => m.text), ['Claude Code reached its usage limit. Codex takes over.'])
+  assert.deepEqual([r.thread.agent, r.thread.preferred.provider, r.thread.resumeAt], [codex, 'claude', null])
+  assert.ok((await api('GET', '/fallback')).limited.includes('claude'))
+
+  // A new conversation for Claude starts on Codex right away.
+  const next = (await api('POST', t, { text: 'skip it', agent: { provider: 'claude' } })).id
+  await done(next)
+  r = await read(next)
+  assert.deepEqual(r.messages.filter((m) => m.kind !== 'user').map((m) => [m.kind, m.text]), [['update', 'Claude Code is at its usage limit. Codex takes over.'], ['conclusion', 'Codex echo: skip it']])
+  assert.equal(r.thread.agent.provider, 'codex')
+
+  // Once Claude's limit has reset, the next request goes back to it.
+  server.kill()
+  await new Promise((resolve) => server.on('exit', resolve))
+  await startDaemon()
+  await api('POST', `${t}/${mine}/messages`, { text: 'back again' })
+  await done(mine, 2)
+  r = await read(mine)
+  assert.equal(r.messages.findLast((m) => m.kind === 'update').text, 'The usage limit of Claude Code has reset. It takes over again.')
+  assert.equal(r.messages.findLast((m) => m.kind === 'conclusion').text, 'Echo: back again')
+  assert.deepEqual([r.thread.agent.provider, r.thread.preferred], ['claude', null])
 })

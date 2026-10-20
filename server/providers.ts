@@ -206,6 +206,8 @@ const probes: Record<Provider, () => Promise<Probe>> = {
 
 const CACHE_MS = 5 * 60_000
 let cache: { at: number; list: Promise<ProviderInfo[]> } | null = null
+// The agents as last probed, for decisions that can't wait for a probe; null before the first one.
+let known: ProviderInfo[] | null = null
 
 // OpenCode leaves a 4 MB library in the temp folder each time it starts (anomalyco/opencode#21427), so
 // its probe runs once per daemon start and again only when its binary changes.
@@ -244,8 +246,10 @@ export function listAgents(refresh = false): Promise<ProviderInfo[]> {
     }),
   )
   cache = { at: Date.now(), list }
+  void list.then((l) => (known = l))
   return list
 }
+export const knownAgents = () => known
 
 // The skills an agent offers in a folder, as the agent itself reports them: its own, the user's, the
 // project's and those of its plugins.
@@ -317,6 +321,8 @@ const usageProbes: Partial<Record<Provider, () => Promise<UsageWindow[]>>> = {
     return (await antigravityUsage()).map((w) => ({ label: w.label, percent: w.percent, resets: w.resetsAt ? resetTime(w.resetsAt / 1000) : null }))
   },
 }
+
+export const knownUsage = () => usage
 
 // `fresh` waits for values asked for within the last minute.
 export function listUsage(fresh = false): Promise<(Usage & { stale: boolean })[]> {

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks'
-import { ArrowUpRight, Bot, Check, ChevronDown, ChevronRight, Laptop, MessageSquare, Mic, Plus, SlidersHorizontal, Smartphone, X } from 'lucide-preact'
-import { api, cap, desktop, useAgents, useApi, type AgentConfig, type Me } from './api'
+import { ArrowDown, ArrowUp, ArrowUpRight, Bot, Check, ChevronDown, ChevronRight, Laptop, MessageSquare, Mic, Plus, SlidersHorizontal, Smartphone, X } from 'lucide-preact'
+import { api, cap, desktop, PROVIDER_NAMES, useAgents, useApi, type AgentConfig, type Fallback, type Me } from './api'
 import { AgentButton, AgentMenu } from './Composer'
 import { AgentStatusRow, ModeCards } from './Setup'
 import { useNotificationToggle } from './notify'
@@ -245,11 +245,91 @@ function Agents() {
           </>
         )}
         {menu && agent && info && <AgentMenu agent={agent} agents={agents ?? []} setAgent={setAgent} close={() => setMenu(false)} />}
+        <FallbackList />
         {agents?.map((a) => (
           <AgentStatusRow key={a.id} agent={a} />
         ))}
       </div>
     </details>
+  )
+}
+
+// The agents every conversation goes on with when one reaches its usage limit, from the top, each with its own
+// model, effort and permissions. Changes apply right away.
+function FallbackList() {
+  const agents = useAgents()
+  const [fallback, reload] = useApi<Fallback>('/fallback', (e) => e.type === 'settings')
+  const [menu, setMenu] = useState<number | null>(null)
+  const [error, setError] = useState('')
+  if (!fallback) return null
+  const { on, agents: list, limited } = fallback
+  const save = (next: Partial<Fallback>) =>
+    api('PUT', '/fallback', { on, agents: list, ...next }).then(
+      () => (setError(''), reload()),
+      (e) => setError((e as Error).message),
+    )
+  const swap = (i: number, j: number) => {
+    const next = [...list]
+    ;[next[i], next[j]] = [next[j], next[i]]
+    setMenu(null)
+    save({ agents: next })
+  }
+  // A new entry starts with an installed agent that is not in the list yet, with its defaults.
+  const add = () => {
+    const p = agents?.find((a) => a.installed && !list.some((x) => x.provider === a.id)) ?? agents?.[0]
+    if (p) save({ agents: [...list, { provider: p.id, model: '', reasoning: p.defaultEffort, fast: false, ultracode: false, permissionMode: p.defaultMode }] }).then(() => setMenu(list.length))
+  }
+  const first = list.find((a) => !limited.includes(a.provider))
+  return (
+    <div class={`fallback ${on ? '' : 'off'}`}>
+      <div class="setting">
+        <span>
+          {t('Switch agents at usage limits')}
+          <small class={error ? 'error-text' : 'muted'}>{error || t('For open and new conversations in all projects on this computer')}</small>
+        </span>
+        <button class={`switch ${on ? 'on' : ''}`} role="switch" aria-checked={on} aria-label={t('Switch agents at usage limits')} onClick={() => save({ on: !on })}>
+          <i />
+        </button>
+      </div>
+      <ol class="fallback-list">
+        {list.map((a, i) => {
+          const info = agents?.find((x) => x.id === a.provider)
+          const mode = info?.modes.find((m) => m.id === a.permissionMode)
+          const name = PROVIDER_NAMES[a.provider] ?? a.provider
+          return (
+            <li key={i}>
+              <span class="fallback-rank">{i + 1}</span>
+              <span class="fallback-name">
+                <b>
+                  {name} {i === 0 && <span class="ap-tag">{t('Preferred')}</span>}
+                </b>
+                {mode && <small class="muted">{t(mode.label)}</small>}
+                <small class={limited.includes(a.provider) ? 'warn' : 'ok'}>{limited.includes(a.provider) ? t('At its usage limit') : on && i > 0 && a === first ? t('Takes over now') : t('Available')}</small>
+              </span>
+              <span class="fallback-tools">
+                <AgentButton agent={a} info={info} open={menu === i} toggle={() => setMenu(menu === i ? null : i)} />
+                <button class="icon-btn" title={t('Move {name} up', { name })} disabled={i === 0} onClick={() => swap(i, i - 1)}>
+                  <ArrowUp size={15} />
+                </button>
+                <button class="icon-btn" title={t('Move {name} down', { name })} disabled={i === list.length - 1} onClick={() => swap(i, i + 1)}>
+                  <ArrowDown size={15} />
+                </button>
+                <button class="icon-btn" title={t('Remove {name}', { name })} onClick={() => (setMenu(null), save({ agents: list.filter((_, j) => j !== i) }))}>
+                  <X size={15} />
+                </button>
+              </span>
+              {menu === i && <AgentMenu agent={a} agents={agents ?? []} setAgent={(next) => save({ agents: list.map((x, j) => (j === i ? next : x)) })} close={() => setMenu(null)} />}
+            </li>
+          )
+        })}
+      </ol>
+      {list.length < 10 && (
+        <button class="ghost small fallback-add" onClick={add}>
+          <Plus size={14} /> {t('Add an agent')}
+        </button>
+      )}
+      <small class="muted">{t('Agents at a known limit are skipped, also before a new conversation starts. Once the limit of the agent a conversation had resets, its next request goes back to it. When all are at their limit, the conversation waits for the earliest reset.')}</small>
+    </div>
   )
 }
 

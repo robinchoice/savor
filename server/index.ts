@@ -190,6 +190,17 @@ route('PUT', '/agent', (_, b, ctx) => {
   emit({ type: 'health' })
   return s.agent
 })
+// The agents every conversation goes on with at a usage limit, in their order (agents.ts).
+route('GET', '/fallback', () => agents.fallbackSettings())
+route('PUT', '/fallback', (_, b, ctx) => {
+  localOnly(ctx)
+  if (!Array.isArray(b.agents) || b.agents.length > 10) throw new BadRequest('Name up to 10 agents in their order.')
+  const s = store.state()
+  s.fallback = { on: b.on === true, agents: b.agents.map((a: Partial<store.AgentConfig>) => agentFrom(ctx, store.defaultAgent(), a)) }
+  store.saveState(s)
+  emit({ type: 'settings' })
+  return agents.fallbackSettings()
+})
 route('GET', '/presets', () => store.listPresets())
 route('POST', '/presets', (_, b, ctx) => {
   localOnly(ctx)
@@ -527,6 +538,8 @@ route('PATCH', '/projects/:pid/threads/:tid', (params, b, ctx) => {
     const current = store.getThread(p, params.tid).agent
     const agent = agentFrom(ctx, current, b.agent)
     patch.agent = agent
+    // The user's choice: Savor no longer goes back to the agent it had before a usage limit.
+    patch.preferred = null
     // Another model has another context window, and another agent starts with an empty one.
     if (agent.provider !== current.provider || agent.model !== current.model) patch.context = null
     if (ctx.auth.origin === 'local') store.updateProject(p.id, { agent })

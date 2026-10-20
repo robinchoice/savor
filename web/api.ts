@@ -125,6 +125,10 @@ export interface ProviderInfo {
 }
 export interface Skill { name: string; description: string }
 export interface Preset { id: string; name: string; agent: AgentConfig }
+// The agents every conversation goes on with at a usage limit, from the top, and the agents at a usage limit now.
+export interface Fallback { on: boolean; agents: AgentConfig[]; limited: string[] }
+// The agent a request starts on: this one, or with the fallback on and this one at its limit, the first free one of the fallback.
+export const freeAgent = (agent: AgentConfig, f?: Fallback) => (f?.on && f.limited.includes(agent.provider) && f.agents.find((a) => !f.limited.includes(a.provider))) || agent
 export interface Thread {
   id: string
   title: string
