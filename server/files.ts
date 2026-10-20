@@ -32,18 +32,42 @@ export function read(p: Project, rel: string) {
 
 export const write = (p: Project, rel: string, content: string) => fs.writeFileSync(resolve(p, rel), content)
 
-// Whether a write to `rel` would land in Savor's own records (.savor/), following symlinks. A dangling
-// symlink would create its target, so it counts as internal.
-export function internal(p: Project, rel: string) {
+// Where a write to `rel` lands, relative to the real project folder and following symlinks, or null for a
+// dangling symlink, which would create its target wherever it points.
+function landing(p: Project, rel: string) {
   const file = resolve(p, rel)
   let target: string
   try {
     target = fs.realpathSync(file)
   } catch {
-    if (fs.lstatSync(file, { throwIfNoEntry: false })?.isSymbolicLink()) return true
-    target = path.join(fs.realpathSync(path.dirname(file)), path.basename(file))
+    if (fs.lstatSync(file, { throwIfNoEntry: false })?.isSymbolicLink()) return null
+    let dir = path.dirname(file)
+    const rest = [path.basename(file)]
+    while (!fs.existsSync(dir)) {
+      rest.unshift(path.basename(dir))
+      dir = path.dirname(dir)
+    }
+    target = path.join(fs.realpathSync(dir), ...rest)
   }
-  return path.relative(fs.realpathSync(p.path), target).split(path.sep)[0].toLowerCase() === '.savor'
+  return path.relative(fs.realpathSync(p.path), target)
+}
+
+// Whether a write to `rel` would land in Savor's own records (.savor/).
+export function internal(p: Project, rel: string) {
+  const real = landing(p, rel)
+  return real === null || real.split(path.sep)[0].toLowerCase() === '.savor'
+}
+
+// What Savor's own git calls and the agents load and act on without asking: git's config and hooks
+// (core.fsmonitor runs on every git status), the agents' project settings with their hooks, allowed
+// commands, MCP servers and plugins.
+const RUNS = new Set(['.git', '.claude', '.codex', '.gemini', '.grok', '.opencode', '.mcp.json', 'opencode.json', 'opencode.jsonc'])
+
+// Whether a write to `rel` could make something run, or lands outside the project through a symlink.
+export function runs(p: Project, rel: string) {
+  const real = landing(p, rel)
+  if (real === null || real === '..' || real.startsWith('..' + path.sep) || path.isAbsolute(real)) return true
+  return real.split(path.sep).some((part) => RUNS.has(part.toLowerCase()))
 }
 
 // Name search for @-mentions; walks at most a few thousand entries.

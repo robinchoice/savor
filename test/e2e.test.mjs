@@ -1457,6 +1457,30 @@ test('a conversation can work in its own git worktree, which merges back and can
   assert.equal(fs.realpathSync(agentRuns().filter((r) => r.agent === 'claude').at(-1).cwd), fs.realpathSync(PROJECT))
 })
 
+test("a paired device without the terminal can't change what runs commands without asking", async () => {
+  const pid = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT).id
+  const put = (file, cookie) => api('PUT', `/projects/${pid}/file`, { path: file, content: '[core]\n\tfsmonitor = touch pwned\n' }, cookie)
+  const device = await pairDevice('CI no-terminal editor')
+  const config = fs.readFileSync(path.join(PROJECT, '.git/config'), 'utf8')
+  fs.mkdirSync(path.join(PROJECT, '.claude'), { recursive: true })
+  fs.symlinkSync('.git', path.join(PROJECT, 'git-link'))
+  fs.symlinkSync(TMP, path.join(PROJECT, 'outside'))
+  for (const file of ['.git/config', '.GIT/config', 'git-link/config', '.claude/settings.json', '.mcp.json', 'outside/escaped']) {
+    assert.equal((await put(file, device)).status, 403, file)
+  }
+  assert.equal(fs.readFileSync(path.join(PROJECT, '.git/config'), 'utf8'), config)
+  assert.ok(!fs.existsSync(path.join(TMP, 'escaped')))
+  assert.equal((await put('notes.md', device)).status, 200)
+
+  // With the terminal allowed, the device may, like this computer.
+  const trusted = await pairDevice('CI terminal editor')
+  const id = (await api('GET', '/devices')).body.find((d) => d.name === 'CI terminal editor').id
+  await api('PATCH', `/devices/${id}`, { terminal: true })
+  assert.equal((await put('.mcp.json', trusted)).status, 200)
+  assert.equal((await put('.claude/settings.json')).status, 200)
+  for (const file of ['git-link', 'outside', 'notes.md', '.mcp.json', '.claude']) fs.rmSync(path.join(PROJECT, file), { recursive: true })
+})
+
 test('agents can start conversations in a worktree', async () => {
   const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
   const [thread] = (await api('GET', `/projects/${project.id}/threads`)).body

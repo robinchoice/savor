@@ -872,10 +872,14 @@ route('GET', '/projects/:pid/files', (params, _, ctx) => files.list(project(para
 route('GET', '/projects/:pid/files/search', (params, _, ctx) => files.search(project(params), ctx.query.get('q') ?? ''))
 route('GET', '/projects/:pid/skills', (params, _, ctx) => listSkills(ctx.query.get('provider') ?? '', project(params).path))
 route('GET', '/projects/:pid/file', (params, _, ctx) => files.read(project(params), ctx.query.get('path') ?? ''))
-route('PUT', '/projects/:pid/file', (params, b) => {
+route('PUT', '/projects/:pid/file', (params, b, ctx) => {
   const p = project(params)
   // Savor's own records change only through their routes, which check who is asking.
   if (files.internal(p, b.path)) throw new Forbidden("Savor's own files (.savor/) can't be edited here.")
+  // Git's config and the agents' settings run commands without asking, so a paired device changes them
+  // only where it may use the terminal too.
+  if (ctx.auth.origin !== 'local' && !ctx.auth.device?.terminal && files.runs(p, b.path))
+    throw new Forbidden("Git's and the agents' settings run commands on your computer. Allow the terminal for this device at your computer to edit them from here.")
   files.write(p, b.path, b.content)
   return {}
 })
