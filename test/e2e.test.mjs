@@ -40,7 +40,7 @@ const freePort = () =>
   })
 
 const api = async (method, p, body, cookie = `savor_token=${token}`) => {
-  const r = await fetch(`${base}/api${p}`, { method, headers: { cookie, 'content-type': 'application/json' }, body: body && JSON.stringify(body) }).catch((e) => {
+  const r = await fetch(`${base}/api${p}`, { method, headers: { connection: 'close', cookie, 'content-type': 'application/json' }, body: body && JSON.stringify(body) }).catch((e) => {
     throw new Error(`${method} ${p}: ${e.message} (${e.cause?.code ?? e.cause?.message ?? 'no cause'})`)
   })
   return { status: r.status, body: await r.json().catch(() => null) }

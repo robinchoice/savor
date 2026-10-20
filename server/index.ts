@@ -1157,6 +1157,9 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
 const UPDATE_GRACE = 5 * 60_000
 const RESTART_COUNTDOWN = 30_000
 const restart = { updated: false, at: null as number | null, timer: undefined as NodeJS.Timeout | undefined }
+// Only this daemon watches the AppImage: agents, and the dev servers and tests they start, don't inherit it.
+const APPIMAGE = process.env.SAVOR_EXIT_ON_UPDATE
+delete process.env.SAVOR_EXIT_ON_UPDATE
 
 function scheduleRestart() {
   clearTimeout(restart.timer)
@@ -1202,7 +1205,7 @@ route('POST', '/restart', () => {
 const settings = () => ({
   autoUpdate: store.state().autoUpdate !== false,
   autoRestart: store.state().autoRestart !== false,
-  service: !!process.env.SAVOR_EXIT_ON_UPDATE,
+  service: !!APPIMAGE,
   usagePing: usageAvailable() ? store.state().usagePing !== false : null,
   pushDelay: push.delay(),
 })
@@ -1242,7 +1245,7 @@ http
     startRelay()
     startUsagePing()
     ci.startCiMonitor()
-    if (process.env.SAVOR_EXIT_ON_UPDATE) exitOnUpdate(process.env.SAVOR_EXIT_ON_UPDATE)
+    if (APPIMAGE) exitOnUpdate(APPIMAGE)
     agents.resumeInterrupted()
     console.log(`Savor running — open ${PUBLIC_URL}/?token=${store.state().token}`)
   })

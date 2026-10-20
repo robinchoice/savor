@@ -6,6 +6,9 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
+// A test daemon must not watch the AppImage of the Savor instance running these tests.
+delete process.env.SAVOR_EXIT_ON_UPDATE
+
 const file = path.join(os.tmpdir(), 'savor-test.gitconfig')
 fs.writeFileSync(`${file}.${process.pid}`, '[user]\n\tname = Test\n\temail = t@test\n')
 fs.renameSync(`${file}.${process.pid}`, file)

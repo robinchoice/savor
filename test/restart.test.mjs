@@ -13,6 +13,7 @@ const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..')
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'savor-restart-'))
 const HOME = path.join(TMP, 'home')
 const APP = path.join(TMP, 'Savor.AppImage')
+const AGENT_LOG = path.join(TMP, 'agents.jsonl')
 let server
 after(() => {
   server?.kill()
@@ -41,7 +42,7 @@ test('an installed update restarts the daemon after a countdown, or on request',
   fs.writeFileSync(APP, 'v1')
   const port = await freePort()
   const entry = fs.existsSync(path.join(ROOT, 'dist/server/index.mjs')) ? 'dist/server/index.mjs' : 'bin/savor.js'
-  server = spawn(process.execPath, [path.join(ROOT, entry)], { env: { ...process.env, SAVOR_HOME: HOME, SAVOR_PORT: String(port), SAVOR_EXIT_ON_UPDATE: APP }, stdio: ['ignore', 'pipe', 'inherit'] })
+  server = spawn(process.execPath, [path.join(ROOT, entry)], { env: { ...process.env, SAVOR_HOME: HOME, SAVOR_PORT: String(port), SAVOR_EXIT_ON_UPDATE: APP, SAVOR_CLAUDE_BIN: path.join(ROOT, 'test/fake-claude.mjs'), CLAUDE_CONFIG_DIR: path.join(TMP, 'claude'), FAKE_AGENT_LOG: AGENT_LOG }, stdio: ['ignore', 'pipe', 'inherit'] })
   const exited = new Promise((resolve) => server.on('exit', resolve))
   await new Promise((resolve) => server.stdout.on('data', (d) => d.toString().includes('Savor running') && resolve()))
   const { token } = JSON.parse(fs.readFileSync(path.join(HOME, 'state.json'), 'utf8'))
@@ -53,6 +54,14 @@ test('an installed update restarts the daemon after a countdown, or on request',
   assert.deepEqual(await api('GET', '/settings'), { autoUpdate: true, autoRestart: true, service: true, usagePing: null, pushDelay: 5 })
   assert.deepEqual(await api('PATCH', '/settings', { autoRestart: false }), { autoUpdate: true, autoRestart: false, service: true, usagePing: null, pushDelay: 5 })
   assert.deepEqual(await api('GET', '/restart'), { updated: false, left: null })
+
+  // The service keeps watching its AppImage, but its agents must not pass that watch to test daemons.
+  const project = await api('POST', '/projects', { path: path.join(TMP, 'project'), create: true })
+  const thread = await api('POST', `/projects/${project.id}/threads`, { text: 'check the environment' })
+  await until(async () => (await api('GET', `/projects/${project.id}/threads/${thread.id}`)).messages.some((m) => m.text === 'Echo: check the environment'), 10_000)
+  const launches = fs.readFileSync(AGENT_LOG, 'utf8').trim().split('\n').map((line) => JSON.parse(line))
+  assert.ok(launches.length > 0)
+  assert.ok(launches.every((launch) => launch.exitOnUpdate === undefined))
 
   fs.writeFileSync(APP, 'v2')
   // Waiting with the restart switched off: only offered.

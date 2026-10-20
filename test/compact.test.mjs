@@ -60,7 +60,17 @@ async function startDaemon() {
     },
     stdio: ['ignore', 'pipe', 'inherit'],
   })
-  await new Promise((resolve) => server.stdout.on('data', (d) => d.toString().includes('Savor running') && resolve()))
+  await new Promise((resolve, reject) => {
+    const onExit = (code, signal) => reject(new Error(`Daemon exited before startup: code=${code}, signal=${signal}`))
+    server.once('error', reject)
+    server.once('exit', onExit)
+    server.stdout.on('data', (d) => {
+      if (!d.toString().includes('Savor running')) return
+      server.off('error', reject)
+      server.off('exit', onExit)
+      resolve()
+    })
+  })
 }
 
 test('open Claude conversations compact when left idle, as Claude settings allow', { timeout: 120_000 }, async () => {
