@@ -542,6 +542,17 @@ test("background work inside the agent's own process counts as waiting and can b
   await page.waitForSelector('.stop-work', { state: 'detached' })
 })
 
+test('plain text that ends a turn while the agent\'s own background work runs is no conclusion', async () => {
+  await newConversation()
+  await send('quiet-background: mockups')
+  await page.waitForSelector('text=quiet-background: mockups')
+  fs.writeFileSync(AGENT_LOG + '.release', 'quiet-background: mockups')
+  await page.waitForSelector('text=Echo: quiet-background: mockups')
+  const [, pid, tid] = (await page.evaluate(() => location.hash)).match(/#\/p\/([^/]+)\/t\/([^/?]+)/)
+  const { messages } = (await api('GET', `/projects/${pid}/threads/${tid}`)).body
+  assert.deepEqual(messages.filter((m) => m.kind === 'conclusion').map((m) => m.text), ['Echo: quiet-background: mockups'])
+})
+
 test('background work an agent leaves running after its conclusion can be stopped', async () => {
   await newConversation()
   await send('own-server: dev server')
@@ -1304,7 +1315,7 @@ test('stopping a process only works for processes registered in the project', as
   await until(() => proc.signalCode === 'SIGTERM')
 })
 
-const gitIn = (cwd, ...args) => execFileSync('git', ['-c', 'user.email=t@test', '-c', 'user.name=Test', ...args], { cwd, stdio: 'pipe' }).toString().trim()
+const gitIn = (cwd, ...args) => execFileSync('git', args, { cwd, stdio: 'pipe' }).toString().trim()
 const agentRuns = () => fs.readFileSync(AGENT_LOG, 'utf8').trim().split('\n').map((l) => JSON.parse(l))
 async function pairDevice(name) {
   const pairing = (await api('POST', '/devices/pairing')).body
@@ -1675,6 +1686,34 @@ test('agents add projects: a new folder gets a git repository, an existing proje
 
   await api('DELETE', `/devices/${(await api('GET', '/devices')).body.find((d) => d.name === 'CI project phone').id}`)
   await api('DELETE', `/projects/${made.id}`)
+})
+
+test('list_conversations filters by state, change time and count', async () => {
+  const project = (await api('POST', '/projects', { path: path.join(TMP, 'list-filter'), name: 'List Filter', create: true })).body
+  const start = async (text) => (await api('POST', `/projects/${project.id}/threads`, { text })).body
+  const get = async (t) => (await api('GET', `/projects/${project.id}/threads/${t.id}?hidden=1`)).body
+  const done = await start('list done')
+  await until(async () => (await get(done)).messages.some((m) => m.text === 'Echo: list done') && !(await get(done)).busy)
+  await api('PATCH', `/projects/${project.id}/threads/${done.id}`, { completed: true })
+  await new Promise((r) => setTimeout(r, 20))
+  const since = new Date().toISOString()
+  const slow = await start('slow: list busy')
+  await until(async () => (await get(slow)).busy)
+
+  const { mcpToken } = JSON.parse(fs.readFileSync(path.join(HOME, 'state.json'), 'utf8'))
+  const client = new Client({ name: 'e2e', version: '1' })
+  await client.connect(new StreamableHTTPClientTransport(new URL(`${base}/mcp?project=${project.id}&thread=${slow.id}`), { requestInit: { headers: { authorization: `Bearer ${mcpToken}` } } }))
+  const list = async (args) => JSON.parse((await client.callTool({ name: 'list_conversations', arguments: args })).content[0].text)
+  const all = await list({})
+  assert.deepEqual(all.map((t) => t.id), [slow.id, done.id], 'without filters it lists all of them')
+  assert.ok(all.every((t) => t.updatedAt))
+  assert.deepEqual((await list({ state: 'open' })).map((t) => t.id), [slow.id])
+  assert.deepEqual((await list({ state: 'busy' })).map((t) => t.id), [slow.id])
+  assert.deepEqual((await list({ since })).map((t) => t.id), [slow.id])
+  assert.deepEqual((await list({ limit: 1 })).map((t) => t.id), [slow.id])
+  await client.close()
+  fs.writeFileSync(AGENT_LOG + '.release', 'slow: list busy')
+  await until(async () => !(await get(slow)).busy)
 })
 
 test('agents send messages to conversations in other projects, marked as theirs, and a message they set off sends none on', async () => {

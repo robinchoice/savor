@@ -7,6 +7,7 @@
 // - "background: <text>" → acknowledges, registers a process it started and ends the turn without a conclusion
 // - "own-background: <text>" → acknowledges, reports a background task of its own and ends the turn; once the
 //   test's release file names the input, the task is done and it concludes in a turn it starts by itself
+// - "quiet-background: <text>" → like own-background, but without an acknowledgement, so its turn ends on plain text
 // - "own-server: <text>" → reports a background task of its own that keeps running after the conclusion
 // - "native-ask: <question>" → an AskUserQuestion control request with the options Blue/Green
 // - "open-page: <url>" → an MCP server asks through an elicitation control request to open that page, then "Page: <action>"
@@ -147,8 +148,8 @@ async function turn(text, command) {
     const job = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60_000)'], { detached: true, stdio: 'ignore' })
     job.unref()
     await call('register_process', { pid: job.pid, name: input.slice('background:'.length).trim(), command: 'node -e …' })
-  } else if (input.startsWith('own-background:') || input.startsWith('own-server:')) {
-    await call('send_acknowledgement_message', { text: 'On it.', summary: 'Work on the request.' })
+  } else if (input.startsWith('own-background:') || input.startsWith('own-server:') || input.startsWith('quiet-background:')) {
+    if (!input.startsWith('quiet-background:')) await call('send_acknowledgement_message', { text: 'On it.', summary: 'Work on the request.' })
     out({ type: 'system', subtype: 'background_tasks_changed', tasks: [{ task_id: 'b1', task_type: 'local_bash', description: input }] })
     if (input.startsWith('own-server:')) await call('send_conclusion_message', { text: `Echo: ${input}` })
     else

@@ -51,7 +51,7 @@ test('a project folder moves, archives or follows its symlink, and its conversat
     const concluded = (pid, tid, text) => until(async () => (await api('GET', `/projects/${pid}/threads/${tid}`)).body.messages.some((m) => m.kind === 'conclusion' && m.text === text))
     const runs = () => fs.readFileSync(log, 'utf8').trim().split('\n').map((l) => JSON.parse(l))
     const project = async (id) => (await api('GET', '/projects')).body.find((p) => p.id === id)
-    const commit = (dir) => execFileSync('git', ['-c', 'user.email=t@test', '-c', 'user.name=Test', 'commit', '-q', '--allow-empty', '-m', 'init'], { cwd: dir, stdio: 'pipe' })
+    const commit = (dir) => execFileSync('git', ['commit', '-q', '--allow-empty', '-m', 'init'], { cwd: dir, stdio: 'pipe' })
 
     // A real move: the folder goes to the archive, a symlink stays at the old path.
     const alphaPath = path.join(dev, 'alpha')

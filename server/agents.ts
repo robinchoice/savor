@@ -360,9 +360,10 @@ function endTurn(p: Project, tid: string, result: { text?: string; error?: strin
   } else {
     store.updateThread(p, tid, { error: null })
     // Fallback for agents that ignore the message protocol: surface their final text. An agent that
-    // acknowledged and ended its turn without a conclusion is waiting for background work.
+    // acknowledged and ended its turn without a conclusion is waiting for background work, and so is one
+    // whose own background work (subagents, shell commands) still runs: its text is no result yet.
     const r = request(p, tid)
-    if (!r.ack && !r.conclusion && !r.updates.size && result.text?.trim()) {
+    if (!r.ack && !r.conclusion && !r.updates.size && result.text?.trim() && !runsBackground(tid)) {
       const msg = post(p, tid, { kind: 'conclusion', text: result.text, modelInfo: agent })
       r.conclusion = { key: '', id: msg.id }
       markConcluded(tid, msg.id)

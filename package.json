@@ -25,7 +25,7 @@
     "relay": "node dist/relay/server.mjs",
     "dev:web": "vite",
     "typecheck": "tsc --noEmit",
-    "test": "flock /tmp/savor-test.lock node --import tsx --test --test-concurrency=2 \"test/*.test.mjs\"",
+    "test": "flock /tmp/savor-test.lock node --import tsx --import ./test/git-env.mjs --test --test-concurrency=2 \"test/*.test.mjs\"",
     "screenshots": "node scripts/screenshots.mjs",
     "release": "bash scripts/release.sh"
   },

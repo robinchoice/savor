@@ -467,12 +467,26 @@ function buildServer(p: Project, tid: string) {
     ok({ current: modelInfo(), agents: await listAgents() }),
   )
 
-  server.registerTool('list_conversations', { description: 'List the conversations in this project, or in another one named by `project`.', inputSchema: { project: PROJECT } }, async ({ project }) => {
-    const target = project ? findProject(project) : p
-    return ok(
-      store.listThreads(target).map((t) => ({ id: t.id, title: t.title, label: t.label?.name ?? null, completed: t.completed, busy: agents.isBusy(t.id), worktree: t.worktree?.branch ?? null, url: threadUrl(t.id, target) })),
-    )
-  })
+  server.registerTool(
+    'list_conversations',
+    {
+      description: 'List the conversations in this project, or in another one named by `project`, newest input first. Without filters it lists all of them.',
+      inputSchema: {
+        project: PROJECT,
+        state: z.enum(['open', 'busy']).optional().describe('Only conversations not marked as done (open) or with an agent at work (busy)'),
+        since: z.iso.datetime({ offset: true }).optional().describe('Only conversations changed since this ISO time, see updatedAt'),
+        limit: z.number().int().min(1).optional().describe('At most this many conversations'),
+      },
+    },
+    async ({ project, state, since, limit }) => {
+      const target = project ? findProject(project) : p
+      const threads = store
+        .listThreads(target)
+        .filter((t) => (state === 'open' ? !t.completed : state === 'busy' ? agents.isBusy(t.id) : true) && (!since || Date.parse(t.updatedAt) >= Date.parse(since)))
+        .slice(0, limit)
+      return ok(threads.map((t) => ({ id: t.id, title: t.title, label: t.label?.name ?? null, completed: t.completed, busy: agents.isBusy(t.id), worktree: t.worktree?.branch ?? null, updatedAt: t.updatedAt, url: threadUrl(t.id, target) })))
+    },
+  )
 
   server.registerTool(
     'read_conversation',
