@@ -1,12 +1,11 @@
 // What each agent can do (models, effort levels, permission modes) and whether it is installed and signed in.
 import { execFile } from 'node:child_process'
 import fs from 'node:fs'
-import os from 'node:os'
 import path from 'node:path'
 import { upgradeAgent, type AgentConfig, type Provider } from './store.js'
 import { BIN, command } from './config.js'
 import { codexSkills, codexUsage, probeCodex } from './codex.js'
-import { probeClaude } from './claude.js'
+import { claudeUsage, probeClaude } from './claude.js'
 import { antigravitySkills, antigravityUsage, probeAntigravity } from './antigravity.js'
 import { acpSkills } from './acp.js'
 
@@ -295,14 +294,11 @@ const windowLabel = (mins: number) => (mins === 10080 ? 'Weekly' : mins % 1440 =
 const resetTime = (s: number) => new Date(s * 1000).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).replace(/\u202f?\s?([AP]M)$/, (_, m) => m.toLowerCase())
 
 const usageProbes: Partial<Record<Provider, () => Promise<UsageWindow[]>>> = {
-  // `claude -p /usage` no longer answers, but Claude Code keeps the last answer of its usage endpoint in
-  // its global config, and its running sessions refresh it. A window whose reset has passed starts over.
+  // A window whose reset has passed starts over.
   async claude() {
-    const dir = process.env.CLAUDE_CONFIG_DIR
-    const file = dir ? path.join(dir, '.claude.json') : path.join(os.homedir(), '.claude.json')
-    const limits: any[] = JSON.parse(await fs.promises.readFile(file, 'utf8')).cachedUsageUtilization?.utilization?.limits ?? []
+    const limits = await claudeUsage()
     return limits.map((l) => {
-      const resets = Date.parse(l.resets_at)
+      const resets = Date.parse(l.resets_at ?? '')
       const model = l.scope?.model?.display_name
       return {
         label: l.group === 'session' ? '5 hours' : model ? `Weekly · ${model}` : 'Weekly',

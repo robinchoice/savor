@@ -34,7 +34,7 @@
 // `--version`, `auth status` and `-p /usage` answer like the real CLI, so Savor lists the fake as installed.
 // With --no-session-persistence it answers a side question (/btw) on stdin.
 // Started without an MCP config it is Savor's probe and answers the initialize request with its models and
-// commands.
+// commands, and get_usage with the limits in the test's limits file.
 import readline from 'node:readline'
 import crypto from 'node:crypto'
 import fs from 'node:fs'
@@ -65,6 +65,11 @@ if (!args.includes('--mcp-config')) {
   readline.createInterface({ input: process.stdin }).on('line', (line) => {
     const msg = JSON.parse(line)
     const answer = (response) => console.log(JSON.stringify({ type: 'control_response', response: { subtype: 'success', request_id: msg.request_id, response } }))
+    // The test's limits file holds the subscription limits get_usage reports.
+    if (msg.request?.subtype === 'get_usage') {
+      const file = process.env.FAKE_AGENT_LOG + '.limits'
+      return answer({ rate_limits: fs.existsSync(file) ? { limits: JSON.parse(fs.readFileSync(file, 'utf8')) } : null })
+    }
     if (msg.request?.subtype !== 'initialize') return
     const models = [
       { value: 'default', displayName: 'Default (recommended)', supportedEffortLevels: ['low', 'high'] },

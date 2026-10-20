@@ -401,3 +401,29 @@ export function probeClaude(cwd?: string) {
     child.stdin!.write(JSON.stringify({ type: 'control_request', request_id: crypto.randomUUID(), request: { subtype: 'initialize' } }) + '\n')
   })
 }
+
+// The subscription limits, from a short run's answer to a get_usage request. No prompt is sent, and
+// skip_behaviors spares it the scan of the last week's transcripts.
+export function claudeUsage() {
+  type Limit = { group: string; percent: number; resets_at: string | null; scope?: { model?: { display_name?: string } } | null }
+  return new Promise<Limit[]>((resolve) => {
+    const child = spawn(...command(BIN.claude, ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--settings', JSON.stringify({ disableAllHooks: true })]), { stdio: ['pipe', 'pipe', 'ignore'] })
+    const done = (limits: Limit[] = []) => {
+      clearTimeout(timer)
+      child.kill('SIGTERM')
+      resolve(limits)
+    }
+    const timer = setTimeout(() => done(), 15_000)
+    child.on('error', () => done()).on('exit', () => done())
+    readline.createInterface({ input: child.stdout! }).on('line', (line) => {
+      let ev: any
+      try {
+        ev = JSON.parse(line)
+      } catch {
+        return
+      }
+      if (ev.type === 'control_response') done(ev.response?.response?.rate_limits?.limits ?? [])
+    })
+    child.stdin!.write(JSON.stringify({ type: 'control_request', request_id: crypto.randomUUID(), request: { subtype: 'get_usage', skip_behaviors: true } }) + '\n')
+  })
+}
