@@ -16,6 +16,8 @@ const CACHE = path.join(os.homedir(), '.cache', 'savor-upstream-check')
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'savor-upstream-'))
 const HOME = path.join(TMP, 'home')
 const LOG = path.join(TMP, 'daemon.log')
+// Each agent's last result, which scripts/upstream-preflight.mjs compares with the newest versions.
+const STATE = process.env.SAVOR_UPSTREAM_STATE || path.join(os.homedir(), '.local', 'state', 'savor-upstream-check', 'last-run.json')
 
 // The cheapest model that still uses tools reliably, where the agent lets us pick one.
 const AGENTS = [
@@ -165,21 +167,35 @@ async function check(a) {
 }
 
 const failed = []
+const results = {}
 const info = Object.fromEntries((await api('GET', '/agents?refresh')).map((i) => [i.id, i]))
 for (const a of AGENTS) {
   const started = Date.now()
+  const at = new Date().toISOString()
   if (!info[a.provider]?.installed || !info[a.provider].signedIn) {
-    console.log(`skip  ${a.provider} ${a.version}: ${info[a.provider]?.installed ? `not signed in, run ${info[a.provider].signIn}` : 'not installed'}`)
+    const reason = info[a.provider]?.installed ? `not signed in, run ${info[a.provider].signIn}` : 'not installed'
+    results[a.provider] = { version: a.version, result: 'skip', reason, at }
+    console.log(`skip  ${a.provider} ${a.version}: ${reason}`)
     continue
   }
   try {
     await check(a)
+    results[a.provider] = { version: a.version, result: 'ok', at }
     console.log(`ok    ${a.provider} ${a.version} (${Math.round((Date.now() - started) / 1000)}s)`)
   } catch (e) {
     failed.push(a.provider)
+    results[a.provider] = { version: a.version, result: 'fail', reason: e.message, at }
     console.log(`FAIL  ${a.provider} ${a.version}: ${e.message}`)
   }
 }
+// A run of only some agents keeps the others' last results.
+let state = {}
+try {
+  state = JSON.parse(fs.readFileSync(STATE, 'utf8'))
+} catch {}
+fs.mkdirSync(path.dirname(STATE), { recursive: true })
+fs.writeFileSync(`${STATE}.tmp`, JSON.stringify({ ...state, ...results }, null, 2))
+fs.renameSync(`${STATE}.tmp`, STATE)
 
 server.kill()
 await new Promise((r) => setTimeout(r, 2000))

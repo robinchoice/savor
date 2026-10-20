@@ -1,0 +1,6 @@
+[Unit]
+Description=Savor preflight for Upstream check and Agent-Features übernehmen (scripts/upstream-preflight.mjs)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/env node %h/dev/savor/scripts/upstream-preflight.mjs

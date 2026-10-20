@@ -14,6 +14,8 @@
 
 `node scripts/upstream-check.mjs` runs Savor against the newest Claude Code, Codex, OpenCode, Grok Build and Antigravity with this computer's logins, nightly as the Savor workflow "Upstream check"; agents not signed in are skipped, and names as arguments (`… upstream-check.mjs grok`) check only those. It is not part of the checks above: each run costs a few real agent turns.
 
+`scripts/upstream-preflight.mjs` is the preflight of "Upstream check" and "Agent-Features übernehmen" (`.workflow-checks/upstream.json`, `features.json`): work when npm or agy has a newer version than the last results of `upstream-check.mjs` (`~/.local/state/savor-upstream-check/last-run.json`) or the versions under „Zuletzt geprüft“ in the document "Claude/Codex-Abgleich", pending for a FAIL there or items under „Neu prüfen beim nächsten Lauf“ and „Als Auftrag gestartet“. Keep those headings. `scripts/savor-upstream-preflight.timer` runs it every 10 minutes, linked into `~/.config/systemd/user`.
+
 ## Deploy
 
 - A push to `main` runs `ci.yml`. If it touches `site/`, Coolify deploys the landing page through a repo webhook. Verify: `curl -sI https://savor.pleasance.org`.

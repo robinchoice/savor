@@ -21,7 +21,7 @@ export const resultSchema = z.object({
     ctx.addIssue({ code: 'custom', message: 'Open follow-up work cannot be successful or skipped.' })
 })
 
-const signalSchema = z.object({
+export const signalSchema = z.object({
   checkedAt: z.iso.datetime(),
   status: z.enum(['ok', 'blocked', 'failed']),
   work: z.boolean(),

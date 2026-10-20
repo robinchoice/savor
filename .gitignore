@@ -2,3 +2,4 @@ node_modules/
 dist/
 .savor/
 .savor-logs/
+.workflow-checks/
