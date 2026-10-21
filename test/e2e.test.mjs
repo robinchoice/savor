@@ -2079,6 +2079,22 @@ test('a prompt fans out to several agents in worktrees of their own, and the pic
   await api('DELETE', `/projects/${project.id}/worktrees?path=${encodeURIComponent(b.worktree.path)}`)
 })
 
+test('a stopped fan-out run reads as stopped, not as an error', async () => {
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
+  const runs = (await api('POST', `/projects/${project.id}/fanout`, { text: 'slow: compare', agents: [{ provider: 'claude' }, { provider: 'claude' }] })).body
+  const read = async (t) => (await api('GET', `/projects/${project.id}/threads/${t.id}`)).body
+  for (const t of runs) await until(async () => (await read(t)).busy)
+  await api('POST', `/projects/${project.id}/threads/${runs[0].id}/stop`)
+  await until(async () => (await read(runs[0])).messages.at(-1)?.text === 'Turn stopped.')
+  await page.goto(`${base}/#/p/${project.id}/fan/${runs[0].fanout.id}`)
+  await page.waitForSelector('.fan-col >> nth=1')
+  assert.equal(await page.locator('.fan-col').nth(0).locator('.status').innerText(), 'Stopped')
+  assert.equal(await page.locator('.fan-col .status.error').count(), 0)
+  await api('POST', `/projects/${project.id}/threads/${runs[1].id}/stop`)
+  await until(async () => (await read(runs[1])).messages.at(-1)?.text === 'Turn stopped.')
+  for (const t of runs) await api('DELETE', `/projects/${project.id}/worktrees?path=${encodeURIComponent(t.worktree.path)}`)
+})
+
 test('Claude Code and Codex sessions of the project can be imported and continue', async () => {
   const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
   const rec = (o) => JSON.stringify(o) + '\n'

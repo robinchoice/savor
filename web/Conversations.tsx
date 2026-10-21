@@ -727,7 +727,7 @@ function NewConversation({ project }: { project: Project }) {
 const waitingFor = (th: Thread) =>
   th.resumeAt ? t('Usage limit · continues {when}', { when: formatStamp(th.resumeAt) }) : th.ciWatch ? t('Waiting for CI · {sha}', { sha: th.ciWatch.sha.slice(0, 7) }) : t('Waiting for background work')
 // What the daemon records as the error of a turn the user stopped. That is not a failure.
-const STOPPED = 'Turn stopped.'
+export const STOPPED = 'Turn stopped.'
 
 interface ThreadData { thread: Thread; busy: boolean; waiting: boolean; background: boolean; startedAt?: string; messages: Message[]; decisions: Decision[]; processes: Proc[] }
 
@@ -921,10 +921,11 @@ export function ThreadView({ project, threadId, back, next, siblings }: { projec
     if (own) openPlan = m.id
   }
   const planCard = (id: string, live: boolean) => <PlanCard key={`plan-${id}`} plan={plans![id]} live={live} stop={(aid) => api('POST', `${base}/plans/agents/${encodeURIComponent(aid)}/stop`)} />
-  const status = busy || waiting
-    ? { icon: <span class="ring busy" />, text: busy ? t('Working') : waitingFor(thread), cls: 'working' }
-    : thread.needsYou
-      ? { icon: <span class="ring needs" />, text: t('Your turn'), cls: 'needs' }
+  // Same order as agents.stateOf: a question or a pending approval comes before the turn it waits in.
+  const status = thread.needsYou
+    ? { icon: <span class="ring needs" />, text: t('Your turn'), cls: 'needs' }
+    : busy || waiting
+      ? { icon: <span class="ring busy" />, text: busy ? t('Working') : waitingFor(thread), cls: 'working' }
       : thread.error === STOPPED
         ? { icon: <span class="ring" />, text: t('Stopped'), cls: '' }
       : thread.error
@@ -1025,7 +1026,7 @@ export function ThreadView({ project, threadId, back, next, siblings }: { projec
                   )}
                   <Label label={thread.label} />
                   <span class={`status ${status.cls}`}>
-                    {status.icon} {status.text}{busy && elapsed ? ` · ${elapsed}` : ''}
+                    {status.icon} {status.text}{status.cls === 'working' && busy && elapsed ? ` · ${elapsed}` : ''}
                   </span>
                   {data.background && !busy && !waiting && <span class="status">{t('Background work running')}</span>}
                   {stoppable && <button class="status stop-work" onClick={stop}>{t('Stop')}</button>}

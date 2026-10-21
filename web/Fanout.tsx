@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'preact/hooks'
 import { ArrowLeft, GitBranch, GitMerge, MessageSquare, Split, Trophy, X } from 'lucide-preact'
 import { agentSummary, api, duration, go, PROVIDER_NAMES, useAgents, useApi, type FanoutRun, type Project, type ProviderInfo } from './api'
-import { Markdown, ProviderIcon } from './Conversations'
+import { Markdown, ProviderIcon, STOPPED } from './Conversations'
 import { transport } from './transport'
 import { plural, t } from './i18n'
 
@@ -67,11 +67,13 @@ function Column({ project, run, info, onPick }: { project: Project; run: FanoutR
         ? [t('Working'), 'working']
         : th.needsYou
           ? [t('Your turn'), 'needs']
-          : th.error
-            ? [t('Error'), 'error']
-            : wt.dirty
-              ? [t('Uncommitted changes'), 'needs']
-              : [t('Ready'), '']
+          : th.error === STOPPED
+            ? [t('Stopped'), '']
+            : th.error
+              ? [t('Error'), 'error']
+              : wt.dirty
+                ? [t('Uncommitted changes'), 'needs']
+                : [t('Ready'), '']
   const openPreview = () => {
     localStorage.setItem(`savor-view:${th.id}`, 'browser')
     go(`/p/${project.id}/t/${th.id}`)
