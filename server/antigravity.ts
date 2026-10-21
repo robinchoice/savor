@@ -9,7 +9,7 @@ import readline from 'node:readline'
 import * as store from './store.js'
 import type { Thread } from './store.js'
 import { BIN, command, mcpUrl } from './config.js'
-import { configKey, rememberSession, sessionIdOf, summarize, systemPrompt, type Host, type Session, type TurnInput } from './session.js'
+import { configKey, rememberSession, sessionIdOf, STOPPED, summarize, systemPrompt, type Host, type Session, type TurnInput } from './session.js'
 import type { ModelInfo, SkillInfo } from './providers.js'
 
 const HOME = process.env.SAVOR_ANTIGRAVITY_HOME ?? path.join(os.homedir(), '.gemini')
@@ -141,7 +141,7 @@ export class AntigravitySession implements Session {
       const denied = (result?.denied_actions ?? []).map((d: any) => d.display_name ?? d.action)
       if (denied.length) activity.instant('note', `Denied: ${denied.join(', ')}. Antigravity cannot ask for approval here; allow it in agy's settings or pick another mode.`)
       // agy catches SIGTERM and reports the turn as an "interrupted" error.
-      if (signal || this.stopping) return this.host.ended({ error: 'Turn stopped.' })
+      if (signal || this.stopping) return this.host.ended({ error: STOPPED })
       // Headless agy ends a turn at the first action it may not take, often without a word.
       if (result?.status === 'SUCCESS' && !result.response && denied.length) return this.host.ended({ error: `Antigravity stopped: it needed permission for ${denied.join(', ')} and cannot ask for it in Savor. Allow it in agy's settings (permissions.allow in ~/.gemini/antigravity-cli/settings.json) or choose another mode or agent.` })
       if (result?.status === 'SUCCESS') return this.host.ended({ text: result.response ?? '' })

@@ -76,6 +76,8 @@ export interface Host {
   closed(error: string): void
 }
 
+// How a turn ends that the user stopped, or whose process Savor killed: the error of that turn, and no failure.
+export const STOPPED = 'Turn stopped.'
 // How a run ends that reached its budget, also in the run's status (scheduler.ts).
 export const BUDGET_REACHED = 'Budget reached'
 export const budgetReached = (usd: number) => `${BUDGET_REACHED}: this run stopped at its limit of $${usd}.`

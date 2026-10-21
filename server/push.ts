@@ -8,6 +8,7 @@
 // minute), at once when Savor shows nowhere. Seen on one device, it disappears from the others.
 import crypto from 'node:crypto'
 import * as store from './store.js'
+import { stateOf } from './agents.js'
 
 const SUBJECT = 'https://github.com/robinchoice/savor'
 // While a page shows Savor it notifies from the event stream, and its device's push would be a double.
@@ -86,10 +87,10 @@ async function deliver(deviceId: string, sub: store.PushSubscription, payload: s
   }
 }
 
-// What the app icon counts: conversations with something unseen or waiting for an answer.
+// What the app icon counts, like the tab title: conversations blocked on the user or with something unseen.
 function badge() {
   let n = 0
-  for (const p of store.listProjects()) for (const t of store.listThreads(p)) if (!t.completed && (t.unread || t.needsYou)) n++
+  for (const p of store.listProjects()) for (const t of store.listThreads(p)) if (['blocked', 'unread'].includes(stateOf(p, t))) n++
   return n
 }
 

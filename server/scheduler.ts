@@ -3,7 +3,7 @@ import * as store from './store.js'
 import type { Origin, Project, Provider, Thread, Workflow } from './store.js'
 import { emit } from './events.js'
 import * as agents from './agents.js'
-import { BUDGET_REACHED } from './session.js'
+import { BUDGET_REACHED, STOPPED } from './session.js'
 import { attempt, beginStep, saveStep, settled } from './workflow-results.js'
 
 let jobs: Cron[] = []
@@ -51,11 +51,8 @@ function dueSlot(wf: Workflow) {
   return slot && slot.toISOString() > wf.settledAt ? slot : null
 }
 
-// Still at it: in a turn, or waiting for background work it started.
-const working = (p: Project, t: Thread) => agents.isBusy(t.id) || agents.waiting(p, t) || !!t.workingSince
-
 // A run of the workflow that still works or waits for the user.
-const openRun = (p: Project, wf: Workflow) => store.listThreads(p).find((t) => t.workflow?.id === wf.id && (!!wf.preflight || !t.completed) && (working(p, t) || t.needsYou || (!!wf.preflight && t.workflow.steps?.some((s) => s.result?.status === 'waiting'))))
+const openRun = (p: Project, wf: Workflow) => store.listThreads(p).find((t) => t.workflow?.id === wf.id && (!!wf.preflight || !t.completed) && (agents.working(p, t) || t.needsYou || (!!wf.preflight && t.workflow.steps?.some((s) => s.result?.status === 'waiting'))))
 
 // A scheduled time has come, now or while Savor was not running. It runs unless the project is paused, the
 // workflow does not catch up what it missed, or a run of it is still open: then the time is skipped.
@@ -108,7 +105,7 @@ export function runWorkflow(projectId: string, workflowId: string, by: Origin, s
   const sameSlot = start.due && store.listThreads(p).find((t) => t.workflow?.id === wf.id && (t.workflow.lastDue === start.due || (t.workflow.due === start.due && (t.workflow.trigger !== 'early' || t.workflow.modelStarted))))
   if (sameSlot) return sameSlot
   const open = wf.preflight ? openRun(p, wf) : undefined
-  if (open && (working(p, open) || open.needsYou || !['manual', 'early'].includes(start.trigger))) return open
+  if (open && (agents.working(p, open) || open.needsYou || !['manual', 'early'].includes(start.trigger))) return open
   const unfinished = wf.preflight ? store.listThreads(p).find((t) => t.workflow?.id === wf.id && t.workflow.steps?.some((s) => !settled(s.result))) : undefined
   const graph = reachable(p, wf)
   const origin = by === 'remote' || graph.some((w) => w.origin === 'remote') || unfinished?.workflow?.origin === 'remote' || (unfinished && store.readMessages(p, unfinished.id).some((m) => m.origin === 'remote')) ? 'remote' : 'local'
@@ -279,7 +276,7 @@ export function runs(p: Project, wf: Workflow, threads = store.listThreads(p), l
         trigger: t.workflow!.trigger,
         due: t.workflow!.due,
         model: t.workflow!.model,
-        status: working(p, t) ? 'working' : t.needsYou ? 'needs' : t.error === 'Turn stopped.' ? 'stopped' : t.error?.startsWith(BUDGET_REACHED) ? 'budget' : t.error || last?.kind === 'error' ? 'failed' : 'finished',
+        status: agents.working(p, t) ? 'working' : t.needsYou ? 'needs' : t.error === STOPPED ? 'stopped' : t.error?.startsWith(BUDGET_REACHED) ? 'budget' : t.error || last?.kind === 'error' ? 'failed' : 'finished',
         threadId: t.id,
         summary: plain(t.error ?? last?.text ?? ''),
         outcome,

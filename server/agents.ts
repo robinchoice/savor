@@ -6,7 +6,7 @@ import * as store from './store.js'
 import type { AgentConfig, Message, NoticeType, Origin, Project, Provider, Question, Thread } from './store.js'
 import { emit } from './events.js'
 import { appUrl } from './config.js'
-import { Activity, PlanTracker, configKey, forkOf, sessionIdOf, type Answer, type ApprovalRequest, type Host, type Session, type TurnInput } from './session.js'
+import { Activity, PlanTracker, configKey, forkOf, sessionIdOf, STOPPED, type Answer, type ApprovalRequest, type Host, type Session, type TurnInput } from './session.js'
 import { ClaudeSession, creditEnv, idleCompaction } from './claude.js'
 import { CodexSession } from './codex.js'
 import { AcpSession } from './acp.js'
@@ -260,7 +260,7 @@ export function stop(tid: string) {
   if (!setup) return current(tid)?.kill()
   preparing.delete(tid)
   setup.activity.finish('setup')
-  endTurn(setup.p, tid, { error: 'Turn stopped.' }, store.getThread(setup.p, tid).agent)
+  endTurn(setup.p, tid, { error: STOPPED }, store.getThread(setup.p, tid).agent)
 }
 
 // The conversation was deleted: end its session, and nothing it still reports touches the removed records.
@@ -300,6 +300,21 @@ export function waiting(p: Project, t: Thread) {
   return !!t.resumeAt || waitsForCi(p, t) || (!t.error && (awaitsBackground(p, t.id) || (!busy.has(t.id) && !!r?.ack && !r.conclusion && runsBackground(t.id))))
 }
 
+// A turn that waits for a usage limit to reset counts as working, not as failed.
+export const failed = (t: Thread) => !!t.error && t.error !== STOPPED && !busy.has(t.id) && !t.resumeAt
+
+// Still at it: in a turn, waiting between turns, or in a turn a restart cut off that continues at the next start.
+export const working = (p: Project, t: Thread) => busy.has(t.id) || waiting(p, t) || !!t.workingSince
+
+// How a conversation stands, for the lists, counts and badges: what blocks the agent (questions, approvals,
+// errors) comes first, then work in progress, then unread results, then what is read but not finished.
+export function stateOf(p: Project, t: Thread): 'done' | 'blocked' | 'working' | 'unread' | 'open' {
+  if (t.completed) return 'done'
+  if (t.needsYou || failed(t)) return 'blocked'
+  if (working(p, t)) return 'working'
+  return t.unread ? 'unread' : 'open'
+}
+
 const waitsForCi = (p: Project, t: Thread) => {
   if (!t.ciWatch || busy.has(t.id)) return false
   const r = request(p, t.id)
@@ -320,7 +335,7 @@ export function stopAgent(p: Project, tid: string) {
   stopped.add(tid)
   if (waited) {
     beginTurn(p, tid)
-    endTurn(p, tid, { error: 'Turn stopped.' }, thread.agent)
+    endTurn(p, tid, { error: STOPPED }, thread.agent)
   } else emit({ type: 'status', projectId: p.id, threadId: tid })
 }
 
@@ -355,9 +370,9 @@ function endTurn(p: Project, tid: string, result: { text?: string; error?: strin
     if (resumeAt) limits.set(agent.provider, result.resetsAt!)
     if (resumeAt && (unattended(thread) || chain())) void fallBack(p, tid, agent.provider, result.resetsAt!, result.error)
     // Whatever stops Claude Code on API credit (no credit left, its budget, the key) hands the request on.
-    else if (credit && unattended(thread) && result.error !== 'Turn stopped.' && !request(p, tid).conclusion) void fallBack(p, tid, 'claude', credit.resetsAt, result.error)
+    else if (credit && unattended(thread) && result.error !== STOPPED && !request(p, tid).conclusion) void fallBack(p, tid, 'claude', credit.resetsAt, result.error)
     else if (resumeAt) notify(p, tid, 'error', result.error, 'Waits for a usage limit')
-    else if (result.error !== 'Turn stopped.') notify(p, tid, 'error', result.error, 'Stopped with an error')
+    else if (result.error !== STOPPED) notify(p, tid, 'error', result.error, 'Stopped with an error')
   } else {
     store.updateThread(p, tid, { error: null })
     // Fallback for agents that ignore the message protocol: surface their final text. An agent that

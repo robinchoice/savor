@@ -8,7 +8,7 @@ import * as store from './store.js'
 import type { ApprovalOption, Provider, Thread } from './store.js'
 import { BIN, command, mcpUrl, VERSION } from './config.js'
 import { Rpc, RpcError } from './jsonrpc.js'
-import { configKey, forkOf, rememberSession, sessionIdOf, summarize, systemPrompt, type Host, type Session, type TurnInput } from './session.js'
+import { configKey, forkOf, rememberSession, sessionIdOf, STOPPED, summarize, systemPrompt, type Host, type Session, type TurnInput } from './session.js'
 import type { SkillInfo } from './providers.js'
 
 const PLAN_DECISION: ApprovalOption[] = [
@@ -49,7 +49,7 @@ export class AcpSession implements Session {
     const cmd = acpCommand(thread.agent.provider, p.id, thread.id, thread.agent.permissionMode)
     const child = spawn(...command(cmd.bin, cmd.args), { cwd: host.cwd, env: { ...process.env, ...cmd.env }, stdio: ['pipe', 'pipe', 'pipe'] })
     this.rpc = new Rpc(child, { notification: (m, params) => this.onNotification(m, params), request: (m, params) => this.onRequest(m, params) })
-    this.rpc.exited.then(({ code, signal }) => host.closed(this.stopping || signal === 'SIGTERM' ? 'Turn stopped.' : `${cmd.bin} exited with ${code}: ${this.rpc.stderrTail}`))
+    this.rpc.exited.then(({ code, signal }) => host.closed(this.stopping || signal === 'SIGTERM' ? STOPPED : `${cmd.bin} exited with ${code}: ${this.rpc.stderrTail}`))
     this.ready = this.init()
   }
 

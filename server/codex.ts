@@ -5,7 +5,7 @@ import * as store from './store.js'
 import type { ApprovalOption, PlanAgent, Thread } from './store.js'
 import { BIN, command, mcpUrl, VERSION } from './config.js'
 import { Rpc } from './jsonrpc.js'
-import { configKey, forkOf, formFields, OPEN_PAGE, rememberSession, SUBMIT_FORM, sessionIdOf, summarize, systemPrompt, webUrl, type Host, type Session, type TurnInput } from './session.js'
+import { configKey, forkOf, formFields, OPEN_PAGE, rememberSession, STOPPED, SUBMIT_FORM, sessionIdOf, summarize, systemPrompt, webUrl, type Host, type Session, type TurnInput } from './session.js'
 import type { ModelInfo, SkillInfo } from './providers.js'
 
 const MODES: Record<string, { sandbox: string; approvalPolicy: string; approvalsReviewer: string }> = {
@@ -67,7 +67,7 @@ export class CodexSession implements Session {
     this.config = configKey(thread.agent)
     const child = spawnAppServer(p.id, thread.id)
     this.rpc = new Rpc(child, { notification: (m, params) => this.onNotification(m, params), request: (m, params) => this.onRequest(m, params) })
-    this.rpc.exited.then(({ code, signal }) => host.closed(this.stopping || signal === 'SIGTERM' ? 'Turn stopped.' : `codex exited with ${code}: ${this.rpc.stderrTail}`))
+    this.rpc.exited.then(({ code, signal }) => host.closed(this.stopping || signal === 'SIGTERM' ? STOPPED : `codex exited with ${code}: ${this.rpc.stderrTail}`))
     this.ready = this.init()
   }
 

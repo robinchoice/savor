@@ -10,7 +10,7 @@ import path from 'node:path'
 import * as store from './store.js'
 import type { ApprovalOption, PlanAgent, PlanStep, Thread } from './store.js'
 import { BIN, command, mcpUrl } from './config.js'
-import { budgetReached, configKey, forkOf, formFields, OPEN_PAGE, rememberSession, SUBMIT_FORM, sessionIdOf, summarize, systemPrompt, webUrl, type Host, type Session, type TurnInput } from './session.js'
+import { budgetReached, configKey, forkOf, formFields, OPEN_PAGE, rememberSession, STOPPED, SUBMIT_FORM, sessionIdOf, summarize, systemPrompt, webUrl, type Host, type Session, type TurnInput } from './session.js'
 import type { ModelInfo, SkillInfo } from './providers.js'
 
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
@@ -154,7 +154,7 @@ export class ClaudeSession implements Session {
     readline.createInterface({ input: this.child.stdout! }).on('line', (l) => this.onLine(l))
     this.child.stderr!.on('data', (d) => (this.stderr = (this.stderr + d).slice(-4000)))
     this.child.on('error', (e) => host.closed(e.message))
-    this.child.on('exit', (code, signal) => host.closed(this.stopping || signal === 'SIGTERM' ? 'Turn stopped.' : exitError(code, this.stderr.trim())))
+    this.child.on('exit', (code, signal) => host.closed(this.stopping || signal === 'SIGTERM' ? STOPPED : exitError(code, this.stderr.trim())))
   }
 
   start({ context, input, images }: TurnInput) {

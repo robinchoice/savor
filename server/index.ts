@@ -307,23 +307,16 @@ route('DELETE', '/voice/models/:id', (params, _, ctx) => {
 
 // ---- projects ----
 
+// The project tabs count the open conversations by their state (agents.stateOf): blocked by a question,
+// an approval or an error, working, unread, or read but not finished.
 route('GET', '/projects', () =>
   store.listProjects().map((p) => {
-    const threads = store.listThreads(p)
-    // As in the conversation lists: waiting for background tasks, CI or a usage limit is working too.
-    const working = (t: store.Thread) => !t.completed && !t.needsYou && (agents.isBusy(t.id) || agents.waiting(p, t))
-    return {
-      ...p,
-      counts: {
-        working: threads.filter(working).length,
-        // Questions, approvals and errors block the agent; unread results only wait to be read.
-        blocked: threads.filter((t) => !t.completed && (t.needsYou || failed(t))).length,
-        // A conversation still working shows as working, even when a message from another one marked it unread.
-        unread: threads.filter((t) => !t.completed && t.unread && !t.needsYou && !failed(t) && !working(t)).length,
-        // Read but not finished yet.
-        open: threads.filter((t) => !t.completed && !t.unread && !t.needsYou && !failed(t) && !working(t)).length,
-      },
+    const counts = { working: 0, blocked: 0, unread: 0, open: 0 }
+    for (const t of store.listThreads(p)) {
+      const state = agents.stateOf(p, t)
+      if (state !== 'done') counts[state]++
     }
+    return { ...p, counts }
   }),
 )
 route('POST', '/projects', (_, b, ctx) => {
@@ -391,10 +384,6 @@ route('DELETE', '/projects/:pid', (params, _, ctx) => {
 
 // ---- threads ----
 
-const STOPPED = 'Turn stopped.'
-// A turn that waits for a usage limit to reset counts as working, not as failed.
-const failed = (t: store.Thread) => !!t.error && t.error !== STOPPED && !agents.isBusy(t.id) && !t.resumeAt
-
 // What the conversation lists show beyond the thread: why it waits for the user and what it does while it works.
 function listed(p: store.Project, t: store.Thread) {
   const messages = store.readMessages(p, t.id)
@@ -415,7 +404,7 @@ function waitsFor(p: store.Project, t: store.Thread, messages: store.Message[], 
     return { reason: 'question', text: open[0]?.title ?? '', more: Math.max(0, open.length - 1), since }
   }
   if (working) return null
-  if (failed(t)) return { reason: 'failed', text: t.error, since }
+  if (agents.failed(t)) return { reason: 'failed', text: t.error, since }
   const last = messages.at(-1)
   // Unread is also what someone marked as unread again, whatever came last.
   if (t.unread) return { reason: 'new', text: (last?.text ?? '').slice(0, 300), since }
