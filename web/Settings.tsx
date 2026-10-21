@@ -3,6 +3,7 @@ import qrcode from 'qrcode-generator'
 import { Download, Smartphone, Trash2, X } from 'lucide-preact'
 import { api, formatDay, go, PROVIDER_NAMES, useApi, useAgents, type ImportableSession, type Project, type Thread } from './api'
 import { pairThroughRelay } from './transport'
+import { parsePairingLink, scanQrCode } from './native'
 import { TEMPLATES } from './templates'
 import { plural, t } from './i18n'
 
@@ -547,7 +548,7 @@ function Waiting({ check }: { check: string }) {
 }
 
 // Pairing a phone through the relay: the QR code carries the computer's public key and a one-time code.
-export function RemotePair({ daemonPk, code }: { daemonPk: string; code: string }) {
+export function RemotePair({ daemonPk, code, relay }: { daemonPk: string; code: string; relay?: string }) {
   const [name, setName] = useState(/iPhone|Android|iPad/.exec(navigator.userAgent)?.[0] ?? t('My phone'))
   const [busy, setBusy] = useState(false)
   const [check, setCheck] = useState('')
@@ -556,7 +557,7 @@ export function RemotePair({ daemonPk, code }: { daemonPk: string; code: string 
     e.preventDefault()
     setBusy(true)
     try {
-      await pairThroughRelay(daemonPk, code, name, setCheck)
+      await pairThroughRelay(daemonPk, code, name, setCheck, relay)
       location.replace('/')
     } catch (err) {
       setError((err as Error).message)
@@ -578,6 +579,46 @@ export function RemotePair({ daemonPk, code }: { daemonPk: string; code: string 
         {error && <div class="error-text">{error}</div>}
         <button class="primary" disabled={busy}>
           {busy ? t('Pairing…') : t('Pair')}
+        </button>
+      </form>
+    </div>
+  )
+}
+
+// In the iOS app: scan the QR code, or paste the pairing link when the camera can't.
+export function AppPair() {
+  const [link, setLink] = useState('')
+  const [pairing, setPairing] = useState<ReturnType<typeof parsePairingLink>>(null)
+  const [error, setError] = useState('')
+  const use = (text: string) => {
+    const next = parsePairingLink(text)
+    setPairing(next)
+    setError(next ? '' : t('That is not a Savor pairing link.'))
+  }
+  const scan = () => scanQrCode().then(use, (e) => setError((e as Error).message))
+  if (pairing) return <RemotePair {...pairing} />
+  return (
+    <div class="gate">
+      <img src="/icon.svg" alt="" />
+      <h1>{t('Pair with your computer')}</h1>
+      <p class="muted">{t('Open Savor on your computer, go to Devices & remote access → Pair a device, and scan the QR code.')}</p>
+      <button class="primary" onClick={scan}>
+        {t('Scan QR code')}
+      </button>
+      <form
+        class="form"
+        onSubmit={(e) => {
+          e.preventDefault()
+          use(link)
+        }}
+      >
+        <label>
+          {t('Or paste the pairing link')}
+          <input value={link} onInput={(e) => setLink(e.currentTarget.value)} placeholder="https://…/#/rpair/…" />
+        </label>
+        {error && <div class="error-text">{error}</div>}
+        <button class="ghost" disabled={!link.trim()}>
+          {t('Continue')}
         </button>
       </form>
     </div>

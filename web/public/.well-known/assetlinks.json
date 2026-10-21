@@ -1,0 +1,10 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "org.pleasance.savor",
+      "sha256_cert_fingerprints": ["A7:E2:B0:0C:AA:ED:FD:8E:BD:C4:2D:F7:04:06:84:F6:A5:7B:A1:AE:B3:75:2E:86:1B:A8:EE:C3:B3:8B:04:04"]
+    }
+  }
+]

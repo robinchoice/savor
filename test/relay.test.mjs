@@ -117,6 +117,12 @@ test('relay and daemon send a strict CSP and security headers', async () => {
   assert.ok(relayCsp.includes('ws://' + new URL(relayBase).host), relayCsp)
 })
 
+test('the relay vouches for the Android app (Trusted Web Activity)', async () => {
+  const r = await fetch(relayBase + '/.well-known/assetlinks.json')
+  assert.equal(r.headers.get('content-type'), 'application/json')
+  assert.equal((await r.json())[0].target.package_name, 'org.pleasance.savor')
+})
+
 test('malformed daemon logins do not take the relay down', async () => {
   for (const frame of [JSON.stringify({ t: 'auth', pk: '!!!', mac: '' }), JSON.stringify({ t: 'auth', pk: 42, mac: [] }), JSON.stringify({ t: 'auth', pk: tunnel.b64.enc(new Uint8Array(32)), mac: 'AAAA' }), 'not json', '[]']) {
     const ws = socket(relayBase.replace('http', 'ws') + '/daemon')

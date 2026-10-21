@@ -84,8 +84,9 @@ function deviceKey(stored: StoredKey): t.DeviceKey {
 // ---- remote mode ----
 
 // Which computers this browser is paired with, and the one it talks to; the key itself lives in IndexedDB.
-// `host` is the computer's name, known once it answered.
-export interface RemoteProfile { daemonPk: string; name: string; host?: string }
+// `host` is the computer's name, known once it answered. `relay` is the relay's origin when it didn't
+// serve this page, as in the iOS app.
+export interface RemoteProfile { daemonPk: string; name: string; host?: string; relay?: string }
 const PROFILE_KEY = 'savor-remote'
 const PROFILES_KEY = 'savor-remotes'
 
@@ -125,7 +126,7 @@ export async function forgetProfile() {
 // The service worker has no localStorage: it finds the profile beside the key, to answer from a notification.
 export const storedProfile = () => keyStore<RemoteProfile | undefined>('readonly', (s) => s.get('profile'))
 
-const relaySocket = (daemonPk: Uint8Array) => new WebSocket(`${location.origin.replace(/^http/, 'ws')}/connect?id=${t.daemonId(daemonPk)}`)
+const relaySocket = (daemonPk: Uint8Array, relay = location.origin) => new WebSocket(`${relay.replace(/^http/, 'ws')}/connect?id=${t.daemonId(daemonPk)}`)
 
 function nextMessage(ws: WebSocket) {
   return new Promise<string>((resolve, reject) => {
@@ -147,10 +148,10 @@ async function welcome(ws: WebSocket, hello: object) {
 
 // First contact: prove knowledge of the one-time code and register this device's key. The computer
 // asks before it lets the device in; onCheck gets the number both of them show meanwhile.
-export async function pairThroughRelay(daemonPkText: string, code: string, name: string, onCheck: (check: string) => void) {
+export async function pairThroughRelay(daemonPkText: string, code: string, name: string, onCheck: (check: string) => void, relay?: string) {
   const daemonPk = t.publicKey(daemonPkText)
   const key = (await keyStore<StoredKey | undefined>('readonly', (s) => s.get('device'))) ?? (await createDeviceKey())
-  const ws = relaySocket(daemonPk)
+  const ws = relaySocket(daemonPk, relay)
   const pairing = t.devicePairing(daemonPk, code)
   const { channel, check } = pairing.finish(await welcome(ws, pairing.hello))
   const reply = async () => {
@@ -169,7 +170,7 @@ export async function pairThroughRelay(daemonPkText: string, code: string, name:
   }
   ws.close()
   if (!result.paired) throw new Error(tr('Pairing was not allowed on your computer.'))
-  const profile = { daemonPk: daemonPkText, name }
+  const profile = { daemonPk: daemonPkText, name, relay }
   saveProfiles([...loadProfiles().filter((p) => p.daemonPk !== daemonPkText), profile], profile)
 }
 
@@ -191,7 +192,7 @@ export function remote(profile: RemoteProfile, onState: (connected: boolean, err
 
   function connect() {
     const attempt: Promise<Tunnel> = (async () => {
-      const ws = relaySocket(daemonPk)
+      const ws = relaySocket(daemonPk, profile.relay)
       const session = t.deviceSession(await device, daemonPk)
       const channel = await session.finish(await welcome(ws, session.hello))
       ws.onmessage = (m) => {

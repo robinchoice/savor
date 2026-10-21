@@ -120,7 +120,10 @@ journalctl --user -u savor | grep token   # the login link
 
 Open **Devices & remote access** from the avatar menu. Your desktop has to stay awake while you're away, which the coffee-cup toggle takes care of. There are two ways in:
 
-**Through a relay** (no VPN, works on mobile data). Enter a relay URL, click **Connect**, then **Pair a device** and scan the QR code with your phone. Use "Add to Home Screen" on the phone.
+**Through a relay** (no VPN, works on mobile data). Enter a relay URL, click **Connect**, then **Pair a device** and scan the QR code with your phone. Use "Add to Home Screen" on the phone, or the app (in testing through TestFlight and Play):
+
+- **iOS** (`mobile/ios`, Capacitor): bundles the web client, so the relay can't change it, and scans the QR code itself. It remembers each computer's relay. No push notifications yet: they need the relay to pass them on to Apple.
+- **Android** (`mobile/android`, Bubblewrap): a Trusted Web Activity of the relay at `savor.diespaetzles.lol`, so it is the web app with its Web Push. The relay proves the app is its own with `/.well-known/assetlinks.json`.
 
 - Traffic between the device and your computer is end-to-end encrypted (X25519 key exchange with forward secrecy, ChaCha20-Poly1305, see [`shared/tunnel.ts`](shared/tunnel.ts)). The relay forwards ciphertext. It sees your computer's public key, connection times and message sizes. It does not see your conversations, files or which of your devices is connecting.
 - Pairing uses the computer's public key and a one-time code from the QR code, so the phone knows it's talking to your computer and not to the relay.
@@ -239,6 +242,7 @@ relay/
 web/            Preact PWA (CodeMirror and TipTap load on demand for the editors)
 recipes/        workflow gallery: markdown with front matter, bundled into the UI
 desktop/        Electron shell and installers (electron-builder)
+mobile/         iOS app (Capacitor, capacitor.config.json in the root), Android app (Trusted Web Activity)
 test/           end-to-end tests with a fake agent
 ```
 
@@ -311,7 +315,7 @@ npm run dev:web     # Vite dev server for the UI, proxies /api to a daemon on :4
 cd desktop && npm run dist   # local installer build (AppImage on Linux)
 ```
 
-CI runs typecheck and the end-to-end tests on every push. `secrets.yml` scans every push on every branch and pull requests from forks for secrets with gitleaks (default rules, `--redact` keeps found values out of the public log); single false positives go into `.gitleaksignore` by fingerprint. Pushing a tag like `v0.2.0` builds the desktop app for Linux, macOS and Windows and publishes it as a GitHub release, which installed apps pick up as an update.
+CI runs typecheck and the end-to-end tests on every push. `secrets.yml` scans every push on every branch and pull requests from forks for secrets with gitleaks (default rules, `--redact` keeps found values out of the public log); single false positives go into `.gitleaksignore` by fingerprint. Pushing a tag like `v0.2.0` builds the desktop app for Linux, macOS and Windows and publishes it as a GitHub release, which installed apps pick up as an update. The same tag builds the phone apps (`mobile.yml`) and hands them to the testers in TestFlight and Play.
 
 ## Status
 

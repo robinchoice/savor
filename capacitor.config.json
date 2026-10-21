@@ -1,0 +1,6 @@
+{
+  "appId": "org.pleasance.savor",
+  "appName": "Savor",
+  "webDir": "dist/web",
+  "ios": { "path": "mobile/ios" }
+}

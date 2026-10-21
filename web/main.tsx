@@ -8,12 +8,13 @@ import { FilesView } from './Files'
 import { WorkflowButtons, Workflows } from './Workflows'
 import { ExportView, TodayView } from './Workspace'
 import { AllProjects } from './Overview'
-import { Settings, Devices, Pair, PairingRequests, RemotePair } from './Settings'
+import { Settings, Devices, Pair, PairingRequests, RemotePair, AppPair } from './Settings'
 import { loadProfile, loadProfiles, rememberHost, remote, setTransport, switchProfile } from './transport'
 import { ProcessesPopover } from './Processes'
 import { setTerminalOpen, TerminalButton, TerminalPanel } from './Terminal'
 import { ArrangeButton, Dock, Panel, useNarrow } from './Layout'
 import { useNotifications } from './notify'
+import { native } from './native'
 import { AccountDialog, AppearanceMenu, FeedbackDialog } from './Account'
 import { BugButton } from './BugButton'
 import { AddProject, SetupWizard } from './Setup'
@@ -60,10 +61,9 @@ function App() {
   const narrow = useNarrow()
   const [projects] = useApi<Project[]>(me ? '/projects' : null, (e) => ['projects', 'thread', 'status'].includes(e.type))
 
-  // Served by a relay: talk to the paired computer through the encrypted tunnel.
+  // Served by a relay, or bundled in the iOS app: talk to the paired computer through the encrypted tunnel.
   useEffect(() => {
-    fetch('/savor-relay.json')
-      .then((r) => r.json())
+    ;(native ? Promise.resolve({ relay: true }) : fetch('/savor-relay.json').then((r) => r.json()))
       .catch(() => null)
       .then((cfg) => {
         const profile = cfg?.relay ? loadProfile() : null
@@ -84,7 +84,7 @@ function App() {
   }, [mode, link.connected])
   useNotifications(route[2] === 't' ? route[3] : undefined, projects, me)
   useEffect(() => {
-    if (projects?.length && !['p', 'all', 'devices', 'pair', 'rpair'].includes(route[0])) {
+    if (projects?.length && !['p', 'all', 'devices', 'pair', 'rpair', 'scan'].includes(route[0])) {
       const last = projects.find((p) => p.id === localStorage.getItem(LAST_PROJECT))
       go(projectHref((last ?? projects.find((p) => p.pinned) ?? projects[0]).id))
     }
@@ -100,6 +100,7 @@ function App() {
 
   if (route[0] === 'pair') return <Pair code={route[1]} />
   if (route[0] === 'rpair') return <RemotePair daemonPk={route[1]} code={route[2]} />
+  if (native && (route[0] === 'scan' || !loadProfile())) return <AppPair />
   if (mode === 'relay' && !loadProfile())
     return (
       <div class="gate">

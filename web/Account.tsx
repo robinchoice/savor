@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks'
 import { ArrowDown, ArrowUp, ArrowUpRight, Bot, Check, ChevronDown, ChevronRight, Laptop, MessageSquare, Mic, Plus, SlidersHorizontal, Smartphone, X } from 'lucide-preact'
-import { api, cap, desktop, PROVIDER_NAMES, useAgents, useApi, type AgentConfig, type Fallback, type Me } from './api'
+import { api, cap, desktop, go, PROVIDER_NAMES, useAgents, useApi, type AgentConfig, type Fallback, type Me } from './api'
+import { native } from './native'
 import { AgentButton, AgentMenu } from './Composer'
 import { AgentStatusRow, ModeCards } from './Setup'
 import { useNotificationToggle } from './notify'
@@ -474,7 +475,14 @@ function Computers() {
             </button>
           ),
         )}
-        <small class="muted">{t('To add a computer, scan the pairing QR code in Savor on it.')}</small>
+        {native ? (
+          <button class="setting" onClick={() => go('/scan')}>
+            <span>{t('Pair another computer')}</span>
+            <ChevronRight size={15} />
+          </button>
+        ) : (
+          <small class="muted">{t('To add a computer, scan the pairing QR code in Savor on it.')}</small>
+        )}
       </div>
     </details>
   )
