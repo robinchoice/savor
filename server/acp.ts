@@ -102,7 +102,15 @@ export class AcpSession implements Session {
         return this.rpc.request('session/prompt', { sessionId: this.sessionId, prompt: [{ type: 'text', text }, ...images64] })
       })
       .then((r) => this.host.ended(r.stopReason === 'refusal' ? { error: 'The agent refused this request.' } : { text: r.stopReason === 'cancelled' ? '' : this.text }))
-      .catch((e: Error) => this.host.ended({ error: e instanceof RpcError && e.code === -32000 && /auth/i.test(e.message) ? `${e.message} Sign in with the agent's CLI first.` : e.message }))
+      .catch(async (e: Error) => {
+        if (e instanceof RpcError && e.code === -32000 && /auth/i.test(e.message)) return this.host.ended({ error: `${e.message} Sign in with the agent's CLI first.` })
+        // Grok Build answers "Internal error" and puts what went wrong in the error's data.
+        const error = e instanceof RpcError && typeof e.data === 'string' ? `${e.message}: ${e.data}` : e.message
+        // Grok Build reports the usage period its limit belongs to on _x.ai/billing; other agents don't have it,
+        // and an agent that has exited never answers.
+        const billing = LIMIT.test(error) ? await Promise.race([this.rpc.request('_x.ai/billing', {}), new Promise((r) => setTimeout(r, 10_000))]).catch(() => null) : null
+        this.host.ended({ error, resetsAt: acpResets(billing) })
+      })
   }
 
   interrupt() {
@@ -164,6 +172,18 @@ export class AcpSession implements Session {
     }
     throw new RpcError(`Savor does not provide ${method}.`, -32601)
   }
+}
+
+// The usage limits Grok Build stops at, as its own UI tells them apart: 402, credits, the weekly or free usage
+// limit, the spending cap. A rate limit (429) passes within a minute and is no reason to wait for the period.
+const LIMIT = /\b402\b|credits|usage (limit|balance)|weekly limit|spending (limit|cap)/i
+
+// When the usage period of a _x.ai/billing answer ends, unless it still has credit left.
+export function acpResets(billing: any, now = Date.now()) {
+  const c = billing?.config
+  if (c?.creditUsagePercent < 100) return null
+  const end = Date.parse(c?.currentPeriod?.end ?? c?.billingPeriodEnd ?? '')
+  return end > now ? end : null
 }
 
 // OpenCode names a model's reasoning effort as a variant of it: "opencode/big-pickle/high".

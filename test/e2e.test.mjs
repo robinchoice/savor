@@ -705,6 +705,14 @@ test('OpenCode runs through the Agent Client Protocol', async () => {
   // The MCP token travelled inside the protocol, not on the command line.
   const run = fs.readFileSync(AGENT_LOG, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).find((r) => r.agent === 'opencode' && r.argv)
   assert.deepEqual(run.argv.slice(2), ['acp'])
+  // At Grok Build's usage limit the conversation waits for the end of the usage period.
+  await until(async () => !(await api('GET', t)).body.busy)
+  await api('POST', `${t}/messages`, { text: 'limit: weekly' })
+  let r
+  await until(async () => (r = (await api('GET', t)).body).thread.resumeAt)
+  assert.ok(r.messages.some((m) => m.kind === 'error' && m.text === 'Internal error: status 402: You hit your weekly limit.'))
+  assert.ok(Math.abs(Date.parse(r.thread.resumeAt) - (Date.now() + 2 * 3600_000 + 60_000)) < 30_000)
+  await api('POST', `${t}/stop`)
   await api('PATCH', `/projects/${project.id}`, { agent: project.agent })
 })
 

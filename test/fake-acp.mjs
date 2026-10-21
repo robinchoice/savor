@@ -3,6 +3,7 @@
 // finds Savor's MCP server in OPENCODE_CONFIG_CONTENT and in the session's mcpServers.
 // - "approve: <anything>" → session/request_permission with Allow once / Reject, then "ACP permission: <optionId>"
 // - "plan: <anything>" → _x.ai/exit_plan_mode like Grok Build, then "ACP plan: <outcome>"
+// - "limit: <anything>" → the prompt fails at Grok Build's weekly limit; _x.ai/billing says the period ends in two hours
 // - a prompt that starts with a slash command → "ACP command: <prompt>"
 // - anything else → "ACP echo: <input>"
 // Like Grok Build, it asks with session/request_permission before it calls a Savor tool.
@@ -72,7 +73,9 @@ async function prompt(params, reply) {
   notify('session/update', { sessionId, update: { sessionUpdate: 'tool_call', toolCallId: 'call3', title: 'run_terminal_command', rawInput: { command: 'ls -la' }, _meta: { 'x.ai/tool': { name: 'run_terminal_command', kind: 'execute' } } } })
   notify('session/update', { sessionId, update: { sessionUpdate: 'tool_call_update', toolCallId: 'call3', status: 'completed' } })
   let answer
-  if (text.startsWith('/')) {
+  if (input.startsWith('limit:')) {
+    return out({ jsonrpc: '2.0', id: params.id, error: { code: -32603, message: 'Internal error', data: 'status 402: You hit your weekly limit.' } })
+  } else if (text.startsWith('/')) {
     answer = `ACP command: ${text}`
   } else if (!input) {
     // A side question carries no Savor envelope.
@@ -128,7 +131,11 @@ rl.on('line', (line) => {
       log({ [msg.method]: msg.params.modeId ?? msg.params.modelId ?? `${msg.params.configId}=${msg.params.value}` })
       return reply({})
     case 'session/prompt':
-      return void prompt(msg.params, reply)
+      return void prompt({ ...msg.params, id: msg.id }, reply)
+    case '_x.ai/billing': {
+      const end = new Date(Date.now() + 2 * 3600_000).toISOString()
+      return reply({ config: { currentPeriod: { type: 'USAGE_PERIOD_TYPE_WEEKLY', start: new Date(Date.now() - 86400_000).toISOString(), end }, billingPeriodEnd: end }, subscription_tier: 'Free' })
+    }
     case 'session/cancel':
       cancelled = true
       return

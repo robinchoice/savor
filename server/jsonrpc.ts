@@ -3,7 +3,7 @@ import type { ChildProcess } from 'node:child_process'
 import readline from 'node:readline'
 
 export class RpcError extends Error {
-  constructor(message: string, readonly code?: number) {
+  constructor(message: string, readonly code?: number, readonly data?: unknown) {
     super(message)
   }
 }
@@ -84,7 +84,7 @@ export class Rpc {
     const p = this.pending.get(msg.id)
     if (!p) return
     this.pending.delete(msg.id)
-    if (msg.error) p.reject(new RpcError(msg.error.message ?? JSON.stringify(msg.error), msg.error.code))
+    if (msg.error) p.reject(new RpcError(msg.error.message ?? JSON.stringify(msg.error), msg.error.code, msg.error.data))
     else p.resolve(msg.result)
   }
 }
