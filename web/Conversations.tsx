@@ -819,7 +819,9 @@ export function ThreadView({ project, threadId, back, next, siblings }: { projec
     const el = listRef.current
     if (!el || !data || find.open) return
     const frame = requestAnimationFrame(() => {
-      const answer = !opened.current && !data.thread.completed ? [...el.querySelectorAll<HTMLElement>('.msg.conclusion')].at(-1) : undefined
+      // Opened, or just answered, an unfinished conversation starts at the top of its latest answer.
+      const answered = !opened.current || data.messages.at(-1)?.kind === 'conclusion'
+      const answer = answered && !data.thread.completed ? [...el.querySelectorAll<HTMLElement>('.msg.conclusion')].at(-1) : undefined
       el.scrollTop = answer ? answer.offsetTop - el.offsetTop - 20 : el.scrollHeight
       opened.current = true
     })

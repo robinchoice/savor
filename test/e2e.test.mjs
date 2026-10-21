@@ -165,6 +165,18 @@ test('only new input moves a conversation up, finishing hides it right away', as
   await page.waitForSelector(`a.card[href="${older}"]`, { state: 'detached' })
 })
 
+test('a new answer in an open conversation shows from its start', async () => {
+  await newConversation()
+  await send(`long answer\n\n${Array.from({ length: 80 }, (_, i) => `Line ${i + 1}`).join('\n\n')}`)
+  await page.waitForSelector('.msg.conclusion >> text=Line 80')
+  const answerTop = () =>
+    page.evaluate(() => {
+      const list = document.querySelector('.messages')
+      return [...list.querySelectorAll('.msg.conclusion')].at(-1).getBoundingClientRect().top - list.getBoundingClientRect().top
+    })
+  await until(async () => Math.abs((await answerTop()) - 20) < 5)
+})
+
 test('agent settings fit the viewport and apply right away', async () => {
   await newConversation()
   for (const viewport of [{ width: 1400, height: 900 }, { width: 900, height: 600 }, { width: 390, height: 844 }]) {
