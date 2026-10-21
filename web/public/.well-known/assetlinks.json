@@ -4,7 +4,7 @@
     "target": {
       "namespace": "android_app",
       "package_name": "org.pleasance.savor",
-      "sha256_cert_fingerprints": ["A7:E2:B0:0C:AA:ED:FD:8E:BD:C4:2D:F7:04:06:84:F6:A5:7B:A1:AE:B3:75:2E:86:1B:A8:EE:C3:B3:8B:04:04"]
+      "sha256_cert_fingerprints": ["73:24:58:D0:28:B3:65:D6:83:2F:BF:E1:83:8B:47:2D:B4:BA:59:16:8A:F2:5D:5A:DE:F3:CB:CA:3C:C1:E8:37"]
     }
   }
 ]
