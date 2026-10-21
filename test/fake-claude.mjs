@@ -66,9 +66,11 @@ if (!args.includes('--mcp-config')) {
   readline.createInterface({ input: process.stdin }).on('line', (line) => {
     const msg = JSON.parse(line)
     const answer = (response) => console.log(JSON.stringify({ type: 'control_response', response: { subtype: 'success', request_id: msg.request_id, response } }))
-    // The test's limits file holds the subscription limits get_usage reports.
+    // The test's limits file holds the subscription limits get_usage reports. Like Claude Code, it reports
+    // none on a token from `claude setup-token`.
     if (msg.request?.subtype === 'get_usage') {
       const file = process.env.FAKE_AGENT_LOG + '.limits'
+      if (process.env.CLAUDE_CODE_OAUTH_TOKEN) return answer({ rate_limits: null })
       return answer({ rate_limits: { limits: fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : [{ group: 'session', percent: 0, resets_at: new Date(Date.now() + 5 * 3600_000).toISOString() }] } })
     }
     if (msg.request?.subtype !== 'initialize') return

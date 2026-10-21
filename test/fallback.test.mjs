@@ -62,6 +62,8 @@ async function startDaemon() {
       FAKE_AGENT_LOG: AGENT_LOG,
       CLAUDE_CONFIG_DIR: path.join(TMP, 'claude'),
       CODEX_HOME: path.join(TMP, 'codex'),
+      // The sessions run on a token from `claude setup-token`; the limits come from the login all the same.
+      CLAUDE_CODE_OAUTH_TOKEN: 'setup-token',
     },
     stdio: ['ignore', 'pipe', 'inherit'],
   })

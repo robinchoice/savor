@@ -450,11 +450,12 @@ export function probeClaude(cwd?: string) {
 }
 
 // The subscription limits, from a short run's answer to a get_usage request. No prompt is sent, and
-// skip_behaviors spares it the scan of the last week's transcripts.
+// skip_behaviors spares it the scan of the last week's transcripts. It runs on the login, not on a token
+// from `claude setup-token`: with that, get_usage reports no limits.
 export function claudeUsage() {
   type Limit = { group: string; percent: number; resets_at: string | null; scope?: { model?: { display_name?: string } } | null }
   return new Promise<Limit[]>((resolve) => {
-    const child = spawn(...command(BIN.claude, ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--settings', JSON.stringify({ disableAllHooks: true })]), { stdio: ['pipe', 'pipe', 'ignore'] })
+    const child = spawn(...command(BIN.claude, ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--settings', JSON.stringify({ disableAllHooks: true })]), { env: { ...process.env, CLAUDE_CODE_OAUTH_TOKEN: undefined }, stdio: ['pipe', 'pipe', 'ignore'] })
     const done = (limits: Limit[] = []) => {
       clearTimeout(timer)
       child.kill('SIGTERM')
