@@ -225,7 +225,7 @@ function deliver(p: Project, tid: string, msg: Message) {
   const startedAt = store.now()
   leaveRemovedWorktree(p, tid)
   // A new request starts on the subscription again.
-  const thread = avoidLimits(p, store.updateThread(p, tid, { needsYou: false, workingSince: startedAt, apiCredit: null }))
+  const thread = avoidLimits(p, store.updateThread(p, tid, { needsYou: needsYouOf(p, tid), workingSince: startedAt, apiCredit: null }))
   store.updateMessage(p, tid, msg.id, { delivered: true })
   requests.set(tid, { inputId: msg.id, startedAt, updates: new Map() })
   const setup = git.setupOf(thread.worktree?.path)
@@ -532,14 +532,20 @@ export function resolveApproval(p: Project, tid: string, mid: string, choice: st
   refreshNeedsYou(p, tid)
 }
 
-function askQuestions(p: Project, tid: string, qs: Question[]) {
-  const msg = post(p, tid, { kind: 'question', modelInfo: store.getThread(p, tid).agent })
+// Questions for the user, as the decisions of the message that asks them (an agent's own question, or a
+// conclusion with questions): the conversation waits for the answers.
+export function askUser(p: Project, tid: string, msg: Message, qs: Question[]) {
   const decisions = qs.map((q, i) => ({ id: `${msg.id}-q${i}`, groupId: msg.id, threadId: tid, ...q, selected: null, answer: null, resolved: false, createdAt: msg.ts }))
   decisions.forEach((d) => store.saveDecision(p, d))
   store.updateMessage(p, tid, msg.id, { decisionIds: decisions.map((d) => d.id) })
   store.updateThread(p, tid, { unread: true, needsYou: true })
   emit({ type: 'thread', projectId: p.id, threadId: tid })
   notify(p, tid, 'ask', `Your turn: ${qs[0]?.title ?? ''}`, 'Has a question')
+}
+
+function askQuestions(p: Project, tid: string, qs: Question[]) {
+  const msg = post(p, tid, { kind: 'question', modelInfo: store.getThread(p, tid).agent })
+  askUser(p, tid, msg, qs)
   return new Promise<Answer[]>((resolve) => questions.set(msg.id, resolve))
 }
 
@@ -576,10 +582,12 @@ export function answerDecisions(p: Project, tid: string, answers: { id: string; 
   else if (commented) send(p, tid, comment)
 }
 
-// "Your turn" = open questions or pending approvals in the thread.
+// "Your turn" = open questions or pending approvals in the thread. Nothing else sets needsYou: new input
+// of the user passes over the questions of earlier conclusions (skipAsked), another agent's input leaves them open.
+export const needsYouOf = (p: Project, tid: string) => store.listDecisions(p, tid).some((d) => !d.resolved) || store.readMessages(p, tid).some((m) => m.approval?.status === 'pending')
+
 export function refreshNeedsYou(p: Project, tid: string) {
-  const needsYou = store.listDecisions(p, tid).some((d) => !d.resolved) || store.readMessages(p, tid).some((m) => m.approval?.status === 'pending')
-  store.updateThread(p, tid, { needsYou })
+  store.updateThread(p, tid, { needsYou: needsYouOf(p, tid) })
   emit({ type: 'thread', projectId: p.id, threadId: tid })
 }
 

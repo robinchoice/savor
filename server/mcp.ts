@@ -142,27 +142,18 @@ function buildServer(p: Project, tid: string) {
       }
       const msg = agents.post(p, tid, { kind: 'conclusion', text, questions, suggestions, commits, modelInfo: modelInfo() })
       r.conclusion = { key, id: msg.id }
+      agents.markConcluded(tid, msg.id)
+      if (summary) store.updateThread(p, tid, { summary })
       if (questions?.length) {
-        const decisions = questions.map((q, i) => ({
-          id: `${msg.id}-q${i}`,
-          groupId: msg.id,
-          threadId: tid,
-          ...q,
-          selected: null,
-          answer: null,
-          resolved: false,
-          createdAt: msg.ts,
-        }))
-        decisions.forEach((d) => store.saveDecision(p, d))
-        store.updateMessage(p, tid, msg.id, { decisionIds: decisions.map((d) => d.id) })
+        agents.askUser(p, tid, msg, questions)
         const run = store.getThread(p, tid).workflow
         const step = run?.steps?.find((s) => s.id === run.activeStep)
         if (step?.begun && !settled(step.result) && (!step.preflight || step.preflight.status === 'ready')) recordResult(p, tid, step.id, { status: 'waiting', reason: 'Waiting for the user’s decision.', evidence: [msg.id], followUp: questions.map((q) => q.title) })
+      } else {
+        store.updateThread(p, tid, { unread: true, needsYou: agents.needsYouOf(p, tid) })
+        touchThread()
+        agents.notify(p, tid, 'result', text!, 'Finished')
       }
-      agents.markConcluded(tid, msg.id)
-      store.updateThread(p, tid, { unread: true, needsYou: store.listDecisions(p, tid).some((d) => !d.resolved), ...(summary && { summary }) })
-      touchThread()
-      agents.notify(p, tid, questions?.length ? 'ask' : 'result', questions?.length ? `Your turn: ${questions[0].title}` : text!, questions?.length ? 'Has a question' : 'Finished')
       return ok({ id: msg.id, note: 'Delivered. Finish your turn now.' })
     },
   )
