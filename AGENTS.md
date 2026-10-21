@@ -24,6 +24,7 @@
 
 ## Pitfalls
 
+- Claude background work shares the daemon's five-hour budget queue (`server/claude-pacing.ts`). Preserve the `PostToolBatch` control hook and native `Workflow`/`Agent`/`Task` restrictions together: throttling only conversation starts leaves native fan-out uncontrolled. Usage must keep its successful observation time and numeric reset; a failed probe must not refresh old values. See README, "Claude subscription pacing", for the enforcement boundary.
 - Robin works in Savor while you change it. Changes reach `savor.service` only through a release and an update. Test against a dev server and don't restart `savor.service`: your own session may run inside it.
 - When you show a UI change in a dev instance in the preview, say that it runs with test data and only shows the change: everything else looks different from Robin's instance.
 - How a conversation stands (blocked, working, unread, open) and whether it needs the user come from `agents.stateOf` and `agents.needsYouOf`, and questions for the user open through `agents.askUser`. Routes, the scheduler, pushes and MCP tools use those instead of reading the thread's fields their own way: the tab counts, the badge and the lists drifted apart before.

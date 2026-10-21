@@ -444,7 +444,7 @@ function buildServer(p: Project, tid: string) {
       emit({ type: 'thread', projectId: target.id, threadId: t.id })
       const origin = agents.originOf(p, tid)
       const device = agents.deviceOf(p, tid)
-      agents.send(target, t.id, { text: prompt, origin, device, chained: agents.chainedOf(p, tid) })
+      agents.send(target, t.id, { text: prompt, origin, device, chained: agents.chainedOf(p, tid), background: true })
       // Input from a paired device that lands in another project shows up there, not only in this conversation.
       if (!here && origin === 'remote') {
         store.updateThread(target, t.id, { unread: true })

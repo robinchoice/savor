@@ -15,8 +15,12 @@ const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'savor-compact-'))
 const HOME = path.join(TMP, 'home')
 const AGENT_LOG = path.join(TMP, 'agents.jsonl')
 let server, port
-after(() => {
-  server?.kill()
+after(async () => {
+  if (server && server.exitCode === null && server.signalCode === null) {
+    const exited = new Promise((resolve) => server.once('exit', resolve))
+    server.kill()
+    await exited
+  }
   fs.rmSync(TMP, { recursive: true, force: true })
 })
 
@@ -99,6 +103,10 @@ test('open Claude conversations compact when left idle, as Claude settings allow
   const restarted = await start(project, 'before the restart')
   server.kill()
   await new Promise((resolve) => server.on('exit', resolve))
+  // The conclusion reached disk, but the restart cut off endTurn's remaining cleanup.
+  const file = path.join(project.path, '.savor/threads', restarted, 'thread.json')
+  const interrupted = JSON.parse(fs.readFileSync(file, 'utf8'))
+  fs.writeFileSync(file, JSON.stringify({ ...interrupted, workingSince: new Date().toISOString() }))
   await startDaemon()
   await until(async () => (await read(project, restarted)).messages.at(-1).compacted)
   let r = await read(project, restarted)

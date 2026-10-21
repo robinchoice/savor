@@ -14,3 +14,5 @@ fs.writeFileSync(`${file}.${process.pid}`, '[user]\n\tname = Test\n\temail = t@t
 fs.renameSync(`${file}.${process.pid}`, file)
 process.env.GIT_CONFIG_GLOBAL = file
 process.env.GIT_CONFIG_NOSYSTEM = '1'
+// Exercise the queue without making daemon tests wait a minute between model requests.
+process.env.SAVOR_CLAUDE_PACING_INTERVAL_MS = '20'

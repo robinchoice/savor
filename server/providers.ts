@@ -6,6 +6,7 @@ import { upgradeAgent, type AgentConfig, type Provider } from './store.js'
 import { BIN, command } from './config.js'
 import { codexSkills, codexUsage, probeCodex } from './codex.js'
 import { claudeUsage, probeClaude } from './claude.js'
+import type { ClaudeUsageSample } from './claude-pacing.js'
 import { antigravitySkills, antigravityUsage, probeAntigravity } from './antigravity.js'
 import { acpSkills } from './acp.js'
 
@@ -293,10 +294,36 @@ let usageRefresh: Promise<Usage[]> | null = null
 const windowLabel = (mins: number) => (mins === 10080 ? 'Weekly' : mins % 1440 === 0 ? `${mins / 1440} days` : mins % 60 === 0 ? `${mins / 60} hours` : `${mins} minutes`)
 const resetTime = (s: number) => new Date(s * 1000).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).replace(/\u202f?\s?([AP]M)$/, (_, m) => m.toLowerCase())
 
+let claudeLimits: Awaited<ReturnType<typeof claudeUsage>> = []
+let claudeObservedAt = 0
+let claudeAskedAt = -Infinity
+let claudeRefresh: Promise<void> | null = null
+
+async function readClaudeUsage() {
+  if (!claudeRefresh && Date.now() - claudeAskedAt >= USAGE_MS) {
+    claudeAskedAt = Date.now()
+    claudeRefresh = claudeUsage().then((limits) => {
+      // A failed probe must not make retained values fresh again.
+      if (limits.length) {
+        claudeLimits = limits
+        claudeObservedAt = Date.now()
+      }
+    }).finally(() => { claudeRefresh = null })
+  }
+  if (claudeRefresh) await claudeRefresh
+  return claudeLimits
+}
+
+export async function claudeBudgetUsage(): Promise<ClaudeUsageSample | null> {
+  const limits = await readClaudeUsage()
+  const window = limits.find((l) => l.group === 'session' && !l.scope?.model)
+  return window ? { percent: window.percent, resetsAt: Date.parse(window.resets_at ?? ''), observedAt: claudeObservedAt } : null
+}
+
 const usageProbes: Partial<Record<Provider, () => Promise<UsageWindow[]>>> = {
   // A window whose reset has passed starts over.
   async claude() {
-    const limits = await claudeUsage()
+    const limits = await readClaudeUsage()
     return limits.map((l) => {
       const resets = Date.parse(l.resets_at ?? '')
       const model = l.scope?.model?.display_name

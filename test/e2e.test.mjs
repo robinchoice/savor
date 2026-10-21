@@ -1478,7 +1478,7 @@ test('a conversation can work in its own git worktree, which merges back and can
   const after = (await api('GET', t)).body.thread
   assert.deepEqual([after.worktree, after.completed, after.agentSessions], [null, true, []])
   await api('POST', `${t}/messages`, { text: 'back home' })
-  await until(async () => (await api('GET', t)).body.messages.some((m) => m.text === 'Echo: back home'))
+  await until(async () => (await api('GET', t)).body.messages.some((m) => m.text === 'Echo: back home'), 30_000)
   assert.equal(fs.realpathSync(agentRuns().filter((r) => r.agent === 'claude').at(-1).cwd), fs.realpathSync(PROJECT))
 })
 

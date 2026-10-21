@@ -17,8 +17,12 @@ const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'savor-fallback-'))
 const HOME = path.join(TMP, 'home')
 const AGENT_LOG = path.join(TMP, 'agents.jsonl')
 let server, port
-after(() => {
-  server?.kill()
+after(async () => {
+  if (server && server.exitCode === null && server.signalCode === null) {
+    const exited = new Promise((resolve) => server.once('exit', resolve))
+    server.kill()
+    await exited
+  }
   fs.rmSync(TMP, { recursive: true, force: true })
 })
 

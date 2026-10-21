@@ -37,6 +37,7 @@ export interface FormField { name: string; label: string; description?: string; 
 // `url` is a page an MCP server asks the user to open, e.g. to sign in; `fields` a form it asks them to fill in.
 export interface Approval { title: string; detail: string; url?: string; fields?: FormField[]; options: ApprovalOption[]; status: 'pending' | 'resolved'; choice?: string; expired?: boolean }
 export interface Message {
+  background?: boolean
   id: string
   ts: string
   // 'question' carries an agent's own clarifying questions (decisions) outside a conclusion.
@@ -91,6 +92,7 @@ export interface Thread {
   workingSince?: string | null
   // When Savor continues a turn that stopped at a usage limit: shortly after the limit resets.
   resumeAt?: string | null
+  budgetWait?: { note: string } | null
   // Set while Claude Code goes on with API credit after its usage limit (agents.ts): when that limit resets (ms),
   // what the session cost before and the USD it may spend on top.
   apiCredit?: { resetsAt: number; fromUsd: number; budgetUsd: number } | null

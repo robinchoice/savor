@@ -17,7 +17,8 @@ import * as terminal from './terminal.js'
 import * as ci from './ci.js'
 import { modelSeen, spent } from './scheduler.js'
 import { attempt, saveStep } from './workflow-results.js'
-import { knownAgents, knownUsage, listAgents, listUsage, mergeAgent, STATIC } from './providers.js'
+import { claudeBudgetUsage, knownAgents, knownUsage, listAgents, listUsage, mergeAgent, STATIC } from './providers.js'
+import { ClaudePacing, PACING_INTERVAL } from './claude-pacing.js'
 
 const IDLE_CLOSE_MS = Number(process.env.SAVOR_IDLE_CLOSE_MS ?? 5 * 60_000)
 // A turn that stopped at a usage limit continues this long after the limit resets.
@@ -43,7 +44,9 @@ export interface RequestState {
 const requests = new Map<string, RequestState>()
 const busy = new Map<string, string>() // threadId → turn start
 const turnConclusion = new Map<string, string>()
-const sessions = new Map<string, { session: Session; idleTimer?: NodeJS.Timeout }>()
+const sessions = new Map<string, { session: Session; paced: boolean; idleTimer?: NodeJS.Timeout }>()
+const pacing = new ClaudePacing(claudeBudgetUsage)
+const starting = new Map<string, { p: Project }>()
 const stopped = new Set<string>() // threads whose last turn the user stopped: don't pump the queue
 const approvals = new Map<string, (answer: { choice: string; content?: Record<string, unknown> }) => void>() // approval message id → resolver
 const questions = new Map<string, (answers: Answer[]) => void>() // decision group id → resolver
@@ -116,15 +119,17 @@ export function notify(p: Project, tid: string, type: NoticeType, body: string, 
 
 // ---- input and the queue ----
 
-export interface Input { text: string; images?: string[]; files?: string[]; origin: Origin; device?: string; from?: Message['from']; chained?: boolean; workflowStart?: boolean }
+export interface Input { text: string; images?: string[]; files?: string[]; origin: Origin; device?: string; from?: Message['from']; chained?: boolean; workflowStart?: boolean; background?: boolean }
 
 export function send(p: Project, tid: string, input: Input) {
   if (!input.workflowStart && !input.from) attempt(p, tid, 'human')
   // New input replaces the turn that waits for a usage limit to reset; it may go to another agent.
   setResume(p, tid, null)
+  pacing.cancel(tid)
+  store.updateThread(p, tid, { budgetWait: null })
   const thread = store.updateThread(p, tid, { completed: false, inputAt: store.now() })
   const queued = busy.has(tid) || compacting.has(tid)
-  const msg = post(p, tid, { kind: 'user', text: input.text, images: input.images, files: input.files, modelInfo: thread.agent, origin: input.origin, device: input.device, from: input.from, chained: input.chained || undefined, delivered: !queued })
+  const msg = post(p, tid, { kind: 'user', text: input.text, images: input.images, files: input.files, modelInfo: thread.agent, origin: input.origin, device: input.device, from: input.from, chained: input.chained || undefined, background: input.background || input.workflowStart || !!input.from || undefined, delivered: !queued })
   const step = thread.workflow?.steps?.find((s) => s.id === thread.workflow?.activeStep)
   if (!input.workflowStart && !input.from && step?.result?.status === 'waiting') saveStep(p, tid, { ...step, result: { ...step.result, status: 'partial', reason: 'User replied; the outcome needs verification.', evidence: [...step.result.evidence, msg.id].slice(-20) } })
   if (!input.from) skipAsked(p, tid)
@@ -230,9 +235,7 @@ function deliver(p: Project, tid: string, msg: Message) {
   requests.set(tid, { inputId: msg.id, startedAt, updates: new Map() })
   const setup = git.setupOf(thread.worktree?.path)
   if (!setup) {
-    const session = sessionFor(p, thread)
-    beginTurn(p, tid)
-    return session.start(turnInput(p, thread, msg))
+    return startRequest(p, thread, msg, '', !!msg.background)
   }
   // The first turn in a new worktree starts once the project's setup command is done, and the agent
   // is told how it went.
@@ -244,7 +247,7 @@ function deliver(p: Project, tid: string, msg: Message) {
     if (!preparing.delete(tid)) return
     activity.finish('setup')
     const now = store.getThread(p, tid)
-    sessionFor(p, now).start(turnInput(p, now, msg, note))
+    startRequest(p, now, msg, note, !!msg.background)
   })
 }
 
@@ -256,6 +259,12 @@ function pump(p: Project, tid: string) {
 
 export function stop(tid: string) {
   stopped.add(tid)
+  pacing.cancel(tid)
+  const pending = starting.get(tid)
+  if (pending) {
+    starting.delete(tid)
+    return endTurn(pending.p, tid, { error: STOPPED }, store.getThread(pending.p, tid).agent)
+  }
   const setup = preparing.get(tid)
   if (!setup) return current(tid)?.kill()
   preparing.delete(tid)
@@ -273,6 +282,11 @@ export function forget(tid: string) {
   clearTimeout(ciTimers.get(tid))
   clearTimeout(compactTimers.get(tid))
   compacting.get(tid)?.kill()
+  starting.delete(tid)
+  pacing.cancel(tid)
+  pacing.release(tid)
+  pacing.cancel(`compact:${tid}`)
+  pacing.release(`compact:${tid}`)
   for (const state of [busy, requests, turnConclusion, preparing, resumeTimers, ciTimers, compactTimers, compacting]) state.delete(tid)
   stopped.delete(tid)
 }
@@ -328,6 +342,9 @@ export function stopAgent(p: Project, tid: string) {
   if (busy.has(tid)) return stop(tid)
   const thread = store.getThread(p, tid)
   const waited = waiting(p, thread)
+  pacing.cancel(tid)
+  pacing.release(tid)
+  store.updateThread(p, tid, { budgetWait: null })
   const s = sessions.get(tid)
   sessions.delete(tid)
   clearTimeout(s?.idleTimer)
@@ -355,10 +372,12 @@ function beginTurn(p: Project, tid: string) {
   emit({ type: 'status', projectId: p.id, threadId: tid })
 }
 
-function endTurn(p: Project, tid: string, result: { text?: string; error?: string; resetsAt?: number | null }, agent: AgentConfig) {
+function endTurn(p: Project, tid: string, result: { text?: string; error?: string; resetsAt?: number | null; paused?: boolean }, agent: AgentConfig) {
   const startedAt = busy.get(tid)
   if (!startedAt) return
-  if (result.error) {
+  if (result.paused && !request(p, tid).conclusion) {
+    queueBudget(p, store.getThread(p, tid), PACED + sameRequest(request(p, tid)), Date.now() + PACING_INTERVAL)
+  } else if (result.error) {
     // A reset that is already well past can't explain the error: no second try then.
     const resumeAt = result.resetsAt && result.resetsAt + LIMIT_MARGIN_MS > Date.now() ? new Date(result.resetsAt + LIMIT_MARGIN_MS).toISOString() : null
     store.updateThread(p, tid, { error: result.error })
@@ -391,9 +410,11 @@ function endTurn(p: Project, tid: string, result: { text?: string; error?: strin
   // Work time counts from the input, including time spent waiting for background tasks.
   if (mid) store.updateMessage(p, tid, mid, { workTiming: { startedAt: request(p, tid).startedAt ?? startedAt, finishedAt: store.now() } })
   busy.delete(tid)
+  if (request(p, tid).conclusion || result.error) pacing.cancel(tid)
+  if (!runsBackground(tid)) pacing.release(tid)
   // An agent that waits for background work still owes its conclusion: the mark stays, so a restart
   // picks the request up again.
-  if (result.error || !awaitsBackground(p, tid)) store.updateThread(p, tid, { workingSince: null })
+  if (result.error || request(p, tid).conclusion || (!result.paused && !awaitsBackground(p, tid))) store.updateThread(p, tid, { workingSince: null })
   emit({ type: 'status', projectId: p.id, threadId: tid })
   emit({ type: 'message', projectId: p.id, threadId: tid })
   maybeClose(p, tid)
@@ -441,11 +462,11 @@ function turnInput(p: Project, thread: Thread, msg: Message, note = ''): TurnInp
 
 // ---- sessions ----
 
-function sessionFor(p: Project, thread: Thread): Session {
+function sessionFor(p: Project, thread: Thread, paced = false): Session {
   const tid = thread.id
   let s = sessions.get(tid)
   // New agent, model, effort or permission settings need a fresh process.
-  if (s && s.session.config !== configKey(thread.agent, !!thread.apiCredit)) {
+  if (s && (s.session.config !== configKey(thread.agent, !!thread.apiCredit) || (s.paced !== paced && !s.session.background?.()))) {
     sessions.delete(tid)
     clearTimeout(s.idleTimer)
     s.session.end()
@@ -459,12 +480,12 @@ function sessionFor(p: Project, thread: Thread): Session {
   const host = hostFor(p, thread, holder)
   const provider = thread.agent.provider
   const session =
-    provider === 'claude' ? new ClaudeSession(host, thread)
+    provider === 'claude' ? new ClaudeSession(host, thread, paced)
     : provider === 'codex' ? new CodexSession(host, thread)
     : provider === 'opencode' || provider === 'grok' ? new AcpSession(host, thread)
     : new AntigravitySession(host, thread)
   holder.session = session
-  sessions.set(tid, { session })
+  sessions.set(tid, { session, paced })
   return session
 }
 
@@ -518,6 +539,7 @@ function hostFor(p: Project, thread: Thread, holder: { session?: Session }): Hos
     ask: (qs) => askQuestions(p, tid, qs),
     backgroundChanged: () => {
       if (!mine()) return
+      if (!busy.has(tid) && !runsBackground(tid)) pacing.release(tid)
       emit({ type: 'status', projectId: p.id, threadId: tid })
       maybeClose(p, tid)
     },
@@ -525,6 +547,7 @@ function hostFor(p: Project, thread: Thread, holder: { session?: Session }): Hos
     closed: (error) => {
       if (!mine()) return
       sessions.delete(tid)
+      pacing.release(tid)
       cancelPending(p, tid)
       if (busy.has(tid)) endTurn(p, tid, { error }, thread.agent)
       else scheduleCompact(p, tid)
@@ -627,13 +650,46 @@ function cancelPending(p: Project, tid: string) {
 
 // The agent resumes its own session on the input it still owes a conclusion for, and is told why.
 function continueRequest(p: Project, thread: Thread, input: Message, note: string) {
-  attempt(p, thread.id, note === INTERRUPTED ? 'restart' : 'resume')
   const r = request(p, thread.id)
   r.startedAt ??= thread.workingSince ?? store.now()
   store.updateThread(p, thread.id, { workingSince: r.startedAt })
-  const session = sessionFor(p, thread)
-  beginTurn(p, thread.id)
-  session.start(turnInput(p, thread, input, note))
+  startRequest(p, thread, input, note, true)
+}
+
+async function startRequest(p: Project, thread: Thread, input: Message, note: string, background: boolean) {
+  const tid = thread.id
+  const subscription = thread.agent.provider === 'claude' && !thread.apiCredit
+  const pending = { p }
+  starting.set(tid, pending)
+  beginTurn(p, tid)
+  if (subscription && background) {
+    const wait = await pacing.admit(tid)
+    if (starting.get(tid) !== pending) return
+    if (wait) {
+      starting.delete(tid)
+      busy.delete(tid)
+      queueBudget(p, thread, note, wait.at)
+      return
+    }
+  } else if (subscription) pacing.running(tid)
+  starting.delete(tid)
+  if (background && (thread.budgetWait || note)) attempt(p, tid, note === INTERRUPTED ? 'restart' : 'resume')
+  if (thread.budgetWait) post(p, tid, { kind: 'update', text: 'Claude background work continues within the shared five-hour budget.' })
+  store.updateThread(p, tid, { budgetWait: null })
+  const next = turnInput(p, thread, input, note)
+  // The session already holds the request and tool results. Re-sending a slash command would run it again.
+  if (note.startsWith(PACED) && thread.agent.provider === 'claude' && sessionIdOf(thread, 'claude')) {
+    next.input = 'Continue the same request.'
+    next.images = []
+  }
+  sessionFor(p, store.getThread(p, tid), subscription && background).start(next)
+}
+
+function queueBudget(p: Project, thread: Thread, note: string, at: number) {
+  if (!thread.budgetWait) post(p, thread.id, { kind: 'update', text: 'Claude background work is queued against the shared five-hour budget (18 percentage points per hour). Usage, spacing and running work are checked again in a minute.' })
+  store.updateThread(p, thread.id, { budgetWait: { note } })
+  setResume(p, thread.id, new Date(at).toISOString())
+  emit({ type: 'status', projectId: p.id, threadId: thread.id })
 }
 
 // ---- usage limits ----
@@ -641,6 +697,7 @@ function continueRequest(p: Project, thread: Thread, input: Message, note: strin
 // An agent that stopped before it acknowledged the input still does.
 const sameRequest = (r: RequestState) => `This is still the same request${r.ack ? ': do not acknowledge it again' : ''}.\n\n`
 const LIMITED = `You stopped at a usage limit while working on the input below, and the limit has reset since. Check what is already done before you repeat anything, then finish the work. `
+const PACED = 'Continue the same request from the completed tool results. Savor paused before the next model call to pace the shared Claude budget. '
 
 // `at` is when the turn continues, or null for no longer. What is queued waits until then.
 function setResume(p: Project, tid: string, at: string | null) {
@@ -655,7 +712,7 @@ function resumeAfterLimit(p: Project, tid: string) {
   const thread = store.getThread(p, tid)
   const r = request(p, tid)
   const input = store.readMessages(p, tid).find((m) => m.id === r.inputId)
-  if (input && !r.conclusion && !busy.has(tid)) continueRequest(p, thread, input, LIMITED + sameRequest(r))
+  if (input && !r.conclusion && !busy.has(tid)) continueRequest(p, thread, input, thread.budgetWait?.note ?? LIMITED + sameRequest(r))
   else pump(p, tid)
 }
 
@@ -831,11 +888,26 @@ function scheduleCompact(p: Project, tid: string) {
 
 // The agent resumes its session for /compact alone, outside of any request. Input that arrives meanwhile
 // waits in the queue; "Send now" ends the compaction.
-function compact(p: Project, tid: string) {
+async function compact(p: Project, tid: string) {
   compactTimers.delete(tid)
   const t = store.getThread(p, tid)
   const last = store.readMessages(p, tid).at(-1)
   if (!last || !compactable(p, t) || busy.has(tid) || sessions.has(tid) || waiting(p, t)) return
+  const wait = await pacing.admit(`compact:${tid}`)
+  if (!store.listThreads(p).some((thread) => thread.id === tid)) {
+    pacing.cancel(`compact:${tid}`)
+    pacing.release(`compact:${tid}`)
+    return
+  }
+  if (wait) {
+    pacing.cancel(`compact:${tid}`)
+    compactTimers.set(tid, setTimeout(() => compact(p, tid), PACING_INTERVAL))
+    return
+  }
+  if (stopped.has(tid) || busy.has(tid) || sessions.has(tid) || waiting(p, store.getThread(p, tid))) {
+    pacing.release(`compact:${tid}`)
+    return
+  }
   const from = t.context!.tokens
   const holder: { session?: Session } = {}
   const mine = () => !!holder.session && compacting.get(tid) === holder.session
@@ -864,6 +936,7 @@ function compact(p: Project, tid: string) {
     closed: () => {
       if (!mine()) return
       compacting.delete(tid)
+      pacing.release(`compact:${tid}`)
       pump(p, tid)
     },
   }
@@ -882,7 +955,10 @@ const INTERRUPTED = `Savor was restarted while you were working on the input bel
 export function resumeInterrupted() {
   for (const p of store.listProjects())
     for (const thread of store.listThreads(p)) {
-      if (thread.resumeAt) setResume(p, thread.id, thread.resumeAt)
+      if (thread.resumeAt) {
+        setResume(p, thread.id, thread.resumeAt)
+        continue
+      }
       if (thread.ciWatch) setCi(p, thread.id, thread.ciWatch, 0)
       if (!thread.workingSince) {
         scheduleCompact(p, thread.id)
@@ -899,6 +975,7 @@ export function resumeInterrupted() {
         continue
       }
       store.updateThread(p, tid, { workingSince: null })
+      if (r.conclusion) scheduleCompact(p, tid)
       // An open question restarts the work with its answer, and what is queued follows that.
       if (!waitsForYou) pump(p, tid)
     }
@@ -907,6 +984,8 @@ export function resumeInterrupted() {
 // The daemon is going down: its agents go with it, and their turns continue at the next start. The
 // sessions are let go first, so their ends don't close the turns.
 export function shutdown() {
+  for (const tid of starting.keys()) pacing.cancel(tid)
+  starting.clear()
   const all = [...sessions.values()].map((s) => s.session).concat([...compacting.values()])
   sessions.clear()
   compacting.clear()
