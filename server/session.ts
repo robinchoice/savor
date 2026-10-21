@@ -119,11 +119,6 @@ export function rememberSession(p: Project, tid: string, provider: Provider, ses
   store.updateThread(p, tid, { agentSessions: [...t.agentSessions.filter((s) => s.provider !== provider), { provider, sessionId }] })
 }
 
-export const ALLOW_DENY: ApprovalOption[] = [
-  { id: 'allow', label: 'Allow', kind: 'allow' },
-  { id: 'deny', label: 'Deny', kind: 'deny' },
-]
-
 // An MCP server asks the user to open a page, e.g. to sign in, and waits until they are done there.
 export const OPEN_PAGE: ApprovalOption[] = [
   { id: 'accept', label: 'Done, continue', kind: 'allow' },

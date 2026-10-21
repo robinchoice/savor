@@ -13,7 +13,7 @@ import * as browser from './browser.js'
 import * as processes from './processes.js'
 import { runWorkflow, runs, syncSchedules, validateCron } from './scheduler.js'
 import { beginStep, delegated, preflightSchema, recordResult, resultSchema, saveStep, settled } from './workflow-results.js'
-import { listAgents, mergeAgent, STATIC } from './providers.js'
+import { isUnsafe, listAgents, mergeAgent, STATIC } from './providers.js'
 import { addWorktree, git, openProject } from './git.js'
 import * as ci from './ci.js'
 import * as move from './move.js'
@@ -428,7 +428,7 @@ function buildServer(p: Project, tid: string) {
       const current = modelInfo()
       const base = here ? current : target.agent
       const chosen = agent ? mergeAgent(base, { ...agent, provider: agent.provider as store.Provider }) : base
-      if (chosen.permissionMode !== current.permissionMode && STATIC[chosen.provider].modes.find((m) => m.id === chosen.permissionMode)?.unsafe)
+      if (chosen.permissionMode !== current.permissionMode && isUnsafe(chosen.provider, chosen.permissionMode))
         throw new Error('A started conversation cannot have broader permissions than this one.')
       // A thread id only means something within its project, and this conversation's worktree belongs to this one.
       const t = store.createThread(target, {

@@ -21,10 +21,6 @@ import { newNonce, securityHeaders, withNonce } from '../shared/headers.js'
 import { fanoutBranches } from '../shared/fanout.js'
 import { handleMcp } from './mcp.js'
 import { formContent } from './session.js'
-import { claudeAside } from './claude.js'
-import { codexAside } from './codex.js'
-import { acpAside } from './acp.js'
-import { antigravityAside } from './antigravity.js'
 import { isUnsafe, listAgents, listSkills, listUsage, mergeAgent } from './providers.js'
 import { month, nextRun, runEarly, runs, runWorkflow, syncSchedules, validateCron } from './scheduler.js'
 import { preflightSchema } from './workflow-results.js'
@@ -791,23 +787,9 @@ route('POST', '/projects/:pid/terminal', (params, b, ctx) => {
 // the question nor the answer becomes part of the conversation.
 route('POST', '/projects/:pid/threads/:tid/btw', async (params, b) => {
   const p = project(params)
-  const t = store.getThread(p, params.tid)
   const question = String(b.text ?? '').trim()
   if (!question) throw new BadRequest('Write the question after /btw.')
-  const { provider, model } = t.agent
-  const sid = t.agentSessions.find((s) => s.provider === provider)?.sessionId
-  const prompt = `The user asks a quick side question while you work on this conversation. Answer it briefly from what you already know. Don't use tools; this answer does not become part of the conversation.\n\nQuestion: ${question}`
-  if (provider === 'claude') return { text: await claudeAside(store.cwdOf(p, t), sid, model, prompt) }
-  if (provider === 'codex') return { text: await codexAside(store.cwdOf(p, t), sid, model, prompt) }
-  if (provider === 'antigravity') {
-    const history = store
-      .readMessages(p, t.id)
-      .filter((m) => m.text && m.kind !== 'error')
-      .slice(-30)
-      .map((m) => `[${m.kind === 'user' ? 'user' : 'agent'}] ${m.text!.slice(0, 2000)}`)
-    return { text: await antigravityAside(store.cwdOf(p, t), model, history.length ? `The conversation so far:\n${history.join('\n\n')}\n\n` : '', prompt) }
-  }
-  return { text: await acpAside(provider, store.cwdOf(p, t), sid, model, prompt) }
+  return { text: await agents.aside(p, store.getThread(p, params.tid), question) }
 })
 // A conversation continues in the agent's own terminal UI, resuming its session there. Savor's process
 // for it goes first, so the two don't write to one session; the next input here resumes what happened there.

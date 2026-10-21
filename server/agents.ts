@@ -7,10 +7,10 @@ import type { AgentConfig, Message, NoticeType, Origin, Project, Provider, Quest
 import { emit } from './events.js'
 import { appUrl } from './config.js'
 import { Activity, PlanTracker, configKey, forkOf, sessionIdOf, STOPPED, type Answer, type ApprovalRequest, type Host, type Session, type TurnInput } from './session.js'
-import { ClaudeSession, creditEnv, idleCompaction } from './claude.js'
-import { CodexSession } from './codex.js'
-import { AcpSession } from './acp.js'
-import { AntigravitySession } from './antigravity.js'
+import { ClaudeSession, claudeAside, creditEnv, idleCompaction } from './claude.js'
+import { CodexSession, codexAside } from './codex.js'
+import { AcpSession, acpAside } from './acp.js'
+import { AntigravitySession, antigravityAside } from './antigravity.js'
 import * as push from './push.js'
 import * as git from './git.js'
 import * as terminal from './terminal.js'
@@ -466,6 +466,27 @@ function sessionFor(p: Project, thread: Thread): Session {
   holder.session = session
   sessions.set(tid, { session })
   return session
+}
+
+// A side question (/btw): a copy of the agent's session answers it once, without tools, also while the agent
+// works. Neither the question nor the answer becomes part of the conversation.
+export function aside(p: Project, thread: Thread, question: string) {
+  const { provider, model } = thread.agent
+  const cwd = store.cwdOf(p, thread)
+  const sid = sessionIdOf(thread, provider)
+  const prompt = `The user asks a quick side question while you work on this conversation. Answer it briefly from what you already know. Don't use tools; this answer does not become part of the conversation.\n\nQuestion: ${question}`
+  if (provider === 'claude') return claudeAside(cwd, sid, model, prompt)
+  if (provider === 'codex') return codexAside(cwd, sid, model, prompt)
+  if (provider === 'antigravity') {
+    // agy cannot fork a conversation: a fresh run gets the visible history instead.
+    const history = store
+      .readMessages(p, thread.id)
+      .filter((m) => m.text && m.kind !== 'error')
+      .slice(-30)
+      .map((m) => `[${m.kind === 'user' ? 'user' : 'agent'}] ${m.text!.slice(0, 2000)}`)
+    return antigravityAside(cwd, model, history.length ? `The conversation so far:\n${history.join('\n\n')}\n\n` : '', prompt)
+  }
+  return acpAside(provider, cwd, sid, model, prompt)
 }
 
 // Events from a session that was already replaced (new settings) or closed are ignored.
