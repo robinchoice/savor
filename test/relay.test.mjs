@@ -301,6 +301,26 @@ test('a device pairs with a second computer and switches between both', async ()
   assert.deepEqual((await local('GET', '/devices')).map((d) => d.id), [first.id])
 })
 
+test('a demo instance lets every device in with its fixed code, without asking', async () => {
+  const home = path.join(TMP, 'demo')
+  const base = `http://127.0.0.1:${await freePort()}`
+  await start('dist/server/index.mjs', { SAVOR_HOME: home, SAVOR_PORT: new URL(base).port, SAVOR_CLAUDE_BIN: path.join(ROOT, 'test/fake-claude.mjs'), SAVOR_DEMO_PAIRING: 'demo2026' }, 'Savor running')
+  const demo = call(base, JSON.parse(fs.readFileSync(path.join(home, 'state.json'), 'utf8')).token)
+  await demo('PUT', '/relay', { url: relayBase, enabled: true })
+  await until(async () => (await demo('GET', '/relay')).state === 'online')
+
+  for (const name of ['Reviewer 1', 'Reviewer 2']) {
+    const reviewer = await browser.newPage({ locale: 'en-US' })
+    await reviewer.goto(`${relayBase}/#/rpair/${(await demo('GET', '/relay')).publicKey}/DEMO2026`)
+    await reviewer.fill('input', name)
+    await reviewer.click('button:has-text("Pair")')
+    await reviewer.waitForSelector('.account')
+    await reviewer.close()
+  }
+  assert.deepEqual((await demo('GET', '/devices')).map((d) => [d.name, d.terminal ?? false]), [['Reviewer 1', false], ['Reviewer 2', false]])
+  assert.deepEqual(await demo('GET', '/devices/requests'), [])
+})
+
 test('idle sockets cannot lock real devices out', async () => {
   const id = await relayId()
   const sockets = Array.from({ length: 10 }, () => socket(relayBase.replace('http', 'ws') + '/connect?id=' + id))

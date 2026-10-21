@@ -16,6 +16,9 @@ const APPROVAL_MS = Number(process.env.SAVOR_PAIRING_APPROVAL_MS ?? 2 * 60_000)
 const MAX_FAILED_PAIRINGS = 10
 const pairings = new Map<string, number>()
 let failedPairings = 0
+// Only for the demo instance Apple's beta review pairs with: a fixed code that never runs out and lets
+// every device in without asking. Never set it on a computer with real work on it.
+const DEMO_CODE = process.env.SAVOR_DEMO_PAIRING?.toUpperCase()
 
 export interface PairingRequest { id: string; name: string; via: 'relay' | 'lan'; check: string }
 const requests = new Map<string, PairingRequest & { decide(approved: boolean): void }>()
@@ -68,6 +71,7 @@ const deviceName = (name: string) => name.slice(0, 60) || 'Device'
 // Spends the code and asks this computer to let the device in. Resolves false when declined, when
 // nobody answers in time or when the device gives up. Once one is allowed, every open code is void.
 export function requestApproval(code: string, name: string, via: PairingRequest['via'], check: string) {
+  if (DEMO_CODE && code.toUpperCase() === DEMO_CODE) return { approved: Promise.resolve(true), cancel: () => {} }
   takeCode(code)
   failedPairings = 0
   const id = store.newId()
@@ -112,7 +116,7 @@ export function addTokenDevice(name: string) {
 
 // ---- pairing through the relay ----
 
-export const openPairingCodes = () => [...pairings].filter(([, expires]) => expires > Date.now()).map(([code]) => code)
+export const openPairingCodes = () => [...pairings].filter(([, expires]) => expires > Date.now()).map(([code]) => code).concat(DEMO_CODE ?? [])
 
 // One device key serves every computer a browser pairs with, so it can pair here again. It keeps its one
 // entry then, and revoking it still cuts it off.

@@ -7,6 +7,7 @@
 - Relay: https://savor.diespaetzles.lol, Coolify on VPS 3, project `privat-savor`, application `savor-relay`.
 - The bug button sends reports through the daemon's `POST /api/feedback` to `POST https://api.pleasance.org/savor/feedback` (repo `pleasance`, `api/`), which files them as issues in the private repo `robinchoice/savor-feedback`. Tests replace it with `SAVOR_FEEDBACK_URL`.
 - Phone apps `org.pleasance.savor`: iOS in TestFlight (groups „Savor Intern“, external „Savor Tester“), Android in Play's internal test (account `play@pleasance.org`). README, "Phone / remote access".
+- Demo instance for Apple's beta review: `demo/` (daemon with the fake agent and a sample project), Coolify on VPS 3, project `privat-savor`, application `savor-demo`, built from `main` and deployed by hand. It only connects out to the relay. Its pairing link is in the Coolify log, the code in its variable `SAVOR_DEMO_PAIRING`.
 - Robin's own instance runs as the systemd user service `savor.service` on `127.0.0.1:4317`, from the AppImage of the last release.
 
 ## Checks
@@ -37,6 +38,7 @@
 - Headless `agy` cannot ask for approval: a command without an allow rule ends the turn, a denied one only fails. Its rules in `~/.gemini/antigravity-cli/settings.json` hold for every project and match a command by its first words (`command(git)`, `command(git status)`; no wildcards). Academic writing projects add the commands their setup and export need and deny the git commands that throw work away (`server/antigravity.ts`), and the agent is told the list. The MCP bridge runs through `sh`, so Antigravity in Savor does not work on Windows yet.
 - The web UI speaks English and German. Every text goes through `t('English text')` from `web/i18n.ts` (`plural()` for counts) with its German entry in `web/de.ts`; `test/i18n.test.mjs` fails on a text without one. Texts the daemon sends with values in them (health warnings, export checks) are translated in the UI by `tx()` with the patterns in `de.ts`. Browser tests pin `locale: 'en-US'`, so on a German machine they still see English.
 - The iOS app bundles `dist/web` (`npx vite build && npx cap sync ios`) and has no service worker, Web Push or `/savor-relay.json`: `web/native.ts` tells the client it runs there, and each profile keeps its `relay`. The Android app is the relay's page in Chrome, so it changes only with the relay. If the Play upload key or Play's signing key changes, `web/public/.well-known/assetlinks.json` needs its SHA-256, otherwise the app shows Chrome's address bar.
+- `SAVOR_DEMO_PAIRING` lets every device in without asking (`server/devices.ts`). Set it only on the demo instance, never on a computer with real work on it. Redeploy `savor-demo` when the tunnel protocol changes, or the reviewers can't pair.
 - `site/llms.txt` is the landing page for agents (llmstxt.org), English and German, written by hand. When the landing page's content changes, update it in the same commit. It links `releases/latest` instead of a version, because `release.yml` rewrites only `site/index.html`. `site/studium/` is `noindex` and stays out of it.
 
 ## Releases
