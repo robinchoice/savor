@@ -48,6 +48,8 @@ interface Props {
   answering?: { picked: number; total: number; send: (comment: string, attachments: Attachment[]) => Promise<unknown> }
   // Set while another conversation needs you: a second button sends and opens it.
   onNext?: () => void
+  // Filled with submit(next) once rendered: the questions card sends through it like Enter in the comment box.
+  submitRef?: { current?: (next: boolean) => void }
 }
 
 const MAX_FILES = 8
@@ -206,6 +208,7 @@ export function Composer(props: Props) {
       setError((e as Error).message)
     }
   }
+  if (props.submitRef) props.submitRef.current = (next) => submit(false, next)
   const setAgent = (a: AgentConfig) => Promise.resolve(props.setAgent(a)).then(() => setError(''), (e: Error) => setError(e.message))
   // One step along the efforts the model offers, from the next turn on.
   const stepEffort = (by: number) => {

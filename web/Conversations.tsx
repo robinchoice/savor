@@ -849,6 +849,8 @@ export function ThreadView({ project, threadId, back, next, siblings }: { projec
   }, [currentMatch])
   // What stop and finish do is known once the conversation has loaded, below.
   const keys = useRef<{ stop?: () => void; finish?: () => void }>({})
+  // The questions card sends its answers through the composer, which hands its submit up here.
+  const sendAnswers = useRef<(next: boolean) => void>()
   useShortcut('stop', () => keys.current.stop?.())
   useShortcut('finish', () => keys.current.finish?.())
   useShortcut('browser', () => setView(mode === 'browser' ? 'chat' : 'browser'))
@@ -994,6 +996,7 @@ export function ThreadView({ project, threadId, back, next, siblings }: { projec
       setReview={saveReview}
       compact={floating}
       answering={answering}
+      submitRef={sendAnswers}
       onNext={nextPath ? () => {
         trail.push(location.hash.slice(1))
         go(nextPath)
@@ -1154,6 +1157,7 @@ export function ThreadView({ project, threadId, back, next, siblings }: { projec
                         active={i > lastUser || m.kind === 'question'}
                         answers={answers}
                         setAnswer={(id, a) => setAnswers({ ...answers, [id]: a })}
+                        send={(next) => sendAnswers.current?.(next)}
                         base={base}
                         highlight={find.open ? find.q.trim() : ''}
                         match={matches.includes(m.id) ? (m.id === currentMatch ? 'current' : 'match') : ''}
@@ -1410,7 +1414,7 @@ function ApprovalForm({ a, submit }: { a: Approval; submit: (choice: string, con
   )
 }
 
-function MessageItem({ m, thread, workflow, decisions, active, answers, setAnswer, base, highlight, match, onCommit, preview, onPreview }: { m: Message; thread: Thread; workflow?: NonNullable<Thread['workflow']> & { href: string }; decisions: Decision[]; active: boolean; answers: Record<string, Pick>; setAnswer: (id: string, a: Pick) => void; base: string; highlight: string; match: string; onCommit: (hash: string) => void; preview?: string | false | null; onPreview?: () => void }) {
+function MessageItem({ m, thread, workflow, decisions, active, answers, setAnswer, send, base, highlight, match, onCommit, preview, onPreview }: { m: Message; thread: Thread; workflow?: NonNullable<Thread['workflow']> & { href: string }; decisions: Decision[]; active: boolean; answers: Record<string, Pick>; setAnswer: (id: string, a: Pick) => void; send: (next: boolean) => void; base: string; highlight: string; match: string; onCommit: (hash: string) => void; preview?: string | false | null; onPreview?: () => void }) {
   const [copyState, setCopyState] = useState('')
   useEffect(() => {
     if (!copyState) return
@@ -1560,7 +1564,7 @@ function MessageItem({ m, thread, workflow, decisions, active, answers, setAnswe
           </button>
         </div>
       )}
-      {decisions.length > 0 && <Questions decisions={decisions} active={active} answers={answers} setAnswer={setAnswer} />}
+      {decisions.length > 0 && <Questions decisions={decisions} active={active} answers={answers} setAnswer={setAnswer} send={send} />}
     </div>
   )
 }
@@ -1588,7 +1592,7 @@ const growToFit = (el: HTMLTextAreaElement | null) => {
 }
 
 // The answers are picked here and sent from the composer, together with an optional comment.
-function Questions({ decisions, active, answers, setAnswer }: { decisions: Decision[]; active: boolean; answers: Record<string, Pick>; setAnswer: (id: string, a: Pick) => void }) {
+function Questions({ decisions, active, answers, setAnswer, send }: { decisions: Decision[]; active: boolean; answers: Record<string, Pick>; setAnswer: (id: string, a: Pick) => void; send: (next: boolean) => void }) {
   const open = active && decisions.some((d) => !d.resolved)
   const n = decisions.length
 
@@ -1599,7 +1603,7 @@ function Questions({ decisions, active, answers, setAnswer }: { decisions: Decis
       onKeyDown={(e) => {
         if (open && e.key === 'Enter' && !e.shiftKey && !e.isComposing && ['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement).tagName)) {
           e.preventDefault()
-          document.querySelector<HTMLButtonElement>(`.composer.answering button.send.${e.altKey ? 'next' : 'wide'}`)?.click()
+          send(e.altKey)
         }
       }}
     >
