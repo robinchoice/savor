@@ -120,8 +120,10 @@ export class AntigravitySession implements Session {
       } catch {
         return
       }
-      if (ev.event === 'init' && ev.conversation_id) rememberSession(p, tid, 'antigravity', ev.conversation_id)
-      else if (ev.event === 'result') result = ev.result
+      if (ev.event === 'init') {
+        if (ev.conversation_id) rememberSession(p, tid, 'antigravity', ev.conversation_id)
+        if (ev.init?.model) this.host.model(ev.init.model)
+      } else if (ev.event === 'result') result = ev.result
       else if (ev.event === 'step_update') {
         const s = ev.step_update
         if (s.step_type === 'tool') {

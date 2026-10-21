@@ -763,6 +763,10 @@ test('a project learns the model its agent answers on, also when only the model 
   // Claude Code switched models without the context growing.
   await turn('model: fake-opus')
   assert.equal(await model(), 'fake-opus')
+  // agy names its model when it starts.
+  await api('PATCH', pp, { agent: { provider: 'antigravity' } })
+  await turn('hello agy')
+  assert.equal(await model(), 'fake-gemini-high')
   await api('DELETE', pp)
 })
 
