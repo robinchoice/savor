@@ -134,6 +134,10 @@ async function approve(pid, tid, m) {
 async function check(a) {
   const dir = path.join(TMP, a.provider)
   const p = await api('POST', '/projects', { path: dir, name: a.provider, create: true })
+  if (a.provider === 'claude') {
+    fs.mkdirSync(path.join(dir, '.claude'), { recursive: true })
+    fs.writeFileSync(path.join(dir, '.claude', 'settings.json'), JSON.stringify({ permissions: { ask: ['Bash(touch savor-check.txt)'] } }))
+  }
   // OpenCode runs commands without asking unless its config says otherwise.
   if (a.provider === 'opencode') fs.writeFileSync(path.join(dir, 'opencode.json'), JSON.stringify({ permission: { bash: 'ask' } }))
   const marker = path.join(dir, 'savor-check.txt')
@@ -152,7 +156,11 @@ async function check(a) {
   // A prompt that needs a permission: the approval reaches Savor, and the command runs once allowed.
   const t = await api('POST', `/projects/${p.id}/threads`, { text, agent: { provider: a.provider, ...a.agent } })
   const first = (await api('GET', `/projects/${p.id}/threads/${t.id}`)).messages.find((m) => m.kind === 'user')
-  if (!a.denies) await approve(p.id, t.id, await until('a permission request', () => pendingApproval(p.id, t.id), 180_000))
+  if (!a.denies) {
+    const approval = await until('a permission request', () => pendingApproval(p.id, t.id), 180_000)
+    if (fs.existsSync(marker) !== !!a.removes) throw new Error('the command ran before permission was granted')
+    await approve(p.id, t.id, approval)
+  }
   await answered(p.id, t.id, first.id, 180_000)
   if (fs.existsSync(marker) === !!a.removes) throw new Error('the allowed command did not run')
 
