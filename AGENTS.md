@@ -26,6 +26,7 @@
 
 - Robin works in Savor while you change it. Changes reach `savor.service` only through a release and an update. Test against a dev server and don't restart `savor.service`: your own session may run inside it.
 - When you show a UI change in a dev instance in the preview, say that it runs with test data and only shows the change: everything else looks different from Robin's instance.
+- How a conversation stands (blocked, working, unread, open) and whether it needs the user come from `agents.stateOf` and `agents.needsYouOf`, and questions for the user open through `agents.askUser`. Routes, the scheduler, pushes and MCP tools use those instead of reading the thread's fields their own way: the tab counts, the badge and the lists drifted apart before.
 - The e2e tests start `dist/server/index.mjs` when it exists, not `server/`. Without a fresh `npm run build` they test an old server and fail on new features.
 - The service worker is `web/sw.ts`, bundled by esbuild into `dist/web/sw.js` during `npm run build` (it answers questions from notifications through the relay tunnel). `npm run dev:web` doesn't serve it.
 - `npm test` holds `flock /tmp/savor-test.lock`, so test runs from parallel sessions and worktrees queue instead of overloading the CPU. A run that seems stuck before its first test is waiting for another one.
