@@ -500,6 +500,12 @@ export function createThread(p: Project, init: { title: string; label?: string |
 
 export const saveThread = (p: Project, t: Thread) => writeJson(path.join(threadDir(p, t.id), 'thread.json'), t)
 
+// A conversation goes with everything of it: its messages, activity, attachments, plans and decisions.
+export function deleteThread(p: Project, tid: string) {
+  fs.rmSync(threadDir(p, tid), { recursive: true, force: true })
+  for (const d of listDecisions(p, tid)) fs.rmSync(path.join(decisionsDir(p), `${path.basename(d.id)}.json`), { force: true })
+}
+
 export const hueFor = (s: string) => [...s].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7)
 
 export function updateThread(p: Project, tid: string, patch: Partial<Thread>): Thread {

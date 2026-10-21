@@ -560,7 +560,7 @@ route('DELETE', '/projects/:pid/threads/:tid', (params) => {
   // The agent's own transcripts go too, unless another conversation still resumes or forks from them.
   const shared = new Set(threads.filter((t) => t !== thread).flatMap((t) => [...t.agentSessions.map((s) => s.sessionId), t.fork?.sessionId]))
   agents.forget(params.tid)
-  fs.rmSync(path.join(p.path, '.savor', 'threads', path.basename(params.tid)), { recursive: true, force: true })
+  store.deleteThread(p, params.tid)
   deleteSessions(thread?.agentSessions.filter((s) => !shared.has(s.sessionId)) ?? [])
   emit({ type: 'thread', projectId: p.id, threadId: params.tid })
   return {}

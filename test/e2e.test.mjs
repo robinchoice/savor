@@ -385,6 +385,10 @@ test("the user's input passes over open questions, another agent's leaves them o
   await settled((ds, thread) => ds.every((d) => d.resolved) && !thread.needsYou)
   await page.waitForSelector('.complete-actions button:has-text("Finish")')
   assert.equal(await page.locator('.answered:has-text("Skipped")').count(), 2)
+  // Deleting the conversation takes its decisions with it.
+  await api('DELETE', t)
+  const decisionsDir = path.join(PROJECT, '.savor', 'decisions')
+  assert.ok(!fs.readdirSync(decisionsDir).some((f) => JSON.parse(fs.readFileSync(path.join(decisionsDir, f), 'utf8')).threadId === target.id))
 })
 
 test('approvals are routed to the user, "Always allow" remembers the rule', async () => {
