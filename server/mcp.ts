@@ -300,7 +300,7 @@ function buildServer(p: Project, tid: string) {
     {
       description:
         'Put something on the backlog of this project, or of another one named by `project`: work worth doing later that nobody started yet, e.g. a follow-up you noticed but that is outside the current request. The user starts it from the board in All projects. Check list_backlog first so the same item is not added twice.',
-      inputSchema: { title: z.string().trim().min(1).max(300).describe('What to do, as a prompt an agent can start from'), project: PROJECT },
+      inputSchema: { title: z.string().trim().min(1).max(store.BACKLOG_TITLE_MAX).describe('What to do, as a prompt an agent can start from'), project: PROJECT },
     },
     async ({ title, project }) => {
       const target = project ? findProject(project) : p

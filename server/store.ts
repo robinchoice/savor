@@ -644,6 +644,9 @@ export interface Backlog { items: BacklogItem[] }
 const backlogFile = (p: Project) => path.join(dataDir(p), 'backlog.json')
 export const readBacklog = (p: Project): Backlog => ({ items: readJson<Partial<Backlog>>(backlogFile(p), {}).items ?? [] })
 export const saveBacklog = (p: Project, b: Backlog) => writeJson(backlogFile(p), b)
+// A backlog item is a prompt an agent starts from, not a document.
+export const BACKLOG_TITLE_MAX = 300
+
 export function addBacklogItem(p: Project, title: string, by: Provenance): BacklogItem {
   const backlog = readBacklog(p)
   const item = { id: newId(), title, createdAt: now(), ...by }

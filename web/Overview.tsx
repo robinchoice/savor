@@ -568,6 +568,7 @@ function AddToBacklog({ projects, initial }: { projects: Project[]; initial: str
     <div class="board-add">
       <textarea
         rows={2}
+        maxLength={300}
         placeholder={t('Add something to do later…')}
         value={text}
         onInput={(e) => setText(e.currentTarget.value)}

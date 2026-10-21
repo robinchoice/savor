@@ -1730,6 +1730,11 @@ test('agents add projects: a new folder gets a git repository, an existing proje
   assert.deepEqual([(await read()).origin, (await read()).from.threadId], ['remote', remote.id])
   await api('PUT', `/projects/${project.id}/docs/${doc.id}`, { title: 'Phone notes', content: 'checked here' })
   assert.deepEqual([(await read()).origin, (await read()).from], ['local', undefined])
+  // A change to the content alone keeps the title, and the other way round.
+  await api('PUT', `/projects/${project.id}/docs/${doc.id}`, { content: 'checked twice' })
+  await api('PUT', `/projects/${project.id}/docs/${doc.id}`, { title: 'Desk notes' })
+  assert.deepEqual([(await read()).title, (await read()).content], ['Desk notes', 'checked twice'])
+  assert.equal((await api('PUT', `/projects/${project.id}/docs/nope`, { content: 'x' })).status, 404)
   await api('DELETE', `/projects/${project.id}/docs/${doc.id}`)
   assert.ok(!fs.existsSync(path.join(PROJECT, '.savor', 'documents', `${doc.id}.json`)))
 
@@ -3355,6 +3360,7 @@ test('the All tab answers questions in place and starts what waits in the backlo
 
   // The backlog holds the items put there, until started or deleted, and not the next steps conversations suggest.
   assert.equal((await api('POST', `/projects/${project.id}/backlog`, { title: '  ' })).status, 400)
+  assert.equal((await api('POST', `/projects/${project.id}/backlog`, { title: 'x'.repeat(301) })).status, 400)
   assert.deepEqual((await api('GET', '/backlog')).body, { items: [] })
   await page.goto(`${base}/#/all/board`)
   await page.fill('.board-add textarea', 'Write the footer copy')

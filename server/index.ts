@@ -916,7 +916,9 @@ route('POST', '/projects/:pid/docs', (params, b, ctx) => {
   return doc
 })
 route('PUT', '/projects/:pid/docs/:id', (params, b, ctx) => {
-  const doc = store.saveDoc(project(params), { id: params.id, title: b.title, content: b.content }, { origin: ctx.auth.origin })
+  const p = project(params)
+  const prev = store.getDoc(p, params.id)
+  const doc = store.saveDoc(p, { id: params.id, title: b.title ?? prev.title, content: b.content ?? prev.content }, { origin: ctx.auth.origin })
   emit({ type: 'documents', projectId: params.pid })
   return doc
 })
@@ -994,6 +996,7 @@ route('POST', '/projects/:pid/backlog', (params, b, ctx) => {
   const p = project(params)
   const title = typeof b.title === 'string' ? b.title.trim() : ''
   if (!title) throw new BadRequest('Describe what to do.')
+  if (title.length > store.BACKLOG_TITLE_MAX) throw new BadRequest(`Keep it under ${store.BACKLOG_TITLE_MAX} characters.`)
   const item = store.addBacklogItem(p, title, { origin: ctx.auth.origin })
   emit({ type: 'backlog', projectId: p.id })
   return item
