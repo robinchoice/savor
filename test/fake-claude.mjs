@@ -29,6 +29,7 @@
 // - a last text block of its own that starts with "/" → "Skill <name and arguments>", the way Claude Code runs slash commands
 // - "/compact" alone, as Savor's idle compaction sends it → logs it, waits for the test's release file to say "/compact",
 //   then compacts the context of 38,000 tokens to 4,000
+// - "model: <id>" → answers on that model with the context unchanged, like a model switch mid-session, then echoes
 // - anything else → acknowledgement plus a conclusion echoing the input with one suggestion
 // While the test's outdated file exists it refuses to start, like a release that lacks an option.
 // `--version`, `auth status` and `-p /usage` answer like the real CLI, so Savor lists the fake as installed.
@@ -248,6 +249,7 @@ async function turn(text, command) {
     if (!interrupted) await call('send_conclusion_message', { text: `Echo: ${input.slice(5).trim()}${text.includes('Savor was restarted') ? ' (after a restart)' : ''}${added.length ? ` (added: ${added.join(', ')})` : ''}` })
     added = []
   } else {
+    if (input.startsWith('model:')) out({ type: 'assistant', parent_tool_use_id: null, message: { model: input.slice(6).trim(), usage: { input_tokens: 1200, cache_read_input_tokens: 30000, cache_creation_input_tokens: 6800 }, content: [{ type: 'text', text: 'switched' }] } })
     await call('send_acknowledgement_message', { text: 'On it.', summary: 'Work on the request.' })
     await call('send_conclusion_message', { text: `Echo: ${input}`, suggestions: ['Do it again'] })
   }

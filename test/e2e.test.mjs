@@ -749,6 +749,23 @@ test('Antigravity continues its conversation with the chosen model, effort and m
   await api('PATCH', `/projects/${project.id}`, { agent: project.agent })
 })
 
+test('a project learns the model its agent answers on, also when only the model changed', async () => {
+  const project = (await api('POST', '/projects', { path: path.join(TMP, 'model-seen'), create: true })).body
+  const pp = `/projects/${project.id}`
+  const model = async () => (await api('GET', '/projects')).body.find((p) => p.id === project.id).model
+  const turn = async (text) => {
+    const t = (await api('POST', `${pp}/threads`, { text })).body
+    await until(async () => (await api('GET', `${pp}/threads/${t.id}`)).body.messages.some((m) => m.kind === 'conclusion'))
+  }
+  await api('PATCH', pp, { agent: { provider: 'claude' } })
+  await turn('hello')
+  assert.equal(await model(), 'fake-fable')
+  // Claude Code switched models without the context growing.
+  await turn('model: fake-opus')
+  assert.equal(await model(), 'fake-opus')
+  await api('DELETE', pp)
+})
+
 test('the agent list reports what is installed, signed in and offered', async () => {
   const agents = (await api('GET', '/agents')).body
   const by = Object.fromEntries(agents.map((a) => [a.id, a]))

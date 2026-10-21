@@ -288,10 +288,10 @@ export class ClaudeSession implements Session {
   private usage(message: any) {
     const u = message.usage
     const tokens = (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0)
-    if (tokens === this.tokens) return
-    this.tokens = tokens
     if (message.model !== this.model) this.host.model(message.model)
     this.model = message.model
+    if (tokens === this.tokens) return
+    this.tokens = tokens
     this.host.context(tokens)
   }
 
