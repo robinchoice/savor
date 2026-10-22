@@ -10,17 +10,7 @@ import * as store from './store.js'
 export interface Run { databaseId: number; name: string; workflowName: string; status: string; conclusion: string; url: string }
 
 export function runsOf(cwd: string, sha: string) {
-  return new Promise<Run[]>((resolve, reject) => {
-    const args = ['run', 'list', '--commit', sha, '--json', 'databaseId,name,workflowName,status,conclusion,url', '--limit', '50']
-    execFile(...command(BIN.gh, args), { cwd, timeout: 60_000 }, (err, stdout, stderr) => {
-      if (err) return reject(new Error(`gh run list failed: ${(stderr || err.message).trim()}`))
-      try {
-        resolve(JSON.parse(stdout))
-      } catch (e) {
-        reject(e)
-      }
-    })
-  })
+  return gh<Run[]>(cwd, ['run', 'list', '--commit', sha, '--json', 'databaseId,name,workflowName,status,conclusion,url', '--limit', '50'])
 }
 
 export const finished = (runs: Run[]) => runs.length > 0 && runs.every((r) => r.status === 'completed')
@@ -78,8 +68,8 @@ let polling = false
 
 function gh<T>(cwd: string, args: string[]) {
   return new Promise<T>((resolve, reject) => {
-    execFile(...command(BIN.gh, args), { cwd, timeout: 60_000 }, (err, stdout) => {
-      if (err) return reject(err)
+    execFile(...command(BIN.gh, args), { cwd, timeout: 60_000 }, (err, stdout, stderr) => {
+      if (err) return reject(new Error(`gh ${args[0]} ${args[1]} failed: ${(stderr || err.message).trim()}`))
       try {
         resolve(JSON.parse(stdout))
       } catch (e) {

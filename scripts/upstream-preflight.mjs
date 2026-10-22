@@ -27,8 +27,9 @@ const ALL = [
   { provider: 'antigravity', name: 'Antigravity', bin: AGY, features: true },
 ]
 const onComputer = (bin) => (path.isAbsolute(bin) ? [''] : [...(process.env.PATH ?? '').split(path.delimiter), path.join(os.homedir(), '.local', 'bin')]).some((dir) => fs.existsSync(path.join(dir, bin)))
-const AGENTS = ALL.filter((a) => onComputer(a.bin))
-const skipped = (features) => ALL.filter((a) => !AGENTS.includes(a) && (!features || a.features)).map((a) => `${a.name}: übersprungen, ${a.bin} fehlt auf diesem Rechner`)
+const MISSING = ALL.filter((a) => !onComputer(a.bin))
+const AGENTS = ALL.filter((a) => !MISSING.includes(a))
+const skipped = (features) => MISSING.filter((a) => !features || a.features).map((a) => `${a.name}: übersprungen, ${a.bin} fehlt auf diesem Rechner`)
 
 const semver = (v) => String(v).match(/\d+\.\d+\.\d+(?:-[\w.]+)?/)?.[0]
 // Whether `latest` is newer than `checked`; a version that can't be read counts as new when it differs.
@@ -114,7 +115,7 @@ function features(latest) {
   if (missing.length) return blocked(`Keine geprüfte Version für ${missing.map((a) => a.name).join(', ')} unter „Zuletzt geprüft“`)
   const updated = agents.filter((a) => newer(latest[a.provider], a.checked))
   // Open items of an agent that is not on this computer wait until it is back.
-  const here = (l) => !ALL.some((a) => !AGENTS.includes(a) && l.startsWith(`${a.name}:`))
+  const here = (l) => !MISSING.some((a) => l.startsWith(`${a.name}:`))
   const open = [...recheck.filter(here).map((l) => `Neu prüfen: ${l}`), ...delegated.filter(here).map((l) => `Auftrag: ${l}`)]
   return signal({
     status: 'ok',

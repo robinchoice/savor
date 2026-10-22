@@ -27,14 +27,15 @@ const AGENTS = [
   // Grok creates files in the project without asking; rm is one of the commands it always asks about.
   { provider: 'grok', pkg: '@xai-official/grok', bin: 'grok', env: 'SAVOR_GROK_BIN', agent: { model: '', reasoning: 'low', permissionMode: 'default' }, removes: true },
   // Headless agy cannot ask: its default mode denies the command, and the rest runs with permissions bypassed.
-  { provider: 'antigravity', bin: 'agy', env: 'SAVOR_ANTIGRAVITY_BIN', agent: { model: '', reasoning: 'low', permissionMode: 'bypass' }, denies: { permissionMode: 'default' } },
+  { provider: 'antigravity', bin: process.env.SAVOR_ANTIGRAVITY_BIN || 'agy', env: 'SAVOR_ANTIGRAVITY_BIN', agent: { model: '', reasoning: 'low', permissionMode: 'bypass' }, denies: { permissionMode: 'default' } },
 ]
 // Agents named on the command line, e.g. `node scripts/upstream-check.mjs grok`, are the only ones checked.
 // Without names, an agent whose CLI is not on this computer is skipped and keeps its last result.
 const only = process.argv.slice(2)
-const onComputer = (bin) => [...(process.env.PATH ?? '').split(path.delimiter), path.join(os.homedir(), '.local', 'bin')].some((dir) => dir && fs.existsSync(path.join(dir, bin)))
-for (const a of only.length ? [] : AGENTS.filter((a) => !onComputer(a.bin))) console.log(`skip  ${a.provider}: ${a.bin} is not on this computer`)
-AGENTS.splice(0, AGENTS.length, ...AGENTS.filter((a) => (only.length ? only.includes(a.provider) : onComputer(a.bin))))
+const onComputer = (bin) => (path.isAbsolute(bin) ? [''] : [...(process.env.PATH ?? '').split(path.delimiter), path.join(os.homedir(), '.local', 'bin')]).some((dir) => fs.existsSync(path.join(dir, bin)))
+const missing = only.length ? [] : AGENTS.filter((a) => !onComputer(a.bin))
+for (const a of missing) console.log(`skip  ${a.provider}: ${a.bin} is not on this computer`)
+AGENTS.splice(0, AGENTS.length, ...AGENTS.filter((a) => (only.length ? only.includes(a.provider) : !missing.includes(a))))
 
 const freePort = () =>
   new Promise((resolve) => {
@@ -58,9 +59,10 @@ console.log(`Installing the latest CLIs into ${CACHE}`)
 fs.mkdirSync(CACHE, { recursive: true })
 if (AGENTS.some((a) => a.pkg)) execFileSync('npm', ['install', '--prefix', CACHE, '--no-audit', '--no-fund', '--loglevel=error', ...AGENTS.filter((a) => a.pkg).map((a) => `${a.pkg}@latest`)], { stdio: 'inherit' })
 const bin = (a) => (a.pkg ? path.join(CACHE, 'node_modules', '.bin', a.bin) : a.bin)
-if (AGENTS.some((a) => a.provider === 'antigravity')) {
+const agy = AGENTS.find((a) => a.provider === 'antigravity')
+if (agy) {
   try {
-    execFileSync('agy', ['update'], { stdio: ['ignore', 'inherit', 'inherit'] })
+    execFileSync(agy.bin, ['update'], { stdio: ['ignore', 'inherit', 'inherit'] })
   } catch {}
 }
 for (const a of AGENTS) {
