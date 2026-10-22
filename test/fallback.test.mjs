@@ -168,6 +168,7 @@ test('unattended conversations switch agents at a usage limit, and wait when all
   // When the credit doesn't carry it either, Codex takes over.
   const empty = await start('limit-later: credit-empty')
   await until(async () => (await read(empty)).messages.some((m) => m.kind === 'conclusion'))
+  await until(async () => !(await read(empty)).busy)
   r = await read(empty)
   assert.equal(r.messages.find((m) => m.kind === 'conclusion').text, 'Codex echo: limit-later: credit-empty (took over)')
   assert.deepEqual(r.messages.filter((m) => m.kind === 'update').map((m) => m.text), ['Claude Code reached its usage limit and goes on through the API credit, up to $5.', 'Claude Code stopped on the API credit too. Codex takes over.'])
