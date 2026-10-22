@@ -191,7 +191,7 @@ export class Activity {
   constructor(private p: Project, private tid: string, private live: () => boolean) {}
 
   private nextId() {
-    const n = (counters.get(this.tid) ?? store.readActivity(this.p, this.tid).length) + 1
+    const n = (counters.get(this.tid) ?? store.readActivity(this.p, this.tid).reduce((max, event) => Math.max(max, event.id), 0)) + 1
     counters.set(this.tid, n)
     return n
   }

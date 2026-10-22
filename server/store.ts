@@ -286,14 +286,23 @@ function writeJson(file: string, data: unknown) {
   fs.renameSync(tmp, file)
 }
 
-const readJsonl = <T>(file: string): T[] =>
-  fs.existsSync(file)
-    ? fs
-        .readFileSync(file, 'utf8')
-        .split('\n')
-        .filter(Boolean)
-        .map((l) => JSON.parse(l))
-    : []
+function readJsonl<T>(file: string, recover = false): T[] {
+  if (!fs.existsSync(file)) return []
+  const records: T[] = []
+  let damaged = 0
+  for (const raw of fs.readFileSync(file, 'utf8').split('\n')) {
+    const line = recover ? raw.replace(/\0/g, '') : raw
+    if (!line.trim()) continue
+    try {
+      records.push(JSON.parse(line))
+    } catch (error) {
+      if (!recover) throw error
+      damaged++
+    }
+  }
+  if (damaged) console.warn(`Skipped ${damaged} damaged activity records in ${file}; the original file is unchanged.`)
+  return records
+}
 
 // ---- global state ----
 
@@ -551,7 +560,7 @@ export const removeMessage = (p: Project, tid: string, id: string) =>
 // Activity is append-only: a start line per event, then a {id, finishedAt} line when it ends.
 export function readActivity(p: Project, tid: string): ActivityEvent[] {
   const events = new Map<number, ActivityEvent>()
-  for (const e of readJsonl<Partial<ActivityEvent> & { id: number }>(path.join(threadDir(p, tid), 'activity.jsonl')))
+  for (const e of readJsonl<Partial<ActivityEvent> & { id: number }>(path.join(threadDir(p, tid), 'activity.jsonl'), true))
     events.set(e.id, { ...events.get(e.id), ...e } as ActivityEvent)
   return [...events.values()]
 }
