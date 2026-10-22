@@ -1209,11 +1209,10 @@ test('a workflow button runs it early, in place of its next scheduled time', asy
   const wf = (await api('POST', list, { name: 'Wrap-up', prompt: 'wrap up', cron: '*/10 * * * * *', button: true })).body
   const w = `${list}/${wf.id}`
   await page.goto(`${base}/#/p/${project.id}/workflows`)
-  // The first click only asks.
-  await page.click('.wf-button:has-text("Wrap-up")')
-  await page.waitForSelector('.wf-button.armed:has-text("Run Wrap-up now?")')
+  // The buttons sit behind one menu in the top bar.
   const due = (await api('GET', '/workflows/buttons')).body.find((b) => b.id === wf.id).nextRunAt
-  await page.click('.wf-button.armed')
+  await page.click('.wf-menu-btn')
+  await page.click('.wf-button:has-text("Wrap-up")')
   await page.waitForSelector('.wf-chip:has-text("Wrap-up") >> text=Early, in place of')
   let runs = (await api('GET', `${w}/runs`)).body
   assert.deepEqual([runs.length, runs[0].trigger, runs[0].due], [1, 'early', due])

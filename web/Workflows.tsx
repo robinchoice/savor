@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'preact/hooks'
+import { useEffect, useRef, useState } from 'preact/hooks'
 import { ArrowLeft, Play, Plus, Clock, Link2, Pencil, Trash2, LayoutGrid, Sparkles, MessageSquare } from 'lucide-preact'
 import { api, duration, go, runTrigger, useApi, type Project, type Run, type SavorEvent, type Thread, type Workflow } from './api'
 import { CATEGORIES, RECIPES, recipe, type Recipe } from './recipes'
@@ -27,31 +27,44 @@ const usage = (u: { usd?: number; tokens?: number }) =>
 // A run changes with its conversation, so the runs follow the project's conversations too.
 const runsChanged = (project: Project) => (e: SavorEvent) => (e.type === 'workflows' || e.type === 'thread' || e.type === 'status') && e.projectId === project.id
 
-// The workflows of all projects with a button in the top bar. A run can do a lot, so the first click only asks.
+// The workflows of all projects with a button in the top bar, behind one menu so they leave the tabs their room.
 export function WorkflowButtons() {
   const [buttons] = useApi<{ id: string; name: string; projectId: string; nextRunAt: string | null }[]>('/workflows/buttons', (e) => e.type === 'workflows' || e.type === 'projects')
-  const [armed, setArmed] = useState<string | null>(null)
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
-    if (!armed) return
-    const t = setTimeout(() => setArmed(null), 4000)
-    return () => clearTimeout(t)
-  }, [armed])
-  const run = async (b: NonNullable<typeof buttons>[number]) => {
-    if (armed !== b.id) return setArmed(b.id)
-    setArmed(null)
+    if (!open) return
+    const on = (e: MouseEvent) => !e.composedPath().includes(ref.current!) && setOpen(false)
+    setTimeout(() => addEventListener('click', on))
+    return () => removeEventListener('click', on)
+  }, [open])
+  if (!buttons?.length) return null
+  const run = async (b: (typeof buttons)[number]) => {
+    setOpen(false)
     const t = await api<Thread>('POST', `/projects/${b.projectId}/workflows/${b.id}/run`, { early: true })
     go(`/p/${b.projectId}/t/${t.id}`)
   }
-  const replaces = (b: NonNullable<typeof buttons>[number]) => b.nextRunAt && Date.parse(b.nextRunAt) - Date.now() < 12 * 3600_000
+  const replaces = (b: (typeof buttons)[number]) => b.nextRunAt && Date.parse(b.nextRunAt) - Date.now() < 12 * 3600_000
   return (
-    <>
-      {buttons?.map((b) => (
-        <button key={b.id} class={`pill wf-button ${armed === b.id ? 'armed' : ''}`} title={replaces(b) ? t('Run “{name}” now, in place of the run at {when}', { name: b.name, when: when(b.nextRunAt!) }) : t('Run “{name}” now', { name: b.name })} onClick={() => run(b)}>
-          <Play size={14} /> {armed === b.id ? t('Run {name} now?', { name: b.name }) : b.name}
-
-        </button>
-      ))}
-    </>
+    <div class="menu-anchor" ref={ref}>
+      <button class={`icon-btn wf-menu-btn ${open ? 'on' : ''}`} title={t('Run a workflow now')} onClick={() => setOpen(!open)}>
+        <Play size={17} />
+      </button>
+      {open && (
+        <div class="menu right workflows">
+          <div class="menu-label">{t('Run now')}</div>
+          {buttons.map((b) => (
+            <button key={b.id} class="wf-button" onClick={() => run(b)}>
+              <Play size={14} />
+              <span>
+                {b.name}
+                {replaces(b) && <small>{t('In place of the run at {when}', { when: when(b.nextRunAt!) })}</small>}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }
 

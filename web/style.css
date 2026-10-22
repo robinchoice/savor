@@ -169,6 +169,7 @@ main { flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
 .menu > a > span:not(.avatar) { flex: 1; min-width: 0; }
 .menu > .search { margin: 2px 2px 6px; }
 .menu-label { font-size: 12px; font-weight: 500; color: var(--faint); padding: 8px 10px 4px; }
+.menu.workflows small { display: block; white-space: nowrap; }
 .menu input, .menu select, .menu textarea { background: var(--raised); }
 .menu-form { display: flex; gap: 6px; padding: 6px; border-top: 1px solid var(--line); margin-top: 4px; }
 .menu > input, .menu > select { margin: 2px 4px; width: calc(100% - 8px); }
@@ -1158,7 +1159,7 @@ details.box[open] > summary .chev { transform: rotate(180deg); }
 
 @media (max-width: 860px) {
   .topbar-right .wide-only, .account-dialog .wide-only { display: none; }
-  .menu.projects, .menu.appearance { position: fixed; top: 58px; left: 8px; right: 8px; width: auto; }
+  .menu.projects, .menu.appearance, .menu.workflows { position: fixed; top: 58px; left: 8px; right: 8px; width: auto; }
 }
 
 [data-messages='compact'] .msg.user .msg-card { padding: 7px 12px; }
