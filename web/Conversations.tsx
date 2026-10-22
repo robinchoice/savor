@@ -725,7 +725,7 @@ function NewConversation({ project }: { project: Project }) {
 // Between turns: the agent ended its turn without a conclusion and continues when its background work
 // or CI is done, or Savor continues the turn once the usage limit it stopped at resets.
 const waitingFor = (th: Thread) =>
-  th.resumeAt ? t(th.budgetWait ? 'Claude budget · checks again {when}' : 'Usage limit · continues {when}', { when: formatStamp(th.resumeAt) }) : th.ciWatch ? t('Waiting for CI · {sha}', { sha: th.ciWatch.sha.slice(0, 7) }) : t('Waiting for background work')
+  th.resumeAt ? t('Usage limit · continues {when}', { when: formatStamp(th.resumeAt) }) : th.ciWatch ? t('Waiting for CI · {sha}', { sha: th.ciWatch.sha.slice(0, 7) }) : t('Waiting for background work')
 // What the daemon records as the error of a turn the user stopped. That is not a failure.
 export const STOPPED = 'Turn stopped.'
 

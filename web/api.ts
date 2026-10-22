@@ -145,7 +145,6 @@ export interface Thread {
   error: string | null
   notice?: { type: NoticeType; actor: string; at: string } | null
   resumeAt?: string | null
-  budgetWait?: { note: string } | null
   ciWatch?: { sha: string } | null
   context?: { tokens: number; window: number | null } | null
   parentId?: string

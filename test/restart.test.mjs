@@ -74,3 +74,78 @@ test('an installed update restarts the daemon after a countdown, or on request',
   await api('POST', '/restart')
   assert.equal(await exited, 0)
 })
+
+test('background work starts immediately and retired budget waits resume without delaying real limits', { timeout: 60_000 }, async () => {
+  const port = await freePort()
+  const start = async () => {
+    server = spawn(process.execPath, [path.join(ROOT, 'dist/server/index.mjs')], {
+      env: { ...process.env, SAVOR_HOME: HOME, SAVOR_PORT: String(port), SAVOR_CLAUDE_BIN: path.join(ROOT, 'test/fake-claude.mjs'), SAVOR_CODEX_BIN: path.join(TMP, 'no-codex'), SAVOR_ANTIGRAVITY_BIN: path.join(TMP, 'no-agy'), SAVOR_GROK_BIN: path.join(TMP, 'no-grok'), SAVOR_OPENCODE_BIN: path.join(TMP, 'no-opencode'), CLAUDE_CONFIG_DIR: path.join(TMP, 'claude'), FAKE_AGENT_LOG: AGENT_LOG },
+      stdio: ['ignore', 'pipe', 'inherit'],
+    })
+    await new Promise((resolve, reject) => {
+      server.stdout.on('data', (d) => d.toString().includes('Savor running') && resolve())
+      server.once('exit', (code) => reject(new Error(`daemon exited ${code}`)))
+    })
+  }
+  const stop = async () => {
+    const exited = new Promise((resolve) => server.once('exit', resolve))
+    server.kill()
+    await exited
+  }
+  const { token } = JSON.parse(fs.readFileSync(path.join(HOME, 'state.json'), 'utf8'))
+  const api = async (method, url, body) => {
+    const r = await fetch(`http://127.0.0.1:${port}/api${url}`, { method, headers: { cookie: `savor_token=${token}`, 'content-type': 'application/json' }, body: body && JSON.stringify(body) })
+    assert.ok(r.ok)
+    return r.json()
+  }
+  fs.writeFileSync(AGENT_LOG + '.limits', JSON.stringify([{ group: 'session', percent: 80, resets_at: new Date(Date.now() + 4 * 3600_000).toISOString() }]))
+  await start()
+  const p = await api('POST', '/projects', { path: path.join(TMP, 'background'), create: true })
+  const q = await api('POST', '/projects', { path: path.join(TMP, 'parallel'), create: true })
+  const read = (project, thread) => api('GET', `/projects/${project.id}/threads/${thread.id}`)
+  const run = async (project, prompt) => {
+    const wf = await api('POST', `/projects/${project.id}/workflows`, { name: prompt, prompt })
+    return api('POST', `/projects/${project.id}/workflows/${wf.id}/run`)
+  }
+  const waiting = await run(p, 'slow: waiting before admission')
+  const checkpoint = await run(q, 'slow: /already-executed')
+  await until(async () => (await read(p, waiting)).busy && (await read(q, checkpoint)).messages.some((m) => m.kind === 'ack'), 15_000)
+  const parallel = await run(q, 'runs alongside other projects')
+  await until(async () => (await read(q, parallel)).messages.some((m) => m.kind === 'conclusion'), 15_000)
+  assert.equal((await read(p, waiting)).busy, true)
+  const limited = await api('POST', `/projects/${p.id}/threads`, { text: 'limit-later: real limit' })
+  const resumeAt = await until(async () => (await read(p, limited)).thread.resumeAt, 15_000)
+  await stop()
+  // Simulate both kinds of persisted waits from the previous release.
+  for (const [project, thread, note] of [[p, waiting, ''], [q, checkpoint, 'Continue the same request from the completed tool results. Savor paused before the next model call to pace the shared Claude budget. ']]) {
+    const file = path.join(project.path, '.savor', 'threads', thread.id, 'thread.json')
+    const saved = JSON.parse(fs.readFileSync(file, 'utf8'))
+    if (!note) {
+      saved.agentSessions = []
+      const messages = path.join(path.dirname(file), 'messages.jsonl')
+      const input = fs.readFileSync(messages, 'utf8').trim().split('\n').map(JSON.parse).find((m) => m.kind === 'user')
+      fs.writeFileSync(messages, JSON.stringify(input) + '\n')
+    }
+    fs.writeFileSync(file, JSON.stringify({ ...saved, budgetWait: { note }, resumeAt: new Date(Date.now() + 3600_000).toISOString() }))
+  }
+  fs.writeFileSync(AGENT_LOG + '.release', 'slow: waiting before admission')
+  await start()
+  await until(async () => (await read(p, waiting)).messages.some((m) => m.kind === 'conclusion') && (await read(q, checkpoint)).messages.some((m) => m.kind === 'conclusion'), 15_000)
+  for (const [project, thread] of [[p, waiting], [q, checkpoint]]) {
+    const state = await read(project, thread)
+    assert.equal(state.thread.resumeAt, null)
+    assert.equal('budgetWait' in state.thread, false)
+    assert.equal(state.messages.filter((m) => m.kind === 'ack').length, 1)
+    assert.ok(!state.messages.some((m) => m.kind === 'update' && m.text.includes('five-hour budget')))
+  }
+  assert.equal((await read(p, waiting)).messages.find((m) => m.kind === 'conclusion').text, 'Echo: waiting before admission')
+  assert.equal((await read(q, checkpoint)).messages.find((m) => m.kind === 'conclusion').text, 'Echo: Continue the same request.')
+  assert.equal((await read(p, limited)).thread.resumeAt, resumeAt)
+  const launches = fs.readFileSync(AGENT_LOG, 'utf8').trim().split('\n').map(JSON.parse).filter((l) => l.argv)
+  for (const { argv } of launches) {
+    const denied = argv[argv.indexOf('--disallowed-tools') + 1].split(',')
+    assert.ok(['Agent', 'Task', 'Workflow'].every((name) => !denied.includes(name)))
+    assert.equal(JSON.parse(argv[argv.indexOf('--settings') + 1]).disableWorkflows, undefined)
+  }
+  await stop()
+})

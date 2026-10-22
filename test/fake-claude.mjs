@@ -107,7 +107,6 @@ await client.connect(new StreamableHTTPClientTransport(new URL(mcp.url), { reque
 const call = async (name, a) => JSON.parse((await client.callTool({ name, arguments: a })).content[0].text)
 
 const controls = new Map() // request_id → resolve(response)
-let hooks = {}
 const control = (request) =>
   new Promise((resolve) => {
     const request_id = crypto.randomUUID()
@@ -130,14 +129,7 @@ let cost = 0
 
 async function turn(text, command) {
   const raw = command ?? text.slice(text.indexOf('New input:\n') + 'New input:\n'.length).trim()
-  const input = raw.replace(/^Run workflow “(?:paced:|slow:|own-server:)[^\n]*”:\n\n/, '')
-  if (hooks.UserPromptSubmit?.length) {
-    const verdict = await control({ subtype: 'hook_callback', callback_id: hooks.UserPromptSubmit[0].hookCallbackIds[0], input: { hook_event_name: 'UserPromptSubmit' } })
-    if (verdict.continue === false) {
-      out({ type: 'result', subtype: 'success', is_error: false, result: 'unsolicited turn blocked' })
-      return
-    }
-  }
+  const input = raw.replace(/^Run workflow “(?:slow:|own-server:)[^\n]*”:\n\n/, '')
   if (!started) out({ type: 'system', subtype: 'init', session_id: sessionId })
   started = true
   interrupted = false
@@ -145,16 +137,6 @@ async function turn(text, command) {
   out({ type: 'assistant', parent_tool_use_id: null, message: { model: 'fake-fable', usage: { input_tokens: 1200, cache_read_input_tokens: 30000, cache_creation_input_tokens: 6800 }, content: [{ type: 'text', text: 'working' }] } })
   out({ type: 'assistant', parent_tool_use_id: 'toolu_subagent', message: { model: 'fake-haiku', usage: { input_tokens: 150000 }, content: [] } })
 
-  if (input.startsWith('paced:') && hooks.PostToolBatch?.length && !text.includes('Continue the same request from the completed tool results.')) {
-    await call('send_acknowledgement_message', { text: 'On it.', summary: 'Work on the request.' })
-    const unsolicited = await control({ subtype: 'hook_callback', callback_id: hooks.UserPromptSubmit[0].hookCallbackIds[0], input: { hook_event_name: 'UserPromptSubmit' } })
-    fs.appendFileSync(process.env.FAKE_AGENT_LOG, JSON.stringify({ unsolicitedDenied: unsolicited.continue === false }) + '\n')
-    const response = await control({ subtype: 'hook_callback', callback_id: hooks.PostToolBatch[0].hookCallbackIds[0], input: { hook_event_name: 'PostToolBatch', tool_calls: [] } })
-    if (response.continue === false) {
-      out({ type: 'result', subtype: 'success', is_error: false, result: 'checkpoint stopped', total_cost_usd: 0.3 })
-      return
-    }
-  }
   if (text.includes('"threadLabel":null')) await call('set_thread_label', { label: 'Fake agent test' })
   if (input.startsWith('fail:')) {
     out({ type: 'result', subtype: 'error_during_execution', is_error: true, result: input.slice(5).trim() })
@@ -274,7 +256,6 @@ async function turn(text, command) {
     await call('send_acknowledgement_message', { text: 'On it.', summary: 'Work on the request.' })
     await call('send_conclusion_message', { text: `Echo: ${input}`, suggestions: ['Do it again'] })
   }
-  if (input === 'Continue the same request.' && hooks.PostToolBatch?.length) await control({ subtype: 'hook_callback', callback_id: hooks.PostToolBatch[0].hookCallbackIds[0], input: { hook_event_name: 'PostToolBatch', tool_calls: [] } })
   // Claude Code ends an interrupted turn with an error result.
   cost += 0.3
   if (interrupted) out({ type: 'result', subtype: 'error_during_execution', is_error: true, terminal_reason: 'aborted_streaming', result: null })
@@ -297,11 +278,6 @@ rl.on('line', (line) => {
   const msg = JSON.parse(line)
   if (msg.type === 'control_response') return controls.get(msg.response.request_id)?.(msg.response.response)
   if (msg.type === 'control_request') {
-    if (msg.request.subtype === 'initialize') {
-      hooks = msg.request.hooks ?? {}
-      if (process.env.FAKE_AGENT_LOG) fs.appendFileSync(process.env.FAKE_AGENT_LOG, JSON.stringify({ hooks }) + '\n')
-      if (fs.existsSync(process.env.FAKE_AGENT_LOG + '.reject-hooks')) return out({ type: 'control_response', response: { subtype: 'error', request_id: msg.request_id, error: 'unsupported hook' } })
-    }
     if (msg.request.subtype === 'interrupt') interrupted = true
     if (msg.request.subtype === 'stop_task') out({ type: 'system', subtype: 'task_updated', task_id: msg.request.task_id, patch: { status: 'killed' } })
     return out({ type: 'control_response', response: { subtype: 'success', request_id: msg.request_id, response: {} } })
@@ -310,12 +286,7 @@ rl.on('line', (line) => {
     const texts = msg.message.content.filter((c) => c.type === 'text').map((c) => c.text)
     if (texts.length === 1 && texts[0] === '/compact') return compact()
     if (texts[0].startsWith('The user adds this to the current request while you work:\n')) {
-      const accept = () => added.push(texts[0].split('\n')[1])
-      if (!hooks.UserPromptSubmit?.length) return accept()
-      return sleep(100).then(() => control({ subtype: 'hook_callback', callback_id: hooks.UserPromptSubmit[0].hookCallbackIds[0], input: { hook_event_name: 'UserPromptSubmit' } })).then((r) => {
-        if (r.continue !== false) accept()
-        if (process.env.FAKE_AGENT_LOG) fs.appendFileSync(process.env.FAKE_AGENT_LOG, JSON.stringify({ steerAccepted: r.continue !== false }) + '\n')
-      })
+      return added.push(texts[0].split('\n')[1])
     }
     turn(texts[0], texts.length > 1 && texts.at(-1).startsWith('/') ? texts.at(-1) : null)
   }

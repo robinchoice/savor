@@ -92,7 +92,6 @@ export interface Thread {
   workingSince?: string | null
   // When Savor continues a turn that stopped at a usage limit: shortly after the limit resets.
   resumeAt?: string | null
-  budgetWait?: { note: string } | null
   // Set while Claude Code goes on with API credit after its usage limit (agents.ts): when that limit resets (ms),
   // what the session cost before and the USD it may spend on top.
   apiCredit?: { resetsAt: number; fromUsd: number; budgetUsd: number } | null

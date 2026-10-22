@@ -102,13 +102,7 @@ export class ClaudeSession implements Session {
   private creates = new Map<string, PlanStep>()
   // Tasks Claude starts by itself (watchers): no work the user asked for.
   private ambient = new Set<string>()
-  private initializeId: string | null = null
-  private pendingInput?: TurnInput
-  private paused = false
-  private admissions = 0
-  private initializeTimer?: NodeJS.Timeout
-
-  constructor(private host: Host, thread: Thread, paced = false) {
+  constructor(private host: Host, thread: Thread) {
     const { p } = host
     const a = thread.agent
     this.config = configKey(a, !!thread.apiCredit)
@@ -123,15 +117,15 @@ export class ClaudeSession implements Session {
       '--input-format', 'stream-json',
       '--output-format', 'stream-json',
       '--verbose',
-      '--append-system-prompt', systemPrompt(p, thread) + UNAVAILABLE_NOTE + BACKGROUND_NOTE + (paced ? '\n- Native Workflow, Agent and Task tools are disabled for paced background work. Work directly or use Savor conversations, which share its budget queue. A CLI launched from Bash is outside this protection and must not be used to bypass it.' : ''),
+      '--append-system-prompt', systemPrompt(p, thread) + UNAVAILABLE_NOTE + BACKGROUND_NOTE,
       '--mcp-config', mcpConfig,
       '--allowedTools', 'mcp__savor',
-      '--disallowed-tools', [...UNAVAILABLE, ...(paced ? ['Workflow', 'Agent', 'Task'] : [])].join(','),
+      '--disallowed-tools', UNAVAILABLE.join(','),
       '--permission-mode', a.permissionMode || 'acceptEdits',
       '--permission-prompts', 'host',
       '--permission-prompt-tool', 'stdio',
       // The user's hooks run as in the terminal, e.g. guards that block a Bash command.
-      '--settings', JSON.stringify({ fastMode: a.fast, ultracode: paced ? false : a.ultracode, ...(paced && { disableWorkflows: true }) }),
+      '--settings', JSON.stringify({ fastMode: a.fast, ultracode: a.ultracode }),
       '--chrome',
     ]
     if (a.model) args.push('--model', a.model)
@@ -156,32 +150,14 @@ export class ClaudeSession implements Session {
     })
     const removeConfig = () => fs.rmSync(mcpConfig, { force: true })
     this.child.on('exit', removeConfig).on('error', removeConfig)
-    this.child.on('exit', () => clearTimeout(this.initializeTimer))
     readline.createInterface({ input: this.child.stdout! }).on('line', (l) => this.onLine(l))
     this.child.stderr!.on('data', (d) => (this.stderr = (this.stderr + d).slice(-4000)))
     this.child.on('error', (e) => host.closed(e.message))
     this.child.on('exit', (code, signal) => host.closed(this.stopping || signal === 'SIGTERM' ? STOPPED : exitError(code, this.stderr.trim())))
-    if (paced) {
-      this.initializeId = crypto.randomUUID()
-      this.initializeTimer = setTimeout(() => {
-        this.host.closed('Claude Code did not install the budget checkpoint in time.')
-        this.kill()
-      }, 15_000)
-      this.write({ type: 'control_request', request_id: this.initializeId, request: { subtype: 'initialize', hooks: {
-        UserPromptSubmit: [{ hookCallbackIds: ['savor_admission'], timeout: 30 }],
-        PostToolBatch: [{ hookCallbackIds: ['savor_budget'], timeout: 30 }],
-      } } })
-    }
   }
 
   start({ context, input, images }: TurnInput) {
-    if (this.initializeId) {
-      this.pendingInput = { context, input, images }
-      return
-    }
     this.interrupted = false
-    this.paused = false
-    this.admissions = 1
     // The task list lives as long as the session: what an earlier request finished is not part of this one's plan.
     for (const [id, t] of this.todos) if (t.status === 'done') this.todos.delete(id)
     const pics = pictures(images)
@@ -193,7 +169,6 @@ export class ClaudeSession implements Session {
 
   // A message written while a turn runs reaches Claude at its next step, within the same turn.
   async steer({ text, images }: { text: string; images: string[] }) {
-    this.admissions++
     this.write({ type: 'user', message: { role: 'user', content: [{ type: 'text', text }, ...pictures(images)] } })
     return true
   }
@@ -234,18 +209,6 @@ export class ClaudeSession implements Session {
       return
     }
     const { p, tid, activity } = this.host
-    if (ev.type === 'control_response' && ev.response?.request_id === this.initializeId) {
-      this.initializeId = null
-      clearTimeout(this.initializeTimer)
-      if (ev.response.subtype !== 'success') {
-        this.host.closed('Claude Code could not install the budget checkpoint.')
-        return this.kill()
-      }
-      const input = this.pendingInput
-      this.pendingInput = undefined
-      if (input) this.start(input)
-      return
-    }
     // Claude names the background tasks that still run (shell commands, subagents) whenever that list changes.
     // Ambient ones (watchers it starts by itself) are no work the user could want to stop.
     if (ev.type === 'system' && ev.subtype === 'background_tasks_changed') {
@@ -294,7 +257,6 @@ export class ClaudeSession implements Session {
       const interrupted = this.interrupted
       this.interrupted = false
       if (ev.subtype === 'error_max_budget_usd') return this.host.ended({ error: this.credit ? `Claude Code used the $${this.credit} of API credit it may spend on this takeover.` : budgetReached(this.budget) })
-      if (this.paused && !interrupted && !ev.is_error) return this.host.ended({ paused: true })
       this.host.ended(ev.is_error && !interrupted ? { error: ev.result || ev.subtype, resetsAt: this.limit } : { text: ev.is_error ? '' : ev.result ?? '' })
     }
   }
@@ -337,16 +299,6 @@ export class ClaudeSession implements Session {
   }
 
   private async control(requestId: string, req: any) {
-    if (req.subtype === 'hook_callback' && req.callback_id === 'savor_admission' && this.admissions > 0) {
-      this.admissions--
-      return this.respond(requestId, {})
-    }
-    if (req.subtype === 'hook_callback' && ['savor_budget', 'savor_admission'].includes(req.callback_id)) {
-      // Stop at a safe boundary, without cancelling any tool or model request. The next model call
-      // needs a fresh admission through the account queue; no hook waits for a budget or times out.
-      this.paused = true
-      return this.respond(requestId, { continue: false, stopReason: 'Savor paused background work at the shared Claude budget checkpoint.' })
-    }
     if (req.subtype === 'elicitation' && req.mode === 'url') {
       const url = webUrl(req.url)
       if (!url) throw new Error('Savor opens only http and https pages.')
