@@ -1,9 +1,10 @@
 [Unit]
-Description=Refresh the Savor upstream preflight every 10 minutes, the workflows accept it for 20
+Description=Refresh the Savor upstream preflight before "Upstream check" on Mondays at 05:00, the workflows accept it for 20 minutes
 
 [Timer]
-OnCalendar=*:0/10
+OnCalendar=Mon *-*-* 04:50
 AccuracySec=1min
+Persistent=true
 
 [Install]
 WantedBy=timers.target

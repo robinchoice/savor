@@ -2,8 +2,8 @@
 // and Grok Build into ~/.cache/savor-upstream-check and updates agy (it only installs itself), starts a
 // daemon with them and runs one real conversation per agent: a prompt, a permission request, an
 // interrupt. It uses the agents' logins on this computer, so it runs as a nightly Savor workflow on the
-// maintainer's computer, not in CI. An agent that is not signed in here is skipped. Exits 1 when an
-// agent broke.
+// maintainer's computer, not in CI. An agent whose CLI is not on this computer or that is not signed in
+// here is skipped. Exits 1 when an agent broke.
 import { execFileSync, spawn } from 'node:child_process'
 import fs from 'node:fs'
 import net from 'node:net'
@@ -30,8 +30,11 @@ const AGENTS = [
   { provider: 'antigravity', bin: 'agy', env: 'SAVOR_ANTIGRAVITY_BIN', agent: { model: '', reasoning: 'low', permissionMode: 'bypass' }, denies: { permissionMode: 'default' } },
 ]
 // Agents named on the command line, e.g. `node scripts/upstream-check.mjs grok`, are the only ones checked.
+// Without names, an agent whose CLI is not on this computer is skipped and keeps its last result.
 const only = process.argv.slice(2)
-if (only.length) AGENTS.splice(0, AGENTS.length, ...AGENTS.filter((a) => only.includes(a.provider)))
+const onComputer = (bin) => [...(process.env.PATH ?? '').split(path.delimiter), path.join(os.homedir(), '.local', 'bin')].some((dir) => dir && fs.existsSync(path.join(dir, bin)))
+for (const a of only.length ? [] : AGENTS.filter((a) => !onComputer(a.bin))) console.log(`skip  ${a.provider}: ${a.bin} is not on this computer`)
+AGENTS.splice(0, AGENTS.length, ...AGENTS.filter((a) => (only.length ? only.includes(a.provider) : onComputer(a.bin))))
 
 const freePort = () =>
   new Promise((resolve) => {

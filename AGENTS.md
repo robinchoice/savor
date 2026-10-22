@@ -18,9 +18,9 @@
 
 `npm run build && npm run typecheck && npm test`
 
-`node scripts/upstream-check.mjs` runs Savor against the newest Claude Code, Codex, OpenCode, Grok Build and Antigravity with this computer's logins, nightly as the Savor workflow "Upstream check"; agents not signed in are skipped, and names as arguments (`… upstream-check.mjs grok`) check only those. It is not part of the checks above: each run costs a few real agent turns.
+`node scripts/upstream-check.mjs` runs Savor against the newest Claude Code, Codex, OpenCode, Grok Build and Antigravity with this computer's logins, weekly as the Savor workflow "Upstream check" (Mondays 05:00); agents whose CLI is not on this computer or that are not signed in are skipped, and names as arguments (`… upstream-check.mjs grok`) check only those. It is not part of the checks above: each run costs a few real agent turns.
 
-`scripts/upstream-preflight.mjs` is the preflight of "Upstream check" and "Agent-Features übernehmen" (`.workflow-checks/upstream.json`, `features.json`): work when npm or agy has a newer version than the last results of `upstream-check.mjs` (`~/.local/state/savor-upstream-check/last-run.json`) or the versions under „Zuletzt geprüft“ in the document "Claude/Codex-Abgleich", pending for a FAIL there or items under „Neu prüfen beim nächsten Lauf“ and „Als Auftrag gestartet“. Keep those headings. `scripts/savor-upstream-preflight.timer` runs it every 10 minutes, linked into `~/.config/systemd/user`.
+`scripts/upstream-preflight.mjs` is the preflight of "Upstream check" and "Agent-Features übernehmen" (`.workflow-checks/upstream.json`, `features.json`): work when npm or agy has a newer version than the last results of `upstream-check.mjs` (`~/.local/state/savor-upstream-check/last-run.json`) or the versions under „Zuletzt geprüft“ in the document "Claude/Codex-Abgleich", pending for a FAIL there or items under „Neu prüfen beim nächsten Lauf“ and „Als Auftrag gestartet“. Agents whose CLI is not on this computer are left out, open items included. Keep those headings. `scripts/savor-upstream-preflight.timer` runs it on Mondays at 04:50, linked into `~/.config/systemd/user`; the workflows accept it for 20 minutes, so a manual start of either workflow runs `node scripts/upstream-preflight.mjs` first.
 
 ## Deploy
 

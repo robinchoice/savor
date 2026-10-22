@@ -13,6 +13,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'savor-upstream-preflight-'))
 const STATE = path.join(TMP, 'last-run.json')
 const AGY = path.join(TMP, 'agy')
+const BIN = path.join(TMP, 'bin')
 const DOC = path.join(TMP, 'project', '.savor', 'documents', '0a00a262a7be4479.md')
 const versions = { '@anthropic-ai/claude-code': '2.1.304', '@openai/codex': '0.163.0', 'opencode-ai': '1.19.3', '@xai-official/grok': '1.0.62' }
 let registry, url
@@ -53,7 +54,7 @@ const run = (name, state) => {
 
 async function check() {
   await promisify(execFile)(process.execPath, [path.join(ROOT, 'scripts/upstream-preflight.mjs')], {
-    env: { ...process.env, SAVOR_PROJECT: path.join(TMP, 'project'), SAVOR_UPSTREAM_STATE: STATE, SAVOR_NPM_REGISTRY: url, SAVOR_ANTIGRAVITY_BIN: AGY },
+    env: { ...process.env, HOME: TMP, PATH: BIN, SAVOR_PROJECT: path.join(TMP, 'project'), SAVOR_UPSTREAM_STATE: STATE, SAVOR_NPM_REGISTRY: url, SAVOR_ANTIGRAVITY_BIN: AGY },
   })
   const read = (name) => JSON.parse(fs.readFileSync(path.join(TMP, 'project', '.workflow-checks', name), 'utf8'))
   const signals = { upstream: read('upstream.json'), features: read('features.json') }
@@ -74,6 +75,9 @@ before(async () => {
   await new Promise((r) => registry.listen(0, '127.0.0.1', r))
   url = `http://127.0.0.1:${registry.address().port}`
   fs.writeFileSync(AGY, '#!/bin/sh\necho 1.4.3\n', { mode: 0o755 })
+  // The other agents' CLIs only need to be on PATH.
+  fs.mkdirSync(BIN)
+  for (const bin of ['claude', 'codex', 'opencode', 'grok']) fs.writeFileSync(path.join(BIN, bin), '')
   fs.mkdirSync(path.dirname(DOC), { recursive: true })
 })
 
@@ -135,6 +139,22 @@ test('a missing record blocks instead of idling', async () => {
   ;({ upstream, features } = await check())
   assert.match(upstream.reason, /Codex, OpenCode, Grok Build, Antigravity/)
   assert.equal(features.status, 'blocked')
+})
+
+test('an agent whose CLI is not on this computer is left out, its open items too', async () => {
+  run('grok')
+  fs.writeFileSync(DOC, doc({ recheck: ['Grok Build: Modelle, Gegenprobe grok models'] }))
+  versions['@xai-official/grok'] = '1.0.70'
+  fs.renameSync(path.join(BIN, 'grok'), path.join(TMP, 'grok'))
+  try {
+    const { upstream, features } = await check()
+    assert.deepEqual([upstream.status, upstream.work, upstream.pending], ['ok', false, false])
+    assert.deepEqual([features.status, features.work, features.pending], ['ok', false, false])
+    assert.match(upstream.evidence.join('\n'), /Grok Build: übersprungen, grok fehlt auf diesem Rechner/)
+  } finally {
+    fs.renameSync(path.join(TMP, 'grok'), path.join(BIN, 'grok'))
+    versions['@xai-official/grok'] = '1.0.62'
+  }
 })
 
 test('an unreachable registry fails both', async () => {

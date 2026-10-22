@@ -1,10 +1,11 @@
 // Savor preflight for the workflows "Upstream check" and "Agent-Features übernehmen": both start an
 // agent only when an agent CLI has a newer version than their last recorded run, or when work from
 // it is still open. Writes .workflow-checks/upstream.json and features.json in this project in
-// Savor's format (README, "Workflow preflights and outcomes"). savor-upstream-preflight.timer runs it every
-// 10 minutes. Reads the newest versions from the npm registry and agy (which updates itself whenever
-// it runs), the last results of scripts/upstream-check.mjs and the document "Claude/Codex-Abgleich".
-// Changes nothing else.
+// Savor's format (README, "Workflow preflights and outcomes"). savor-upstream-preflight.timer runs it on
+// Mondays at 04:50 before "Upstream check"; whoever starts a workflow by hand runs it first. Reads the
+// newest versions from the npm registry and agy (which updates itself whenever it runs), the last
+// results of scripts/upstream-check.mjs and the document "Claude/Codex-Abgleich". Only agents whose CLI
+// is on this computer count, as in upstream-check.mjs. Changes nothing else.
 import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
@@ -18,13 +19,16 @@ const AGY = process.env.SAVOR_ANTIGRAVITY_BIN || 'agy'
 // The document "Claude/Codex-Abgleich" that "Agent-Features übernehmen" reads and updates.
 const DOC = path.join(PROJECT, '.savor', 'documents', '0a00a262a7be4479.md')
 
-const AGENTS = [
-  { provider: 'claude', name: 'Claude Code', pkg: '@anthropic-ai/claude-code', features: true },
-  { provider: 'codex', name: 'Codex', pkg: '@openai/codex', features: true },
-  { provider: 'opencode', name: 'OpenCode', pkg: 'opencode-ai' },
-  { provider: 'grok', name: 'Grok Build', pkg: '@xai-official/grok', features: true },
-  { provider: 'antigravity', name: 'Antigravity', features: true },
+const ALL = [
+  { provider: 'claude', name: 'Claude Code', bin: 'claude', pkg: '@anthropic-ai/claude-code', features: true },
+  { provider: 'codex', name: 'Codex', bin: 'codex', pkg: '@openai/codex', features: true },
+  { provider: 'opencode', name: 'OpenCode', bin: 'opencode', pkg: 'opencode-ai' },
+  { provider: 'grok', name: 'Grok Build', bin: 'grok', pkg: '@xai-official/grok', features: true },
+  { provider: 'antigravity', name: 'Antigravity', bin: AGY, features: true },
 ]
+const onComputer = (bin) => (path.isAbsolute(bin) ? [''] : [...(process.env.PATH ?? '').split(path.delimiter), path.join(os.homedir(), '.local', 'bin')]).some((dir) => fs.existsSync(path.join(dir, bin)))
+const AGENTS = ALL.filter((a) => onComputer(a.bin))
+const skipped = (features) => ALL.filter((a) => !AGENTS.includes(a) && (!features || a.features)).map((a) => `${a.name}: übersprungen, ${a.bin} fehlt auf diesem Rechner`)
 
 const semver = (v) => String(v).match(/\d+\.\d+\.\d+(?:-[\w.]+)?/)?.[0]
 // Whether `latest` is newer than `checked`; a version that can't be read counts as new when it differs.
@@ -55,7 +59,7 @@ async function latestVersions() {
 }
 
 const signal = (s) => ({ checkedAt: new Date().toISOString(), work: false, pending: false, followUp: [], ...s })
-const failed = (e) => signal({ status: 'failed', reason: `Prüfung fehlgeschlagen: ${e.message}`.slice(0, 2000), evidence: [String(e.stack ?? e).slice(0, 2000)], followUp: ['Ursache beheben (Netz, npm-Registry, agy), der Timer prüft alle 10 Minuten erneut'] })
+const failed = (e) => signal({ status: 'failed', reason: `Prüfung fehlgeschlagen: ${e.message}`.slice(0, 2000), evidence: [String(e.stack ?? e).slice(0, 2000)], followUp: ['Ursache beheben (Netz, npm-Registry, agy), dann `node scripts/upstream-preflight.mjs` erneut ausführen'] })
 
 function upstream(latest) {
   let state
@@ -79,7 +83,7 @@ function upstream(latest) {
     evidence: AGENTS.map((a) => {
       const s = state[a.provider]
       return `${a.name}: geprüft ${s.version} (${s.result}${s.reason ? `: ${s.reason}` : ''}, ${s.at}), neueste ${latest[a.provider]}`.slice(0, 2000)
-    }),
+    }).concat(skipped()),
     followUp: broken.map((a) => `${a.name} ${state[a.provider].version}: FAIL „${state[a.provider].reason}“, Gegenprobe \`node scripts/upstream-check.mjs ${a.provider}\``.slice(0, 2000)),
   })
 }
@@ -109,7 +113,9 @@ function features(latest) {
   const missing = agents.filter((a) => !a.checked)
   if (missing.length) return blocked(`Keine geprüfte Version für ${missing.map((a) => a.name).join(', ')} unter „Zuletzt geprüft“`)
   const updated = agents.filter((a) => newer(latest[a.provider], a.checked))
-  const open = [...recheck.map((l) => `Neu prüfen: ${l}`), ...delegated.map((l) => `Auftrag: ${l}`)]
+  // Open items of an agent that is not on this computer wait until it is back.
+  const here = (l) => !ALL.some((a) => !AGENTS.includes(a) && l.startsWith(`${a.name}:`))
+  const open = [...recheck.filter(here).map((l) => `Neu prüfen: ${l}`), ...delegated.filter(here).map((l) => `Auftrag: ${l}`)]
   return signal({
     status: 'ok',
     work: updated.length > 0,
@@ -118,7 +124,7 @@ function features(latest) {
       updated.length ? `Neue Versionen: ${updated.map((a) => `${a.name} ${a.checked} → ${latest[a.provider]}`).join(', ')}` : 'Keine neue Version seit dem letzten Lauf',
       open.length ? `${open.length} offene Nachprüfung(en) oder Aufträge` : 'keine offene Nachprüfung',
     ].join('; '),
-    evidence: agents.map((a) => `${a.name}: geprüft ${a.checked}, neueste ${latest[a.provider]}`),
+    evidence: agents.map((a) => `${a.name}: geprüft ${a.checked}, neueste ${latest[a.provider]}`).concat(skipped(true)),
     followUp: open.slice(0, 20).map((l) => (l.length > 400 ? `${l.slice(0, 399)}…` : l)),
   })
 }
