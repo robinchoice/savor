@@ -7,8 +7,16 @@ import path from 'node:path'
 
 const HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'savor-acp-'))
 process.env.SAVOR_HOME = HOME
-const { acpCommand, acpResets } = await import('../server/acp.ts')
+process.env.SAVOR_GROK_BIN = path.resolve('test/fake-acp.mjs')
+const { acpCommand, acpResets, grokModels } = await import('../server/acp.ts')
 after(() => fs.rmSync(HOME, { recursive: true, force: true }))
+
+test('Grok models and their effort levels come from ACP initialize without a prompt', async () => {
+  assert.deepEqual(await grokModels(), [
+    { id: 'fake-grok', label: 'Fake Grok', detail: 'A reasoning model', efforts: ['low', 'xhigh'] },
+    { id: 'fake-grok-fast', label: 'fake-grok-fast', detail: undefined, efforts: [] },
+  ])
+})
 
 test("Grok Build's Always approve mode is a flag of its agent process", () => {
   assert.deepEqual(acpCommand('grok', 'p', 't', 'default').args, ['--no-auto-update', 'agent', '--no-leader', 'stdio'])

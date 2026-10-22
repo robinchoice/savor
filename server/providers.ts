@@ -8,7 +8,7 @@ import { codexSkills, codexUsage, probeCodex } from './codex.js'
 import { claudeUsage, probeClaude } from './claude.js'
 import type { ClaudeUsageSample } from './claude-pacing.js'
 import { antigravitySkills, antigravityUsage, probeAntigravity } from './antigravity.js'
-import { acpSkills } from './acp.js'
+import { acpSkills, grokModels } from './acp.js'
 
 export interface ModeInfo { id: string; label: string; detail: string; unsafe?: boolean }
 export interface ModelInfo { id: string; label: string; detail?: string; efforts?: string[]; ultracode?: boolean }
@@ -193,9 +193,9 @@ const probes: Record<Provider, () => Promise<Probe>> = {
   async grok() {
     const v = await run(BIN.grok, ['--version'])
     if (v.missing) return { installed: false, version: null, signedIn: null, account: null }
-    const status = await run(BIN.grok, ['--no-auto-update', 'models'])
+    const [status, models] = await Promise.all([run(BIN.grok, ['--no-auto-update', 'models']), grokModels().catch(() => [])])
     const signedIn = status.ok && /You are (using|logged in|authenticated)|^Model '/m.test(status.out)
-    return { installed: true, version: version(v.out), signedIn, account: status.out.match(/logged in with (\S+)/)?.[1] ?? null }
+    return { installed: true, version: version(v.out), signedIn, account: status.out.match(/logged in with (\S+)/)?.[1] ?? null, models }
   },
   async antigravity() {
     const v = await run(BIN.antigravity, ['--version'])

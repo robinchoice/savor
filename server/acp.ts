@@ -9,7 +9,7 @@ import type { ApprovalOption, Provider, Thread } from './store.js'
 import { BIN, command, mcpUrl, VERSION } from './config.js'
 import { Rpc, RpcError } from './jsonrpc.js'
 import { configKey, forkOf, rememberSession, sessionIdOf, STOPPED, summarize, systemPrompt, type Host, type Session, type TurnInput } from './session.js'
-import type { SkillInfo } from './providers.js'
+import type { ModelInfo, SkillInfo } from './providers.js'
 
 const PLAN_DECISION: ApprovalOption[] = [
   { id: 'approved', label: 'Approve', kind: 'allow' },
@@ -208,6 +208,18 @@ async function oneShot<T>(provider: Provider, cwd: string, ask: (rpc: Rpc, init:
 
 // Sessions Savor only opened to ask something are removed again, so they don't show up in OpenCode's list.
 const discard = (provider: Provider, sessionId: string) => provider === 'opencode' && execFile(...command(BIN.opencode, ['session', 'delete', sessionId]), () => {})
+
+export function grokModels() {
+  const effortOrder = ['low', 'medium', 'high', 'xhigh', 'max', 'ultra']
+  return oneShot<ModelInfo[]>('grok', process.cwd(), async (_, init) =>
+    (init._meta?.modelState?.availableModels ?? []).map((m: any) => ({
+      id: m.modelId,
+      label: m.name ?? m.modelId,
+      detail: m.description,
+      efforts: (m._meta?.reasoningEfforts ?? []).map((e: any) => e.value).sort((a: string, b: string) => effortOrder.indexOf(a) - effortOrder.indexOf(b)),
+    })),
+  )
+}
 
 // The commands and skills an agent offers in a folder, as it announces them to a new session.
 export function acpSkills(provider: Provider, cwd: string) {

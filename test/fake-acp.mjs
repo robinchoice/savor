@@ -112,7 +112,10 @@ rl.on('line', (line) => {
   const reply = (result) => out({ jsonrpc: '2.0', id: msg.id, result })
   switch (msg.method) {
     case 'initialize':
-      return reply({ protocolVersion: 1, agentCapabilities: { loadSession: true, promptCapabilities: { image: true }, sessionCapabilities: { fork: {} } }, authMethods: [] })
+      return reply({ protocolVersion: 1, agentCapabilities: { loadSession: true, promptCapabilities: { image: true }, sessionCapabilities: { fork: {} } }, authMethods: [], _meta: { modelState: { availableModels: [
+        { modelId: 'fake-grok', name: 'Fake Grok', description: 'A reasoning model', _meta: { reasoningEfforts: [{ value: 'xhigh' }, { value: 'low' }] } },
+        { modelId: 'fake-grok-fast' },
+      ] } } })
     case 'session/new':
       mcp = msg.params.mcpServers.find((s) => s.name === 'savor')
       // Like Grok Build, it offers the effort as a config option and does not announce its modes.
