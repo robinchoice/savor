@@ -17,26 +17,7 @@ const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'savor-shots-'))
 const SITE_PORT = 8792
 const TZ = 'Europe/Berlin'
 
-const BAKERY = `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Brotzeit Bakery</title>
-<style>
-@font-face { font-family: Bricolage; src: url(/font.woff2) format('woff2'); font-weight: 200 800; }
-body { margin: 0; font-family: Bricolage, sans-serif; background: #faf6f0; color: #3b2a1e; text-align: center; }
-.hero { padding: 72px 24px 56px; }
-.eyebrow { font: 600 11px/1 Bricolage, sans-serif; letter-spacing: .25em; color: #d9792b; }
-h1 { font-size: clamp(3rem, 7vw, 6rem); line-height: 1.05; margin: 24px 0; }
-p { max-width: 36em; margin: 0 auto 32px; font-size: 18px; }
-a { display: inline-block; padding: 14px 28px; border-radius: 99px; background: #d9792b; color: #fff; text-decoration: none; font: 600 15px Bricolage, sans-serif; }
-h2 { font-size: 28px; margin: 24px 0; }
-.items { display: flex; gap: 24px; justify-content: center; padding: 0 24px 64px; flex-wrap: wrap; }
-.item { width: 220px; padding: 28px 20px; border-radius: 16px; background: #fff; box-shadow: 0 2px 12px #3b2a1e14; }
-.dot { width: 48px; height: 48px; margin: 0 auto 16px; border-radius: 50%; background: #f3d7b8; }
-</style></head><body>
-<section class="hero"><div class="eyebrow">BROTZEIT BAKERY</div><h1>Baked fresh.<br>Shared warm.</h1>
-<p>Slow-fermented sourdough, buttery pastries and honest crumbs, from our oven to your table every morning.</p><a href="#">Visit us today</a></section>
-<h2>Our bestsellers</h2>
-<div class="items"><div class="item"><div class="dot"></div><b>Rye sourdough</b></div><div class="item"><div class="dot"></div><b>Butter croissant</b></div><div class="item"><div class="dot"></div><b>Laugenbrezel</b></div></div>
-</body></html>`
+const BAKERY = fs.readFileSync(path.join(ROOT, 'scripts/demo-bakery.html'), 'utf8')
 
 const freePort = () =>
   new Promise((resolve) => {

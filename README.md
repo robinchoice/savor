@@ -3,8 +3,8 @@
 <h1 align="center">Savor</h1>
 
 <p align="center">
-  <b>A local-first workspace for coding agents.</b><br>
-  Describe what you want, let Claude Code, Codex or OpenCode build it, and keep projects, conversations and live previews in one place: on your desktop, in the browser or on your phone.
+  <b>A local workspace for the coding agents you already use.</b><br>
+  Savor runs Claude Code, Codex, OpenCode, Grok Build or Antigravity on your own computer and turns every task into a conversation that reports back: a short acknowledgement, questions you answer in one click, the result, and a live preview of what was built. On your desktop, in the browser or on your phone.
 </p>
 
 <p align="center">
@@ -19,7 +19,13 @@
   <a href="#how-it-works">How it works</a>
 </p>
 
-![A conversation with Claude Code next to the live preview of the landing page it built](docs/screenshots/conversation.png)
+[![A task, the agent's question, the answer, and the result in the live preview (49 s)](docs/demo.gif)](docs/demo.mp4)
+
+<sub>A task, the agent's question and the result in the live preview, in 49 seconds. Recorded with a scripted stand-in for Claude Code and made-up projects ([`scripts/demo-video.mjs`](scripts/demo-video.mjs)); [MP4](docs/demo.mp4).</sub>
+
+**What you need:** Savor brings no model and no account of its own. It drives agent CLIs you have installed and signed in to, with their subscriptions or API keys: Claude Code, Codex, OpenCode, Grok Build or Antigravity. At least one of them has to work in your terminal first.
+
+**Quick start:** download the app for Linux, macOS or Windows from the [latest release](https://github.com/robinchoice/savor/releases/latest), start it, and add a project folder. It finds the agent CLIs on your `PATH`. Details and running from source are under [Install](#install), what doesn't work yet under [Status](#status).
 
 **Why Savor**
 
@@ -314,7 +320,12 @@ CI runs typecheck and the end-to-end tests on every push. `secrets.yml` scans ev
 
 ## Status
 
-Early. Known gaps:
+Early: version 0.x, first released in September 2026, with releases several times a week. Savor is used every day for real work, but expect rough edges. Known gaps and limits:
+- One person, one computer: there are no user accounts, teams or shared projects. Other devices are your own, paired with a QR code.
+- Savor is not a sandbox. Agents run as your user with the permissions you give them in the agent picker, and Savor shows their approval prompts.
+- The desktop builds are not notarized (macOS) or code-signed (Windows) yet, and macOS builds don't update themselves until they are.
+- Antigravity doesn't work on Windows yet.
+- The phone apps are in closed testing (TestFlight, Play's internal test). On the phone, use the web app through a relay or your own network.
 - There is no public relay instance yet: run your own (see above) or use a direct connection.
 - A browser can pair with several computers but talks to one at a time, and only that one sends it notifications.
 

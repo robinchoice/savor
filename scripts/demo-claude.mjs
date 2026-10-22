@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Stand-in for Claude Code that plays the scripted demo conversations of scripts/screenshots.mjs. It speaks
 // the same stream-json protocol as test/fake-claude.mjs and answers through Savor's MCP tools.
-// DEMO_SITE_URL is the bakery page the demo opens in the preview.
+// DEMO_SITE_URL is the bakery page the demo opens in the preview. DEMO_PAUSE_MS slows the turns down for
+// scripts/demo-video.mjs, so the video shows the agent at work.
 import readline from 'node:readline'
 import crypto from 'node:crypto'
 import fs from 'node:fs'
@@ -50,6 +51,7 @@ const call = async (name, a) => {
 }
 const say = (text) => out({ type: 'assistant', parent_tool_use_id: null, message: { model: MODEL, usage: { input_tokens: 1200, cache_read_input_tokens: 30000 }, content: [{ type: 'text', text }] } })
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+const pause = () => sleep(Number(process.env.DEMO_PAUSE_MS ?? 0))
 
 const CHECKLIST = `# Website Launch Checklist
 
@@ -88,18 +90,28 @@ async function turn(text) {
   } else if (input.includes('landing page')) {
     if (label) await call('set_thread_label', { label: 'Brotzeit Bakery Landing Page' })
     await call('send_acknowledgement_message', { text: 'Building the page in index.html.', summary: 'Landing page for the Brotzeit bakery.' })
+    await pause()
     say('Drafting the hero, the bestsellers and the map.')
+    await pause()
     await call('send_conclusion_message', {
       text: 'The first draft of index.html has a hero, three bestsellers and a map placeholder. One choice before I polish it:',
       questions: [{ title: 'Which accent color?', body: '', options: ['Warm orange', 'Deep green', 'Rye brown'], recommended: 0 }],
     })
   } else if (input.includes('Warm orange')) {
     say('Warm orange it is.')
+    await pause()
     await call('open_browser', { url: process.env.DEMO_SITE_URL })
     await call('send_conclusion_message', { text: `Warm orange (#d9792b) is the accent in index.html. The page is live at ${process.env.DEMO_SITE_URL}.` })
   } else {
     say('Enlarging the headline and reloading.')
     await sleep(300)
+    await pause()
+    // The video's page starts with a smaller headline; the screenshots' page already has the larger one.
+    const page = fs.readFileSync('index.html', 'utf8')
+    if (page.includes('clamp(2.5rem, 4.5vw, 4.5rem)')) {
+      fs.writeFileSync('index.html', page.replace('clamp(2.5rem, 4.5vw, 4.5rem)', 'clamp(3rem, 7vw, 6rem)'))
+      await call('open_browser', { url: process.env.DEMO_SITE_URL })
+    }
     await call('send_conclusion_message', {
       text: 'The hero headline is larger (up to 6rem, was 4.5rem) and the preview is reloaded.',
       suggestions: ['Replace the map placeholder with a real OpenStreetMap embed', 'Add a short story section about the bakery and a contact footer', 'Add photos of the three bestsellers'],
