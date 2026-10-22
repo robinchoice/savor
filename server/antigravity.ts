@@ -110,6 +110,7 @@ export class AntigravitySession implements Session {
 
     let result: any = null
     let stderr = ''
+    let failure = ''
     this.stopping = false
     const child = spawn(...command(BIN.antigravity, args), { cwd: this.host.cwd, env: env(p.id, tid), stdio: ['ignore', 'pipe', 'pipe'] })
     this.child = child
@@ -120,20 +121,27 @@ export class AntigravitySession implements Session {
       } catch {
         return
       }
-      if (ev.event === 'init') {
-        if (ev.conversation_id) rememberSession(p, tid, 'antigravity', ev.conversation_id)
-        if (ev.init?.model) this.host.model(ev.init.model)
-      } else if (ev.event === 'result') result = ev.result
-      else if (ev.event === 'step_update') {
-        const s = ev.step_update
-        if (s.step_type === 'tool') {
-          const key = `step${s.step_index}`
-          if (s.state === 'ACTIVE') activity.start(key, s.tool_name === 'run_command' ? 'command' : EDITS.includes(s.tool_name) ? 'edit' : 'note', describe(s.tool_name, s.tool_info?.parameters))
-          else activity.finish(key)
-        } else if (s.step_type === 'agent_response' && s.state === 'DONE' && s.usage) {
-          if (s.usage.thinking_tokens) activity.instant('thinking', 'Thinking')
-          this.host.context(s.usage.input_tokens + (s.usage.cache_read_tokens ?? 0))
+      // An event Savor can't handle ends this turn, never the daemon.
+      try {
+        if (ev.event === 'init') {
+          if (ev.conversation_id) rememberSession(p, tid, 'antigravity', ev.conversation_id)
+          if (ev.init?.model) this.host.model(ev.init.model)
+        } else if (ev.event === 'result') result = ev.result
+        else if (ev.event === 'step_update') {
+          const s = ev.step_update
+          if (s.step_type === 'tool') {
+            const key = `step${s.step_index}`
+            if (s.state === 'ACTIVE') activity.start(key, s.tool_name === 'run_command' ? 'command' : EDITS.includes(s.tool_name) ? 'edit' : 'note', describe(s.tool_name, s.tool_info?.parameters))
+            else activity.finish(key)
+          } else if (s.step_type === 'agent_response' && s.state === 'DONE' && s.usage) {
+            if (s.usage.thinking_tokens) activity.instant('thinking', 'Thinking')
+            this.host.context(s.usage.input_tokens + (s.usage.cache_read_tokens ?? 0))
+          }
         }
+      } catch (e) {
+        console.error(`Antigravity session of ${tid} failed on an event:`, e)
+        failure ||= `Savor could not handle an event from Antigravity: ${(e as Error).message}`
+        child.kill('SIGKILL')
       }
     })
     child.stderr!.on('data', (d) => (stderr = (stderr + d).slice(-4000)))
@@ -142,6 +150,7 @@ export class AntigravitySession implements Session {
       this.child = undefined
       const denied = (result?.denied_actions ?? []).map((d: any) => d.display_name ?? d.action)
       if (denied.length) activity.instant('note', `Denied: ${denied.join(', ')}. Antigravity cannot ask for approval here; allow it in agy's settings or pick another mode.`)
+      if (failure) return this.host.ended({ error: failure })
       // agy catches SIGTERM and reports the turn as an "interrupted" error.
       if (signal || this.stopping) return this.host.ended({ error: STOPPED })
       // Headless agy ends a turn at the first action it may not take, often without a word.

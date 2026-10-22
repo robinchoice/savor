@@ -90,6 +90,8 @@ export interface Thread {
   // When the agent got the input it still owes work on. It is on disk so that a turn cut off by a
   // restart is found again.
   workingSince?: string | null
+  // How often restarts of the daemon cut off the turn on this input; Savor stops continuing it after a few (agents.ts).
+  restarts?: { inputId: string; count: number } | null
   // When Savor continues a turn that stopped at a usage limit: shortly after the limit resets.
   resumeAt?: string | null
   // Set while Claude Code goes on with API credit after its usage limit (agents.ts): when that limit resets (ms),
@@ -270,36 +272,63 @@ export const hash = (s: string) => crypto.createHash('sha256').update(s).digest(
 export const sameHash = (a: string, b: string) => a.length === b.length && crypto.timingSafeEqual(Buffer.from(a, 'hex'), Buffer.from(b, 'hex'))
 export const safeEqual = (given: unknown, expected: string) => typeof given === 'string' && sameHash(hash(given), hash(expected))
 
+// A file that exists but can't be read as JSON (e.g. zeros after a power loss) is logged and kept as
+// <file>.damaged, so writing the fallback back doesn't lose what was in it.
 function readJson<T>(file: string, fallback: T): T {
+  let text: string
   try {
-    return JSON.parse(fs.readFileSync(file, 'utf8'))
+    text = fs.readFileSync(file, 'utf8')
   } catch {
+    return fallback
+  }
+  try {
+    return JSON.parse(text) ?? fallback
+  } catch {
+    const copy = `${file}.damaged`
+    if (!fs.existsSync(copy)) fs.copyFileSync(file, copy)
+    console.warn(`Could not read ${file}; a copy is in ${copy}.`)
     return fallback
   }
 }
 
+// Synced before the rename, so a hard reset leaves the old file or the new one, not an empty one.
 function writeJson(file: string, data: unknown) {
   fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 })
   const tmp = `${file}.${process.pid}.tmp`
-  fs.writeFileSync(tmp, JSON.stringify(data, null, 2), { mode: 0o600 })
+  const fd = fs.openSync(tmp, 'w', 0o600)
+  try {
+    fs.writeFileSync(fd, JSON.stringify(data, null, 2))
+    fs.fsyncSync(fd)
+  } finally {
+    fs.closeSync(fd)
+  }
   fs.renameSync(tmp, file)
 }
 
-function readJsonl<T>(file: string, recover = false): T[] {
+// Append-only logs survive a hard reset with zeros, blank or cut-off lines in them: those lines are
+// skipped and logged, the file stays as it is. A cut-off last line gets its line break, so the next
+// record appended doesn't end up on the same line.
+function readJsonl<T>(file: string): T[] {
   if (!fs.existsSync(file)) return []
   const records: T[] = []
   let damaged = 0
+  let last = false
   for (const raw of fs.readFileSync(file, 'utf8').split('\n')) {
-    const line = recover ? raw.replace(/\0/g, '') : raw
+    const line = raw.replace(/\0/g, '')
+    last = false
     if (!line.trim()) continue
+    let record: unknown
     try {
-      records.push(JSON.parse(line))
-    } catch (error) {
-      if (!recover) throw error
+      record = JSON.parse(line)
+    } catch {}
+    if (record && typeof record === 'object' && !Array.isArray(record)) records.push(record as T)
+    else {
       damaged++
+      last = true
     }
   }
-  if (damaged) console.warn(`Skipped ${damaged} damaged activity records in ${file}; the original file is unchanged.`)
+  if (last) fs.appendFileSync(file, '\n')
+  if (damaged) console.warn(`Skipped ${damaged} damaged records in ${file}; the file is otherwise unchanged.`)
   return records
 }
 
@@ -559,8 +588,8 @@ export const removeMessage = (p: Project, tid: string, id: string) =>
 // Activity is append-only: a start line per event, then a {id, finishedAt} line when it ends.
 export function readActivity(p: Project, tid: string): ActivityEvent[] {
   const events = new Map<number, ActivityEvent>()
-  for (const e of readJsonl<Partial<ActivityEvent> & { id: number }>(path.join(threadDir(p, tid), 'activity.jsonl'), true))
-    events.set(e.id, { ...events.get(e.id), ...e } as ActivityEvent)
+  for (const e of readJsonl<Partial<ActivityEvent> & { id: number }>(path.join(threadDir(p, tid), 'activity.jsonl')))
+    if (Number.isInteger(e.id)) events.set(e.id, { ...events.get(e.id), ...e } as ActivityEvent)
   return [...events.values()]
 }
 
@@ -594,6 +623,7 @@ export function listDecisions(p: Project, threadId?: string): Decision[] {
   if (!fs.existsSync(decisionsDir(p))) return []
   return fs
     .readdirSync(decisionsDir(p))
+    .filter((f) => f.endsWith('.json'))
     .map((f) => readJson<Decision>(path.join(decisionsDir(p), f), null as never))
     .filter((d) => d && (!threadId || d.threadId === threadId))
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))
@@ -706,7 +736,9 @@ export function listWorkflows(p: Project): Workflow[] {
   return fs
     .readdirSync(wfDir(p))
     .filter((f) => f.endsWith('.json'))
-    .map((f) => ({ ...wfDefaults, ...readJson<Partial<Workflow>>(path.join(wfDir(p), f), null as never) }) as Workflow)
+    .map((f) => readJson<Partial<Workflow> | null>(path.join(wfDir(p), f), null))
+    .filter((wf) => wf?.id)
+    .map((wf) => ({ ...wfDefaults, ...wf }) as Workflow)
 }
 
 export function getWorkflow(p: Project, id: string): Workflow {

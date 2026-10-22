@@ -103,11 +103,16 @@ mkdir -p ~/.config/systemd/user
 cat > ~/.config/systemd/user/savor.service <<UNIT
 [Unit]
 Description=Savor
+# A daemon that keeps crashing stops after five tries in five minutes instead of looping.
+StartLimitIntervalSec=300
+StartLimitBurst=5
 
 [Service]
 ExecStart=$(command -v node) $PWD/dist/server/index.mjs
 Environment=PATH=$PATH
 Restart=on-failure
+# The kernel ending a browser or agent for lack of memory leaves the daemon running.
+OOMPolicy=continue
 
 [Install]
 WantedBy=default.target

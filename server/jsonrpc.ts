@@ -20,7 +20,17 @@ export class Rpc {
   readonly exited: Promise<{ code: number | null; signal: NodeJS.Signals | null }>
 
   constructor(private child: ChildProcess, private handlers: Handlers) {
-    readline.createInterface({ input: child.stdout! }).on('line', (l) => this.onLine(l))
+    readline.createInterface({ input: child.stdout! }).on('line', (l) => {
+      // A message Savor can't handle ends this agent's session, never the daemon. SIGKILL, so the
+      // session doesn't take the exit for a stop.
+      try {
+        this.onLine(l)
+      } catch (e) {
+        console.error('Agent session failed on a message:', e)
+        this.stderr += `\nSavor could not handle a message from the agent: ${(e as Error).message}`
+        child.kill('SIGKILL')
+      }
+    })
     child.stderr?.on('data', (d) => (this.stderr = (this.stderr + d).slice(-4000)))
     this.exited = new Promise((resolve) => {
       child.on('exit', (code, signal) => {

@@ -1,0 +1,6 @@
+[Unit]
+Description=Tell the desktop that savor.service has stopped
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/notify-send -u critical -a Savor "Savor has stopped" "savor.service crashed repeatedly and systemd gave up. Log: journalctl --user -u savor. Start again: systemctl --user reset-failed savor && systemctl --user start savor"

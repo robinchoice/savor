@@ -1197,6 +1197,14 @@ route('PATCH', '/settings', (_, b, ctx) => {
   return settings()
 })
 
+// Last resort: an error nothing caught is logged (and reported, see monitoring.ts), and the daemon goes
+// on with every conversation it runs. Only during the start does it still end the daemon.
+let started = false
+process.on('uncaughtException', (e) => {
+  console.error('Uncaught error:', e)
+  if (!started) process.exit(1)
+})
+
 http
   .createServer((req, res) =>
     handle(req, res).catch((e) => {
@@ -1221,6 +1229,7 @@ http
     ci.startCiMonitor()
     if (APPIMAGE) exitOnUpdate(APPIMAGE)
     agents.resumeInterrupted()
+    started = true
     console.log(`Savor running — open ${PUBLIC_URL}/?token=${store.state().token}`)
   })
 

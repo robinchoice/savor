@@ -40,3 +40,33 @@ test('damaged activity does not crash the next agent event or overwrite saved ch
   assert.deepEqual(fs.readFileSync(messageFile), messages)
   assert.equal(store.getThread(project, thread.id).title, 'Saved conversation')
 })
+
+test('damaged messages, threads, workflows and decisions are skipped and kept', async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'savor-damaged-'))
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }))
+  process.env.SAVOR_HOME = path.join(dir, 'home')
+  const store = await import('../server/store.ts')
+  const project = { id: 'damaged-test', path: dir, agent: store.defaultAgent() }
+  const kept = store.createThread(project, { title: 'Kept' })
+  const broken = store.createThread(project, { title: 'Broken' })
+  store.appendMessage(project, kept.id, { kind: 'user', text: 'first' })
+  const data = path.join(dir, '.savor')
+  const messages = path.join(data, 'threads', kept.id, 'messages.jsonl')
+  fs.appendFileSync(messages, `${'\0'.repeat(20)}\n  \n42\n{"id":"cut`)
+  const thread = path.join(data, 'threads', broken.id, 'thread.json')
+  fs.writeFileSync(thread, '\0'.repeat(50))
+  fs.mkdirSync(path.join(data, 'workflows'), { recursive: true })
+  fs.writeFileSync(path.join(data, 'workflows', 'broken.json'), '{"id":"broken","na')
+  fs.mkdirSync(path.join(data, 'decisions'), { recursive: true })
+  fs.writeFileSync(path.join(data, 'decisions', 'broken.json'), 'null')
+  t.mock.method(console, 'warn', () => {})
+
+  assert.deepEqual(store.readMessages(project, kept.id).map((m) => m.text), ['first'])
+  // The next message starts on a line of its own.
+  store.appendMessage(project, kept.id, { kind: 'user', text: 'second' })
+  assert.deepEqual(store.readMessages(project, kept.id).map((m) => m.text), ['first', 'second'])
+  assert.deepEqual(store.listThreads(project).map((x) => x.title), ['Kept'])
+  assert.equal(fs.readFileSync(`${thread}.damaged`, 'utf8'), '\0'.repeat(50))
+  assert.deepEqual(store.listWorkflows(project), [])
+  assert.deepEqual(store.listDecisions(project), [])
+})

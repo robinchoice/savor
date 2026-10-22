@@ -882,42 +882,52 @@ const INTERRUPTED = `Savor was restarted while you were working on the input bel
 // A turn that waits for a usage limit continues when it resets, also if that was while Savor was down.
 export function resumeInterrupted() {
   for (const p of store.listProjects())
-    for (let thread of store.listThreads(p)) {
-      let note = INTERRUPTED
-      let checkpoint = false
-      // Retire saved waits from the removed Claude budget queue before restoring real limit timers.
-      if ('budgetWait' in thread && thread.budgetWait) {
-        const { budgetWait, ...rest } = thread as Thread & { budgetWait: { note: string } }
-        note = budgetWait.note
-        checkpoint = note.startsWith('Continue the same request from the completed tool results.') && thread.agent.provider === 'claude' && !!sessionIdOf(thread, 'claude')
-        if (checkpoint) note = 'Continue the same request from the completed tool results. ' + sameRequest(request(p, thread.id))
-        thread = { ...rest, resumeAt: null }
-        store.saveThread(p, thread)
+    for (const thread of store.listThreads(p))
+      try {
+        resumeThread(p, thread)
+      } catch (e) {
+        console.error(`Could not continue conversation ${thread.id} after the restart:`, e)
       }
-      if (thread.resumeAt) {
-        setResume(p, thread.id, thread.resumeAt)
-        continue
-      }
-      if (thread.ciWatch) setCi(p, thread.id, thread.ciWatch, 0)
-      if (!thread.workingSince) {
-        scheduleCompact(p, thread.id)
-        continue
-      }
-      const tid = thread.id
-      // Whoever asked for these approvals is gone; the agent asks again when it gets there.
-      cancelPending(p, tid)
-      const r = request(p, tid)
-      const input = store.readMessages(p, tid).find((m) => m.id === r.inputId)
-      const waitsForYou = store.getThread(p, tid).needsYou
-      if (input && !r.conclusion && !waitsForYou) {
-        continueRequest(p, thread, checkpoint ? { ...input, text: 'Continue the same request.', images: [], files: [] } : input, note)
-        continue
-      }
-      store.updateThread(p, tid, { workingSince: null })
-      if (r.conclusion) scheduleCompact(p, tid)
-      // An open question restarts the work with its answer, and what is queued follows that.
-      if (!waitsForYou) pump(p, tid)
+}
+
+// A turn that restarts cut off this often in a row may be what ends the daemon: it waits for the user.
+const MAX_RESTARTS = 3
+const GAVE_UP = `Savor was restarted ${MAX_RESTARTS} times while this request was running and stopped continuing it. Send a message to go on.`
+
+function resumeThread(p: Project, thread: Thread) {
+  let note = INTERRUPTED
+  let checkpoint = false
+  // Retire saved waits from the removed Claude budget queue before restoring real limit timers.
+  if ('budgetWait' in thread && thread.budgetWait) {
+    const { budgetWait, ...rest } = thread as Thread & { budgetWait: { note: string } }
+    note = budgetWait.note
+    checkpoint = note.startsWith('Continue the same request from the completed tool results.') && thread.agent.provider === 'claude' && !!sessionIdOf(thread, 'claude')
+    if (checkpoint) note = 'Continue the same request from the completed tool results. ' + sameRequest(request(p, thread.id))
+    thread = { ...rest, resumeAt: null }
+    store.saveThread(p, thread)
+  }
+  if (thread.resumeAt) return setResume(p, thread.id, thread.resumeAt)
+  if (thread.ciWatch) setCi(p, thread.id, thread.ciWatch, 0)
+  if (!thread.workingSince) return scheduleCompact(p, thread.id)
+  const tid = thread.id
+  // Whoever asked for these approvals is gone; the agent asks again when it gets there.
+  cancelPending(p, tid)
+  const r = request(p, tid)
+  const input = store.readMessages(p, tid).find((m) => m.id === r.inputId)
+  const waitsForYou = store.getThread(p, tid).needsYou
+  if (input && !r.conclusion && !waitsForYou) {
+    const restarts = thread.restarts?.inputId === input.id ? thread.restarts.count : 0
+    if (restarts < MAX_RESTARTS) {
+      store.updateThread(p, tid, { restarts: { inputId: input.id, count: restarts + 1 } })
+      return continueRequest(p, thread, checkpoint ? { ...input, text: 'Continue the same request.', images: [], files: [] } : input, note)
     }
+    store.updateThread(p, tid, { workingSince: null, error: GAVE_UP })
+    return notify(p, tid, 'error', GAVE_UP, 'Stopped with an error')
+  }
+  store.updateThread(p, tid, { workingSince: null })
+  if (r.conclusion) scheduleCompact(p, tid)
+  // An open question restarts the work with its answer, and what is queued follows that.
+  if (!waitsForYou) pump(p, tid)
 }
 
 // The daemon is going down: its agents go with it, and their turns continue at the next start. The

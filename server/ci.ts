@@ -14,7 +14,11 @@ export function runsOf(cwd: string, sha: string) {
     const args = ['run', 'list', '--commit', sha, '--json', 'databaseId,name,workflowName,status,conclusion,url', '--limit', '50']
     execFile(...command(BIN.gh, args), { cwd, timeout: 60_000 }, (err, stdout, stderr) => {
       if (err) return reject(new Error(`gh run list failed: ${(stderr || err.message).trim()}`))
-      resolve(JSON.parse(stdout))
+      try {
+        resolve(JSON.parse(stdout))
+      } catch (e) {
+        reject(e)
+      }
     })
   })
 }
@@ -74,7 +78,14 @@ let polling = false
 
 function gh<T>(cwd: string, args: string[]) {
   return new Promise<T>((resolve, reject) => {
-    execFile(...command(BIN.gh, args), { cwd, timeout: 60_000 }, (err, stdout) => (err ? reject(err) : resolve(JSON.parse(stdout))))
+    execFile(...command(BIN.gh, args), { cwd, timeout: 60_000 }, (err, stdout) => {
+      if (err) return reject(err)
+      try {
+        resolve(JSON.parse(stdout))
+      } catch (e) {
+        reject(e)
+      }
+    })
   })
 }
 

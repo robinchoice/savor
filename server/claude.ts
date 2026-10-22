@@ -150,7 +150,16 @@ export class ClaudeSession implements Session {
     })
     const removeConfig = () => fs.rmSync(mcpConfig, { force: true })
     this.child.on('exit', removeConfig).on('error', removeConfig)
-    readline.createInterface({ input: this.child.stdout! }).on('line', (l) => this.onLine(l))
+    readline.createInterface({ input: this.child.stdout! }).on('line', (l) => {
+      // An event Savor can't handle ends this session, never the daemon.
+      try {
+        this.onLine(l)
+      } catch (e) {
+        console.error(`Claude Code session of ${host.tid} failed on an event:`, e)
+        host.closed(`Savor could not handle an event from Claude Code: ${(e as Error).message}`)
+        this.kill()
+      }
+    })
     this.child.stderr!.on('data', (d) => (this.stderr = (this.stderr + d).slice(-4000)))
     this.child.on('error', (e) => host.closed(e.message))
     this.child.on('exit', (code, signal) => host.closed(this.stopping || signal === 'SIGTERM' ? STOPPED : exitError(code, this.stderr.trim())))

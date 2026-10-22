@@ -20,7 +20,7 @@ Sentry.init({
   maxBreadcrumbs: 0,
   tracesSampleRate: 0,
   defaultIntegrations: false,
-  integrations: [Sentry.onUncaughtExceptionIntegration(), Sentry.onUnhandledRejectionIntegration({ mode: 'strict' })],
+  integrations: [Sentry.onUncaughtExceptionIntegration(), Sentry.onUnhandledRejectionIntegration({ mode: 'warn' })],
   beforeSend(event) {
     delete event.request
     delete event.user
