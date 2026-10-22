@@ -21,7 +21,7 @@
 ## Deploy
 
 - A push to `main` runs `ci.yml`. If it touches `site/`, Coolify deploys the landing page through a repo webhook. Verify: `curl -sI https://savor.pleasance.org`.
-- Every push on every branch also runs `secrets.yml`, a gitleaks scan of the new commits. Catch false positives narrowly: by fingerprint in `.gitleaksignore` or by path and rule in `.gitleaks.toml`, never switch off a whole rule. The repo and its CI logs are public, so a real finding is already out: tell Robin to rotate the secret, removing it from code or history is not enough.
+- Every push of a branch or tag also runs `secrets.yml`, a gitleaks scan of the new commits (a tag without new commits is skipped). Catch false positives narrowly: by fingerprint in `.gitleaksignore` or by path and rule in `.gitleaks.toml`, never switch off a whole rule. The repo and its CI logs are public, so a real finding is already out: tell Robin to rotate the secret, removing it from code or history is not enough.
 - The app and the relay ship only with a release, see below.
 - `mobile.yml` builds the phone apps on every tag `v*` and hands them to the testers: iOS to TestFlight (`mobile/testflight.mjs`, beta review for „Savor Tester“), Android to Play's internal track once the repo variable `PLAY_UPLOAD` is `true`. A manual run (`gh workflow run Mobile`) reaches only „Savor Intern“, `-f testers=true` both. Verify in App Store Connect → TestFlight and Play Console → Internal testing. `release.yml` builds the desktop app, publishes the GitHub release and deploys the relay image `ghcr.io/robinchoice/savor-relay:<version>`.
 
@@ -31,6 +31,7 @@
 - Robin works in Savor while you change it. Changes reach `savor.service` only through a release and an update. Test against a dev server and don't restart `savor.service`: your own session may run inside it.
 - When you show a UI change in a dev instance in the preview, say that it runs with test data and only shows the change: everything else looks different from Robin's instance.
 - How a conversation stands (blocked, working, unread, open) and whether it needs the user come from `agents.stateOf` and `agents.needsYouOf`, and questions for the user open through `agents.askUser`. Routes, the scheduler, pushes and MCP tools use those instead of reading the thread's fields their own way: the tab counts, the badge and the lists drifted apart before.
+- Secret scan: gitleaks 8.30.1 also reads `.gitleaksignore` from the checkout, besides `--gitleaks-ignore-path`. `secrets.yml` therefore replaces that file with the version from `CONFIG_REF` too, for fork PRs the base commit's.
 - The e2e tests start `dist/server/index.mjs` when it exists, not `server/`. Without a fresh `npm run build` they test an old server and fail on new features.
 - The service worker is `web/sw.ts`, bundled by esbuild into `dist/web/sw.js` during `npm run build` (it answers questions from notifications through the relay tunnel). `npm run dev:web` doesn't serve it.
 - `npm test` holds `flock /tmp/savor-test.lock`, so test runs from parallel sessions and worktrees queue instead of overloading the CPU. A run that seems stuck before its first test is waiting for another one.
