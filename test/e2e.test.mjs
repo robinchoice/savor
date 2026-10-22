@@ -825,6 +825,19 @@ test('OpenCode is probed again only when its binary changes', async () => {
   assert.equal(probes(), before + 1)
 })
 
+test('a missing agent is found again once its binary turns up', async () => {
+  const bin = path.join(TMP, 'no-such-grok')
+  const installed = async () => (await api('GET', '/agents?refresh=1')).body.find((a) => a.id === 'grok').installed
+  assert.equal(await installed(), false)
+  fs.writeFileSync(bin, '#!/bin/sh\necho 1.0.0\n', { mode: 0o755 })
+  try {
+    assert.equal(await installed(), true)
+  } finally {
+    fs.rmSync(bin)
+  }
+  assert.equal(await installed(), false)
+})
+
 test('Ultracode is a switch next to the effort, and the old Ultracode effort becomes X-High with it', async () => {
   const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
   const thread = (await api('POST', `/projects/${project.id}/threads`, { text: 'hello ultracode', agent: { provider: 'claude', reasoning: 'ultracode' } })).body

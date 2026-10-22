@@ -209,9 +209,10 @@ let cache: { at: number; list: Promise<ProviderInfo[]> } | null = null
 let known: ProviderInfo[] | null = null
 
 // OpenCode leaves a 4 MB library in the temp folder each time it starts (anomalyco/opencode#21427), so
-// its probe runs once per daemon start and again only when its binary changes.
+// its probe runs once per daemon start and again only when its binary changes. A missing agent is
+// likewise probed again only once its binary turns up.
 const ONCE: Partial<Record<Provider, true>> = { opencode: true }
-const probed = new Map<Provider, { stamp: string; probe: Promise<Probe> }>()
+const probed = new Map<Provider, { stamp: string; probe: Promise<Probe>; missing: boolean }>()
 
 // The binary's path and modification time, found on PATH like the shell would; empty if it is missing.
 function stamp(bin: string) {
@@ -226,12 +227,13 @@ function stamp(bin: string) {
 }
 
 function runProbe(id: Provider) {
-  if (!ONCE[id]) return probes[id]()
   const now = stamp(BIN[id])
   const hit = probed.get(id)
-  if (hit?.stamp === now) return hit.probe
+  if (hit?.stamp === now && (ONCE[id] || hit.missing)) return hit.probe
   const p = probes[id]()
-  probed.set(id, { stamp: now, probe: p })
+  const entry = { stamp: now, probe: p, missing: false }
+  probed.set(id, entry)
+  void p.then((r) => (entry.missing = !r.installed), () => {})
   return p
 }
 

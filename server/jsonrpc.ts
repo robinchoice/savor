@@ -32,6 +32,8 @@ export class Rpc {
       }
     })
     child.stderr?.on('data', (d) => (this.stderr = (this.stderr + d).slice(-4000)))
+    // An agent that exits right away closes its stdin; the exit then rejects what is pending.
+    child.stdin?.on('error', (e) => (this.stderr += e.message))
     this.exited = new Promise((resolve) => {
       child.on('exit', (code, signal) => {
         for (const p of this.pending.values()) p.reject(new RpcError(`agent exited with ${signal ?? code}: ${this.stderr.trim()}`))
