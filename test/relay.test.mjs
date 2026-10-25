@@ -255,8 +255,11 @@ test('remote devices can create projects in the projects folder but cannot manag
   await page.fill('input[placeholder="Name of the new project"]', 'Relay Thesis')
   await page.click('button:has-text("Next")')
   await page.click('.type-form button:has-text("Create project")')
-  await page.waitForURL(/#\/p\/[^/]+\/export$/)
+  // The new project opens on its own page once its setup is done.
+  await until(async () => (await local('GET', '/projects')).some((p) => p.name === 'Relay Thesis'))
   const thesis = (await local('GET', '/projects')).find((p) => p.name === 'Relay Thesis')
+  await page.waitForURL(new RegExp(`#/p/${thesis.id}$`))
+  await page.waitForSelector('.study-work:has-text("Manuscript")')
   assert.equal(thesis.path, path.join(TMP, 'relay-thesis'))
   assert.equal(thesis.type, 'academic-writing')
   assert.match((await local('GET', `/projects/${thesis.id}/role`)).role, /This project is a piece of academic writing/)

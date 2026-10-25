@@ -23,11 +23,30 @@ const PROJECT = path.join(TMP, 'project')
 const AGENT_LOG = path.join(TMP, 'agents.jsonl') // the fake agents log their command lines here
 let server, browser, page, port, token, base
 
-// Stands in for the Pleasance API that files bug reports as issues.
+// Stands in for the Pleasance API that files bug reports as issues, and for OpenAlex, doi.org and a
+// publisher's PDF in the sources of academic writing.
 const reports = []
+const SCHOLAR = {
+  '/openalex/works/doi:10.1000/heat.1': { best_oa_location: null, locations: [{ pdf_url: 'http://127.0.0.1:0/gone.pdf' }, { pdf_url: '/pdf/heat.pdf' }] },
+  '/doi/10.1000/heat.1': '@article{Miara_2022, title={Heat pumps in {old} buildings}, author={Miara, Ada and Ruhl, Ben}, journal={Energy Journal}, year={2022}, DOI={10.1000/heat.1}}',
+  '/doi/10.1000/xmp.2': '@article{Ghost_2020, title={Ghosts in the machine}, author={Ghost, Anna}, year={2020}, DOI={10.1000/xmp.2}}',
+  '/pdf/heat.pdf': '%PDF-1.4 heat',
+}
 const feedbackApi = http.createServer(async (req, res) => {
   let body = ''
   for await (const c of req) body += c
+  const url = decodeURIComponent(req.url)
+  if (url.startsWith('/openalex/works?')) {
+    const work = (id, doi, title, pdf) => ({ id: `https://openalex.org/${id}`, doi: doi && `https://doi.org/${doi}`, title, publication_year: 2022, authorships: [{ author: { display_name: 'Ada Miara' } }], primary_location: { source: { display_name: 'Energy Journal' } }, cited_by_count: 42, best_oa_location: pdf ? { pdf_url: pdf } : null })
+    return res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ results: [work('W1', '10.1000/heat.1', 'Heat pumps in old buildings', '/pdf/heat.pdf'), work('W2', null, 'A work without a DOI')] }))
+  }
+  const known = Object.entries(SCHOLAR).find(([p]) => url.split('?')[0] === p)?.[1]
+  if (known) {
+    const local = (u) => (u?.startsWith('/') ? `http://127.0.0.1:${feedbackApi.address().port}${u}` : u)
+    const value = typeof known === 'string' ? known : JSON.stringify({ ...known, locations: known.locations.map((l) => ({ pdf_url: local(l.pdf_url) })) })
+    return res.writeHead(200).end(value)
+  }
+  if (req.method === 'GET') return res.writeHead(404).end()
   reports.push(JSON.parse(body))
   res.writeHead(200, { 'content-type': 'application/json' }).end('{"ok":true}')
 })
@@ -94,6 +113,8 @@ async function startDaemon() {
       SAVOR_HEALTH_RELAY_MS: '1500',
       SAVOR_PANDOC_BIN: path.join(ROOT, 'test/fake-pandoc.mjs'),
       SAVOR_FEEDBACK_URL: `http://127.0.0.1:${feedbackApi.address().port}/savor/feedback`,
+      SAVOR_OPENALEX_URL: `http://127.0.0.1:${feedbackApi.address().port}/openalex`,
+      SAVOR_DOI_URL: `http://127.0.0.1:${feedbackApi.address().port}/doi`,
       FAKE_AGENT_LOG: AGENT_LOG,
       CLAUDE_CONFIG_DIR: path.join(TMP, 'claude'),
       CODEX_HOME: path.join(TMP, 'codex'),
@@ -2739,7 +2760,7 @@ test('a project type brings its role and workflows, and its folders from the ans
   assert.equal(fs.readFileSync(path.join(kontor, 'tasks.md'), 'utf8'), '# Tasks\n\n')
   assert.match(fs.readFileSync(path.join(kontor, 'README.md'), 'utf8'), /^# Household\n\nKontor for a private household\.\n\n- inbox\/: new things to file\n- notes\/: notes\n- finance\/\n- contracts\/\n- car\/\n/)
 
-  // Academic writing: the chapters follow the kind of work and its language, and the Export tab opens.
+  // Academic writing: the chapters follow the kind of work and its language, and the work opens.
   await page.click('text=Projects')
   await page.click('text=Start new project')
   await page.click('.project-type:has-text("Academic writing")')
@@ -2754,10 +2775,9 @@ test('a project type brings its role and workflows, and its folders from the ans
   await page.press('.type-form label:has-text("Target length") input', 'Enter')
   assert.ok(await page.isVisible('.type-form'))
   await page.click('.type-form button:has-text("Create project")')
-  await page.waitForURL(/#\/p\/[^/]+\/export$/)
-  await page.waitForSelector('.ws-chip.on:has-text("PDF (Typst)")')
-  await page.waitForSelector('.ws-check.lvl-info:has-text("0 of 20,000 words")')
-  assert.equal(await page.locator('.ws-check.lvl-warn').count(), 0, 'empty chapters of a new manuscript are no warning')
+  await page.waitForURL(/#\/p\/[^/]+$/)
+  await page.waitForSelector('.study-work:has-text("0 of 20,000 words") >> text=PDF (Typst)')
+  assert.equal(await page.locator('.study-work .ws-check.lvl-warn').count(), 0, 'empty chapters of a new manuscript are no warning')
   const thesis = (await api('GET', '/projects')).body.find((p) => p.name === 'Heat Pumps')
   assert.equal(thesis.type, 'academic-writing')
   assert.deepEqual((await api('GET', `/projects/${thesis.id}/threads`)).body, [])
@@ -2813,8 +2833,10 @@ test('paired devices create projects only in new folders under the configured pr
       await devicePage.click('button:has-text("Next")')
       await devicePage.fill('.type-form label:has-text("Your name") input', 'Remote Author')
       await devicePage.click('.type-form button:has-text("Create project")')
-      await devicePage.waitForURL(/#\/p\/[^/]+\/export$/)
+      // The page may show another project first; the new one opens once its setup is done.
+      await until(async () => (await api('GET', '/projects')).body.some((p) => p.name === name))
       const thesis = (await api('GET', '/projects')).body.find((p) => p.name === name)
+      await devicePage.waitForURL(new RegExp(`#/p/${thesis.id}$`))
       assert.equal(path.dirname(thesis.path), root)
       assert.equal(thesis.type, 'academic-writing')
       assert.match((await api('GET', `/projects/${thesis.id}/role`)).body.role, /This project is a piece of academic writing/)
@@ -2871,6 +2893,84 @@ test('an academic project checks its citations and exports with pandoc', async (
   const ris = (await api('GET', `/projects/${project.id}/export`)).body.checks.map((c) => c.text)
   assert.ok(ris.includes('3 of 4 cited sources are in references.ris'), ris.join('\n'))
   assert.ok(ris.includes('[@Ghost_2021b] has no entry in references.ris'))
+  await api('DELETE', `/projects/${project.id}`)
+})
+
+test('academic writing shows its sources, one chat and the work, and adds sources by search and upload', async () => {
+  const dir = path.join(TMP, 'study')
+  fs.mkdirSync(path.join(dir, 'manuscript'), { recursive: true })
+  fs.writeFileSync(path.join(dir, 'manuscript/01-intro.md'), '# Intro\n\nHeat pumps work [@miara2022].\n')
+  fs.writeFileSync(path.join(dir, 'references.bib'), '')
+  fs.writeFileSync(path.join(dir, 'pandoc.yaml'), 'to: docx\nbibliography: references.bib\nciteproc: true\n')
+  fs.writeFileSync(path.join(dir, 'PROJECT.md'), '# Heat\n\n- Kind of work: Term paper\n- Target length: 1000 words\n')
+  const project = (await api('POST', '/projects', { path: dir })).body
+  await api('PATCH', `/projects/${project.id}`, { type: 'academic-writing' })
+  await page.goto(`${base}/#/p/${project.id}`)
+  await page.waitForSelector('.subtab.active:has-text("Work")')
+  await page.waitForSelector('.study-work:has-text("Term paper") >> text=3 of 1,000 words')
+  assert.equal(await page.locator('.subtab:has-text("Conversations")').count(), 0)
+  assert.equal(await page.locator('.subbar [title="Background processes"]').count(), 0, 'no terminal or processes')
+  await page.waitForSelector('.study-source.missing:has-text("[@miara2022]")')
+  await page.waitForSelector('.study-work .ws-check.lvl-error:has-text("[@miara2022] has no entry")')
+
+  // A search hit comes in with its BibTeX from the DOI under Savor's key, and the next open PDF
+  // when the first link fails.
+  await page.click('.study-actions button:has-text("Search")')
+  await page.fill('.study-search input', 'heat pumps')
+  await page.press('.study-search input', 'Enter')
+  await page.waitForSelector('.study-hit:has-text("Heat pumps in old buildings")')
+  assert.ok(await page.locator('.study-hit:has-text("A work without a DOI") button').isDisabled())
+  await page.click('.study-hit:has-text("Heat pumps in old buildings") button')
+  await page.waitForSelector('.study-note:has-text("Added miara2022 with its PDF.")')
+  assert.match(fs.readFileSync(path.join(dir, 'references.bib'), 'utf8'), /^@article\{miara2022, title=\{Heat pumps in \{old\} buildings\}, .*DOI=\{10\.1000\/heat\.1\}\n\}\n$/)
+  assert.equal(fs.readFileSync(path.join(dir, 'sources/miara2022.pdf'), 'utf8'), '%PDF-1.4 heat')
+  await page.waitForSelector('.study-source:has-text("Heat pumps in old buildings") >> text=cited 1×')
+  await page.waitForSelector('.study-source:has-text("Heat pumps in old buildings") >> text=Miara & Ruhl · 2022')
+  assert.equal(await page.locator('.study-source.missing').count(), 0)
+  await page.waitForSelector('.study-work .ws-check.lvl-ok:has-text("Ready to export")')
+  assert.equal((await api('POST', `/projects/${project.id}/sources`, { doi: '10.1000/heat.1' })).status, 400, 'already in the bibliography')
+  assert.equal((await api('POST', `/projects/${project.id}/sources`, { doi: 'not a doi' })).status, 400)
+
+  // An uploaded PDF with a DOI in its metadata gets its entry; one without lands as it is.
+  await page.setInputFiles('.study-actions input[type=file]', [
+    { name: 'paper.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.7\n<x:xmpmeta><prism:doi>10.1000/xmp.2</prism:doi></x:xmpmeta>') },
+    { name: 'my scan.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.7\nscan, cites doi 10.1000/heat.1') },
+  ])
+  await page.waitForSelector('.study-note:has-text("Savor found no DOI in some of them")')
+  assert.ok(fs.existsSync(path.join(dir, 'sources/ghost2020.pdf')))
+  assert.ok(fs.existsSync(path.join(dir, 'sources/my scan.pdf')))
+  await page.waitForSelector('.study-source:has-text("my scan.pdf") >> text=no entry yet')
+  assert.equal((await api('POST', `/projects/${project.id}/sources/upload`, { name: 'x.pdf', dataUrl: `data:application/pdf;base64,${Buffer.from('hello').toString('base64')}` })).status, 400)
+  await page.click('.study-source:has-text("Ghosts in the machine")')
+  await page.waitForSelector('.study-detail >> text=doi.org/10.1000/xmp.2')
+  await page.click('.study-detail button:has-text("All sources")')
+
+  // A chapter opens on the right, and in the middle for those who rather write.
+  await page.click('.work-chapter:has-text("Intro")')
+  await page.waitForSelector('.study-side .study-doc .rich-content:has-text("Heat pumps work")')
+  await page.click('.study-doc-bar button:has-text("Text in the middle")')
+  await page.waitForSelector('.study.swapped .study-mid .rich-content')
+  await page.click('.study-doc-bar button:has-text("Chat in the middle")')
+  await page.click('.study-doc-bar button:has-text("Overview")')
+  await page.waitForSelector('.study-side .study-work')
+
+  // One chat for the work: the first message starts it, later ones go into the same conversation.
+  await page.fill('.study-chat .composer textarea', 'Summarize my sources')
+  await page.keyboard.press('Enter')
+  await page.waitForSelector('.study-chat >> text=Echo: Summarize my sources')
+  await page.goto(`${base}/#/p/${project.id}`)
+  await page.fill('.study-chat .composer textarea', 'And now the intro')
+  await page.keyboard.press('Enter')
+  await page.waitForSelector('.study-chat >> text=Echo: And now the intro')
+  assert.equal((await api('GET', `/projects/${project.id}/threads`)).body.length, 1)
+  assert.equal(await page.locator('.study-chat .modes').count(), 0, 'no browser or changes in the chat')
+
+  // On a phone the three columns are tabs.
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.click('.study-tabs button:has-text("Sources")')
+  await page.waitForSelector('.study-sources:visible')
+  assert.ok(!(await page.isVisible('.study-chat')))
+  await page.setViewportSize({ width: 1400, height: 900 })
   await api('DELETE', `/projects/${project.id}`)
 })
 

@@ -745,7 +745,8 @@ function ContextUse({ context: c }: { context: NonNullable<Thread['context']> })
 // `back` is where the arrow leads; set outside the project, a second button opens the conversation there.
 // `next` lists the conversations that need you, so Finish & next can open the first other one.
 // `siblings` are the project's conversations in the list's order, for the bar below a conversation on a phone.
-export function ThreadView({ project, threadId, back, next, siblings }: { project: Project; threadId: string; back?: string; next?: string[]; siblings?: Thread[] }) {
+// `plain` is the chat of academic writing: no browser, changes or terminal; its main conversation has no way back.
+export function ThreadView({ project, threadId, back, next, siblings, plain }: { project: Project; threadId: string; back?: string; next?: string[]; siblings?: Thread[]; plain?: 'main' | 'side' }) {
   const base = `/projects/${project.id}/threads/${threadId}`
   const [data, reload, loadError] = useApi<ThreadData>(base, (e) => (e.threadId === threadId && ['message', 'thread', 'status'].includes(e.type)) || (e.projectId === project.id && e.type === 'processes'))
   // Back on screen, an open conversation counts as seen.
@@ -809,7 +810,7 @@ export function ThreadView({ project, threadId, back, next, siblings }: { projec
     } else if (location.hash === `#/p/${project.id}/t/${threadId}`) localStorage.setItem(key, threadId)
   }, [data?.thread.completed])
 
-  const mode = view ?? (data?.thread.preview ? 'browser' : 'chat')
+  const mode = plain ? 'chat' : view ?? (data?.thread.preview ? 'browser' : 'chat')
   // Browser and changes both sit beside the chat.
   const browserMode = mode !== 'chat'
   const floating = browserMode && (chatHidden || narrow)
@@ -909,7 +910,7 @@ export function ThreadView({ project, threadId, back, next, siblings }: { projec
     : undefined
   const lastConclusion = [...messages].reverse().find((m) => m.kind === 'conclusion')
   const showNext = !busy && last?.kind === 'conclusion' && !asked.length && last.suggestions?.length
-  const canComplete = !busy && !thread.completed && last?.kind === 'conclusion' && !asked.length
+  const canComplete = plain !== 'main' && !busy && !thread.completed && last?.kind === 'conclusion' && !asked.length
   const nextPath = next?.find((p) => `#${p}` !== location.hash)
   keys.current = { stop: stoppable ? stop : undefined, finish: canComplete ? () => patch({ completed: true }) : undefined }
   const queued = messages.filter((m) => m.kind === 'user' && m.delivered === false).length
@@ -1014,9 +1015,11 @@ export function ThreadView({ project, threadId, back, next, siblings }: { projec
         <Panel id="main" title={t('Chat')} class={`thread-layout ${browserMode ? 'browser' : ''}`}>
           <section class="thread">
             <header class="thread-head">
-              <a class="square back" href={`#${back ?? `/p/${project.id}`}`} title={t('All conversations')}>
-                <ArrowLeft size={17} />
-              </a>
+              {plain !== 'main' && (
+                <a class="square back" href={`#${back ?? `/p/${project.id}`}`} title={plain ? t('Back to the chat') : t('All conversations')}>
+                  <ArrowLeft size={17} />
+                </a>
+              )}
               {browserMode && (
                 <button class="square list" title={t('Show conversations')} onClick={() => setView('chat')}>
                   <PanelLeft size={17} />
@@ -1061,7 +1064,7 @@ export function ThreadView({ project, threadId, back, next, siblings }: { projec
                     <SquareArrowOutUpRight size={16} />
                   </a>
                 )}
-                {!compactHead && (
+                {!compactHead && plain !== 'main' && (
                   <button class={`square ${thread.completed ? 'on' : ''}`} title={thread.completed ? t('Reopen') : t('Finish')} onClick={() => patch({ completed: !thread.completed })}>
                     <Check size={17} />
                   </button>
@@ -1081,10 +1084,11 @@ export function ThreadView({ project, threadId, back, next, siblings }: { projec
                         {compactHead && <button onClick={() => patch({ completed: !thread.completed })}>{thread.completed ? t('Reopen') : t('Finish')}</button>}
                         {compactHead && <button onClick={openFind}>{t('Find in conversation')}</button>}
                         {compactHead && <button onClick={showActivity}>{t('Show activity')}</button>}
-                        <button onClick={rename}>{t('Rename label')}</button>
-                        {!busy && <button onClick={fork}>{t('Fork conversation')}</button>}
-                        {!busy && inTerminal && <button onClick={openInTerminal}>{t('Open in terminal')}</button>}
-                        <button onClick={() => navigator.clipboard.writeText(`${project.path}/.savor/threads/${thread.id}/messages.jsonl`)}>{t('Copy file path')}</button>
+                        {plain === 'main' && <button onClick={() => go(`/p/${project.id}/new`)}>{t('New chat')}</button>}
+                        {!plain && <button onClick={rename}>{t('Rename label')}</button>}
+                        {!busy && !plain && <button onClick={fork}>{t('Fork conversation')}</button>}
+                        {!busy && inTerminal && !plain && <button onClick={openInTerminal}>{t('Open in terminal')}</button>}
+                        {!plain && <button onClick={() => navigator.clipboard.writeText(`${project.path}/.savor/threads/${thread.id}/messages.jsonl`)}>{t('Copy file path')}</button>}
                         {stoppable && <button onClick={stop}>{t('Stop agent')}</button>}
                         <button class="danger" onClick={remove}>
                           {t('Delete conversation')}
@@ -1098,7 +1102,7 @@ export function ThreadView({ project, threadId, back, next, siblings }: { projec
                     </button>
                   )}
                 </div>
-                <div class="modes">
+                {!plain && <div class="modes">
                   <button class={mode === 'chat' ? 'on' : ''} aria-pressed={mode === 'chat'} title={t('Chat')} onClick={() => setView('chat')}>
                     <MessageSquare size={15} /> <span>{t('Chat')}</span>
                   </button>
@@ -1109,7 +1113,7 @@ export function ThreadView({ project, threadId, back, next, siblings }: { projec
                     <FileDiff size={15} /> <span>{t('Changes')}</span>
                     {review?.length ? <i class="mode-count">{review.length}</i> : null}
                   </button>
-                </div>
+                </div>}
               </div>
             </header>
             {links && (links.source || links.targets.length > 0) && (

@@ -1,6 +1,6 @@
 import { useState } from 'preact/hooks'
 import { Check, Download, Info, Plus, X } from 'lucide-preact'
-import { api, go, useApi, type Project, type Workflow } from './api'
+import { api, go, useApi, type Project, type Thread, type Workflow } from './api'
 import { plural, t, tx } from './i18n'
 
 // The workspaces of the project types: Export for academic writing, Today for a Kontor. What they show
@@ -27,6 +27,22 @@ const useWorkflow = (project: Project, name: string) => {
   const [workflows] = useApi<Workflow[]>(`/projects/${project.id}/workflows`, (e) => e.type === 'workflows' && e.projectId === project.id)
   return workflows?.find((w) => w.name === name)
 }
+// The chat of academic writing: the author's newest open conversation, not one of a workflow, a worktree or a comparison.
+export const mainThread = (threads: Thread[]) =>
+  threads
+    .filter((th) => !th.completed && !th.workflow && !th.fanout && !th.worktree && !th.routedFrom && !th.inbox)
+    .sort((a, b) => (b.inputAt ?? b.createdAt).localeCompare(a.inputAt ?? a.createdAt))[0]
+
+// A task for the agent goes into that chat, or starts it.
+export async function askInChat(project: Project, text: string) {
+  const main = mainThread(await api<Thread[]>('GET', `/projects/${project.id}/threads`))
+  if (main) {
+    await api('POST', `/projects/${project.id}/threads/${main.id}/messages`, { text })
+    return main.id
+  }
+  return (await api<Thread>('POST', `/projects/${project.id}/threads`, { text })).id
+}
+
 const when = (iso: string) => new Date(iso).toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
 
 export function ExportView({ project }: { project: Project }) {
@@ -60,16 +76,15 @@ export function ExportView({ project }: { project: Project }) {
     }
     setBusy(null)
   }
-  // The agent gets the findings as they are, and the conversation opens.
+  // The agent gets the findings as they are in the chat of the work, which opens.
   const fix = async () => {
     const problems = state!.checks.filter((c) => c.level === 'error' || c.level === 'warn')
     const text = `Fix what keeps the manuscript from a clean export:\n\n${problems.map((c) => `- ${c.text}${c.file ? ` (${c.file}${c.line ? `:${c.line}` : ''})` : ''}`).join('\n')}\n\nDo not invent sources: if a citation has no entry, find the work and check its DOI, or tell me what is missing.`
-    const t = await api<{ id: string }>('POST', `/projects/${project.id}/threads`, { text })
-    go(`/p/${project.id}/t/${t.id}`)
+    go(`/p/${project.id}/t/${await askInChat(project, text)}`)
   }
   const install = async () => {
-    const t = await api<{ id: string }>('POST', `/projects/${project.id}/threads`, { text: `Install ${state!.missingTools.join(' and ')} on this computer so that the export works. Use the system's package manager if there is one, otherwise the official installer, and tell me if I need to confirm anything.` })
-    go(`/p/${project.id}/t/${t.id}`)
+    const text = `Install ${state!.missingTools.join(' and ')} on this computer so that the export works. Use the system's package manager if there is one, otherwise the official installer, and tell me if I need to confirm anything.`
+    go(`/p/${project.id}/t/${await askInChat(project, text)}`)
   }
   if (!state) return <div class="page" />
   const problems = state.checks.some((c) => c.level === 'error' || c.level === 'warn')

@@ -30,6 +30,7 @@ import * as move from './move.js'
 import { deleteSessions, importSessions, listSessions } from './import.js'
 import * as voice from './voice.js'
 import * as workspace from './workspace.js'
+import * as sources from './sources.js'
 import * as push from './push.js'
 import { listWarnings } from './health.js'
 
@@ -894,6 +895,12 @@ route('GET', '/projects/:pid/export/:name', (params, _, ctx) => {
   ctx.res.writeHead(200, { 'content-type': 'application/octet-stream', 'content-disposition': `attachment; filename="${encodeURIComponent(path.basename(file))}"` })
   fs.createReadStream(file).pipe(ctx.res)
 })
+// The sources of academic writing: search and DOIs reach OpenAlex and doi.org, and what is added
+// goes into the bibliography and sources/.
+route('GET', '/projects/:pid/sources', (params) => sources.list(project(params)))
+route('GET', '/projects/:pid/sources/search', (params, _, ctx) => asBadRequest(() => sources.search(project(params), ctx.query.get('q') ?? '', ctx.query.get('sort') ?? '')))
+route('POST', '/projects/:pid/sources', (params, b) => asBadRequest(() => sources.add(project(params), b.doi)))
+route('POST', '/projects/:pid/sources/upload', (params, b) => asBadRequest(() => sources.upload(project(params), String(b.name ?? 'source.pdf'), b.dataUrl)))
 // The answers of the new-project form become the type's folders and files.
 route('POST', '/projects/:pid/setup', async (params, b) => {
   const p = project(params)

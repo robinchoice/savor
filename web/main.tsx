@@ -1,12 +1,13 @@
 import './monitoring'
 import { Fragment, render } from 'preact'
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
-import { ArrowDownAZ, Coffee, Download, Lock, FolderOpen, Monitor, Pin, PinOff, RefreshCw, Search, Files as FilesIcon, MessageSquare, Moon, Server, SlidersHorizontal, SquareKanban, Sun, Workflow as WorkflowIcon, ChevronDown, Inbox, Layers, LayoutList, Smartphone, X, CalendarCheck, FileDown, MoreHorizontal, SquareTerminal } from 'lucide-preact'
+import { ArrowDownAZ, Coffee, Download, Lock, FolderOpen, Monitor, Pin, PinOff, RefreshCw, Search, Files as FilesIcon, MessageSquare, Moon, Server, SlidersHorizontal, SquareKanban, Sun, Workflow as WorkflowIcon, ChevronDown, Inbox, Layers, LayoutList, Smartphone, X, CalendarCheck, FileDown, MoreHorizontal, SquareTerminal, GraduationCap } from 'lucide-preact'
 import { api, avatarStyle, cap, connectEvents, desktop, go, initial, lastThreadKey, Unauthorized, useApi, useEvent, type Me, type Project } from './api'
 import { ContextActions, Conversations } from './Conversations'
 import { FilesView } from './Files'
 import { WorkflowButtons, Workflows } from './Workflows'
 import { ExportView, TodayView } from './Workspace'
+import { StudyView } from './Study'
 import { AllProjects } from './Overview'
 import { Settings, Devices, Pair, PairingRequests, RemotePair, AppPair } from './Settings'
 import { loadProfile, loadProfiles, rememberHost, remote, setTransport, switchProfile } from './transport'
@@ -92,7 +93,7 @@ function App() {
   useEffect(() => {
     if (route[0] !== 'p' || !route[1]) return
     localStorage.setItem(LAST_PROJECT, route[1])
-    if (route[2] && !['t', 'new', 'fan'].includes(route[2])) return localStorage.setItem(lastPageKey(route[1]), location.hash.split('?')[0].split('/').slice(3).join('/'))
+    if (route[2] && !['t', 'new', 'fan', 'conversations'].includes(route[2])) return localStorage.setItem(lastPageKey(route[1]), location.hash.split('?')[0].split('/').slice(3).join('/'))
     localStorage.removeItem(lastPageKey(route[1]))
     if (route[2] === 't' && route[3]) localStorage.setItem(lastThreadKey(route[1]), route[3])
     else localStorage.removeItem(lastThreadKey(route[1]))
@@ -141,6 +142,8 @@ function App() {
   // The conversations and the inbox put their parts in panels of their own; every other page of a project or of All
   // is the main panel.
   let panels = false
+  // Academic writing has its own three columns instead of the conversations; their list stays reachable.
+  const study = project?.type === 'academic-writing' && (!section || section === 't' || section === 'new')
   if (route[0] === 'devices') main = <Devices />
   else if (route[0] === 'all') {
     panels = route[1] === 'inbox'
@@ -152,13 +155,14 @@ function App() {
     else if (section === 'settings') main = <Settings key={project.id} project={project} />
     else if (section === 'export') main = <ExportView key={project.id} project={project} />
     else if (section === 'today') main = <TodayView key={project.id} project={project} />
+    else if (study) main = <StudyView key={project.id} project={project} threadId={section === 't' ? rest[0] : undefined} isNew={section === 'new'} />
     else {
       panels = true
       main = <Conversations key={project.id} project={project} threadId={section === 't' ? rest[0] : undefined} fanoutId={section === 'fan' ? rest[0] : undefined} isNew={section === 'new'} />
     }
   }
-  const terminal = project && terminalOpen && <TerminalPanel key={project.id} project={project} threadId={section === 't' ? rest[0] : undefined} />
-  const docked = (project || route[0] === 'all') && !narrow
+  const terminal = project && terminalOpen && project.type !== 'academic-writing' && <TerminalPanel key={project.id} project={project} threadId={section === 't' ? rest[0] : undefined} />
+  const docked = (project || route[0] === 'all') && !narrow && !study
 
   return (
     <div class={`app ${!docked && terminal && terminalMax ? 'terminal-max' : ''}`}>
@@ -506,6 +510,7 @@ function SubBar({ project, projects, section, threadId }: { project: Project; pr
   useShortcut('conversations', () => go(`/p/${project.id}`))
   useShortcut('files', () => go(`/p/${project.id}/files`))
   useShortcut('workflows', () => go(`/p/${project.id}/workflows`))
+  const academic = project.type === 'academic-writing'
   const tab = (id: string, label: string, Icon: any, href: string, counts?: Project['counts'], extra = '') => (
     <a href={href} class={`subtab ${extra} ${(['t', 'new', undefined].includes(section) ? 't' : section) === id ? 'active' : ''}`}>
       <Icon size={15} /> {label}
@@ -516,18 +521,22 @@ function SubBar({ project, projects, section, threadId }: { project: Project; pr
   return (
     <div class="subbar">
       {project.type === 'kontor' && tab('today', t('Today'), CalendarCheck, `#/p/${project.id}/today`, undefined, 'extra')}
-      {tab('t', t('Conversations'), MessageSquare, `#/p/${project.id}`, project.counts)}
+      {academic ? tab('t', t('Work'), GraduationCap, `#/p/${project.id}`, project.counts) : tab('t', t('Conversations'), MessageSquare, `#/p/${project.id}`, project.counts)}
       {tab('files', t('Files'), FilesIcon, `#/p/${project.id}/files`)}
       {tab('workflows', t('Workflows'), WorkflowIcon, `#/p/${project.id}/workflows`)}
-      {project.type === 'academic-writing' && tab('export', t('Export'), FileDown, `#/p/${project.id}/export`, undefined, 'extra')}
+      {academic && tab('export', t('Export'), FileDown, `#/p/${project.id}/export`, undefined, 'extra')}
       <ContextActions project={project} projects={projects} threadId={threadId} />
       <div class="subbar-right menu-anchor">
-        <ArrangeButton />
-        <TerminalButton project={project} />
-        <button class={`icon-btn ${procCount ? 'on' : ''}`} title={t('Background processes')} onClick={() => setMenu(menu === 'procs' ? null : 'procs')}>
-          <Server size={16} />
-          {procCount > 0 && <i class="dot-count">{procCount}</i>}
-        </button>
+        {!academic && (
+          <>
+            <ArrangeButton />
+            <TerminalButton project={project} />
+            <button class={`icon-btn ${procCount ? 'on' : ''}`} title={t('Background processes')} onClick={() => setMenu(menu === 'procs' ? null : 'procs')}>
+              <Server size={16} />
+              {procCount > 0 && <i class="dot-count">{procCount}</i>}
+            </button>
+          </>
+        )}
         <a class={`icon-btn ${section === 'settings' ? 'on' : ''}`} title={t('Project settings')} href={`#/p/${project.id}/settings`}>
           <SlidersHorizontal size={16} />
         </a>
@@ -555,13 +564,19 @@ function MoreMenu({ project, procCount, openProcs, close }: { project: Project; 
     <div class="menu right more" ref={ref}>
       {project.type === 'kontor' && <a href={`#/p/${project.id}/today`} onClick={close}><CalendarCheck size={16} /> <span>{t('Today')}</span></a>}
       {project.type === 'academic-writing' && <a href={`#/p/${project.id}/export`} onClick={close}><FileDown size={16} /> <span>{t('Export')}</span></a>}
-      <button onClick={() => (setTerminalOpen(!terminalOpen), close())}>
-        <SquareTerminal size={16} /> <span>{terminalOpen ? t('Close terminal') : t('Terminal')}</span>
-      </button>
-      <button onClick={openProcs}>
-        <Server size={16} /> <span>{t('Background processes')}</span>
-        {procCount > 0 && <small>{procCount}</small>}
-      </button>
+      {project.type === 'academic-writing' ? (
+        <a href={`#/p/${project.id}/conversations`} onClick={close}><MessageSquare size={16} /> <span>{t('All conversations')}</span></a>
+      ) : (
+        <>
+          <button onClick={() => (setTerminalOpen(!terminalOpen), close())}>
+            <SquareTerminal size={16} /> <span>{terminalOpen ? t('Close terminal') : t('Terminal')}</span>
+          </button>
+          <button onClick={openProcs}>
+            <Server size={16} /> <span>{t('Background processes')}</span>
+            {procCount > 0 && <small>{procCount}</small>}
+          </button>
+        </>
+      )}
       <a href={`#/p/${project.id}/settings`} onClick={close}><SlidersHorizontal size={16} /> <span>{t('Project settings')}</span></a>
     </div>
   )

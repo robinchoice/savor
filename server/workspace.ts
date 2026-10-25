@@ -6,7 +6,7 @@ import type { Project } from './store.js'
 // The workspaces of the project types: the export page of academic writing and the Kontor's Today.
 // Both read and write the project's own files, so agents and the page see the same state.
 
-const read = (p: Project, rel: string) => {
+export const read = (p: Project, rel: string) => {
   const file = path.join(p.path, rel)
   return fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : ''
 }
@@ -23,7 +23,7 @@ const files = (p: Project, dir: string) => {
 
 // pandoc.yaml is the agent's and the page's shared export setup. The page reads and writes only the
 // top-level scalar keys it shows, line by line, so everything else in the file stays as it is.
-const yamlGet = (text: string, key: string) => text.match(new RegExp(`^${key}:[ \\t]*(.*)$`, 'm'))?.[1].trim().replace(/^(["'])(.*)\1$/, '$2') || null
+export const yamlGet = (text: string, key: string) => text.match(new RegExp(`^${key}:[ \\t]*(.*)$`, 'm'))?.[1].trim().replace(/^(["'])(.*)\1$/, '$2') || null
 function yamlSet(text: string, key: string, value: string | null) {
   const line = new RegExp(`^${key}:.*\\n?`, 'm')
   if (value === null) return text.replace(line, '')
@@ -49,12 +49,12 @@ const ext = (to: string) => (to === 'latex' || to === 'typst' ? 'pdf' : to.repla
 const installed = (bin: string) => spawnSync(bin, ['--version'], { stdio: 'ignore' }).status === 0
 const pandocBin = () => process.env.SAVOR_PANDOC_BIN ?? 'pandoc'
 
-const chapters = (p: Project) => files(p, 'manuscript').filter((f) => f.name.endsWith('.md')).sort((a, b) => a.name.localeCompare(b.name))
+export const chapters = (p: Project) => files(p, 'manuscript').filter((f) => f.name.endsWith('.md')).sort((a, b) => a.name.localeCompare(b.name))
 
 // Pandoc citation keys: [@key], [@key, p. 12], [-@key] and @key in running text, but not e-mail
 // addresses and not pandoc-crossref labels such as @fig:map.
-const CITE = /(?<![\p{L}\p{N}_@])-?@([\p{L}\p{N}_](?:[\p{L}\p{N}_:.#$%&+?<>~/-]*[\p{L}\p{N}_])?)/gu
-const CROSSREF = /^(fig|tbl|sec|eq|lst):/
+export const CITE = /(?<![\p{L}\p{N}_@])-?@([\p{L}\p{N}_](?:[\p{L}\p{N}_:.#$%&+?<>~/-]*[\p{L}\p{N}_])?)/gu
+export const CROSSREF = /^(fig|tbl|sec|eq|lst):/
 
 function bibKeys(p: Project, bib: string) {
   const text = read(p, bib)
@@ -109,6 +109,7 @@ export function exportState(p: Project) {
   const cited = new Set<string>()
   const missing = new Map<string, { file: string; line: number }>()
   const empty: typeof chaps = []
+  const outline: { path: string; title: string; words: number }[] = []
   let total = 0
   for (const c of chaps) {
     const text = read(p, c.path)
@@ -121,6 +122,7 @@ export function exportState(p: Project) {
     })
     const n = words(text)
     total += n
+    outline.push({ path: c.path, title: text.match(/^#\s+(.+)$/m)?.[1].trim() ?? c.name.replace(/\.md$/, ''), words: n })
     if (!n) empty.push(c)
   }
   // A manuscript without any text yet is just new, not a problem.
@@ -128,7 +130,9 @@ export function exportState(p: Project) {
   if (!chaps.length) checks.push({ level: 'error', text: 'No chapters in manuscript/' })
   if (cited.size) checks.unshift({ level: missing.size ? 'info' : 'ok', text: `${cited.size - missing.size} of ${cited.size} cited sources are in ${bibliography}` })
   for (const [key, at] of missing) checks.push({ level: 'error', text: `[@${key}] has no entry in ${bibliography}`, ...at })
-  const target = Number(read(p, 'PROJECT.md').match(/(?:target length|umfang):\D*([\d.,]+)\s*(?:words|wörter)/i)?.[1].replace(/[.,]/g, '') ?? 0)
+  const project = read(p, 'PROJECT.md')
+  const field = (...names: string[]) => project.match(new RegExp(`^- (?:${names.join('|')}):[ \\t]*(.+)$`, 'mi'))?.[1].trim() ?? null
+  const target = Number(project.match(/(?:target length|umfang):\D*([\d.,]+)\s*(?:words|wörter)/i)?.[1].replace(/[.,]/g, '') ?? 0)
   const n = (x: number) => x.toLocaleString('en')
   checks.push({ level: 'info', text: target ? `${n(total)} of ${n(target)} words (${Math.round((total / target) * 100)} %)` : `${n(total)} words` })
 
@@ -138,6 +142,12 @@ export function exportState(p: Project) {
     style: csl ? path.basename(csl, '.csl') : null,
     template: yamlGet(yaml, 'reference-doc') ?? yamlGet(yaml, 'template'),
     chapters: chaps.map((c) => c.path),
+    outline,
+    words: total,
+    target,
+    title: project.match(/^# (.+)$/m)?.[1].trim() ?? null,
+    kind: field('Kind of work', 'Art der Arbeit'),
+    deadline: field('Deadline', 'Abgabetermin'),
     checks,
     missingTools: tools.map((t) => (t === pandocBin() ? 'pandoc' : t)),
     exports: files(p, 'export')

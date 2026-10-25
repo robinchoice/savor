@@ -152,7 +152,7 @@ export function AddProject({ me, setMe, onAdded }: { me: Me; setMe: (m: Me) => v
           const answers = template.slug === 'kontor' ? { ...kontor, language: lang } : { ...academic, title: body.name }
           await api('POST', `/projects/${p.id}/setup`, { type: template.slug, answers })
           onAdded()
-          return go(`/p/${p.id}/${template.slug === 'kontor' ? 'today' : 'export'}`)
+          return go(`/p/${p.id}${template.slug === 'kontor' ? '/today' : ''}`)
         }
         // The prompt shows as the first message: in German when Savor is, otherwise in English with a note
         // that the agent talks in the computer's language.

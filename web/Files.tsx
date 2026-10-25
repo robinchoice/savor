@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks'
 import { lazy, Suspense } from 'preact/compat'
 import { ChevronDown, ChevronRight, Download, File, FileText, Folder, Plus, Smartphone, Trash2 } from 'lucide-preact'
-import { api, apiBlob, go, useApi, type Doc, type Project } from './api'
+import { api, apiBlob, go, useApi, useEvent, type Doc, type Project } from './api'
 import { t, tx } from './i18n'
 import type { PreviewKind } from './FileViewer'
 
@@ -117,7 +117,7 @@ const ModeToggle = ({ rich, setRich, labels = [t('Rich'), t('Markdown')] }: { ri
 const Loading = ({ text = t('Loading editor…') }: { text?: string }) => <p class="muted pad">{text}</p>
 
 // PDFs, Word and Excel files open read-only, with a button to download them.
-function FilePreview({ base, path, kind }: { base: string; path: string; kind: PreviewKind }) {
+export function FilePreview({ base, path, kind }: { base: string; path: string; kind: PreviewKind }) {
   const [file, setFile] = useState<{ blob: Blob; url: string } | null>(null)
   const [error, setError] = useState('')
   useEffect(() => {
@@ -161,13 +161,25 @@ function FilePreview({ base, path, kind }: { base: string; path: string; kind: P
   )
 }
 
-function FileEditor({ base, path, line }: { base: string; path: string; line?: number }) {
+// With `follow`, the file reloads when an agent of the project ends a turn, unless it has unsaved changes.
+export function FileEditor({ base, path, line, follow }: { base: string; path: string; line?: number; follow?: string }) {
   const [file, setFile] = useState<{ dir?: boolean; content: string; binary: boolean; truncated: boolean; size: number } | null>(null)
   const [draft, setDraft] = useState<string | null>(null)
   const [error, setError] = useState('')
   const [rich, setRich] = useRichMode(isTable(path) ? 'savor-csv-view' : 'savor-md-editor')
-  useEffect(() => void api('GET', `${base}/file?path=${encodeURIComponent(path)}`).then(setFile, (e) => setError(e.message)), [path])
+  useEffect(() => void api<NonNullable<typeof file>>('GET', `${base}/file?path=${encodeURIComponent(path)}`).then(setFile, (e) => setError(e.message)), [path])
   const dirty = file !== null && draft !== null && draft !== file.content
+  // The editors read their text once, so a changed file opens them anew.
+  const [rev, setRev] = useState(0)
+  useEvent((e) => {
+    if (!follow || e.type !== 'status' || e.projectId !== follow || dirty || !file) return
+    api<NonNullable<typeof file>>('GET', `${base}/file?path=${encodeURIComponent(path)}`).then((next) => {
+      if (next.content === file.content) return
+      setFile(next)
+      setDraft(null)
+      setRev((n) => n + 1)
+    }, () => {})
+  }, [follow, dirty, path, file])
   const save = async () => {
     if (!dirty) return
     try {
@@ -215,11 +227,11 @@ function FileEditor({ base, path, line }: { base: string; path: string; line?: n
       ) : (
         <Suspense fallback={<Loading />}>
           {md && rich ? (
-            <RichEditor key="rich" value={draft ?? file.content} onChange={setDraft} onSave={save} />
+            <RichEditor key={`rich${rev}`} value={draft ?? file.content} onChange={setDraft} onSave={save} />
           ) : table && rich ? (
             <CsvTable value={draft ?? file.content} />
           ) : (
-            <CodeEditor key="code" value={draft ?? file.content} path={path} line={line} onChange={setDraft} onSave={save} />
+            <CodeEditor key={`code${rev}`} value={draft ?? file.content} path={path} line={line} onChange={setDraft} onSave={save} />
           )}
         </Suspense>
       )}
