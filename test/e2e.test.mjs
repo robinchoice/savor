@@ -3223,9 +3223,13 @@ test('the status bar shows the running CI runs after a push, and a failed run un
   await page.waitForSelector('.statusbar .ci-track.moving', { state: 'detached' })
 
   // The run fails: it stays red until it is dismissed. The failure before the push is not shown.
-  gh([listed(4, 12, 'completed', 'failure', ago(60), ago(1)), ...earlier])
-  await page.waitForSelector('.statusbar .ci-run.failed:has-text("#12 CI failed")', { timeout: 30_000 })
-  await page.click('.statusbar .ci-dismiss')
+  // Two more fail after the push: one is dismissed on its own, the other two all at once.
+  const fresh = new Date().toISOString()
+  gh([listed(4, 12, 'completed', 'failure', ago(60), ago(1)), listed(5, 13, 'completed', 'failure', fresh), listed(6, 14, 'completed', 'failure', fresh), ...earlier])
+  await page.waitForSelector('.statusbar .ci-run.failed:has-text("#14 CI failed")', { timeout: 30_000 })
+  await page.click('.statusbar .ci-run:has-text("#12") .ci-dismiss')
+  await page.waitForSelector('.statusbar .ci-run:has-text("#12")', { state: 'detached' })
+  await page.click('.statusbar .ci-dismiss.all')
   await page.waitForSelector('.statusbar .ci-run', { state: 'detached' })
   assert.deepEqual((await api('GET', '/ci')).body, [])
   for (let i = 0; i < n; i++) fs.rmSync(path.join(refs, `push-${i}`))

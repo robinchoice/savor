@@ -91,7 +91,7 @@ const SPEED = 40
 const GAP = 40
 
 // Per run: project, number, workflow, finished steps and how long it runs, with the time a run of this
-// workflow usually still needs. A failed run stays until it is dismissed. When the runs don't fit, they
+// workflow usually still needs. A failed run stays until it is dismissed, from two on also all at once. When the runs don't fit, they
 // scroll through as two copies in a row, so the second one follows the first without a gap.
 function CiStatus() {
   const [runs] = useApi<LiveRun[]>('/ci', (e) => e.type === 'ci' || e.type === 'connected')
@@ -119,6 +119,7 @@ function CiStatus() {
     return () => observer.disconnect()
   }, [shown])
   if (!runs?.length) return null
+  const failed = runs.filter((r) => r.failed)
   // A function, since Preact can't mount the same elements twice.
   const items = () =>
     runs.map((r, i) => {
@@ -141,7 +142,7 @@ function CiStatus() {
             )}
           </a>
           {r.failed && (
-            <button class="ci-dismiss" title={t('Dismiss')} onClick={() => api('POST', '/ci/dismiss', { id: r.id })}>
+            <button class="ci-dismiss" title={t('Dismiss')} onClick={() => api('POST', '/ci/dismiss', { ids: [r.id] })}>
               <X size={12} />
             </button>
           )}
@@ -157,6 +158,11 @@ function CiStatus() {
           {secs > 0 && <div class="ci-runs" aria-hidden="true">{items()}</div>}
         </div>
       </div>
+      {failed.length > 1 && (
+        <button class="ci-dismiss all" onClick={() => api('POST', '/ci/dismiss', { ids: failed.map((r) => r.id) })}>
+          <X size={12} /> {t('Dismiss all')}
+        </button>
+      )}
     </div>
   )
 }

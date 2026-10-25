@@ -1016,6 +1016,7 @@ mark { background: color-mix(in srgb, var(--attn) 50%, transparent); color: inhe
 .ci-run.failed a { color: var(--red); }
 .ci-dismiss { display: inline-flex; color: var(--muted); padding: 1px; border-radius: 4px; }
 .ci-dismiss:hover { color: var(--text); background: var(--raised); }
+.ci-dismiss.all { flex: none; gap: 3px; padding: 1px 4px; white-space: nowrap; }
 .usage-row b { font: 750 22px/1 var(--display); font-stretch: 80%; font-variant-numeric: tabular-nums; }
 .menu.usage { width: 260px; padding: 6px 10px 10px; }
 .usage-row { display: flex; flex-direction: column; gap: 4px; padding: 4px 0 6px; font-size: 13px; }

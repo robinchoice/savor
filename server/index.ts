@@ -175,7 +175,7 @@ route('GET', '/agents', async (_, __, ctx) => {
 })
 route('GET', '/usage', () => listUsage())
 route('GET', '/ci', () => ci.liveRuns())
-route('POST', '/ci/dismiss', (_, b) => (ci.dismiss(Number(b.id)), { ok: true }))
+route('POST', '/ci/dismiss', (_, b) => (ci.dismiss(b.ids.map(Number)), { ok: true }))
 // The agent new projects start with.
 route('GET', '/agent', () => store.state().agent ?? store.defaultAgent())
 route('PUT', '/agent', (_, b, ctx) => {

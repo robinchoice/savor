@@ -728,6 +728,7 @@ const de: Record<string, string> = {
   ' failed': ' fehlgeschlagen',
   'Left, after the median of the last successful runs': 'Verbleibend, nach dem Median der letzten erfolgreichen Läufe',
   'Dismiss': 'Schließen',
+  'Dismiss all': 'Alle schließen',
   'CI': 'CI',
   'All conversations of the project': 'Alle Gespräche des Projekts',
   'Undo': 'Rückgängig',

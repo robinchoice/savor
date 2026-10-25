@@ -86,9 +86,13 @@ const median = (xs: number[]) => {
 
 export const liveRuns = () => [...live.values()].sort((a, b) => a.project.localeCompare(b.project) || a.number - b.number)
 
-export function dismiss(id: number) {
-  dismissed.add(id)
-  if (live.delete(id)) emit({ type: 'ci' })
+export function dismiss(ids: number[]) {
+  let changed = false
+  for (const id of ids) {
+    dismissed.add(id)
+    changed = live.delete(id) || changed
+  }
+  if (changed) emit({ type: 'ci' })
 }
 
 // Ask GitHub about a project's runs for the next minutes, e.g. after a push.
