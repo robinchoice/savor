@@ -4,7 +4,7 @@ import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import {
   Asterisk, Hexagon, Code2, Sparkles, Orbit, Plus, Search, MessageSquare, Check, MoreHorizontal, PanelLeft, PanelRight, FileText, Globe,
-  CircleAlert, ArrowUp, ArrowLeft, Pencil, MessageSquarePlus, Brain, Terminal, Wrench, ArrowRight, Smartphone, Monitor, Bot, ShieldQuestion, X, ChevronUp, ChevronDown, ChevronRight, Paperclip, GitBranch, GitFork, GitMerge, Trash2, Copy, FileDiff, Split, SquareArrowOutUpRight, Workflow as WorkflowIcon, Mail, MailOpen, SquareTerminal, RotateCcw,
+  CircleAlert, ArrowUp, ArrowLeft, Pencil, MessageSquarePlus, ArrowRight, Smartphone, Monitor, Bot, ShieldQuestion, X, ChevronUp, ChevronDown, ChevronRight, Paperclip, GitBranch, GitFork, GitMerge, Trash2, Copy, FileDiff, Split, SquareArrowOutUpRight, Workflow as WorkflowIcon, Mail, MailOpen, SquareTerminal, RotateCcw,
 } from 'lucide-preact'
 import {
   api, avatarStyle, cap, desktop, duration, effortLabel, formatStamp, formatTime, freeAgent, go, initial, lastThreadKey, PROVIDER_NAMES, runTrigger, useApi, kindOf, noticeOf, NOTICES, RINGS, type ActivityEvent, type AgentConfig, type Approval, type ApprovalOption, type Attachment, type Decision, type Fallback, type Message, type Plan, type PlanAgent, type PlanStep, type Proc, type Project, type Reason, type Thread, type Workflow, type Worktree,
@@ -15,6 +15,7 @@ import { Preview } from './Preview'
 import { PleasanceFooter } from './PleasanceFooter'
 import { Changes, type ReviewComment, type Source } from './Changes'
 import { Fanout } from './Fanout'
+import { ActivityLog } from './Activity'
 import { schedule, when } from './Workflows'
 import { usePrefs } from './prefs'
 import { keyLabel, useKey, useShortcut } from './Shortcuts'
@@ -1250,7 +1251,7 @@ export function ThreadView({ project, threadId, back, next, siblings }: { projec
                   <X size={15} />
                 </button>
               </div>
-              <ActivityLog events={activity ?? []} />
+              <ActivityLog events={activity ?? []} messages={attributedMessages} />
             </aside>
           )}
         </Panel>
@@ -1757,31 +1758,6 @@ function PlanCard({ plan, live, stop }: { plan: Plan; live: boolean; stop: (id: 
       )}
       <StepRows steps={open ? plan.steps : plan.steps.filter((s) => s.status !== 'done')} />
       {agents}
-    </div>
-  )
-}
-
-const ACTIVITY_ICONS = { thinking: Brain, command: Terminal, edit: Pencil, note: Wrench }
-
-function ActivityLog({ events }: { events: ActivityEvent[] }) {
-  const ref = useRef<HTMLDivElement>(null)
-  useEffect(() => ref.current?.scrollTo({ top: ref.current.scrollHeight }), [events.length])
-  if (!events.length) return <p class="muted center">{t('No activity yet.')}</p>
-  return (
-    <div class="activity" ref={ref}>
-      {events.map((e) => {
-        const Icon = ACTIVITY_ICONS[e.type]
-        const ms = e.finishedAt ? Date.parse(e.finishedAt) - Date.parse(e.time) : null
-        return (
-          <div key={e.id} class={`activity-row ${e.type} ${e.finishedAt ? '' : 'running'}`}>
-            <Icon size={14} />
-            <span class="activity-label" title={e.label}>
-              {e.label}
-            </span>
-            <span class="muted small">{ms === null ? <span class="spinner small" /> : ms >= 1000 ? duration(ms) : ''}</span>
-          </div>
-        )
-      })}
     </div>
   )
 }

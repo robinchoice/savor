@@ -225,6 +225,12 @@ async function turn(text, command) {
     await call('send_conclusion_message', { text: `Note: ${text.match(/Savor context:\n.*\n\n([\s\S]*)New input:/)[1].trim() || 'none'}` })
   } else if (command) {
     await call('send_conclusion_message', { text: `Skill ${command.slice(1)}` })
+  } else if (input.startsWith('activity:')) {
+    for (const [id, name, toolInput] of [['toolu_lint', 'Bash', { command: 'npm run lint -- --fix' }], ['toolu_edit', 'Edit', { file_path: 'src/app.ts' }]]) {
+      out({ type: 'assistant', parent_tool_use_id: null, message: { content: [{ type: 'tool_use', id, name, input: toolInput }] } })
+      out({ type: 'user', parent_tool_use_id: null, message: { content: [{ type: 'tool_result', tool_use_id: id, content: 'ok' }] } })
+    }
+    await call('send_conclusion_message', { text: 'Tidied up.' })
   } else if (input.startsWith('plan:')) {
     await call('send_acknowledgement_message', { text: 'On it.', summary: 'Work on the request.' })
     const tool = (name, toolInput, result) => {

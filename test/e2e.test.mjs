@@ -618,6 +618,23 @@ test("the agent's plan shows in the conversation, its subagents stop one by one,
   await line.locator('.plan-agent:has-text("npm test") small:has-text("Background command · Done")').waitFor()
 })
 
+test('the activity log groups steps by request, filters them and shows one in full', async () => {
+  await newConversation()
+  await send('activity: tidy up')
+  await page.waitForSelector('text=Tidied up.')
+  await page.click('button.square[title="Activity"]')
+  const log = page.locator('.activity')
+  await log.locator('.activity-turn-head:has-text("activity: tidy up")').waitFor()
+  assert.match(await log.locator('.activity-turn-meta').last().innerText(), /1 command · 1 edit/)
+  await log.locator('.activity-filter button:has-text("Commands")').click()
+  assert.deepEqual(await log.locator('.activity-row').allInnerTexts(), ['npm run lint -- --fix'])
+  await log.locator('.activity-row').click()
+  await log.locator('.activity-row.expanded .activity-detail').waitFor()
+  await log.locator('.activity-filter button:has-text("Edits")').click()
+  assert.deepEqual(await log.locator('.activity-row').allInnerTexts(), ['Edit · src/app.ts'])
+  await page.click('button.square[title="Activity"]')
+})
+
 test("Codex's plan updates and subagents become the request's plan", async () => {
   const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
   const thread = (await api('POST', `/projects/${project.id}/threads`, { text: 'plan: codex', agent: { provider: 'codex' } })).body

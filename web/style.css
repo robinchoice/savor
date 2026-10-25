@@ -607,6 +607,18 @@ main { flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
 .activity-row.command .activity-label { font-family: 'Geist Mono Variable', ui-monospace, monospace; }
 .activity-row.running { color: var(--text); }
 .activity-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.activity-filter { padding: 0 2px 6px; }
+.activity-turn { display: flex; flex-direction: column; }
+.activity-turn + .activity-turn { border-top: 1px solid var(--line); margin-top: 4px; padding-top: 4px; }
+.activity-turn-head { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; font-size: 12px; text-align: left; background: none; border: 0; color: var(--text); }
+.activity-turn-head:hover { background: var(--card-hover); }
+.activity-turn-meta { padding: 0 8px 4px 29px; }
+.activity-row { position: relative; cursor: pointer; }
+.activity-bar { position: absolute; bottom: 1px; height: 2px; border-radius: 1px; background: var(--accent); opacity: 0.45; pointer-events: none; }
+.activity-row.running .activity-bar { opacity: 0.8; }
+.activity-row.expanded { align-items: flex-start; }
+.activity-row.expanded .activity-label { white-space: pre-wrap; word-break: break-word; }
+.activity-detail { display: block; margin-top: 4px; font-family: inherit; }
 
 /* ---- files, workflows, settings ---- */
 
