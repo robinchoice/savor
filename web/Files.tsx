@@ -1,12 +1,15 @@
 import { useEffect, useRef, useState } from 'preact/hooks'
 import { lazy, Suspense } from 'preact/compat'
-import { ChevronDown, ChevronRight, File, FileText, Folder, Plus, Smartphone, Trash2 } from 'lucide-preact'
-import { api, go, useApi, type Doc, type Project } from './api'
-import { t } from './i18n'
+import { ChevronDown, ChevronRight, Download, File, FileText, Folder, Plus, Smartphone, Trash2 } from 'lucide-preact'
+import { api, apiBlob, go, useApi, type Doc, type Project } from './api'
+import { t, tx } from './i18n'
+import type { PreviewKind } from './FileViewer'
 
 // The editors are big: they load when a file or document opens.
 const CodeEditor = lazy(() => import('./CodeEditor'))
 const RichEditor = lazy(() => import('./RichEditor'))
+const FileViewer = lazy(() => import('./FileViewer'))
+const CsvTable = lazy(() => import('./FileViewer').then((m) => ({ default: m.CsvTable })))
 
 interface Entry { name: string; path: string; dir: boolean }
 
@@ -42,6 +45,8 @@ export function FilesView({ project, rest }: { project: Project; rest: string[] 
       <section class="file-view">
         {kind === 'doc' && id ? (
           <DocEditor key={id} base={base} id={id} projectId={project.id} />
+        ) : kind === 'f' && id && previewOf(id) ? (
+          <FilePreview key={id} base={base} path={id} kind={previewOf(id)!} />
         ) : kind === 'f' && id ? (
           <FileEditor key={id} base={base} path={id} line={Number(line) || undefined} />
         ) : (
@@ -85,35 +90,82 @@ function Tree({ project, path, active }: { project: Project; path: string; activ
 }
 
 const isMarkdown = (path: string) => /\.(md|markdown)$/i.test(path)
+const isTable = (path: string) => /\.(csv|tsv)$/i.test(path)
+const previewOf = (path: string): PreviewKind | null => path.match(/\.(pdf|docx|xlsx)$/i)?.[1].toLowerCase() as PreviewKind ?? null
 
-// Markdown opens in the rich editor unless the source view was chosen; the choice is remembered.
-function useMarkdownMode() {
-  const [rich, setRich] = useState(() => localStorage.getItem('savor-md-editor') !== 'source')
+// Markdown opens in the rich editor and CSV as a table unless the source view was chosen; the choice is remembered.
+function useRichMode(key: string) {
+  const [rich, setRich] = useState(() => localStorage.getItem(key) !== 'source')
   const toggle = (next: boolean) => {
-    localStorage.setItem('savor-md-editor', next ? 'rich' : 'source')
+    localStorage.setItem(key, next ? 'rich' : 'source')
     setRich(next)
   }
   return [rich, toggle] as const
 }
 
-const ModeToggle = ({ rich, setRich }: { rich: boolean; setRich: (b: boolean) => void }) => (
+const ModeToggle = ({ rich, setRich, labels = [t('Rich'), t('Markdown')] }: { rich: boolean; setRich: (b: boolean) => void; labels?: string[] }) => (
   <div class="segmented">
     <button type="button" class={rich ? 'selected' : ''} onClick={() => setRich(true)}>
-      {t('Rich')}
+      {labels[0]}
     </button>
     <button type="button" class={!rich ? 'selected' : ''} onClick={() => setRich(false)}>
-      {t('Markdown')}
+      {labels[1]}
     </button>
   </div>
 )
 
-const Loading = () => <p class="muted pad">{t('Loading editor…')}</p>
+const Loading = ({ text = t('Loading editor…') }: { text?: string }) => <p class="muted pad">{text}</p>
+
+// PDFs, Word and Excel files open read-only, with a button to download them.
+function FilePreview({ base, path, kind }: { base: string; path: string; kind: PreviewKind }) {
+  const [file, setFile] = useState<{ blob: Blob; url: string } | null>(null)
+  const [error, setError] = useState('')
+  useEffect(() => {
+    let url = ''
+    let gone = false
+    apiBlob(`${base}/file/raw?path=${encodeURIComponent(path)}`).then(
+      (b) => {
+        if (gone) return
+        // Only a PDF keeps its type, for the browser's viewer; a blob of another type could run script on this origin.
+        const blob = new Blob([b], { type: kind === 'pdf' ? 'application/pdf' : 'application/octet-stream' })
+        setFile({ blob, url: (url = URL.createObjectURL(blob)) })
+      },
+      (e) => !gone && setError(tx(e.message)),
+    )
+    return () => {
+      gone = true
+      if (url) URL.revokeObjectURL(url)
+    }
+  }, [path])
+  const name = path.split('/').pop()!
+  return (
+    <article class="doc editor-page">
+      <div class="doc-head">
+        <h1 class="mono">{path}</h1>
+        {file && (
+          <a class="ghost" href={file.url} download={name}>
+            <Download size={14} /> {t('Download')}
+          </a>
+        )}
+      </div>
+      {error ? (
+        <div class="error-text">{error}</div>
+      ) : !file ? (
+        <Loading text={t('Loading preview…')} />
+      ) : (
+        <Suspense fallback={<Loading text={t('Loading preview…')} />}>
+          <FileViewer kind={kind} blob={file.blob} url={file.url} name={name} />
+        </Suspense>
+      )}
+    </article>
+  )
+}
 
 function FileEditor({ base, path, line }: { base: string; path: string; line?: number }) {
   const [file, setFile] = useState<{ dir?: boolean; content: string; binary: boolean; truncated: boolean; size: number } | null>(null)
   const [draft, setDraft] = useState<string | null>(null)
   const [error, setError] = useState('')
-  const [rich, setRich] = useMarkdownMode()
+  const [rich, setRich] = useRichMode(isTable(path) ? 'savor-csv-view' : 'savor-md-editor')
   useEffect(() => void api('GET', `${base}/file?path=${encodeURIComponent(path)}`).then(setFile, (e) => setError(e.message)), [path])
   const dirty = file !== null && draft !== null && draft !== file.content
   const save = async () => {
@@ -136,12 +188,14 @@ function FileEditor({ base, path, line }: { base: string; path: string; line?: n
       </div>
     )
   const md = isMarkdown(path)
+  const table = isTable(path)
   return (
     <article class="doc editor-page">
       <div class="doc-head">
         <h1 class="mono">{path}</h1>
         <div class="row">
           {md && !file.binary && <ModeToggle rich={rich} setRich={setRich} />}
+          {table && !file.binary && !file.truncated && <ModeToggle rich={rich} setRich={setRich} labels={[t('Table'), t('Text')]} />}
           {dirty && <span class="muted small">{t('Unsaved changes')}</span>}
           {!file.binary && !file.truncated && (
             <button class="primary" disabled={!dirty} onClick={save} title={t('Save (Ctrl+S)')}>
@@ -162,6 +216,8 @@ function FileEditor({ base, path, line }: { base: string; path: string; line?: n
         <Suspense fallback={<Loading />}>
           {md && rich ? (
             <RichEditor key="rich" value={draft ?? file.content} onChange={setDraft} onSave={save} />
+          ) : table && rich ? (
+            <CsvTable value={draft ?? file.content} />
           ) : (
             <CodeEditor key="code" value={draft ?? file.content} path={path} line={line} onChange={setDraft} onSave={save} />
           )}
@@ -176,7 +232,7 @@ function DocEditor({ base, id, projectId }: { base: string; id: string; projectI
   const [doc, setDoc] = useState<Doc | null>(null)
   const [title, setTitle] = useState('')
   const [state, setState] = useState<'saved' | 'unsaved' | 'saving' | 'error'>('saved')
-  const [rich, setRich] = useMarkdownMode()
+  const [rich, setRich] = useRichMode('savor-md-editor')
   const pending = useRef<{ title: string; content: string } | null>(null)
   const timer = useRef<ReturnType<typeof setTimeout>>()
   useEffect(() => {

@@ -5,6 +5,7 @@
 import { test, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync, spawn } from 'node:child_process'
+import { crc32 } from 'node:zlib'
 import fs from 'node:fs'
 import http from 'node:http'
 import net from 'node:net'
@@ -2294,6 +2295,115 @@ test('files open in the code editor, markdown and documents in the rich editor',
   await page.goto(`${base}/#/p/${project.id}/files/doc/${image.id}`)
   await page.waitForSelector('.rich-content[contenteditable=false]')
   await page.waitForSelector('text=Switch to Markdown to edit it.')
+})
+
+// A zip archive with its files stored uncompressed, enough for a .docx or .xlsx.
+function zip(files) {
+  const local = []
+  const central = []
+  let offset = 0
+  for (const [name, text] of Object.entries(files)) {
+    const data = Buffer.from(text)
+    const head = Buffer.alloc(30)
+    head.writeUInt32LE(0x04034b50, 0)
+    head.writeUInt16LE(20, 4)
+    head.writeUInt32LE(crc32(data), 14)
+    head.writeUInt32LE(data.length, 18)
+    head.writeUInt32LE(data.length, 22)
+    head.writeUInt16LE(name.length, 26)
+    const entry = Buffer.alloc(46)
+    entry.writeUInt32LE(0x02014b50, 0)
+    entry.writeUInt16LE(20, 4)
+    entry.writeUInt16LE(20, 6)
+    head.copy(entry, 12, 10, 26)
+    entry.writeUInt16LE(name.length, 28)
+    entry.writeUInt32LE(offset, 42)
+    local.push(head, Buffer.from(name), data)
+    central.push(entry, Buffer.from(name))
+    offset += 30 + name.length + data.length
+  }
+  const size = central.reduce((n, b) => n + b.length, 0)
+  const end = Buffer.alloc(22)
+  end.writeUInt32LE(0x06054b50, 0)
+  end.writeUInt16LE(central.length / 2, 8)
+  end.writeUInt16LE(central.length / 2, 10)
+  end.writeUInt32LE(size, 12)
+  end.writeUInt32LE(offset, 16)
+  return Buffer.concat([...local, ...central, end])
+}
+
+const OOXML = {
+  types: (part, type) => `<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/${part}" ContentType="application/vnd.openxmlformats-officedocument.${type}.main+xml"/></Types>`,
+  rels: (links) => `<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${links}</Relationships>`,
+  rel: (id, type, target, external) => `<Relationship Id="${id}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/${type}" Target="${target}"${external ? ' TargetMode="External"' : ''}/>`,
+}
+const sheetXml = (rows) => `<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${rows}</sheetData></worksheet>`
+
+test('PDFs, Word and Excel files open read-only, CSV also as a table', async () => {
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
+  const open = (file) => page.goto(`${base}/#/p/${project.id}/files/f/${encodeURIComponent(file)}`)
+
+  // A Word document with markup in its text and a javascript: link, both other people's data.
+  fs.writeFileSync(
+    path.join(PROJECT, 'thesis.docx'),
+    zip({
+      '[Content_Types].xml': OOXML.types('word/document.xml', 'wordprocessingml.document'),
+      '_rels/.rels': OOXML.rels(OOXML.rel('rId1', 'officeDocument', 'word/document.xml')),
+      'word/_rels/document.xml.rels': OOXML.rels(OOXML.rel('rId9', 'hyperlink', 'javascript:alert(1)', true)),
+      'word/document.xml': '<?xml version="1.0"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body><w:p><w:r><w:rPr><w:b/></w:rPr><w:t>Chapter one</w:t></w:r></w:p><w:p><w:r><w:t xml:space="preserve">Text &lt;img src=x onerror=alert(1)&gt; and </w:t></w:r><w:hyperlink r:id="rId9"><w:r><w:t>a link</w:t></w:r></w:hyperlink></w:p></w:body></w:document>',
+    }),
+  )
+  await open('thesis.docx')
+  await page.waitForSelector('.docx-page strong:has-text("Chapter one")')
+  await page.waitForSelector('.docx-page >> text=Text <img src=x onerror=alert(1)> and')
+  assert.equal(await page.locator('.docx-page img').count(), 0)
+  assert.equal(await page.getAttribute('.docx-page a:has-text("a link")', 'href'), null)
+  assert.equal(await page.getAttribute('.doc-head a:has-text("Download")', 'download'), 'thesis.docx')
+  assert.equal(await page.locator('.cm-editor').count(), 0)
+
+  // A workbook with two sheets; numbers read in the UI's language, without thousands separators like Excel's General format.
+  fs.writeFileSync(
+    path.join(PROJECT, 'budget.xlsx'),
+    zip({
+      '[Content_Types].xml': OOXML.types('xl/workbook.xml', 'spreadsheetml.sheet'),
+      '_rels/.rels': OOXML.rels(OOXML.rel('rId1', 'officeDocument', 'xl/workbook.xml')),
+      'xl/workbook.xml': '<?xml version="1.0"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Budget" sheetId="1" r:id="rId1"/><sheet name="Notes" sheetId="2" r:id="rId2"/></sheets></workbook>',
+      'xl/_rels/workbook.xml.rels': OOXML.rels(OOXML.rel('rId1', 'worksheet', 'worksheets/sheet1.xml') + OOXML.rel('rId2', 'worksheet', 'worksheets/sheet2.xml')),
+      'xl/worksheets/sheet1.xml': sheetXml('<row r="1"><c r="A1" t="inlineStr"><is><t>Item</t></is></c><c r="B1" t="inlineStr"><is><t>Cost</t></is></c></row><row r="2"><c r="A2" t="inlineStr"><is><t>Rent</t></is></c><c r="B2"><v>1250.5</v></c></row>'),
+      'xl/worksheets/sheet2.xml': sheetXml('<row r="1"><c r="A1" t="inlineStr"><is><t>Second sheet</t></is></c></row>'),
+    }),
+  )
+  await open('budget.xlsx')
+  await page.waitForSelector('.sheet td:text-is("Rent")')
+  await page.waitForSelector('.sheet td.num:text-is("1250.5")')
+  await page.click('.segmented button:has-text("Notes")')
+  await page.waitForSelector('.sheet td:text-is("Second sheet")')
+
+  // CSV shows as a table, also behind Excel's byte order mark and with a quoted delimiter, and stays editable as text.
+  fs.writeFileSync(path.join(PROJECT, 'amps.csv'), '\uFEFF"Name";Count\n"Fender; Co";2\n')
+  await open('amps.csv')
+  await page.waitForSelector('.sheet td:text-is("Fender; Co")')
+  await page.waitForSelector('.sheet td:text-is("Name")')
+  await page.click('.segmented button:has-text("Text")')
+  await page.waitForSelector('.cm-editor')
+  await page.click('.segmented button:has-text("Table")')
+  await page.waitForSelector('.sheet td:text-is("Count")')
+
+  // A PDF opens in the browser's viewer where there is one, otherwise it offers the download.
+  fs.writeFileSync(path.join(PROJECT, 'manual.pdf'), '%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj 2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj 3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 300 200]>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n')
+  await open('manual.pdf')
+  await page.waitForSelector('.doc-head a:has-text("Download")')
+  if (await page.evaluate(() => navigator.pdfViewerEnabled)) await until(() => page.frames().some((f) => f.url().startsWith('chrome-extension://')))
+  else await page.waitForSelector("text=PDFs can't be shown here on this device.")
+
+  // Only a PDF is served inline: an HTML file of the project downloads instead of running as Savor's origin.
+  fs.writeFileSync(path.join(PROJECT, 'page.html'), '<script>alert(1)</script>')
+  const raw = (file) => fetch(`${base}/api/projects/${project.id}/file/raw?path=${encodeURIComponent(file)}`, { headers: { cookie: `savor_token=${token}` } })
+  const pdf = await raw('manual.pdf')
+  assert.equal(pdf.headers.get('content-type'), 'application/pdf')
+  const html = await raw('page.html')
+  assert.equal(html.headers.get('content-type'), 'application/octet-stream')
+  assert.match(html.headers.get('content-disposition'), /^attachment/)
 })
 
 test('unpinned projects leave the tab bar and stay in the Projects menu', async () => {

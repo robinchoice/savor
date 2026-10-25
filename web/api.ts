@@ -29,6 +29,17 @@ export async function api<T = any>(method: string, path: string, body?: unknown)
   return data
 }
 
+export async function apiBlob(path: string) {
+  const r = await transport.blob('/api' + path)
+  if (r.status === 401) throw new Unauthorized()
+  if (r.status < 400) return r.blob
+  let data: any = {}
+  try {
+    data = JSON.parse(await r.blob.text())
+  } catch {}
+  throw new Error(data.error ?? t('Request failed ({status})', { status: r.status }))
+}
+
 export type SavorEvent = { type: string; projectId?: string; threadId?: string; title?: string; body?: string; version?: string }
 type Listener = (e: SavorEvent) => void
 const listeners = new Set<Listener>()

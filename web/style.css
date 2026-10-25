@@ -863,6 +863,20 @@ mark { background: color-mix(in srgb, var(--attn) 50%, transparent); color: inhe
 .editor-page { max-width: none; }
 .editor-page .doc-head { position: sticky; top: 0; background: var(--bg); z-index: 2; padding-bottom: 4px; }
 .editor-page .title-input { flex: 1; }
+.pdf-frame { width: 100%; height: calc(100vh - 200px); min-height: 60vh; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--card); }
+.docx-page { background: var(--card); border-radius: 12px; padding: 28px 36px; max-width: 860px; line-height: 1.6; }
+.docx-page img { max-width: 100%; height: auto; }
+.sheet { overflow: auto; width: fit-content; max-width: 100%; max-height: calc(100vh - 200px); border: 1px solid var(--line-strong); border-radius: 10px; }
+.sheet table { border-collapse: separate; border-spacing: 0; width: max-content; font-size: 12.5px; }
+.sheet th, .sheet td { border: solid var(--line); border-width: 0 1px 1px 0; padding: 4px 8px; white-space: pre-wrap; overflow-wrap: anywhere; max-width: 24em; vertical-align: top; text-align: left; }
+.sheet td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.sheet th { background: var(--panel); color: var(--muted); font-weight: 500; position: sticky; }
+.sheet thead th { top: 0; z-index: 1; }
+.sheet tbody th { left: 0; text-align: right; }
+.sheet thead th:first-child { left: 0; z-index: 2; }
+@media (max-width: 600px) {
+  .docx-page { padding: 18px 16px; }
+}
 .code-editor .cm-editor { border: 1px solid var(--line-strong); border-radius: 10px; min-height: 60vh; max-height: calc(100vh - 220px); font-size: 13px; }
 .code-editor .cm-editor.cm-focused { outline: none; border-color: var(--faint); }
 .code-editor .cm-scroller { overflow: auto; }

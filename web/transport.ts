@@ -11,6 +11,8 @@ export interface Transport {
   stream(path: string, onData: (data: string) => void): () => void
   // URL for <img src>; the tunnel has to fetch and wrap binary responses first.
   imageUrl(path: string): Promise<string>
+  // A binary response, for the previews of PDFs, Word and Excel files.
+  blob(path: string): Promise<{ status: number; blob: Blob }>
 }
 
 export const direct: Transport = {
@@ -26,6 +28,12 @@ export const direct: Transport = {
     return () => es.close()
   },
   imageUrl: async (path) => path,
+  async blob(path) {
+    const r = await fetch(path).catch(() => {
+      throw new Error(tr('Savor is not reachable, the daemon is probably restarting.'))
+    })
+    return { status: r.status, blob: await r.blob() }
+  },
 }
 
 export let transport: Transport = direct
@@ -274,6 +282,10 @@ export function remote(profile: RemoteProfile, onState: (connected: boolean, err
       // Only images become blob URLs; a blob of another type could run script on this origin.
       if (!r.binary || !/^image\/(png|jpeg|gif|webp)$/.test(r.type)) return ''
       return URL.createObjectURL(new Blob([t.b64.dec(r.body)], { type: r.type }))
+    },
+    async blob(path) {
+      const r = await this.request('GET', path)
+      return { status: r.status, blob: new Blob([r.binary ? t.b64.dec(r.body) : r.body], { type: r.type }) }
     },
   }
 }

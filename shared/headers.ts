@@ -2,8 +2,9 @@ import crypto from 'node:crypto'
 
 // Response headers for the daemon and the relay. The CSP allows only same-origin code; the relay's
 // web app additionally opens a WebSocket to its own host, and previews and attachments are data:
-// and blob: images. A strict CSP matters most on the relay, where the device key lives. The editors
-// (CodeMirror, TipTap) add their own <style> elements, which the per-page nonce lets through.
+// and blob: images, PDFs blob: frames in the browser's own viewer. A strict CSP matters most on the
+// relay, where the device key lives. The editors (CodeMirror, TipTap) add their own <style> elements,
+// which the per-page nonce lets through.
 export function securityHeaders(host?: string, nonce?: string) {
   const ws = host && /^[\w.:[\]-]+$/.test(host) ? ` ws://${host} wss://${host}` : ''
   return {
@@ -12,6 +13,7 @@ export function securityHeaders(host?: string, nonce?: string) {
       "script-src 'self'",
       `style-src 'self'${nonce ? ` 'nonce-${nonce}'` : ''}`,
       "img-src 'self' data: blob:",
+      "frame-src 'self' blob:",
       `connect-src 'self'${ws} https://glitchtip.pleasance.org`,
       "worker-src 'self'",
       "manifest-src 'self'",

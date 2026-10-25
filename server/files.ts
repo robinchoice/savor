@@ -4,6 +4,8 @@ import type { Project } from './store.js'
 
 const HIDDEN = new Set(['.git', 'node_modules', '.savor', '.next', '.venv', '__pycache__', '.cache'])
 const MAX_READ = 512 * 1024
+// The relay tunnel carries a response in one message of at most 32 MB, base64 inside base64.
+const MAX_RAW = 16 * 1024 * 1024
 
 function resolve(p: Project, rel: string) {
   const abs = path.resolve(p.path, rel || '.')
@@ -28,6 +30,14 @@ export function read(p: Project, rel: string) {
   const buf = fs.readFileSync(file).subarray(0, MAX_READ)
   const binary = buf.subarray(0, 8000).includes(0)
   return { path: rel, size, binary, truncated: size > MAX_READ, content: binary ? '' : buf.toString('utf8') }
+}
+
+// A file for the previews of PDFs, Word and Excel files, or null when it's too big to send.
+export function raw(p: Project, rel: string) {
+  const file = resolve(p, rel)
+  const stat = fs.statSync(file)
+  if (stat.isDirectory()) throw new Error('A folder has no preview.')
+  return stat.size > MAX_RAW ? null : file
 }
 
 export const write = (p: Project, rel: string, content: string) => fs.writeFileSync(resolve(p, rel), content)

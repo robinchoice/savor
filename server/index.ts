@@ -843,6 +843,19 @@ route('GET', '/projects/:pid/files', (params, _, ctx) => files.list(project(para
 route('GET', '/projects/:pid/files/search', (params, _, ctx) => files.search(project(params), ctx.query.get('q') ?? ''))
 route('GET', '/projects/:pid/skills', (params, _, ctx) => listSkills(ctx.query.get('provider') ?? '', project(params).path))
 route('GET', '/projects/:pid/file', (params, _, ctx) => files.read(project(params), ctx.query.get('path') ?? ''))
+// Only a PDF shows inline; everything else downloads, so an HTML file in the project can't run as this origin.
+route('GET', '/projects/:pid/file/raw', (params, _, ctx) => {
+  const file = files.raw(project(params), ctx.query.get('path') ?? '')
+  if (!file) throw new BadRequest('This file is larger than 16 MB, too large to preview.')
+  const pdf = /\.pdf$/i.test(file)
+  ctx.res.writeHead(200, {
+    'content-type': pdf ? 'application/pdf' : 'application/octet-stream',
+    'content-disposition': `${pdf ? 'inline' : 'attachment'}; filename="${encodeURIComponent(path.basename(file))}"`,
+    'x-content-type-options': 'nosniff',
+    'cache-control': 'no-store',
+  })
+  fs.createReadStream(file).pipe(ctx.res)
+})
 route('PUT', '/projects/:pid/file', (params, b, ctx) => {
   const p = project(params)
   // Savor's own records change only through their routes, which check who is asking.
