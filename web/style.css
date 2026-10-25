@@ -114,7 +114,8 @@ input[type='radio']:checked { border-color: var(--text); background: radial-grad
 
 /* ---- app shell ---- */
 
-.app { display: flex; flex-direction: column; height: 100dvh; }
+/* viewport-fit=cover: the iOS app draws under the status bar, the notch and the home indicator. */
+.app { display: flex; flex-direction: column; height: 100dvh; padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left); }
 main { flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
 .app.terminal-max main { display: none; }
 
@@ -179,7 +180,7 @@ main { flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
 .conversations { display: grid; grid-template-columns: 330px 1fr; grid-template-rows: minmax(0, 1fr); height: 100%; }
 .conversations > *, .files > *, .split-page > * { min-width: 0; }
 .conv-list { background: var(--panel); border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
-.list-foot { flex: none; padding: 10px 16px 12px; border-top: 1px solid var(--line); }
+.list-foot { flex: none; padding: 10px 16px calc(12px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); }
 .absender { flex: 1; display: flex; align-items: center; gap: 12px; min-width: 0; color: var(--muted); font-size: 12px; }
 .absender a { display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; transition: color 0.18s ease; }
 .absender a:hover { color: var(--text); }
@@ -660,7 +661,7 @@ main { flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
 .relay-state.online i { background: var(--green); }
 .relay-state.connecting i { background: var(--attn); }
 .relay-state.error i { background: var(--red); }
-.link-banner { position: fixed; top: 8px; left: 50%; transform: translateX(-50%); z-index: 60; background: var(--attn-bg); color: var(--attn-ink); font-weight: 500; font-size: 13px; padding: 6px 14px; border-radius: 999px; box-shadow: var(--shadow); }
+.link-banner { position: fixed; top: calc(8px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); z-index: 60; background: var(--attn-bg); color: var(--attn-ink); font-weight: 500; font-size: 13px; padding: 6px 14px; border-radius: 999px; box-shadow: var(--shadow); }
 .update-banner { position: fixed; bottom: 16px; right: 16px; z-index: 60; display: flex; align-items: center; gap: 10px; background: var(--panel); border: 1px solid var(--line-strong); border-radius: 12px; padding: 8px 8px 8px 14px; font-size: 13px; box-shadow: var(--shadow); }
 .device { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 10px; background: var(--card); }
 .device > div { flex: 1; }
@@ -689,7 +690,7 @@ main { flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
   .subbar .subtab.extra, .subbar-right > .icon-btn:not(.more) { display: none; }
   .subbar-right > .more { display: inline-flex; }
   /* The subbar scrolls sideways and would clip its menus. */
-  .menu.more, .menu.procs { position: fixed; top: 92px; left: auto; right: 8px; }
+  .menu.more, .menu.procs { position: fixed; top: calc(92px + env(safe-area-inset-top)); left: auto; right: calc(8px + env(safe-area-inset-right)); }
   /* Only the current tab; switching goes through the Projects menu, the logo leads to All. */
   .project-tab:not(.active), .tab-sep, .tab-pin { display: none; }
   .project-tab { min-width: 0; }
@@ -697,6 +698,7 @@ main { flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
   .pill span, .pill { font-size: 0; gap: 0; padding: 6px 8px; }
   .pill svg:first-child { width: 16px; height: 16px; }
   .conversations { grid-template-columns: 1fr; }
+  .conv-list { border-right: 0; }
   /* Arrows instead of words and keys: no keyboard, little room. */
   .next-btn, .prev-btn { padding: 5px 10px; }
   .next-btn svg, .prev-btn svg { display: block; }
@@ -1186,7 +1188,7 @@ details.box[open] > summary .chev { transform: rotate(180deg); }
 
 @media (max-width: 860px) {
   .topbar-right .wide-only, .account-dialog .wide-only { display: none; }
-  .menu.projects, .menu.appearance, .menu.workflows { position: fixed; top: 58px; left: 8px; right: 8px; width: auto; }
+  .menu.projects, .menu.appearance, .menu.workflows { position: fixed; top: calc(58px + env(safe-area-inset-top)); left: calc(8px + env(safe-area-inset-left)); right: calc(8px + env(safe-area-inset-right)); width: auto; }
 }
 
 [data-messages='compact'] .msg.user .msg-card { padding: 7px 12px; }
