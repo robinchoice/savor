@@ -1,7 +1,7 @@
 // Checks this checkout against the newest agent CLIs: installs the latest Claude Code, Codex, OpenCode
 // and Grok Build into ~/.cache/savor-upstream-check and updates agy (it only installs itself), starts a
 // daemon with them and runs one real conversation per agent: a prompt, a permission request, an
-// interrupt. It uses the agents' logins on this computer, so it runs as a nightly Savor workflow on the
+// interrupt. It uses the agents' logins on this computer, so it runs as a weekly Savor workflow on the
 // maintainer's computer, not in CI. An agent whose CLI is not on this computer or that is not signed in
 // here is skipped. Exits 1 when an agent broke.
 import { execFileSync, spawn } from 'node:child_process'

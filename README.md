@@ -349,7 +349,7 @@ Early: version 0.x, first released in September 2026, with releases several time
 
 Robin at [Pleasance](https://pleasance.org) sets the direction: architecture, specifications and review. Coding agents working inside Savor write the code. Every change goes through CI, which runs the end-to-end tests against a real daemon and UI. Releases ship several times a week, and installed apps update themselves.
 
-Every night, a check installs the newest Claude Code, Codex and OpenCode and runs a real conversation with each through Savor (a prompt, a permission request, an interrupt). A change in their protocols that breaks Savor lands in the backlog the next morning, ready for an agent to fix. When the agents move to a new model, an uplift check goes through Savor's own instructions to agents, project types and workflow gallery and proposes what the new model no longer needs.
+Every Monday, when Claude Code, Codex, OpenCode, Grok Build or Antigravity has a new version, a check installs the newest ones and runs a real conversation with each through Savor (a prompt, a permission request, an interrupt). A change in their protocols that breaks Savor is diagnosed and handed to an agent as a fix conversation. When the agents move to a new model, an uplift check goes through Savor's own instructions to agents, project types and workflow gallery and proposes what the new model no longer needs.
 
 If Savor ever stops, you lose nothing:
 - Your code is in your own git repository.
