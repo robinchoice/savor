@@ -1,8 +1,8 @@
 # Savor
 
-> Savor is a free, open-source workspace for the coding agents Claude Code, Codex and OpenCode. Every task ends with one clear result, the questions that need you, and next steps, instead of a wall of terminal output. It runs on your own computer, without an account, for Linux, macOS and Windows. License: AGPL-3.0. Made by Pleasance, Freiburg im Breisgau, Germany.
+> Savor is a free, open-source workspace for the coding agents Claude Code, Codex and OpenCode. Every task ends with one clear result, the questions that need you, and next steps, instead of a wall of terminal output. It runs on your own computer, without an account, for Linux, macOS and Windows. License: AGPL-3.0. Made by Pleasance, Freiburg im Breisgau, Germany. Robin designed the architecture, writes the specifications and reviews the results; coding agents working inside Savor write the code.
 
-Deutsch: Savor ist ein freier Open-Source-Arbeitsplatz für die Coding-Agenten Claude Code, Codex und OpenCode. Jede Aufgabe endet mit einem klaren Ergebnis, den Fragen, die dich brauchen, und nächsten Schritten statt einer Wand aus Terminal-Ausgabe. Savor läuft auf dem eigenen Computer, ohne Konto, für Linux, macOS und Windows. Lizenz: AGPL-3.0. Von Pleasance aus Freiburg im Breisgau.
+Deutsch: Savor ist ein freier Open-Source-Arbeitsplatz für die Coding-Agenten Claude Code, Codex und OpenCode. Jede Aufgabe endet mit einem klaren Ergebnis, den Fragen, die dich brauchen, und nächsten Schritten statt einer Wand aus Terminal-Ausgabe. Savor läuft auf dem eigenen Computer, ohne Konto, für Linux, macOS und Windows. Lizenz: AGPL-3.0. Von Pleasance aus Freiburg im Breisgau. Robin hat die Architektur entworfen, schreibt die Spezifikationen und prüft die Ergebnisse; den Code schreiben Coding-Agenten, die in Savor arbeiten.
 
 ## English
 
