@@ -104,7 +104,7 @@ export function Composer(props: Props) {
   useShortcut('composer', () => ref.current?.focus())
   const fileRef = useRef<HTMLInputElement>(null)
   const composerRef = useRef<HTMLDivElement>(null)
-  const agents = useAgents()
+  const agents = useAgents(popover)
   const info = agents?.find((a) => a.id === props.agent.provider)
 
   // The skills of the chosen agent are fetched up front, so "/" opens the list right away.

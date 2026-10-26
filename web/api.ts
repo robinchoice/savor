@@ -236,13 +236,18 @@ export const desktop = (window as { savorDesktop?: { pickFolder(): Promise<strin
 
 export const PROVIDER_NAMES: Record<string, string> = { claude: 'Claude Code', codex: 'Codex', opencode: 'OpenCode', grok: 'Grok Build', antigravity: 'Antigravity' }
 
-// Installed agents, their models and modes: fetched once and shared by every picker.
-let agentsCache: Promise<ProviderInfo[]> | null = null
-export const fetchAgents = (refresh = false) => (agentsCache = !refresh && agentsCache ? agentsCache : api<ProviderInfo[]>('GET', refresh ? '/agents?refresh=1' : '/agents'))
+// Installed agents, their models and modes: shared by every picker and fetched again after a minute, so
+// an agent installed or signed in since shows up with its models the next time a picker opens.
+let agentsCache: { at: number; list: Promise<ProviderInfo[]> } | null = null
+export function fetchAgents(refresh = false) {
+  if (refresh || !agentsCache || Date.now() - agentsCache.at > 60_000) agentsCache = { at: Date.now(), list: api<ProviderInfo[]>('GET', refresh ? '/agents?refresh=1' : '/agents') }
+  return agentsCache.list
+}
 
-export function useAgents() {
+// `again` fetches them again when it changes, like a picker opening.
+export function useAgents(again?: unknown) {
   const [agents, setAgents] = useState<ProviderInfo[]>()
-  useEffect(() => void fetchAgents().then(setAgents, () => setAgents([])), [])
+  useEffect(() => void fetchAgents().then(setAgents, () => setAgents([])), [again])
   return agents
 }
 
