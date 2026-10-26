@@ -21,10 +21,12 @@ const MIME: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg
 export function acpCommand(provider: Provider, projectId: string, threadId: string, mode = '') {
   const savor = { url: mcpUrl(projectId, threadId), headers: { Authorization: `Bearer ${store.state().mcpToken}` } }
   if (provider === 'opencode') {
+    // Full access is OpenCode's build agent with every permission allowed, files outside the project included.
+    const permission = mode === 'full-access' ? { permission: 'allow' } : {}
     return {
       bin: BIN.opencode,
       args: ['acp'],
-      env: { OPENCODE_CONFIG_CONTENT: JSON.stringify({ autoupdate: false, share: 'disabled', mcp: { savor: { type: 'remote', ...savor, enabled: true } } }) },
+      env: { OPENCODE_CONFIG_CONTENT: JSON.stringify({ autoupdate: false, share: 'disabled', ...permission, mcp: { savor: { type: 'remote', ...savor, enabled: true } } }) },
     }
   }
   // Grok Build takes only plan as a mode over ACP; approving everything is a flag of the agent process.

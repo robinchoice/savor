@@ -24,6 +24,12 @@ test("Grok Build's Always approve mode is a flag of its agent process", () => {
   assert.deepEqual(acpCommand('opencode', 'p', 't', 'always-approve').args, ['acp'])
 })
 
+test("OpenCode's Full access mode allows every permission in its config", () => {
+  const config = (mode) => JSON.parse(acpCommand('opencode', 'p', 't', mode).env.OPENCODE_CONFIG_CONTENT)
+  assert.equal(config('full-access').permission, 'allow')
+  assert.equal(config('build').permission, undefined)
+})
+
 test("a usage limit resets at the end of the usage period Grok Build's _x.ai/billing reports", () => {
   const now = Date.parse('2026-10-21T12:00:00Z')
   // As Grok Build 1.0.62 answers on the free tier.

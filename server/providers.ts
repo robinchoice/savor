@@ -80,8 +80,9 @@ export const STATIC: Record<Provider, Static> = {
     efforts: [],
     defaultEffort: '',
     modes: [
-      { id: 'build', label: 'Build', detail: 'Make changes using your configured OpenCode permissions.' },
+      { id: 'build', label: 'Build', detail: 'Make changes in the project. Ask before files outside it.' },
       { id: 'plan', label: 'Plan', detail: 'Explore and plan using OpenCode’s plan mode.' },
+      { id: 'full-access', label: 'Full access', detail: 'Run every action without asking, commands included. Use only in an isolated environment you trust.', unsafe: true },
     ],
     defaultMode: 'build',
     fast: false,
