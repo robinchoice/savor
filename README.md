@@ -4,20 +4,21 @@
 
 <p align="center">
   <b>A local workspace for the coding agents you already use.</b><br>
-  Savor runs Claude Code, Codex, OpenCode, Grok Build or Antigravity on your own computer and turns every task into a conversation that reports back: a short acknowledgement, questions you answer in one click, the result, and a live preview of what was built. On your desktop, in the browser or on your phone.
+  Savor runs Claude Code, Codex, OpenCode, Grok Build or Antigravity on your own computer and turns every task into a conversation that reports back: an acknowledgement, questions you answer in one click, the result and a live preview of what was built. On your desktop, in the browser or on your phone.
 </p>
 
 <p align="center">
   <a href="https://github.com/robinchoice/savor/releases/latest"><img src="https://img.shields.io/github/v/release/robinchoice/savor" alt="Latest release"></a>
   <a href="https://github.com/robinchoice/savor/actions/workflows/ci.yml"><img src="https://github.com/robinchoice/savor/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/github/license/robinchoice/savor" alt="AGPL-3.0"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/robinchoice/savor" alt="AGPL-3.0"></a><br>
+  <a href="https://github.com/robinchoice/savor/releases/latest"><b>Download</b></a> · <a href="#install">Install</a> · <a href="#how-it-works">How it works</a>
 </p>
 
-<p align="center">
-  <a href="https://github.com/robinchoice/savor/releases/latest"><b>Download</b></a> ·
-  <a href="#install">Install</a> ·
-  <a href="#how-it-works">How it works</a>
-</p>
+**Under the hood:** a Node daemon drives each agent CLI over its own protocol (Claude Code's stream-json, Codex's app-server JSON-RPC, the Agent Client Protocol for OpenCode and Grok Build) and gives all of them the same MCP tools to report back, ask, start other agents and run workflows. Input queues per turn; conversations can run in parallel git worktrees, workflows on cron schedules, and both can switch agents at a usage limit. State is plain files, shown by a Preact UI and reachable from your phone through an end-to-end encrypted relay. [Architecture](#how-it-works)
+
+**Who builds it:** Robin ([robinchoice](https://github.com/robinchoice)) designed the architecture, writes the specifications and reviews the results; coding agents working inside Savor write the code ([how](#how-savor-is-maintained)).
+
+**In numbers** (v0.6.37, 26 October 2026): 425 commits and 48 releases since the first commit on 29 September 2026 · 5 agent CLIs through 4 adapters · 43 MCP tools · 191 tests in 20 test files.
 
 [![A task, the agent's question, the answer, and the result in the live preview (49 s)](docs/demo.gif)](docs/demo.mp4)
 
@@ -212,6 +213,21 @@ Antigravity runs `agy --print` once per turn and continues the conversation with
 
 ## How it works
 
+```mermaid
+flowchart TD
+  In["Input: UI, phone, scheduled workflow, another agent"] --> Q["Turn and queue<br/>agents.ts"]
+  Q --> H["Session host<br/>session.ts"]
+  H --> C["Claude Code<br/>stream-json<br/>claude.ts"]
+  H --> X["Codex<br/>app-server JSON-RPC<br/>codex.ts"]
+  H --> A["OpenCode, Grok Build<br/>Agent Client Protocol<br/>acp.ts"]
+  H --> G["Antigravity<br/>agy --print<br/>antigravity.ts"]
+  C & X & A & G --> M["MCP tools: acknowledge, ask, conclude,<br/>start agents, run workflows<br/>mcp.ts"]
+  H -->|approvals, activity log| S
+  M --> S[("Messages, decisions, documents<br/>plain files in .savor/<br/>store.ts")]
+  S -->|SSE events| UI["Web UI and desktop app"]
+  S -->|end-to-end encrypted tunnel| R["Relay → phone"]
+```
+
 ```
 server/
   index.ts      HTTP API, SSE events, static UI, MCP endpoint
@@ -331,7 +347,7 @@ Early: version 0.x, first released in September 2026, with releases several time
 
 ## How Savor is maintained
 
-Savor is built by coding agents working inside Savor, with one person at [Pleasance](https://pleasance.org) setting the direction. Every change goes through CI, which runs the end-to-end tests against a real daemon and UI. Releases ship several times a week, and installed apps update themselves.
+Robin at [Pleasance](https://pleasance.org) sets the direction: architecture, specifications and review. Coding agents working inside Savor write the code. Every change goes through CI, which runs the end-to-end tests against a real daemon and UI. Releases ship several times a week, and installed apps update themselves.
 
 Every night, a check installs the newest Claude Code, Codex and OpenCode and runs a real conversation with each through Savor (a prompt, a permission request, an interrupt). A change in their protocols that breaks Savor lands in the backlog the next morning, ready for an agent to fix. When the agents move to a new model, an uplift check goes through Savor's own instructions to agents, project types and workflow gallery and proposes what the new model no longer needs.
 
