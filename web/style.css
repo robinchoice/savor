@@ -1533,11 +1533,12 @@ button.study-source:hover { background: var(--card); }
 .work-chapter { display: flex; gap: 10px; align-items: center; width: 100%; padding: 7px 8px; border: 0; border-radius: 8px; background: none; color: var(--text); text-align: left; font: inherit; }
 .work-chapter:hover { background: var(--card); }
 .work-chapter .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.work-bg-card { padding: 8px 8px 6px; margin-bottom: 10px; }
+.study-body .work-bg-card .field-label { margin: 0 8px 2px; }
 .work-bg { display: flex; gap: 8px; align-items: center; padding: 5px 8px; border-radius: 8px; color: var(--text); font-size: 13px; }
-.work-bg:hover { background: var(--card); }
-.work-bg span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.work-bg .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
-.work-bg .dot.needs { background: var(--needs); }
+.work-bg:hover { background: var(--bg); }
+.work-bg .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.work-bg .ring { --s: 10px; }
 .work-all { margin-top: 14px; }
 .study-doc { display: flex; flex-direction: column; min-height: 0; }
 .study-doc-bar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--line); flex: none; }

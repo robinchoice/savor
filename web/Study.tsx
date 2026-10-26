@@ -1,7 +1,7 @@
 import { useContext, useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { ArrowLeft, ArrowLeftRight, BookOpen, Download, ExternalLink, FileText, MessageSquare, PenLine, Plus, Search, Upload, X } from 'lucide-preact'
-import { api, freeAgent, go, readFileAsDataUrl, useApi, type AgentConfig, type Attachment, type Fallback, type Project, type Thread } from './api'
-import { ThreadView } from './Conversations'
+import { api, freeAgent, go, kindOf, readFileAsDataUrl, RINGS, useApi, type AgentConfig, type Attachment, type Fallback, type Project, type Thread } from './api'
+import { REASONS, ThreadView } from './Conversations'
 import { Composer } from './Composer'
 import { FileEditor, FilePreview } from './Files'
 import { useNarrow } from './Layout'
@@ -403,6 +403,18 @@ function WorkPane({ project, open, ask, others, rev }: { project: Project; open:
         <h2>{t('Manuscript')}</h2>
       </div>
       <div class="study-body">
+        {others.length > 0 && (
+          <div class="ws-card work-bg-card">
+            <div class="field-label">{t('In the background')}</div>
+            {others.map((th) => (
+              <a key={th.id} class="work-bg" href={`#/p/${project.id}/t/${th.id}`}>
+                <span class={`ring ${RINGS[kindOf(th)]}`} />
+                <span class="name">{th.summary ?? th.title}</span>
+                <span class="muted small">{th.waitsFor ? REASONS[th.waitsFor.reason] : t('Working')}</span>
+              </a>
+            ))}
+          </div>
+        )}
         {work.title && <div class="work-title">{work.title}</div>}
         <div class="muted small">
           {[work.kind, style, work.deadline && (days !== null && days >= 0 ? t('due {date} ({n} days)', { date: new Date(work.deadline).toLocaleDateString(), n: days }) : t('due {date}', { date: work.deadline }))].filter(Boolean).join(' · ')}
@@ -476,17 +488,6 @@ function WorkPane({ project, open, ask, others, rev }: { project: Project; open:
             </a>
           )}
         </div>
-        {others.length > 0 && (
-          <>
-            <div class="field-label">{t('In the background')}</div>
-            {others.map((th) => (
-              <a key={th.id} class="work-bg" href={`#/p/${project.id}/t/${th.id}`}>
-                {th.waitsFor ? <span class="dot needs" /> : <span class="spinner" />}
-                <span>{th.summary ?? th.title}</span>
-              </a>
-            ))}
-          </>
-        )}
         <a class="small muted work-all" href={`#/p/${project.id}/conversations`}>
           {t('All conversations')}
         </a>

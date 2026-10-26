@@ -425,7 +425,7 @@ function WorktreeHead({ project, branch, path, info }: { project: Project; branc
   )
 }
 
-const REASONS: Record<Reason, string> = { approval: t('Approval'), question: t('Question'), failed: t('Failed'), new: t('New result'), result: t('Result') }
+export const REASONS: Record<Reason, string> = { approval: t('Approval'), question: t('Question'), failed: t('Failed'), new: t('New result'), result: t('Result') }
 // Markdown of a result as one plain line.
 export const plain = (md: string) => md.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1').replace(/[*_`#>|]+/g, '').replace(/\s+/g, ' ').trim()
 const short = (ms: number) => {
