@@ -24,6 +24,8 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Savor scans the pairing QR code shown on your computer.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Savor records your voice for voice input and turns it into text on your computer.</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>LSRequiresIPhoneOS</key>

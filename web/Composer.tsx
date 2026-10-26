@@ -1,9 +1,9 @@
 import { useContext, useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
-import { ArrowRight, ArrowUp, AtSign, CornerDownRight, Bookmark, Check, ChevronDown, Download, FileText, FolderGit2, GitBranch, ListPlus, MessageSquare, Mic, Paperclip, Plus, ShieldAlert, Sparkles, Split, Square, Workflow as WorkflowIcon, X, Zap, Crosshair, BookOpen } from 'lucide-preact'
+import { ArrowRight, ArrowUp, AtSign, CornerDownRight, Bookmark, Check, ChevronDown, Download, FileText, FolderGit2, GitBranch, ListPlus, MessageSquare, Mic, Paperclip, Plus, RotateCw, ShieldAlert, Sparkles, Split, Square, Workflow as WorkflowIcon, X, Zap, Crosshair, BookOpen } from 'lucide-preact'
 import { api, agentSummary, describeModel, effortLabel, modelName, PROVIDER_NAMES, readFileAsDataUrl, useAgents, useApi, type AgentConfig, type Attachment, type Doc, type Project, type ProviderInfo, type Preset, type Skill, type Workflow } from './api'
 import { ProviderIcon } from './Conversations'
 import { useShortcut } from './Shortcuts'
-import { megabytes, ModelMissing, record, type Recording, type VoiceModels } from './voice'
+import { megabytes, ModelMissing, NothingHeard, record, type Recording, type VoiceModels } from './voice'
 import { useUsage } from './Usage'
 import { reviewMessage, type ReviewComment } from './Changes'
 import { fanoutBranches } from '../shared/fanout'
@@ -62,6 +62,10 @@ const pickedContext = (picked: Picked[]) =>
         `\n\n[Selected element in the preview]\nURL: ${p.url}\nSelector: ${p.selector}\nText: ${p.text}\nStyles: ${JSON.stringify(p.styles)}\nHTML: ${p.html}`,
     )
     .join('')
+
+// The composer on screen for each draft.
+const composers = new Map<string, (text: string) => void>()
+const append = (text: string, s: string) => (text && !text.endsWith(' ') ? text + ' ' : text) + s + ' '
 
 // Text quoted from the context menu goes to the composer on screen, or waits until one shows.
 let quoteInto: ((text: string) => void) | null = null
@@ -230,9 +234,23 @@ export function Composer(props: Props) {
     if (mention) setText((t) => (t && !/\s$/.test(t) ? t + ' ' : t) + added.map((f) => `[${f.name}]`).join(' ') + ' ')
   }
   const insert = (s: string) => {
-    setText((t) => (t && !t.endsWith(' ') ? t + ' ' : t) + s + ' ')
+    setText((t) => append(t, s))
     setPopover(null)
     ref.current?.focus()
+  }
+  const insertRef = useRef(insert)
+  insertRef.current = insert
+  useEffect(() => {
+    const into = (s: string) => insertRef.current(s)
+    composers.set(draftKey, into)
+    return () => void (composers.get(draftKey) === into && composers.delete(draftKey))
+  }, [draftKey])
+  // Text from a recording that ends after this composer is gone goes to the one that shows its draft now, or into
+  // the draft.
+  const insertVoice = (s: string) => {
+    const into = composers.get(draftKey)
+    if (into) into(s)
+    else localStorage.setItem(draftKey, append(localStorage.getItem(draftKey) ?? '', s))
   }
 
   const sendButtons = (
@@ -313,7 +331,7 @@ export function Composer(props: Props) {
         </div>
       )}
       {error && <div class="error-text pad">{error}</div>}
-      {!!props.voice && <VoiceButton key={props.voice} onText={insert} onHeard={setHeard} onError={setError} onSetup={setVoiceSetup} big />}
+      {!!props.voice && <VoiceButton key={props.voice} onText={insertVoice} onHeard={setHeard} onError={setError} onSetup={setVoiceSetup} big />}
       {heard && (
         // The key keeps Preact from matching it with a later sibling, which would remount the recording button.
         <div key="heard" class="voice-heard pad">
@@ -441,8 +459,9 @@ export function Composer(props: Props) {
           </div>
         </div>
       )}
+      {/* The key keeps Preact from rebuilding the bar, and the recording button in it, when an error shows. */}
       {!props.compact && (
-        <div class="composer-bottom">
+        <div key="bottom" class="composer-bottom">
           <div class="menu-anchor">
             <button class={`icon-btn ${popover === 'plus' ? 'on' : ''}`} title={t('Attach, mention or compare agents')} onClick={() => setPopover(popover === 'plus' ? null : 'plus')}>
               <Plus size={18} />
@@ -482,7 +501,7 @@ export function Composer(props: Props) {
           )}
           {!fanout && <BranchPicker project={props.project} threadId={props.threadId} worktree={props.worktree} setWorktree={props.setWorktree} open={popover === 'branch'} toggle={() => setPopover(popover === 'branch' ? null : 'branch')} />}
           <div class="spacer" />
-          {!props.voice && <VoiceButton onText={insert} onHeard={setHeard} onError={setError} onSetup={setVoiceSetup} />}
+          {!props.voice && <VoiceButton onText={insertVoice} onHeard={setHeard} onError={setError} onSetup={setVoiceSetup} />}
           {sendButtons}
         </div>
       )}
@@ -491,13 +510,15 @@ export function Composer(props: Props) {
 }
 
 function VoiceButton({ onText, onHeard, onError, onSetup, big }: { onText: (s: string) => void; onHeard: (s: string) => void; onError: (e: string) => void; onSetup: (open: boolean) => void; big?: boolean }) {
-  const [state, setState] = useState<'idle' | 'starting' | 'recording' | 'transcribing'>('idle')
+  // 'failed': turning the recording into text failed, and it waits to be tried again or discarded.
+  const [state, setState] = useState<'idle' | 'starting' | 'recording' | 'transcribing' | 'failed'>('idle')
   const [seconds, setSeconds] = useState(0)
   const rec = useRef<Recording | null>(null)
   const mounted = useRef(true)
   useEffect(() => () => {
     mounted.current = false
-    rec.current?.cancel()
+    // A recording this button can no longer show still turns into text, in its conversation's draft.
+    rec.current?.stop().then(onText, () => {})
     onHeard('')
   }, [])
   useEffect(() => {
@@ -527,24 +548,32 @@ function VoiceButton({ onText, onHeard, onError, onSetup, big }: { onText: (s: s
     }
   }
   const stop = async () => {
-    setState('transcribing')
-    try {
-      const text = await rec.current!.stop()
-      if (text && mounted.current) onText(text)
-    } catch (e) {
-      if (mounted.current) onError((e as Error).message)
-    }
+    // While it turns into text, the recording is nobody else's to stop.
+    const recording = rec.current
+    if (!recording) return
     rec.current = null
+    setState('transcribing')
+    onError('')
+    let failed = false
+    try {
+      const text = await recording.stop()
+      if (text) onText(text)
+    } catch (e) {
+      failed = !(e instanceof NothingHeard)
+      if (mounted.current) onError((e as Error)?.message || t('Voice input failed.'))
+    }
+    if (failed) rec.current = recording
     onHeard('')
-    setState('idle')
+    setState(failed ? 'failed' : 'idle')
   }
   const cancel = () => {
     rec.current?.cancel()
     rec.current = null
     onHeard('')
+    onError('')
     setState('idle')
   }
-  useShortcut('voice', state === 'recording' ? stop : state === 'idle' && start)
+  useShortcut('voice', state === 'recording' || state === 'failed' ? stop : state === 'idle' && start)
   // The big button starts on arrival, once the page shows: browsers give the microphone only to a visible page.
   // Where they also want a tap first, as Safari on iOS may, the error shows and the big button takes the tap.
   useEffect(() => {
@@ -562,10 +591,17 @@ function VoiceButton({ onText, onHeard, onError, onSetup, big }: { onText: (s: s
   if (big)
     return (
       <div class="voice big">
-        <button class={`icon-btn${state === 'recording' ? ' recording' : ''}`} title={state === 'recording' ? t('Stop and insert the text') : t('Voice input')} disabled={state === 'starting' || state === 'transcribing'} onClick={state === 'recording' ? stop : start}>
-          {state === 'transcribing' || state === 'starting' ? <span class="spinner" /> : <Mic size={40} />}
+        <button class={`icon-btn${state === 'recording' ? ' recording' : ''}`} title={state === 'recording' ? t('Stop and insert the text') : state === 'failed' ? t('Transcribe the recording again') : t('Voice input')} disabled={state === 'starting' || state === 'transcribing'} onClick={state === 'recording' || state === 'failed' ? stop : start}>
+          {state === 'transcribing' || state === 'starting' ? <span class="spinner" /> : state === 'failed' ? <RotateCw size={40} /> : <Mic size={40} />}
         </button>
-        {state === 'recording' ? (
+        {state === 'failed' ? (
+          <span>
+            {t('Tap to try again')} ·{' '}
+            <button class="link" title={t('Discard the recording')} onClick={cancel}>
+              {t('Discard')}
+            </button>
+          </span>
+        ) : state === 'recording' ? (
           <span>
             <span class="voice-time">
               {Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, '0')}
@@ -582,6 +618,11 @@ function VoiceButton({ onText, onHeard, onError, onSetup, big }: { onText: (s: s
     )
   return (
     <span class="voice">
+      {state === 'failed' && (
+        <button class="icon-btn" title={t('Discard the recording')} onClick={cancel}>
+          <X size={15} />
+        </button>
+      )}
       {state === 'recording' && (
         <>
           <span class="voice-time">
@@ -593,8 +634,8 @@ function VoiceButton({ onText, onHeard, onError, onSetup, big }: { onText: (s: s
         </>
       )}
       {state === 'transcribing' && <small>{t('Transcribing…')}</small>}
-      <button class={`icon-btn${state === 'recording' ? ' recording' : ''}`} title={state === 'recording' ? t('Stop and insert the text') : t('Voice input')} disabled={state === 'starting' || state === 'transcribing'} onClick={state === 'recording' ? stop : start}>
-        {state === 'transcribing' ? <span class="spinner small" /> : <Mic size={17} />}
+      <button class={`icon-btn${state === 'recording' ? ' recording' : ''}`} title={state === 'recording' ? t('Stop and insert the text') : state === 'failed' ? t('Transcribe the recording again') : t('Voice input')} disabled={state === 'starting' || state === 'transcribing'} onClick={state === 'recording' || state === 'failed' ? stop : start}>
+        {state === 'transcribing' ? <span class="spinner small" /> : state === 'failed' ? <RotateCw size={17} /> : <Mic size={17} />}
       </button>
     </span>
   )

@@ -987,6 +987,55 @@ test('a link with voice=1 opens a new conversation that records right away', asy
   await page.fill('.composer textarea', '')
 })
 
+test('a failed transcription keeps the recording to try again', async () => {
+  await newConversation()
+  await page.fill('.composer textarea', '')
+  await page.route('**/api/voice/transcribe', (route) => route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"The speech engine crashed (SIGSEGV)."}' }))
+  await page.click('.voice button[title="Voice input"]')
+  await page.waitForSelector('.voice-time')
+  await page.waitForTimeout(2000)
+  await page.click('.voice button.recording')
+  await page.waitForSelector('.error-text >> text=The speech engine crashed (SIGSEGV).')
+  assert.equal(await page.inputValue('.composer textarea'), '')
+  await page.unroute('**/api/voice/transcribe')
+  await page.click('.voice button[title="Transcribe the recording again"]')
+  await page.waitForFunction(() => document.querySelector('.composer textarea').value.includes('Heard'))
+  assert.equal(await page.locator('.error-text').count(), 0)
+  const [, seconds] = (await page.inputValue('.composer textarea')).match(/^Heard (\d+\.\d) seconds/) ?? []
+  assert.ok(seconds >= 1.9, seconds)
+  await page.fill('.composer textarea', '')
+})
+
+test('a recording without speech or sound says so instead of leaving the composer empty', async () => {
+  await newConversation()
+  await page.fill('.composer textarea', '')
+  await page.route('**/api/voice/transcribe', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '{"text":""}' }))
+  await page.click('.voice button[title="Voice input"]')
+  await page.waitForSelector('.voice-time')
+  await page.waitForTimeout(1500)
+  await page.click('.voice button.recording')
+  await page.waitForSelector('.error-text >> text=No speech was recognized in the recording.')
+  // Trying the same audio again would understand nothing either.
+  await page.waitForSelector('.voice button[title="Voice input"]')
+  await page.unroute('**/api/voice/transcribe')
+  // A muted microphone delivers zeros.
+  await page.evaluate(() => {
+    const original = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices)
+    navigator.mediaDevices.getUserMedia = async (constraints) => {
+      const stream = await original(constraints)
+      for (const track of stream.getAudioTracks()) track.enabled = false
+      return stream
+    }
+  })
+  await page.click('.voice button[title="Voice input"]')
+  await page.waitForSelector('.voice-time')
+  await page.waitForTimeout(1500)
+  await page.click('.voice button.recording')
+  await page.waitForSelector('.error-text >> text=The microphone delivered only silence.')
+  assert.equal(await page.inputValue('.composer textarea'), '')
+  await page.reload()
+})
+
 test('voice input offers to download a speech model that is missing', async () => {
   const { models } = (await api('PUT', '/voice/model', { id: 'whisper-small' })).body
   assert.deepEqual(models.map((m) => [m.id, m.installed]), [['parakeet-v3', true], ['whisper-small', false], ['whisper-turbo', false]])
