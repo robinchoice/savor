@@ -1,5 +1,5 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
-import { ArrowRight, ArrowUp, AtSign, CornerDownRight, Bookmark, Check, ChevronDown, Download, FileText, FolderGit2, GitBranch, ListPlus, MessageSquare, Mic, Paperclip, Plus, ShieldAlert, Sparkles, Split, Square, Workflow as WorkflowIcon, X, Zap, Crosshair } from 'lucide-preact'
+import { useContext, useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
+import { ArrowRight, ArrowUp, AtSign, CornerDownRight, Bookmark, Check, ChevronDown, Download, FileText, FolderGit2, GitBranch, ListPlus, MessageSquare, Mic, Paperclip, Plus, ShieldAlert, Sparkles, Split, Square, Workflow as WorkflowIcon, X, Zap, Crosshair, BookOpen } from 'lucide-preact'
 import { api, agentSummary, describeModel, effortLabel, modelName, PROVIDER_NAMES, readFileAsDataUrl, useAgents, useApi, type AgentConfig, type Attachment, type Doc, type Project, type ProviderInfo, type Preset, type Skill, type Workflow } from './api'
 import { ProviderIcon } from './Conversations'
 import { useShortcut } from './Shortcuts'
@@ -7,7 +7,8 @@ import { megabytes, ModelMissing, record, type Recording, type VoiceModels } fro
 import { useUsage } from './Usage'
 import { reviewMessage, type ReviewComment } from './Changes'
 import { fanoutBranches } from '../shared/fanout'
-import { t, tx } from './i18n'
+import { plural, t, tx } from './i18n'
+import { focusContext, shortName, StudyContext } from './cite'
 
 export interface Picked { selector: string; text: string; html: string; styles: Record<string, string>; url: string }
 
@@ -95,6 +96,7 @@ export function Composer(props: Props) {
   // 'fan-add' adds an agent to a fan-out, `fan-<i>` changes its i-th agent.
   const [popover, setPopover] = useState<string | null>(null)
   const ref = useRef<HTMLTextAreaElement>(null)
+  const study = useContext(StudyContext)
   useShortcut('composer', () => ref.current?.focus())
   const fileRef = useRef<HTMLInputElement>(null)
   const composerRef = useRef<HTMLDivElement>(null)
@@ -190,7 +192,8 @@ export function Composer(props: Props) {
     if (!canSend) return
     const btw = props.threadId && !answers && text.match(/^\/btw\s+(\S[\s\S]*)$/)?.[1].trim()
     if (btw) return ask(btw)
-    const full = (text + pickedContext(props.picked ?? []) + reviewMessage(review)).trimStart()
+    // Picked sources narrow a question, not an answer to the agent's own question.
+    const full = (text + pickedContext(props.picked ?? []) + reviewMessage(review) + (answers ? '' : focusContext(study?.focus ?? []))).trimStart()
     setText('')
     setFiles([])
     props.clearPicked?.(-1)
@@ -264,7 +267,7 @@ export function Composer(props: Props) {
 
   return (
     <div class={`composer ${props.compact ? 'compact' : ''} ${props.answering ? 'answering' : ''}`} ref={composerRef} onDragOver={(e) => e.preventDefault()} onDrop={(e) => (e.preventDefault(), addFiles(e.dataTransfer?.files ?? [], true))}>
-      {(files.length > 0 || (props.picked?.length ?? 0) > 0 || review.length > 0) && (
+      {(files.length > 0 || (props.picked?.length ?? 0) > 0 || review.length > 0 || !!study?.focus.length) && (
         <div class="attachments">
           {files.map((f, i) =>
             f.image ? (
@@ -291,6 +294,14 @@ export function Composer(props: Props) {
               </button>
             </span>
           ))}
+          {!!study?.focus.length && (
+            <span class="chip-ctx focus" title={study.focus.map((s) => s.title).join('\n')}>
+              <BookOpen size={13} /> {study.focus.length === 1 ? shortName(study.focus[0]) : plural(study.focus.length, '{n} source', '{n} sources')}
+              <button onClick={() => study.setFocus([])} aria-label={t('Answer from all sources')}>
+                <X size={12} />
+              </button>
+            </span>
+          )}
           {review.map((c) => (
             <span key={c.id} class="chip-ctx" title={c.text}>
               <MessageSquare size={13} /> {c.path.split('/').pop()}:{c.lines.replace(' (removed)', '')}

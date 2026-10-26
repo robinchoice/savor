@@ -1,30 +1,25 @@
-import { useEffect, useRef, useState } from 'preact/hooks'
+import { useContext, useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { ArrowLeft, ArrowLeftRight, BookOpen, Download, ExternalLink, FileText, MessageSquare, PenLine, Plus, Search, Upload, X } from 'lucide-preact'
 import { api, freeAgent, go, readFileAsDataUrl, useApi, type AgentConfig, type Attachment, type Fallback, type Project, type Thread } from './api'
 import { ThreadView } from './Conversations'
-import { Composer, quoteInComposer } from './Composer'
+import { Composer } from './Composer'
 import { FileEditor, FilePreview } from './Files'
 import { useNarrow } from './Layout'
 import { askInChat, FORMATS, mainThread, STYLES } from './Workspace'
 import { plural, t, tx } from './i18n'
+import { authorLine, pdfPage, StudyContext, type Source, type StudyScope } from './cite'
 
 // Academic writing in three columns, like NotebookLM: the sources, one chat for the whole work, and the
 // work itself with its chapters and the export. A chapter or a PDF opens on the right, or in the middle
 // for those who rather write than chat. Everything shown comes from the project's files.
 
-interface Source { key: string | null; title: string; authors: string; year: string; venue: string; doi: string | null; file: string | null; cited: number }
 interface Sources { bibliography: string; sources: Source[]; missing: { key: string; cited: number }[] }
 interface Hit { id: string; doi: string | null; title: string; year: number | null; authors: string[]; moreAuthors: boolean; venue: string; cited: number; pdf: boolean; url: string | null; added: boolean }
 interface Check { level: 'ok' | 'error' | 'warn' | 'info'; text: string; file?: string; line?: number }
 interface Work { format: string; style: string | null; outline: { path: string; title: string; words: number }[]; words: number; target: number; title: string | null; kind: string | null; deadline: string | null; checks: Check[]; missingTools: string[] }
-type Open = { kind: 'chapter' | 'pdf'; path: string } | null
+// `jump` counts the citations followed, so the same one again goes back to its page.
+type Open = { kind: 'chapter'; path: string } | { kind: 'pdf'; path: string; page?: number | null; jump?: number } | null
 type Tab = 'sources' | 'chat' | 'work'
-
-const authorLine = (authors: string) => {
-  const names = authors.split(/\s+and\s+/).filter(Boolean)
-  const last = (n: string) => (n.includes(',') ? n.split(',')[0] : n.split(' ').pop()!)
-  return names.length > 2 ? t('{name} et al.', { name: last(names[0]) }) : names.map(last).join(' & ')
-}
 
 export function StudyView({ project, threadId, isNew }: { project: Project; threadId?: string; isNew?: boolean }) {
   const [threads] = useApi<Thread[]>(`/projects/${project.id}/threads`, (e) => e.projectId === project.id && ['thread', 'status', 'message'].includes(e.type))
@@ -49,12 +44,35 @@ export function StudyView({ project, threadId, isNew }: { project: Project; thre
     if (chatId) return void (await api('POST', `/projects/${project.id}/threads/${chatId}/messages`, { text }))
     go(`/p/${project.id}/t/${await askInChat(project, text)}`)
   }
-  const mention = (text: string) => {
-    if (narrow) setTab('chat')
-    quoteInComposer(text, () => {})
-  }
   // A source added here can be one the manuscript already cites, so the checks of the work follow.
   const [sourcesRev, setSourcesRev] = useState(0)
+  const [sourcesData, reloadSources] = useApi<Sources>(`/projects/${project.id}/sources`, (e) => e.projectId === project.id && e.type === 'status')
+  const [selected, setSelected] = useState<Source | null>(null)
+  const [focus, setFocus] = useState<Source[]>([])
+  const jumps = useRef(0)
+  const scope = useMemo<StudyScope>(() => {
+    const sources = sourcesData?.sources ?? []
+    return {
+      sources,
+      // The picked sources as listed now, with a text copy that may have come since; gone ones drop out.
+      focus: sourcesData ? focus.map((f) => sources.find((s) => same(s, f))).filter((s): s is Source => !!s) : focus,
+      setFocus,
+      // A citation opens its PDF at the page, or the source's details when there is no PDF.
+      open: async (key, page) => {
+        const s = sources.find((x) => x.key === key)
+        if (!s) return
+        if (s.file) return setOpen({ kind: 'pdf', path: s.file, page: await pdfPage(`/projects/${project.id}`, s, page), jump: ++jumps.current })
+        setSelected(s)
+        if (narrow) setTab('sources')
+      },
+    }
+  }, [sourcesData, focus, narrow])
+  // Asking about one source picks it for the next questions.
+  const askAbout = (s: Source) => {
+    setFocus([s])
+    if (narrow) setTab('chat')
+    requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('.study-chat .composer textarea')?.focus())
+  }
   const others = (threads ?? []).filter((th) => th.id !== chatId && !th.completed && (th.busy || th.waiting || th.waitsFor))
 
   const chat = (
@@ -70,8 +88,9 @@ export function StudyView({ project, threadId, isNew }: { project: Project; thre
   const work = <WorkPane project={project} open={setOpen} ask={ask} others={others} rev={sourcesRev} />
   const swapped = wide && !narrow && !!open
   return (
+    <StudyContext.Provider value={scope}>
     <div class={`study tab-${tab} ${swapped ? 'swapped' : ''}`}>
-      <SourcesPane project={project} openPdf={(path) => setOpen({ kind: 'pdf', path })} ask={ask} mention={mention} changed={() => setSourcesRev((n) => n + 1)} />
+      <SourcesPane project={project} data={sourcesData} reload={reloadSources} selected={selected} setSelected={setSelected} openPdf={(path) => setOpen({ kind: 'pdf', path })} ask={ask} askAbout={askAbout} changed={() => setSourcesRev((n) => n + 1)} />
       <div class="study-mid">{swapped ? doc : chat}</div>
       <div class="study-side">{swapped ? chat : doc || work}</div>
       {narrow && (
@@ -85,6 +104,7 @@ export function StudyView({ project, threadId, isNew }: { project: Project; thre
         </nav>
       )}
     </div>
+    </StudyContext.Provider>
   )
 }
 
@@ -107,11 +127,11 @@ function NewChat({ project }: { project: Project }) {
   )
 }
 
-function SourcesPane({ project, openPdf, ask, mention, changed }: { project: Project; openPdf: (path: string) => void; ask: (text: string) => void; mention: (text: string) => void; changed: () => void }) {
+function SourcesPane({ project, data, reload, selected, setSelected, openPdf, ask, askAbout, changed }: { project: Project; data: Sources | null | undefined; reload: () => void; selected: Source | null; setSelected: (s: Source | null) => void; openPdf: (path: string) => void; ask: (text: string) => void; askAbout: (s: Source) => void; changed: () => void }) {
   const base = `/projects/${project.id}/sources`
-  const [data, reload] = useApi<Sources>(base, (e) => e.projectId === project.id && e.type === 'status')
+  const { focus, setFocus } = useContext(StudyContext)!
+  const picked = (s: Source) => focus.some((f) => same(f, s))
   const [searching, setSearching] = useState(false)
-  const [selected, setSelected] = useState<Source | null>(null)
   const [note, setNote] = useState<{ text: string; url?: string | null; error?: boolean } | null>(null)
   const [drag, setDrag] = useState(false)
   const input = useRef<HTMLInputElement>(null)
@@ -150,7 +170,7 @@ function SourcesPane({ project, openPdf, ask, mention, changed }: { project: Pro
       }}
     >
       {selected ? (
-        <SourceDetail source={selected} back={() => setSelected(null)} openPdf={openPdf} ask={ask} mention={mention} bibliography={data?.bibliography ?? 'references.bib'} />
+        <SourceDetail source={selected} back={() => setSelected(null)} openPdf={openPdf} ask={ask} askAbout={askAbout} bibliography={data?.bibliography ?? 'references.bib'} />
       ) : (
         <>
           <div class="study-head">
@@ -182,6 +202,14 @@ function SourcesPane({ project, openPdf, ask, mention, changed }: { project: Pro
             </div>
           )}
           {searching && <SourceSearch project={project} added={added} />}
+          {focus.length > 0 && (
+            <div class="study-focus small">
+              <span>{plural(focus.length, 'Answers only from {n} source', 'Answers only from {n} sources')}</span>
+              <button class="link-btn" onClick={() => setFocus([])}>
+                {t('All sources')}
+              </button>
+            </div>
+          )}
           <div class="study-list">
             {data?.missing.map((m) => (
               <div key={m.key} class="study-source missing">
@@ -198,17 +226,22 @@ function SourcesPane({ project, openPdf, ask, mention, changed }: { project: Pro
               </div>
             ))}
             {sources.map((s) => (
-              <button key={s.key ?? s.file} class="study-source" onClick={() => setSelected(s)}>
-                <span class="doc-icon">{s.file ? 'PDF' : '—'}</span>
-                <div>
-                  <div class="title">{s.title}</div>
-                  {(s.authors || s.year) && <div class="muted small">{[authorLine(s.authors), s.year].filter(Boolean).join(' · ')}</div>}
-                  <div class="tags">
-                    {!s.key ? <span class="tag warn">{t('no entry yet')}</span> : s.cited ? <span class="tag ok">{t('cited {n}×', { n: s.cited })}</span> : <span class="tag">{t('not cited')}</span>}
-                    {s.key && !s.file && <span class="tag">{t('no PDF')}</span>}
+              <div key={s.key ?? s.file} class={`study-source-row ${picked(s) ? 'picked' : ''}`}>
+                <button class="study-source" onClick={() => setSelected(s)}>
+                  <span class="doc-icon">{s.file ? 'PDF' : '—'}</span>
+                  <div>
+                    <div class="title">{s.title}</div>
+                    {(s.authors || s.year) && <div class="muted small">{[authorLine(s.authors), s.year].filter(Boolean).join(' · ')}</div>}
+                    <div class="tags">
+                      {!s.key ? <span class="tag warn">{t('no entry yet')}</span> : s.cited ? <span class="tag ok">{t('cited {n}×', { n: s.cited })}</span> : <span class="tag">{t('not cited')}</span>}
+                      {s.key && !s.file && <span class="tag">{t('no PDF')}</span>}
+                    </div>
                   </div>
-                </div>
-              </button>
+                </button>
+                <label class="study-pick" title={t('Answer the next questions from this source')}>
+                  <input type="checkbox" aria-label={t('Answer the next questions from this source')} checked={picked(s)} onChange={() => setFocus(picked(s) ? focus.filter((f) => !same(f, s)) : [...focus, s])} />
+                </label>
+              </div>
             ))}
             {data && !sources.length && !data.missing.length && <p class="muted small study-empty">{t('No sources yet. Search for literature or upload PDFs; they go into sources/ and their entries into {file}.', { file: data.bibliography })}</p>}
             <div class="study-drop muted small">{t('Drop PDFs here')}</div>
@@ -292,7 +325,10 @@ function SourceSearch({ project, added }: { project: Project; added: (r: { key: 
   )
 }
 
-function SourceDetail({ source: s, back, openPdf, ask, mention, bibliography }: { source: Source; back: () => void; openPdf: (path: string) => void; ask: (text: string) => void; mention: (text: string) => void; bibliography: string }) {
+// The same work by its key or its PDF: a loose PDF keeps its file when it gets an entry.
+const same = (a: Source, b: Source) => (!!a.key && a.key === b.key) || (!!a.file && a.file === b.file)
+
+function SourceDetail({ source: s, back, openPdf, ask, askAbout, bibliography }: { source: Source; back: () => void; openPdf: (path: string) => void; ask: (text: string) => void; askAbout: (s: Source) => void; bibliography: string }) {
   return (
     <div class="study-detail">
       <button class="ghost small" onClick={back}>
@@ -321,8 +357,8 @@ function SourceDetail({ source: s, back, openPdf, ask, mention, bibliography }: 
             <FileText size={15} /> {t('Open PDF')}
           </button>
         )}
-        {s.key && (
-          <button class="ghost" onClick={() => mention(`${authorLine(s.authors)} ${s.year} [@${s.key}]`)}>
+        {(s.key || s.file) && (
+          <button class="ghost" onClick={() => askAbout(s)}>
             <MessageSquare size={15} /> {t('Ask in the chat')}
           </button>
         )}
@@ -474,7 +510,7 @@ function DocPane({ project, open, close, wide, setWide, narrow }: { project: Pro
           </button>
         )}
       </div>
-      {open.kind === 'pdf' ? <FilePreview key={open.path} base={base} path={open.path} kind="pdf" /> : <FileEditor key={open.path} base={base} path={open.path} follow={project.id} />}
+      {open.kind === 'pdf' ? <FilePreview key={open.path} base={base} path={open.path} kind="pdf" page={open.page} jump={open.jump} /> : <FileEditor key={open.path} base={base} path={open.path} follow={project.id} />}
     </aside>
   )
 }

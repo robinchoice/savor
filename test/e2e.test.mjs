@@ -26,11 +26,23 @@ let server, browser, page, port, token, base
 // Stands in for the Pleasance API that files bug reports as issues, and for OpenAlex, doi.org and a
 // publisher's PDF in the sources of academic writing.
 const reports = []
+// A PDF with one line of text per page, enough for pdf.js.
+function pdfOf(pages) {
+  const objs = ['<< /Type /Catalog /Pages 2 0 R >>', `<< /Type /Pages /Kids [${pages.map((_, i) => `${4 + i * 2} 0 R`).join(' ')}] /Count ${pages.length} >>`, '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>']
+  for (const [i, text] of pages.entries()) {
+    const stream = `BT /F1 12 Tf 72 720 Td (${text}) Tj ET`
+    objs.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents ${5 + i * 2} 0 R >>`, `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`)
+  }
+  let out = '%PDF-1.4\n'
+  const offsets = objs.map((o, i) => [out.length, (out += `${i + 1} 0 obj\n${o}\nendobj\n`)][0])
+  const xref = out.length
+  return `${out}xref\n0 ${objs.length + 1}\n0000000000 65535 f \n${offsets.map((o) => `${String(o).padStart(10, '0')} 00000 n \n`).join('')}trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`
+}
 const SCHOLAR = {
   '/openalex/works/doi:10.1000/heat.1': { best_oa_location: null, locations: [{ pdf_url: 'http://127.0.0.1:0/gone.pdf' }, { pdf_url: '/pdf/heat.pdf' }] },
-  '/doi/10.1000/heat.1': '@article{Miara_2022, title={Heat pumps in {old} buildings}, author={Miara, Ada and Ruhl, Ben}, journal={Energy Journal}, year={2022}, DOI={10.1000/heat.1}}',
+  '/doi/10.1000/heat.1': '@article{Miara_2022, title={Heat pumps in {old} buildings}, author={Miara, Ada and Ruhl, Ben}, journal={Energy Journal}, year={2022}, pages={10--12}, DOI={10.1000/heat.1}}',
   '/doi/10.1000/xmp.2': '@article{Ghost_2020, title={Ghosts in the machine}, author={Ghost, Anna}, year={2020}, DOI={10.1000/xmp.2}}',
-  '/pdf/heat.pdf': '%PDF-1.4 heat',
+  '/pdf/heat.pdf': pdfOf(['Heat pumps in old buildings.', 'Old buildings need lower flow temperatures.', 'Conclusions.']),
 }
 const feedbackApi = http.createServer(async (req, res) => {
   let body = ''
@@ -2923,7 +2935,10 @@ test('academic writing shows its sources, one chat and the work, and adds source
   await page.click('.study-hit:has-text("Heat pumps in old buildings") button')
   await page.waitForSelector('.study-note:has-text("Added miara2022 with its PDF.")')
   assert.match(fs.readFileSync(path.join(dir, 'references.bib'), 'utf8'), /^@article\{miara2022, title=\{Heat pumps in \{old\} buildings\}, .*DOI=\{10\.1000\/heat\.1\}\n\}\n$/)
-  assert.equal(fs.readFileSync(path.join(dir, 'sources/miara2022.pdf'), 'utf8'), '%PDF-1.4 heat')
+  assert.equal(fs.readFileSync(path.join(dir, 'sources/miara2022.pdf'), 'utf8'), SCHOLAR['/pdf/heat.pdf'])
+  // Every agent gets the PDF's text, page by page.
+  await until(() => fs.existsSync(path.join(dir, 'sources/text/miara2022.txt')))
+  assert.equal(fs.readFileSync(path.join(dir, 'sources/text/miara2022.txt'), 'utf8'), '--- page 1 ---\nHeat pumps in old buildings.\n\n--- page 2 ---\nOld buildings need lower flow temperatures.\n\n--- page 3 ---\nConclusions.\n')
   await page.waitForSelector('.study-source:has-text("Heat pumps in old buildings") >> text=cited 1×')
   await page.waitForSelector('.study-source:has-text("Heat pumps in old buildings") >> text=Miara & Ruhl · 2022')
   assert.equal(await page.locator('.study-source.missing').count(), 0)
@@ -2964,6 +2979,30 @@ test('academic writing shows its sources, one chat and the work, and adds source
   await page.waitForSelector('.study-chat >> text=Echo: And now the intro')
   assert.equal((await api('GET', `/projects/${project.id}/threads`)).body.length, 1)
   assert.equal(await page.locator('.study-chat .modes').count(), 0, 'no browser or changes in the chat')
+
+  // A citation in an answer opens its PDF at the cited page, counted from the article's first page.
+  await page.fill('.study-chat .composer textarea', 'Flow [see @miara2022, p. 11; @nobody2000]')
+  await page.keyboard.press('Enter')
+  await page.waitForSelector('.study-chat .md:has-text("Echo: Flow see Miara & Ruhl 2022, p. 11; @nobody2000")')
+  assert.ok(await page.locator('.study-chat .cite-chip.missing:has-text("@nobody2000")').isDisabled(), 'a key without an entry leads nowhere')
+  await page.click('.study-chat .cite-chip:has-text("Miara & Ruhl 2022, p. 11")')
+  await page.waitForSelector('.study-doc h1:has-text("sources/miara2022.pdf")')
+  if (await page.evaluate(() => navigator.pdfViewerEnabled)) await page.waitForSelector('.study-doc iframe.pdf-frame[src$="#page=2"]')
+  await page.click('.study-doc-bar button:has-text("Overview")')
+
+  // Picked sources narrow the next questions to them, by their text copy.
+  await page.check('.study-source-row:has-text("Heat pumps in old buildings") .study-pick')
+  await page.waitForSelector('.study-focus:has-text("Answers only from 1 source")')
+  await page.waitForSelector('.study-chat .composer .chip-ctx:has-text("Miara & Ruhl 2022")')
+  await page.fill('.study-chat .composer textarea', 'What about flow?')
+  await page.keyboard.press('Enter')
+  await page.waitForSelector('.study-chat .md:has-text("sources/text/miara2022.txt")')
+  await page.waitForSelector('.study-chat .plain:has-text("What about flow?") .focus-note:has-text("Answered only from 1 source")')
+  const sent = (await api('GET', `/projects/${project.id}/threads/${(await api('GET', `/projects/${project.id}/threads`)).body[0].id}`)).body.messages.filter((m) => m.kind === 'user').pop()
+  assert.equal(sent.text, 'What about flow?\n\n[Answer only from these sources]\n- [@miara2022] sources/text/miara2022.txt')
+  await page.click('.study-chat .composer .chip-ctx button')
+  await page.waitForSelector('.study-focus', { state: 'detached' })
+  assert.ok(!(await page.isChecked('.study-source-row:has-text("Heat pumps in old buildings") .study-pick')))
 
   // On a phone the three columns are tabs.
   await page.setViewportSize({ width: 390, height: 844 })

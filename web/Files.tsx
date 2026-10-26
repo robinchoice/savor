@@ -117,7 +117,7 @@ const ModeToggle = ({ rich, setRich, labels = [t('Rich'), t('Markdown')] }: { ri
 const Loading = ({ text = t('Loading editor…') }: { text?: string }) => <p class="muted pad">{text}</p>
 
 // PDFs, Word and Excel files open read-only, with a button to download them.
-export function FilePreview({ base, path, kind }: { base: string; path: string; kind: PreviewKind }) {
+export function FilePreview({ base, path, kind, page, jump }: { base: string; path: string; kind: PreviewKind; page?: number | null; jump?: number }) {
   const [file, setFile] = useState<{ blob: Blob; url: string } | null>(null)
   const [error, setError] = useState('')
   useEffect(() => {
@@ -154,7 +154,7 @@ export function FilePreview({ base, path, kind }: { base: string; path: string; 
         <Loading text={t('Loading preview…')} />
       ) : (
         <Suspense fallback={<Loading text={t('Loading preview…')} />}>
-          <FileViewer kind={kind} blob={file.blob} url={file.url} name={name} />
+          <FileViewer kind={kind} blob={file.blob} url={file.url} name={name} page={page} jump={jump} />
         </Suspense>
       )}
     </article>

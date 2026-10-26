@@ -6,12 +6,13 @@ export type PreviewKind = 'pdf' | 'docx' | 'xlsx'
 
 // Read-only previews. The files are other people's data: Word documents become sanitized HTML,
 // spreadsheets plain text in a table, and PDFs open in the browser's own viewer.
-export default function FileViewer({ kind, blob, url, name }: { kind: PreviewKind; blob: Blob; url: string; name: string }) {
+export default function FileViewer({ kind, blob, url, name, page, jump }: { kind: PreviewKind; blob: Blob; url: string; name: string; page?: number | null; jump?: number }) {
   if (kind === 'docx') return <Docx blob={blob} />
   if (kind === 'xlsx') return <Workbook blob={blob} />
   // Phones (Chrome on Android, some WebViews) have no PDF viewer for a page.
   if (!navigator.pdfViewerEnabled) return <p class="muted">{t('PDFs can\'t be shown here on this device. Download the file to open it.')}</p>
-  return <iframe class="pdf-frame" src={url} title={name} />
+  // The viewer reads the page from the address only when it loads, so each jump loads it anew.
+  return <iframe key={`${page}:${jump}`} class="pdf-frame" src={page ? `${url}#page=${page}` : url} title={name} />
 }
 
 function Docx({ blob }: { blob: Blob }) {

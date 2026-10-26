@@ -13,6 +13,12 @@ Sources:
 - Cite with Pandoc citekeys: [@key], [@key, p. 12], [-@key]. Give a page for every claim taken from a source when the PDF is in sources/.
 - Mark direct quotes as quotes and copy them word for word.
 - Say so when a claim needs a source you could not find, instead of weakening or dropping the citation.
+- Savor keeps a text copy of each PDF in sources/text/<name>.txt, every page under a line like `--- page 3 (printed 347) ---`. Search and read those; open the PDF only when its copy is missing or nearly empty (a scan). Cite the printed page number, from the marker or printed on the page, and the PDF page only when the work has none.
+
+Questions about the sources:
+- Answer from sources/ and notes/. Cite every statement taken from them as [@key, p. N] and quote the sentence that supports it.
+- When a message names the sources to use, answer only from those.
+- If the sources don't answer the question, say so. Mark anything you add from your own knowledge or the web as such.
 
 Writing:
 - The text belongs to the author. Write or rewrite passages when asked, otherwise propose changes in your conclusion.

@@ -1,10 +1,10 @@
 import { Fragment, render, type JSX } from 'preact'
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks'
+import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import {
   Asterisk, Hexagon, Code2, Sparkles, Orbit, Plus, Search, MessageSquare, Check, MoreHorizontal, PanelLeft, PanelRight, FileText, Globe,
-  CircleAlert, ArrowUp, ArrowLeft, Pencil, MessageSquarePlus, ArrowRight, Smartphone, Monitor, Bot, ShieldQuestion, X, ChevronUp, ChevronDown, ChevronRight, Paperclip, GitBranch, GitFork, GitMerge, Trash2, Copy, FileDiff, Split, SquareArrowOutUpRight, Workflow as WorkflowIcon, Mail, MailOpen, SquareTerminal, RotateCcw,
+  BookOpen, CircleAlert, ArrowUp, ArrowLeft, Pencil, MessageSquarePlus, ArrowRight, Smartphone, Monitor, Bot, ShieldQuestion, X, ChevronUp, ChevronDown, ChevronRight, Paperclip, GitBranch, GitFork, GitMerge, Trash2, Copy, FileDiff, Split, SquareArrowOutUpRight, Workflow as WorkflowIcon, Mail, MailOpen, SquareTerminal, RotateCcw,
 } from 'lucide-preact'
 import {
   api, avatarStyle, cap, desktop, duration, effortLabel, formatStamp, formatTime, freeAgent, go, initial, lastThreadKey, PROVIDER_NAMES, runTrigger, useApi, kindOf, noticeOf, NOTICES, RINGS, type ActivityEvent, type AgentConfig, type Approval, type ApprovalOption, type Attachment, type Decision, type Fallback, type Message, type Plan, type PlanAgent, type PlanStep, type Proc, type Project, type Reason, type Thread, type Workflow, type Worktree,
@@ -23,6 +23,7 @@ import { runInTerminal, setTerminalHome, showTerminal } from './Terminal'
 import { offerUndo, resetWalk, swipeToFinish, ThumbBar, UndoToast } from './Swipe'
 import { Panel, useHidePanel, useNarrow } from './Layout'
 import { plural, t, tx } from './i18n'
+import { citationsIn, FOCUS_HEAD, shortName, StudyContext, type Cite } from './cite'
 
 const SHELL = /\blanguage-(bash|sh|shell|zsh)\b/
 
@@ -68,7 +69,10 @@ DOMPurify.addHook('afterSanitizeAttributes', (node) => {
 export function Markdown({ text }: { text: string }) {
   const html = useMemo(() => DOMPurify.sanitize(marked.parse(text, { async: false }) as string), [text])
   const ref = useRef<HTMLDivElement>(null)
+  const study = useContext(StudyContext)
   const onClick = (e: MouseEvent) => {
+    const chip = study && (e.target as HTMLElement).closest<HTMLElement>('.cite-chip')
+    if (chip) return study.open(chip.dataset.key!, Number(chip.dataset.page) || null)
     const href = (e.target as HTMLElement).closest('a')?.getAttribute('href')
     const local = href && localPath(href)
     if (!local) return
@@ -96,7 +100,68 @@ export function Markdown({ text }: { text: string }) {
     }
     return () => slots.forEach((slot) => render(null, slot))
   }, [html])
+  // In Study, citations like [@key, p. 12] become chips that open their source at that page.
+  useLayoutEffect(() => {
+    if (!study) return
+    const walk = document.createTreeWalker(ref.current!, NodeFilter.SHOW_TEXT, {
+      acceptNode: (n) => (n.parentElement!.closest('code, pre, a') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT),
+    })
+    const nodes: Text[] = []
+    while (walk.nextNode()) if ((walk.currentNode as Text).data.includes('@')) nodes.push(walk.currentNode as Text)
+    for (const node of nodes) {
+      const found = citationsIn(node.data)
+      if (!found.length) continue
+      const frag = document.createDocumentFragment()
+      let at = 0
+      for (const g of found) {
+        frag.append(node.data.slice(at, g.start))
+        for (const part of g.parts) frag.append(typeof part === 'string' ? part : citeChip(part))
+        at = g.end
+      }
+      frag.append(node.data.slice(at))
+      node.replaceWith(frag)
+    }
+  }, [html, !!study])
+  useLayoutEffect(() => {
+    if (!study) return
+    for (const chip of ref.current!.querySelectorAll<HTMLButtonElement>('.cite-chip')) {
+      const s = study.sources.find((x) => x.key === chip.dataset.key)
+      const locator = chip.dataset.locator ? `, ${chip.dataset.locator}` : ''
+      // [-@key] leaves out the authors, who are named in the sentence.
+      chip.textContent = s ? (chip.dataset.suppress ? s.year || shortName(s) : shortName(s)) + locator : `@${chip.dataset.key}${locator}`
+      chip.title = s ? [s.title, s.venue].filter(Boolean).join(' · ') : t('Not in the bibliography')
+      chip.classList.toggle('missing', !s)
+      chip.disabled = !s
+    }
+  }, [html, study?.sources])
   return <div class="md" ref={ref} onClick={onClick} dangerouslySetInnerHTML={{ __html: html }} />
+}
+
+// The sources a question was narrowed to (Study) show as a note, not as the list sent to the agent.
+function UserText({ text, q }: { text: string; q: string }) {
+  const [own, focus] = text.split(`\n\n${FOCUS_HEAD}\n`)
+  return (
+    <div class="plain">
+      <Highlighted text={own} q={q} />
+      {focus !== undefined && (
+        <div class="focus-note" title={focus}>
+          <BookOpen size={13} /> {plural(focus.split('\n').length, 'Answered only from {n} source', 'Answered only from {n} sources')}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function citeChip(c: Cite) {
+  const chip = document.createElement('button')
+  chip.type = 'button'
+  chip.className = 'cite-chip'
+  chip.dataset.key = c.key
+  chip.dataset.locator = c.locator
+  if (c.page) chip.dataset.page = String(c.page)
+  if (c.suppress) chip.dataset.suppress = '1'
+  chip.textContent = `@${c.key}`
+  return chip
 }
 
 const PROVIDER_ICONS: Record<string, [any, string]> = {
@@ -1535,7 +1600,7 @@ function MessageItem({ m, thread, workflow, decisions, active, answers, setAnswe
               ))}
             </div>
           ) : null}
-          {m.text && (m.kind === 'user' ? <div class="plain"><Highlighted text={m.text} q={highlight} /></div> : <Markdown text={m.kind === 'error' || m.kind === 'update' ? tx(m.text) : m.text} />)}
+          {m.text && (m.kind === 'user' ? <UserText text={m.text} q={highlight} /> : <Markdown text={m.kind === 'error' || m.kind === 'update' ? tx(m.text) : m.text} />)}
           {m.commits?.length ? (
             <div class="commits">
               {m.commits.map((c) => (

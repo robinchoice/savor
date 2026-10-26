@@ -72,6 +72,51 @@ const pdfs = (p: Project) => {
     .sort((a, b) => b.mtime - a.mtime)
 }
 const stem = (file: string) => path.basename(file, path.extname(file)).toLowerCase()
+const textOf = (pdf: string) => `sources/text/${path.basename(pdf, path.extname(pdf))}.txt`
+
+// A text copy of every PDF, page by page, so each agent can search the sources and check a cited page
+// without reading the PDF (Codex and Antigravity can't). The PDF names a page's printed number when
+// it has page labels. One PDF at a time, in the daemon, so a huge one is left out and a stuck one
+// given up; one that can't be read is tried again only once it changes.
+const MAX_TEXT_PDF = 100 * 1024 * 1024
+let extracting = Promise.resolve()
+const tried = new Set<string>()
+function extract(p: Project, pdf: string) {
+  const file = path.join(p.path, pdf)
+  const stat = fs.statSync(file)
+  const tag = `${file}:${stat.mtimeMs}`
+  if (tried.has(tag) || stat.size > MAX_TEXT_PDF) return extracting
+  tried.add(tag)
+  return (extracting = extracting.then(async () => {
+    try {
+      const { getDocumentProxy } = await import('unpdf')
+      const doc = await getDocumentProxy(new Uint8Array(fs.readFileSync(file)), { verbosity: 0 })
+      let timer: NodeJS.Timeout | undefined
+      const late = new Promise<never>((_, reject) => (timer = setTimeout(() => reject(new Error('took longer than two minutes')), 120_000)))
+      const pages = async () => {
+        const labels = await doc.getPageLabels().catch(() => null)
+        const out: string[] = []
+        for (let n = 1; n <= doc.numPages; n++) {
+          const items = (await (await doc.getPage(n)).getTextContent()).items as { str?: string; hasEOL?: boolean }[]
+          const text = items.map((i) => (i.str ?? '') + (i.hasEOL ? '\n' : '')).join('').replace(/[ \t]+\n/g, '\n').trim()
+          const printed = labels?.[n - 1]
+          out.push(`--- page ${n}${printed && printed !== String(n) ? ` (printed ${printed})` : ''} ---\n${text}\n`)
+        }
+        return out.join('\n')
+      }
+      try {
+        const text = await Promise.race([late, pages()])
+        fs.mkdirSync(path.join(p.path, 'sources/text'), { recursive: true })
+        fs.writeFileSync(path.join(p.path, textOf(pdf)), text)
+      } finally {
+        clearTimeout(timer)
+        await doc.loadingTask.destroy()
+      }
+    } catch (e) {
+      console.warn(`[sources] no text from ${pdf}: ${(e as Error).message}`)
+    }
+  }))
+}
 const cleanDoi = (s?: string) => s?.replace(/^https?:\/\/(dx\.)?doi\.org\//i, '').toLowerCase()
 
 export function list(p: Project) {
@@ -79,6 +124,16 @@ export function list(p: Project) {
   for (const c of chapters(p))
     for (const [, key] of read(p, c.path).matchAll(CITE)) if (!CROSSREF.test(key)) cited.set(key, (cited.get(key) ?? 0) + 1)
   const files = pdfs(p)
+  // PDFs an agent or the user put there or replaced get their text copy now, and copies of PDFs that
+  // are gone go too, so no search finds them.
+  const copied = (f: string) => fs.statSync(path.join(p.path, textOf(f)), { throwIfNoEntry: false })?.mtimeMs ?? 0
+  const sourcePdfs = files.filter((f) => /\.pdf$/i.test(f.path))
+  for (const f of sourcePdfs) if (copied(f.path) < f.mtime) void extract(p, f.path)
+  const textDir = path.join(p.path, 'sources/text')
+  const kept = new Set(sourcePdfs.map((f) => path.basename(textOf(f.path))))
+  const ours = (file: string) => fs.readFileSync(file, 'utf8').startsWith('--- page ')
+  if (fs.existsSync(textDir)) for (const name of fs.readdirSync(textDir)) if (name.endsWith('.txt') && !kept.has(name) && ours(path.join(textDir, name))) fs.rmSync(path.join(textDir, name), { force: true })
+  const text = (file: string | null) => (file && /\.pdf$/i.test(file) && copied(file) ? textOf(file) : null)
   const byStem = new Map(files.map((f) => [stem(f.path), f.path]))
   const entries = entriesOf(p)
   // Newest first: entries are appended, PDFs without an entry were mostly just uploaded.
@@ -89,11 +144,12 @@ export function list(p: Project) {
     year: e.fields.year ?? e.fields.date?.slice(0, 4) ?? '',
     venue: e.fields.journal ?? e.fields.journaltitle ?? e.fields.booktitle ?? e.fields.publisher ?? '',
     doi: cleanDoi(e.fields.doi) ?? null,
+    pages: e.fields.pages ?? '',
     file: byStem.get(e.key.toLowerCase()) ?? (e.fields.file && files.find((f) => e.fields.file.includes(path.basename(f.path)))?.path) ?? null,
     cited: cited.get(e.key) ?? 0,
-  }))
+  })).map((s) => ({ ...s, text: text(s.file) }))
   const linked = new Set(listed.map((s) => s.file))
-  const loose = files.filter((f) => !linked.has(f.path)).map((f) => ({ key: null, title: path.basename(f.path), authors: '', year: '', venue: '', doi: null, file: f.path, cited: 0 }))
+  const loose = files.filter((f) => !linked.has(f.path)).map((f) => ({ key: null, title: path.basename(f.path), authors: '', year: '', venue: '', doi: null, pages: '', file: f.path, text: text(f.path), cited: 0 }))
   const keys = new Set(entries.map((e) => e.key))
   const missing = [...cited].filter(([key]) => !keys.has(key)).map(([key, n]) => ({ key, cited: n }))
   return { bibliography: bibliography(p), sources: [...loose, ...listed], missing }
@@ -152,6 +208,7 @@ function freePath(p: Project, name: string) {
 const save = (p: Project, rel: string, buf: Buffer) => {
   fs.mkdirSync(path.join(p.path, 'sources'), { recursive: true })
   fs.writeFileSync(path.join(p.path, rel), buf)
+  void extract(p, rel)
 }
 
 // The open-access PDFs that OpenAlex knows for a DOI, the best one first. Some publishers turn
