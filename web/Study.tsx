@@ -84,7 +84,7 @@ export function StudyView({ project, threadId, isNew }: { project: Project; thre
       )}
     </section>
   )
-  const doc = open && <DocPane project={project} open={open} close={() => setOpenState(null)} wide={wide && !narrow} setWide={setWide} narrow={narrow} />
+  const doc = open && <DocPane project={project} open={open} close={() => setOpenState(null)} wide={wide && !narrow} setWide={setWide} narrow={narrow} others={others} />
   const work = <WorkPane project={project} open={setOpen} ask={ask} others={others} rev={sourcesRev} />
   const swapped = wide && !narrow && !!open
   return (
@@ -372,6 +372,21 @@ function SourceDetail({ source: s, back, openPdf, ask, askAbout, bibliography }:
   )
 }
 
+// The other open conversations that work or wait for the user, at the top of the right column.
+const Background = ({ project, others }: { project: Project; others: Thread[] }) =>
+  others.length ? (
+    <div class="ws-card work-bg-card">
+      <div class="field-label">{t('In the background')}</div>
+      {others.map((th) => (
+        <a key={th.id} class="work-bg" href={`#/p/${project.id}/t/${th.id}`}>
+          <span class={`ring ${RINGS[kindOf(th)]}`} />
+          <span class="name">{th.summary ?? th.title}</span>
+          <span class="muted small">{th.waitsFor ? REASONS[th.waitsFor.reason] : t('Working')}</span>
+        </a>
+      ))}
+    </div>
+  ) : null
+
 function WorkPane({ project, open, ask, others, rev }: { project: Project; open: (o: Open) => void; ask: (text: string) => void; others: Thread[]; rev: number }) {
   const base = `/projects/${project.id}/export`
   const [work, reload] = useApi<Work>(base, (e) => e.projectId === project.id && e.type === 'status')
@@ -403,18 +418,7 @@ function WorkPane({ project, open, ask, others, rev }: { project: Project; open:
         <h2>{t('Manuscript')}</h2>
       </div>
       <div class="study-body">
-        {others.length > 0 && (
-          <div class="ws-card work-bg-card">
-            <div class="field-label">{t('In the background')}</div>
-            {others.map((th) => (
-              <a key={th.id} class="work-bg" href={`#/p/${project.id}/t/${th.id}`}>
-                <span class={`ring ${RINGS[kindOf(th)]}`} />
-                <span class="name">{th.summary ?? th.title}</span>
-                <span class="muted small">{th.waitsFor ? REASONS[th.waitsFor.reason] : t('Working')}</span>
-              </a>
-            ))}
-          </div>
-        )}
+        <Background project={project} others={others} />
         {work.title && <div class="work-title">{work.title}</div>}
         <div class="muted small">
           {[work.kind, style, work.deadline && (days !== null && days >= 0 ? t('due {date} ({n} days)', { date: new Date(work.deadline).toLocaleDateString(), n: days }) : t('due {date}', { date: work.deadline }))].filter(Boolean).join(' · ')}
@@ -496,7 +500,7 @@ function WorkPane({ project, open, ask, others, rev }: { project: Project; open:
   )
 }
 
-function DocPane({ project, open, close, wide, setWide, narrow }: { project: Project; open: NonNullable<Open>; close: () => void; wide: boolean; setWide: (on: boolean) => void; narrow: boolean }) {
+function DocPane({ project, open, close, wide, setWide, narrow, others }: { project: Project; open: NonNullable<Open>; close: () => void; wide: boolean; setWide: (on: boolean) => void; narrow: boolean; others: Thread[] }) {
   const base = `/projects/${project.id}`
   return (
     <aside class="study-doc">
@@ -511,6 +515,7 @@ function DocPane({ project, open, close, wide, setWide, narrow }: { project: Pro
           </button>
         )}
       </div>
+      <Background project={project} others={others} />
       {open.kind === 'pdf' ? <FilePreview key={open.path} base={base} path={open.path} kind="pdf" page={open.page} jump={open.jump} /> : <FileEditor key={open.path} base={base} path={open.path} follow={project.id} />}
     </aside>
   )

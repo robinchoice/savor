@@ -1534,7 +1534,7 @@ button.study-source:hover { background: var(--card); }
 .work-chapter:hover { background: var(--card); }
 .work-chapter .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .work-bg-card { padding: 8px 8px 6px; margin-bottom: 10px; }
-.study-body .work-bg-card .field-label { margin: 0 8px 2px; }
+.work-bg-card .field-label { margin: 0 8px 2px; color: var(--faint); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; }
 .work-bg { display: flex; gap: 8px; align-items: center; padding: 5px 8px; border-radius: 8px; color: var(--text); font-size: 13px; }
 .work-bg:hover { background: var(--bg); }
 .work-bg .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1543,6 +1543,7 @@ button.study-source:hover { background: var(--card); }
 .study-doc { display: flex; flex-direction: column; min-height: 0; }
 .study-doc-bar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--line); flex: none; }
 .study-doc-bar button.on { background: var(--raised); }
+.study-doc > .work-bg-card { flex: none; margin: 8px 12px 0; }
 .study-doc > article { flex: 1; overflow: auto; padding: 16px 20px; max-width: none; }
 .study.swapped .study-doc > article { padding: 24px 40px; }
 .study > .study-tabs { display: flex; flex-direction: row; overflow: visible; border-top: 1px solid var(--line); background: var(--panel); padding-bottom: env(safe-area-inset-bottom); }
