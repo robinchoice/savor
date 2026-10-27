@@ -23,7 +23,8 @@ after(async () => {
     server.kill()
     await exited
   }
-  fs.rmSync(TMP, { recursive: true, force: true })
+  // The usage checks the daemon started last can outlive it for a moment and still write here.
+  fs.rmSync(TMP, { recursive: true, force: true, maxRetries: 5 })
 })
 
 const freePort = () =>
