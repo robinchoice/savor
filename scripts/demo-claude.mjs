@@ -4,8 +4,10 @@
 // DEMO_SITE_URL is the bakery page the demo opens in the preview. DEMO_PAUSE_MS slows the turns down for
 // scripts/demo-video.mjs, so the video shows the agent at work.
 import readline from 'node:readline'
+import { execFileSync } from 'node:child_process'
 import crypto from 'node:crypto'
 import fs from 'node:fs'
+import path from 'node:path'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 
@@ -31,6 +33,7 @@ if (!args.includes('--mcp-config')) {
       models: [
         { value: 'default', displayName: 'Default (recommended)', supportedEffortLevels: efforts },
         { value: MODEL, displayName: 'Sonnet', supportedEffortLevels: efforts },
+        { value: 'opus', displayName: 'Opus', supportedEffortLevels: efforts },
       ],
       commands: [],
     })
@@ -102,6 +105,29 @@ async function turn(text) {
     await pause()
     await call('open_browser', { url: process.env.DEMO_SITE_URL })
     await call('send_conclusion_message', { text: `Warm orange (#d9792b) is the accent in index.html. The page is live at ${process.env.DEMO_SITE_URL}.` })
+  } else if (input.includes('hero more character')) {
+    // The fan-out of scripts/demo-video.mjs: each model writes its own hero into its worktree and commits it.
+    const opus = args.includes('opus')
+    if (label) await call('set_thread_label', { label: 'Bolder hero' })
+    await call('send_acknowledgement_message', { text: 'Reworking the hero in index.html.', summary: 'A hero with more character.' })
+    say('Trying a bolder headline.')
+    await pause()
+    const page = fs.readFileSync('index.html', 'utf8')
+    fs.writeFileSync(
+      'index.html',
+      opus
+        ? page
+            .replace('Baked fresh.<br>Shared warm.', 'Sourdough<br>at sunrise.')
+            .replace('.hero { padding: 72px 24px 56px; }', '.hero { padding: 72px 24px 56px; background: #2b1d14; color: #faf6f0; } .hero h1 { font-weight: 800; letter-spacing: -.03em; }')
+        : page.replace('Baked fresh.<br>Shared warm.', 'Real bread.<br>Real early.').replaceAll('#d9792b', '#2f6b4f'),
+    )
+    execFileSync('git', ['commit', '-qam', opus ? 'Dark hero: Sourdough at sunrise' : 'Green hero: Real bread, real early'])
+    await call('open_browser', { url: `${process.env.DEMO_SITE_URL}${path.relative(process.env.DEMO_ROOT, process.cwd())}/index.html` })
+    await call('send_conclusion_message', {
+      text: opus
+        ? 'A dark hero with **“Sourdough at sunrise.”** in extra bold, cream on espresso brown. Committed.'
+        : 'A green accent and the headline **“Real bread. Real early.”**, the layout unchanged. Committed.',
+    })
   } else if (input.includes('launch date')) {
     say('Adding the launch date and a pre-order section.')
     await pause()

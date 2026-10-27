@@ -46,14 +46,18 @@ fs.mkdirSync(brotzeit)
 fs.mkdirSync(path.join(TMP, 'portfolio'))
 fs.writeFileSync(path.join(brotzeit, 'index.html'), BAKERY)
 const FONT = fs.readFileSync(path.join(ROOT, 'site/fonts/bricolage-grotesque-latin.woff2'))
-// Serves index.html fresh on every request, so the preview shows the agent's change after it reloads.
+// Serves index.html fresh on every request, so the preview shows the agent's change after it reloads. Other
+// paths are pages under TMP, such as the fan-out's worktrees.
 const site = http
-  .createServer((req, res) =>
-    req.url === '/font.woff2'
-      ? res.writeHead(200, { 'content-type': 'font/woff2' }).end(FONT)
-      : res.writeHead(200, { 'content-type': 'text/html' }).end(fs.readFileSync(path.join(brotzeit, 'index.html'))),
-  )
+  .createServer((req, res) => {
+    if (req.url === '/font.woff2') return res.writeHead(200, { 'content-type': 'font/woff2' }).end(FONT)
+    const file = req.url === '/' ? path.join(brotzeit, 'index.html') : path.join(TMP, path.normalize(decodeURIComponent(req.url)))
+    if (!file.endsWith('.html') || !fs.existsSync(file)) return res.writeHead(404).end()
+    res.writeHead(200, { 'content-type': 'text/html' }).end(fs.readFileSync(file))
+  })
   .listen(SITE_PORT, '127.0.0.1')
+// The demo's repos commit with a git config of their own, not the user's signing setup.
+fs.writeFileSync(path.join(TMP, 'gitconfig'), '[user]\n\tname = Brotzeit\n\temail = team@brotzeit.example\n')
 
 const port = await freePort()
 const base = `http://127.0.0.1:${port}`
@@ -71,6 +75,9 @@ const server = spawn(process.execPath, [path.join(ROOT, 'dist/server/index.mjs')
     SAVOR_ANTIGRAVITY_BIN: missing,
     CLAUDE_CONFIG_DIR: path.join(TMP, 'claude'),
     CODEX_HOME: path.join(TMP, 'codex'),
+    GIT_CONFIG_GLOBAL: path.join(TMP, 'gitconfig'),
+    GIT_CONFIG_NOSYSTEM: '1',
+    DEMO_ROOT: TMP,
     DEMO_SITE_URL: `http://localhost:${SITE_PORT}/`,
     // The clips show the agent at work for a shorter moment than the demo.
     DEMO_PAUSE_MS: SCENES.includes('demo') ? '1800' : '900',
@@ -230,6 +237,33 @@ try {
         await page.mouse.move(SIZE.width - 300, 300, { steps: 25 })
         await wait(4500)
       }),
+    // Clip: one prompt to two models, each in its own worktree, compared side by side, and the pick merged.
+    fanout: async () => {
+      const git = (...args) => execFileSync('git', args, { cwd: brotzeit, env: { ...process.env, GIT_CONFIG_GLOBAL: path.join(TMP, 'gitconfig'), GIT_CONFIG_NOSYSTEM: '1' } })
+      git('init', '-q', '-b', 'main')
+      git('add', '.')
+      git('commit', '-qm', 'Landing page')
+      await api('POST', '/presets', { name: 'Opus · high', agent: { provider: 'claude', model: 'opus', reasoning: 'high' } })
+      await record('fanout', { ready: 'text=Website launch checklist' }, async ({ page, wait, click, write }) => {
+        await wait(800)
+        await click('.new-btn')
+        await page.waitForSelector('text=What do you want to build?')
+        await click('button[title="Attach, mention or compare agents"]')
+        await click('.plus-menu button:has-text("Compare agents")')
+        await click('.fan-row button:has-text("Add agent")')
+        await click('.menu button:has-text("Opus · high")')
+        await write('.composer textarea', 'Give the hero more character: a bolder headline and a new tagline.')
+        await page.keyboard.press('Enter')
+        await page.waitForSelector('.fan-col:nth-child(2) .fan-frame img', { timeout: 30_000 })
+        await page.waitForSelector('.fan-col:nth-child(1) .fan-frame img', { timeout: 30_000 })
+        await wait(2500)
+        await click('.fan-col:nth-child(2) button:has-text("Pick")')
+        await wait(1200)
+        await click('.pick-dialog button.primary')
+        await page.waitForSelector('.thread-sub :text("merged")', { timeout: 30_000 })
+        await wait(3000)
+      })
+    },
   }
   for (const name of SCENES) await scenes[name]()
 } finally {
