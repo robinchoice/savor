@@ -102,6 +102,23 @@ async function turn(text) {
     await pause()
     await call('open_browser', { url: process.env.DEMO_SITE_URL })
     await call('send_conclusion_message', { text: `Warm orange (#d9792b) is the accent in index.html. The page is live at ${process.env.DEMO_SITE_URL}.` })
+  } else if (input.includes('launch date')) {
+    say('Adding the launch date and a pre-order section.')
+    await pause()
+    await call('send_conclusion_message', {
+      text: 'Checklist updated: launch on Saturday, 7 November, and a new section for online pre-orders (payment, pickup slots, order cut-off).',
+      suggestions: ['Set up the pre-order form', 'Write the launch announcement for Instagram'],
+    })
+  } else if (input.includes('out of date')) {
+    if (label) await call('set_thread_label', { label: 'Morning site check' })
+    await call('send_acknowledgement_message', { text: 'Opening the website in the preview.', summary: 'Morning check of the bakery website.' })
+    await call('open_browser', { url: process.env.DEMO_SITE_URL })
+    say('Reading the page.')
+    await pause()
+    await call('send_conclusion_message', {
+      text: 'Two things are out of date on brotzeit-bakery.de:\n\n- The opening hours still show the summer hours (until 19:00).\n- The bestsellers lack the Christmas stollen, which is in the shop since Monday.',
+      suggestions: ['Update the opening hours', 'Add the Christmas stollen to the bestsellers'],
+    })
   } else {
     say('Enlarging the headline and reloading.')
     await sleep(300)
