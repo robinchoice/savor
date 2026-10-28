@@ -476,6 +476,31 @@ test('the relay counts installations from their daily ping, and keeps the counts
   )
 })
 
+test('the relay lists online daemons with their version, behind the usage token', async () => {
+  const instances = (token = 'usage-token') => fetch(relayBase + '/instances', { headers: { authorization: `Bearer ${token}` } })
+  const mine = async () => (await (await instances()).json()).instances.find((i) => i.id === relay.id)
+  const relay = await local('GET', '/relay')
+  const version = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version
+  assert.equal((await instances('wrong')).status, 401)
+  assert.equal((await fetch(relayBase + '/instances')).status, 401)
+  const online = await mine()
+  assert.deepEqual(Object.keys(online).sort(), ['id', 'lastSeen', 'online', 'since', 'version'])
+  assert.equal(online.version, version)
+  assert.equal(online.online, true)
+
+  await local('PUT', '/relay', { url: relayBase, enabled: false })
+  try {
+    await until(async () => (await mine())?.online === false)
+    const offline = await mine()
+    assert.equal(offline.version, version)
+    assert.ok(offline.lastSeen >= online.since && offline.lastSeen <= Date.now())
+  } finally {
+    await local('PUT', '/relay', { url: relayBase, enabled: true })
+    await until(async () => (await local('GET', '/relay')).state === 'online')
+  }
+  assert.equal((await mine()).online, true)
+})
+
 test('spoofed X-Forwarded-For does not bypass the rate limit', async () => {
   const outcomes = []
   for (let i = 0; i < 70; i++) {

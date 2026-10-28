@@ -7,7 +7,7 @@
 import * as t from '../shared/tunnel.js'
 import * as store from './store.js'
 import * as devices from './devices.js'
-import { PORT } from './config.js'
+import { PORT, VERSION } from './config.js'
 import { emit } from './events.js'
 
 type Status = { state: 'off' | 'connecting' | 'online' | 'error'; error?: string; id?: string }
@@ -93,7 +93,7 @@ function connect(url: string) {
 }
 
 function onRelayMessage(ws: WebSocket, m: any) {
-  if (m.t === 'challenge') ws.send(JSON.stringify({ t: 'auth', pk: t.b64.enc(identity().pk), mac: t.answerChallenge(identity(), m) }))
+  if (m.t === 'challenge') ws.send(JSON.stringify({ t: 'auth', pk: t.b64.enc(identity().pk), mac: t.answerChallenge(identity(), m), v: VERSION }))
   if (m.t === 'ready') {
     retryDelay = 2000
     setStatus({ state: 'online', id: m.id })

@@ -193,7 +193,7 @@ To mark an installation as internal, set `"internal": true` in `~/.savor/state.j
 | `RELAY_TRUST_PROXY` | off | Relay only: set to `1` behind a reverse proxy, so rate limits use `X-Forwarded-For` |
 | `RELAY_MAX_DAEMONS` | `5000` | Relay only: computers that can be connected at once |
 | `RELAY_DB` | in memory | Relay only: SQLite file for the installation counts |
-| `RELAY_USAGE_TOKEN` | – | Relay only: bearer token for `GET /usage`, the weekly installation counts |
+| `RELAY_USAGE_TOKEN` | – | Relay only: bearer token for `GET /usage`, the weekly installation counts, and `GET /instances`, the computers online now or in the last week with their relay address and Savor version (kept in memory only) |
 | `SAVOR_USAGE_URL` | set by the desktop app | Where the daily usage ping goes; unset, nothing is sent |
 | `SAVOR_CHROMIUM` | Playwright Chromium, then system Chrome/Chromium | Browser for the preview |
 | `SAVOR_CLAUDE_BIN`, `SAVOR_CODEX_BIN`, `SAVOR_OPENCODE_BIN`, `SAVOR_GROK_BIN`, `SAVOR_ANTIGRAVITY_BIN` | `claude`, `codex`, `opencode`, `grok`, `agy` | Agent binaries |

@@ -26,14 +26,22 @@ const MAX_DAEMONS = Number(process.env.RELAY_MAX_DAEMONS ?? 5000)
 const MAX_DEVICES_PER_DAEMON = 32
 const MAX_DEVICES_PER_IP_PER_DAEMON = 8
 const CONNECTS_PER_MINUTE = 60
-// Lets GET /usage read the installation counts; without it, /usage only takes pings.
+// Lets GET /usage read the installation counts and GET /instances the daemons that are or were
+// online; without it, /usage only takes pings and /instances answers 401.
 const USAGE_TOKEN = process.env.RELAY_USAGE_TOKEN
+// Daemons that went offline stay listed for a week, at most this many.
+const MAX_OFFLINE = 10_000
+const OFFLINE_DAYS = 7
 // For tests: append every forwarded payload so they can check that no plaintext passes through.
 const TAP = process.env.RELAY_TAP_FILE
 
 interface Device { socket: WebSocket; ip: string }
 interface Daemon { socket: WebSocket; devices: Map<string, Device> }
 const daemons = new Map<string, Daemon>()
+// For monitoring Savor Cloud: address, version and when a daemon connected or went offline, no
+// contents. Kept in memory, so a restarted relay only knows the daemons that reconnect.
+interface Instance { version: string | null; online: boolean; since: number }
+const instances = new Map<string, Instance>()
 const recentConnects = new Map<string, number[]>()
 
 const MIME: Record<string, string> = {
@@ -111,6 +119,9 @@ function acceptDaemon(socket: WebSocket) {
       // A reconnect from the same key replaces the old socket; its tunnels can't be resumed.
       const old = daemons.get(id)
       daemons.set(id, { socket, devices: new Map() })
+      const version = typeof m.v === 'string' && /^[\w.+-]{1,32}$/.test(m.v) ? m.v : null
+      instances.delete(id)
+      instances.set(id, { version, online: true, since: Date.now() })
       if (old) {
         old.socket.close(4409, 'replaced')
         for (const device of old.devices.values()) device.socket.close(4503, 'daemon reconnected')
@@ -132,6 +143,10 @@ function acceptDaemon(socket: WebSocket) {
     const d = id ? daemons.get(id) : null
     if (!d || d.socket !== socket) return
     daemons.delete(id!)
+    const version = instances.get(id!)?.version ?? null
+    instances.delete(id!)
+    instances.set(id!, { version, online: false, since: Date.now() })
+    pruneInstances()
     for (const device of d.devices.values()) device.socket.close(4503, 'daemon offline')
   })
 }
@@ -162,17 +177,40 @@ function acceptDevice(socket: WebSocket, id: string, ip: string) {
   })
 }
 
+// Offline entries are in the order they went offline, so the oldest come first.
+function pruneInstances(now = Date.now()) {
+  let offline = [...instances.values()].filter((i) => !i.online).length
+  for (const [id, i] of instances) {
+    if (i.online) continue
+    if (offline <= MAX_OFFLINE && now - i.since < OFFLINE_DAYS * 86_400_000) break
+    instances.delete(id)
+    offline--
+  }
+}
+
+const reply = (res: http.ServerResponse, status: number, body?: object) =>
+  res.writeHead(status, body && { 'content-type': 'application/json' }).end(body && JSON.stringify(body))
+
+function authorized(req: http.IncomingMessage) {
+  const hash = (s: string) => crypto.createHash('sha256').update(s).digest()
+  return !!USAGE_TOKEN && crypto.timingSafeEqual(hash(req.headers.authorization ?? ''), hash(`Bearer ${USAGE_TOKEN}`))
+}
+
+// GET: every daemon online now or within the last week, with its version.
+function serveInstances(req: http.IncomingMessage, res: http.ServerResponse) {
+  if (req.method !== 'GET') return reply(res, 405)
+  if (!authorized(req)) return reply(res, 401)
+  pruneInstances()
+  const now = Date.now()
+  const list = [...instances].map(([id, i]) => ({ id, version: i.version, online: i.online, ...(i.online ? { since: i.since, lastSeen: now } : { lastSeen: i.since }) }))
+  reply(res, 200, { instances: list })
+}
+
 // POST: an installation's daily ping. GET: the counts, sums only.
 function serveUsage(req: http.IncomingMessage, res: http.ServerResponse) {
-  const reply = (status: number, body?: object) => res.writeHead(status, body && { 'content-type': 'application/json' }).end(body && JSON.stringify(body))
-  if (req.method === 'GET') {
-    const auth = req.headers.authorization ?? ''
-    const hash = (s: string) => crypto.createHash('sha256').update(s).digest()
-    if (!USAGE_TOKEN || !crypto.timingSafeEqual(hash(auth), hash(`Bearer ${USAGE_TOKEN}`))) return reply(401)
-    return reply(200, usage.summary())
-  }
-  if (req.method !== 'POST') return reply(405)
-  if (rateLimited(clientIp(req))) return reply(429)
+  if (req.method === 'GET') return authorized(req) ? reply(res, 200, usage.summary()) : reply(res, 401)
+  if (req.method !== 'POST') return reply(res, 405)
+  if (rateLimited(clientIp(req))) return reply(res, 429)
   let body = ''
   req.on('data', (chunk) => {
     body += chunk
@@ -180,16 +218,21 @@ function serveUsage(req: http.IncomingMessage, res: http.ServerResponse) {
   })
   req.on('end', () => {
     const ping = usage.parsePing(parse(body) ?? {})
-    if (!ping) return reply(400)
+    if (!ping) return reply(res, 400)
     usage.record(ping)
-    reply(204)
+    reply(res, 204)
   })
 }
 
 usage.prune()
 setInterval(() => usage.prune(), 3_600_000).unref()
 
-const server = http.createServer((req, res) => (new URL(req.url ?? '/', 'http://x').pathname === '/usage' ? serveUsage(req, res) : serveStatic(req, res)))
+const server = http.createServer((req, res) => {
+  const { pathname } = new URL(req.url ?? '/', 'http://x')
+  if (pathname === '/usage') return serveUsage(req, res)
+  if (pathname === '/instances') return serveInstances(req, res)
+  serveStatic(req, res)
+})
 const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_FRAME })
 
 server.on('upgrade', (req, socket, head) => {
