@@ -39,6 +39,14 @@ fi
 if booted; then
   ufw allow OpenSSH
   ufw --force enable
+  cat >/etc/ssh/sshd_config.d/00-hardening.conf <<'EOF'
+PasswordAuthentication no
+PermitRootLogin prohibit-password
+X11Forwarding no
+AllowAgentForwarding no
+MaxAuthTries 3
+EOF
+  systemctl try-reload-or-restart ssh
 fi
 
 id savor >/dev/null 2>&1 || useradd -m -s /bin/bash savor
