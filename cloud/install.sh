@@ -95,6 +95,8 @@ User=savor
 WorkingDirectory=/home/savor/savor/current
 Environment=PATH=/home/savor/.local/bin:/usr/local/bin:/usr/bin:/bin
 Environment=SAVOR_EXIT_ON_UPDATE=/home/savor/savor/current/package.json
+# Until the customer's first device is in, each start logs a setup code that lets it in as the owner.
+Environment=SAVOR_SETUP=1
 ExecStart=/usr/bin/node dist/server/index.mjs
 Restart=always
 RestartSec=5

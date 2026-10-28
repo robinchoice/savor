@@ -1121,7 +1121,7 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
     }
     res.on('close', request.cancel)
     if (!(await request.approved)) return json(res, 403, { error: 'Pairing was not allowed on your computer.' })
-    const token = devices.addTokenDevice(name)
+    const token = devices.addTokenDevice(name, request.owner)
     emit({ type: 'devices' })
     res.writeHead(200, { 'set-cookie': `savor_device=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=31536000`, 'content-type': 'application/json' })
     return res.end('{}')
@@ -1251,6 +1251,8 @@ http
     agents.resumeInterrupted()
     started = true
     console.log(`Savor running — open ${PUBLIC_URL}/?token=${store.state().token}`)
+    const setupCode = devices.createSetupCode()
+    if (setupCode) console.log(`Setup code for the owner's device, once, for a day: ${setupCode}`)
   })
 
 // The browser module exits once its browsers are closed.

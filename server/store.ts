@@ -218,7 +218,7 @@ export interface Proc {
 }
 // Devices paired over the LAN get a cookie token (tokenHash), devices paired through the relay a public key.
 // terminal: whether the device may open the terminal, a shell on this computer.
-export interface Device { id: string; name: string; tokenHash: string; publicKey?: string; push?: PushSubscription; terminal?: boolean; createdAt: string; lastSeenAt: string | null }
+export interface Device { id: string; name: string; tokenHash: string; publicKey?: string; push?: PushSubscription; terminal?: boolean; owner?: boolean; createdAt: string; lastSeenAt: string | null }
 // Where the device's browser receives Web Push (see push.ts).
 export interface PushSubscription { endpoint: string; keys: { p256dh: string; auth: string } }
 export interface Preset { id: string; name: string; agent: AgentConfig }

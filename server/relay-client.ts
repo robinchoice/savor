@@ -97,6 +97,8 @@ function onRelayMessage(ws: WebSocket, m: any) {
   if (m.t === 'ready') {
     retryDelay = 2000
     setStatus({ state: 'online', id: m.id })
+    const setupCode = devices.openSetupCode()
+    if (setupCode) console.log(`Setup link for the owner's device: ${pairingLink(setupCode)}`)
   }
   if (typeof m.c !== 'string') return
   if (m.t === 'open' && !conns.has(m.c)) conns.set(m.c, new Conn(m.c, ws))
@@ -196,7 +198,7 @@ class Conn {
           this.send(channel.seal({ paired: false }))
           return this.fail('declined')
         }
-        const device = devices.addKeyDevice(name, devicePk)
+        const device = devices.addKeyDevice(name, devicePk, request.owner)
         emit({ type: 'devices' })
         this.send(channel.seal({ paired: true, deviceId: device.id }))
         this.fail('paired')

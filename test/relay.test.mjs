@@ -324,6 +324,75 @@ test('a demo instance lets every device in with its fixed code, without asking',
   assert.deepEqual(await demo('GET', '/devices/requests'), [])
 })
 
+// A cloud instance: the daemon started with SAVOR_SETUP, and its output so far.
+async function startCloud(home, env = {}, base) {
+  base ??= `http://127.0.0.1:${await freePort()}`
+  const child = spawn(process.execPath, [path.join(ROOT, 'dist/server/index.mjs')], {
+    env: { ...process.env, SAVOR_HOME: home, SAVOR_PORT: new URL(base).port, SAVOR_CLAUDE_BIN: path.join(ROOT, 'test/fake-claude.mjs'), SAVOR_SETUP: '1', ...env },
+    stdio: ['ignore', 'pipe', 'inherit'],
+  })
+  children.push(child)
+  const daemon = { base, child, out: '' }
+  child.stdout.on('data', (d) => (daemon.out += d))
+  return until(() => daemon.out.includes('Savor running')).then(() => daemon)
+}
+const setupCode = (daemon) => daemon.out.match(/Setup code for the owner's device, once, for a day: (\w+)/)?.[1]
+const pairLan = (base, code, name = 'Owner laptop') =>
+  fetch(`${base}/api/pair`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code, name, check: '042137' }) })
+
+test('the setup code lets the first device in through the relay as the owner, once', async () => {
+  const home = path.join(TMP, 'cloud')
+  const cloud = await startCloud(home)
+  const code = setupCode(cloud)
+  assert.match(code, /^[0-9A-F]{32}$/)
+  const owner = call(cloud.base, JSON.parse(fs.readFileSync(path.join(home, 'state.json'), 'utf8')).token)
+  await owner('PUT', '/relay', { url: relayBase, enabled: true })
+  await until(() => cloud.out.includes("Setup link for the owner's device: "))
+  const link = cloud.out.match(/Setup link for the owner's device: (\S+)/)[1]
+  assert.equal(link, `${relayBase}/#/rpair/${(await owner('GET', '/relay')).publicKey}/${code}`)
+
+  const phone = await browser.newPage({ locale: 'en-US' })
+  await phone.goto(link)
+  await phone.fill('input', 'Owner phone')
+  await phone.click('button:has-text("Pair")')
+  // Through the tunnel the owner counts as this computer, which alone gets the first-start setup.
+  await phone.waitForSelector('text=Welcome to Savor')
+  await phone.close()
+  assert.deepEqual((await owner('GET', '/devices')).map((d) => [d.name, d.via, d.owner]), [['Owner phone', 'relay', true]])
+  assert.deepEqual(await owner('GET', '/devices/requests'), [])
+
+  const again = await pairLan(cloud.base, code)
+  assert.equal(again.status, 400)
+  assert.equal((await owner('GET', '/devices')).length, 1)
+})
+
+test('a device paired with the setup code has the rights of this computer, and no new code is made once it is in', async () => {
+  const home = path.join(TMP, 'cloud-lan')
+  let cloud = await startCloud(home)
+  const reply = await pairLan(cloud.base, setupCode(cloud))
+  assert.equal(reply.status, 200)
+  const cookie = reply.headers.get('set-cookie').split(';')[0]
+  const asOwner = (method, p) => fetch(`${cloud.base}/api${p}`, { method, headers: { cookie, 'content-type': 'application/json' } })
+  assert.equal((await (await asOwner('GET', '/me')).json()).origin, 'local')
+  const listed = await asOwner('GET', '/devices')
+  assert.equal(listed.status, 200)
+  assert.deepEqual((await listed.json()).map((d) => [d.name, d.via, d.owner]), [['Owner laptop', 'lan', true]])
+
+  cloud.child.kill()
+  await new Promise((resolve) => cloud.child.once('exit', resolve))
+  cloud = await startCloud(home, {}, cloud.base)
+  assert.equal(setupCode(cloud), undefined)
+  assert.equal((await (await asOwner('GET', '/me')).json()).origin, 'local')
+})
+
+test('an expired setup code lets no device in, and without SAVOR_SETUP there is none', async () => {
+  const expired = await startCloud(path.join(TMP, 'cloud-expired'), { SAVOR_SETUP_MS: '1' })
+  await new Promise((r) => setTimeout(r, 20))
+  assert.equal((await pairLan(expired.base, setupCode(expired))).status, 400)
+  const plain = await startCloud(path.join(TMP, 'cloud-plain'), { SAVOR_SETUP: '' })
+  assert.equal(setupCode(plain), undefined)
+})
+
 test('idle sockets cannot lock real devices out', async () => {
   const id = await relayId()
   const sockets = Array.from({ length: 10 }, () => socket(relayBase.replace('http', 'ws') + '/connect?id=' + id))
