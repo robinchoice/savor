@@ -125,7 +125,11 @@ export async function record(onText: (text: string) => void): Promise<Recording>
         settled = join(settled, await text(from, length))
         from = length
       }
-      if (!settled) throw new NothingHeard(t('No speech was recognized in the recording.'))
+      if (!settled) {
+        // The audio stays, e.g. to try again with another speech model.
+        from = 0
+        throw new Error(t('No speech was recognized in the recording.'))
+      }
       return settled
     },
     cancel: finish,
@@ -150,9 +154,11 @@ function quietest(samples: Float32Array, from: number, to: number, window: numbe
 // The daemon takes 16 kHz mono 16-bit PCM. Rendering in an audio context of that rate resamples the recording.
 async function transcribe(samples: Float32Array<ArrayBuffer>, rate: number) {
   const context = new OfflineAudioContext(1, Math.ceil((samples.length * 16_000) / rate), 16_000)
+  const buffer = context.createBuffer(1, samples.length, rate)
+  // Filled before it goes to the source: Firefox takes the buffer's contents when it is assigned and renders silence.
+  buffer.copyToChannel(samples, 0)
   const source = context.createBufferSource()
-  source.buffer = context.createBuffer(1, samples.length, rate)
-  source.buffer.copyToChannel(samples, 0)
+  source.buffer = buffer
   source.connect(context.destination)
   source.start()
   const pcm = Int16Array.from((await context.startRendering()).getChannelData(0), (s) => Math.max(-1, Math.min(1, s)) * 0x7fff)

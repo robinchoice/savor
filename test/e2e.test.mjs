@@ -1017,9 +1017,13 @@ test('a recording without speech or sound says so instead of leaving the compose
   await page.waitForTimeout(1500)
   await page.click('.voice button.recording')
   await page.waitForSelector('.error-text >> text=No speech was recognized in the recording.')
-  // Trying the same audio again would understand nothing either.
-  await page.waitForSelector('.voice button[title="Voice input"]')
+  // The recording stays, and trying again transcribes all of it.
   await page.unroute('**/api/voice/transcribe')
+  await page.click('.voice button[title="Transcribe the recording again"]')
+  await page.waitForFunction(() => document.querySelector('.composer textarea').value.includes('Heard'))
+  const [, seconds] = (await page.inputValue('.composer textarea')).match(/^Heard (\d+\.\d) seconds/) ?? []
+  assert.ok(seconds >= 1.4, seconds)
+  await page.fill('.composer textarea', '')
   // A muted microphone delivers zeros.
   await page.evaluate(() => {
     const original = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices)
