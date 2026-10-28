@@ -6,6 +6,7 @@ const fs = require('node:fs')
 const net = require('node:net')
 const os = require('node:os')
 const path = require('node:path')
+const { checkForUpdate } = require('./updates.cjs')
 
 const PORT = Number(process.env.SAVOR_PORT ?? 4317)
 const HOME = process.env.SAVOR_HOME ?? path.join(os.homedir(), '.savor')
@@ -174,10 +175,11 @@ ipcMain.handle('ready-update', (e) => (fromUi(e) ? ready : null))
 // Resolves to the newer version, which then downloads in the background, or to null when this one is current.
 let download = null
 ipcMain.handle('check-for-updates', async (e) => {
-  const result = fromUi(e) ? await updater()?.checkForUpdates() : null
-  if (!result?.isUpdateAvailable) return null
-  download = result.downloadPromise
-  return result.updateInfo.version
+  const autoUpdater = fromUi(e) && updater()
+  const found = autoUpdater ? await checkForUpdate(autoUpdater, ready) : null
+  if (!found) return null
+  download = found.download
+  return found.version
 })
 // Waits for the download, then replaces the app and starts it again without asking.
 ipcMain.handle('install-update', async (e) => {
@@ -205,7 +207,11 @@ function watchUpdates() {
     win?.webContents.send('update-ready', ready)
   })
   app.on('before-quit', () => (autoUpdater.autoInstallOnAppQuit = autoUpdate()))
-  const check = () => autoUpdate() && autoUpdater.checkForUpdates().catch(() => {})
+  const check = () =>
+    autoUpdate() &&
+    checkForUpdate(autoUpdater, ready)
+      .then((found) => found?.download?.catch(() => {}))
+      .catch(() => {})
   check()
   setInterval(check, 10 * 60_000)
 }

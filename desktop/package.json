@@ -33,7 +33,8 @@
     "productName": "Savor",
     "files": [
       "main.cjs",
-      "preload.cjs"
+      "preload.cjs",
+      "updates.cjs"
     ],
     "extraResources": [
       {
