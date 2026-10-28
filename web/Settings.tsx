@@ -5,6 +5,7 @@ import { api, formatDay, go, PROVIDER_NAMES, useApi, useAgents, type ImportableS
 import { pairThroughRelay } from './transport'
 import { parsePairingLink, scanQrCode } from './native'
 import { TEMPLATES } from './templates'
+import { AntigravityWarning } from './Composer'
 import { plural, t } from './i18n'
 
 const TINTS = ['#b5654a', '#8b6bc7', '#3f9a78', '#c59a3d', '#c8577a', '#4a9bb8', '#7a8794']
@@ -103,6 +104,7 @@ export function Settings({ project }: { project: Project }) {
             </select>
           </label>
         </div>
+        <AntigravityWarning agent={agents?.find((a) => a.id === draft.agent.provider)} />
         <label class="check">
           <input type="checkbox" checked={draft.paused} onChange={(e) => set({ paused: e.currentTarget.checked })} /> {t('Pause project — scheduled workflows don\'t run')}
         </label>

@@ -2,7 +2,7 @@ import { useState } from 'preact/hooks'
 import { Archive, Check, Code, Copy, Folder, GraduationCap, Plus, RefreshCw } from 'lucide-preact'
 import { api, describeModel, desktop, effortLabel, fetchAgents, go, modelName, useAgents, type AgentConfig, type Me, type Project, type ProviderInfo } from './api'
 import { ProviderIcon } from './Conversations'
-import { effortsOf } from './Composer'
+import { AntigravityWarning, effortsOf } from './Composer'
 import { recipe } from './recipes'
 import { setPrefs, usePrefs } from './prefs'
 import { STANDARD } from './Shortcuts'
@@ -20,22 +20,25 @@ export const agentStatus = (a: ProviderInfo) => (!a.installed ? t('Not installed
 // One agent CLI on this computer, with what to run when it is not signed in.
 export function AgentStatusRow({ agent: a }: { agent: ProviderInfo }) {
   return (
-    <div class="setting agent-status">
-      <ProviderIcon provider={a.id} size={16} />
-      <span>
-        <b>{a.name}</b>
-        <small class="muted">
-          {a.installed && a.signedIn === false ? (
-            <>
-              {t('Sign in:')} <code>{a.signIn}</code>
-            </>
-          ) : (
-            [a.version, a.account].filter(Boolean).join(' · ')
-          )}
-        </small>
-      </span>
-      <span class={a.signedIn ? 'ok' : a.signedIn === false ? 'warn' : 'muted'}>{agentStatus(a)}</span>
-    </div>
+    <>
+      <div class="setting agent-status">
+        <ProviderIcon provider={a.id} size={16} />
+        <span>
+          <b>{a.name}</b>
+          <small class="muted">
+            {a.installed && a.signedIn === false ? (
+              <>
+                {t('Sign in:')} <code>{a.signIn}</code>
+              </>
+            ) : (
+              [a.version, a.account].filter(Boolean).join(' · ')
+            )}
+          </small>
+        </span>
+        <span class={a.signedIn ? 'ok' : a.signedIn === false ? 'warn' : 'muted'}>{agentStatus(a)}</span>
+      </div>
+      <AntigravityWarning agent={a} />
+    </>
   )
 }
 
@@ -434,6 +437,7 @@ export function SetupWizard({ me, setMe }: { me: Me; setMe: (m: Me) => void }) {
                   </button>
                 ))}
               </div>
+              <AntigravityWarning agent={info} />
               {info.models.length > 0 && (
                 <label class="setting">
                   <span>{t('Model')}</span>

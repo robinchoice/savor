@@ -854,6 +854,8 @@ test('the agent list reports what is installed, signed in and offered', async ()
   assert.deepEqual(by.opencode.models.map((m) => [m.id, m.efforts]), [['fake/model', ['low', 'high']], ['fake/other', []]])
   assert.equal(by.antigravity.signedIn, true)
   assert.deepEqual(by.antigravity.models.map((m) => m.id), ['', 'fake-gemini-high', 'fake-claude'])
+  // Without "modelProvider": "gemini" and GEMINI_API_KEY, agy runs on the Google account, which Savor warns about.
+  assert.equal(by.antigravity.auth, 'google')
   assert.equal(by.grok.installed, false)
   assert.ok(by.claude.modes.find((m) => m.id === 'bypassPermissions').unsafe)
 })
@@ -3178,6 +3180,8 @@ test('the account dialog shows this computer, its devices and agents', async () 
   await page.waitForSelector('.account-dialog .qr svg')
   await page.click('.account-dialog summary:has-text("Agents")')
   await page.waitForSelector('.account-dialog .setting:has-text("Claude Code") >> text=Signed in')
+  // Antigravity on a Google account gets a warning that points to an API key.
+  await page.waitForSelector('.account-dialog .banner:has-text("signed in with a Google account") >> text=GEMINI_API_KEY')
   // The feedback button can leave the toolbar.
   await page.uncheck('.account-dialog label:has-text("Show feedback in toolbar") input')
   await page.waitForSelector('button[title="Send feedback"]', { state: 'detached' })

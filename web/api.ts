@@ -125,6 +125,7 @@ export interface ProviderInfo {
   version: string | null
   signedIn: boolean | null
   account: string | null
+  auth?: 'google' | 'api-key' | null
   models: ModelInfo[]
   efforts: string[]
   defaultEffort: string

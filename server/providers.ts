@@ -19,6 +19,8 @@ export interface ProviderInfo {
   version: string | null
   signedIn: boolean | null
   account: string | null
+  // How agy is signed in: with a Google account, which its terms don't allow inside Savor, or an API key.
+  auth?: 'google' | 'api-key' | null
   models: ModelInfo[]
   efforts: string[]
   defaultEffort: string
@@ -29,7 +31,7 @@ export interface ProviderInfo {
   signIn: string
 }
 
-type Static = Omit<ProviderInfo, 'installed' | 'version' | 'signedIn' | 'account'>
+type Static = Omit<ProviderInfo, 'installed' | 'version' | 'signedIn' | 'account' | 'auth'>
 
 export const STATIC: Record<Provider, Static> = {
   claude: {
@@ -155,7 +157,7 @@ function run(bin: string, args: string[], timeout = 10_000) {
 
 const version = (out: string) => out.match(/\d+\.\d+\.\d+[\w.-]*/)?.[0] ?? null
 
-type Probe = Pick<ProviderInfo, 'installed' | 'version' | 'signedIn' | 'account'> & { models?: ModelInfo[] }
+type Probe = Pick<ProviderInfo, 'installed' | 'version' | 'signedIn' | 'account' | 'auth'> & { models?: ModelInfo[] }
 
 const probes: Record<Provider, () => Promise<Probe>> = {
   async claude() {

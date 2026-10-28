@@ -641,6 +641,9 @@ main { flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
 .code-input { min-height: 60vh; font-family: 'Geist Mono Variable', ui-monospace, monospace; font-size: 13px; }
 .title-input { font-size: 20px; font-weight: 500; }
 .banner { padding: 8px 10px; border-radius: 8px; background: color-mix(in srgb, var(--attn) 12%, transparent); color: var(--attn); font-size: 12px; margin-bottom: 6px; }
+.banner ol { margin: 4px 0 0; padding-left: 18px; }
+.banner a { color: inherit; text-decoration: underline; }
+.banner code { overflow-wrap: anywhere; }
 
 .page { overflow-y: auto; height: 100%; }
 .form { max-width: 760px; padding: 24px 32px; display: flex; flex-direction: column; gap: 16px; }

@@ -190,17 +190,25 @@ function run(args: string[], cwd?: string) {
 const slash = async (name: string, cwd?: string) => JSON.parse(await run(['--output-format', 'json', '--print', `/${name}`], cwd)).command?.data
 
 // Lines like "gemini-3.1-pro-high\tGemini 3.1 Pro (High)". A signed-out agy fails here.
-export async function probeAntigravity(): Promise<{ signedIn: boolean; account: string | null; models: ModelInfo[] }> {
+// Google's consumer plans don't allow agy inside other apps, an API key does: "modelProvider": "gemini" in
+// its settings and GEMINI_API_KEY in its environment, which it gets from the daemon's. Only whether the key is set counts.
+export async function probeAntigravity(): Promise<{ signedIn: boolean; account: string | null; auth: 'google' | 'api-key' | null; models: ModelInfo[] }> {
   const out = await run(['models']).catch(() => null)
   let account: string | null = null
+  let provider: unknown
   try {
     account = JSON.parse(fs.readFileSync(path.join(HOME, 'google_accounts.json'), 'utf8')).active ?? null
+  } catch {}
+  try {
+    provider = JSON.parse(fs.readFileSync(path.join(HOME, 'antigravity-cli', 'settings.json'), 'utf8')).modelProvider
   } catch {}
   const models = (out ?? '').split('\n').flatMap((l) => {
     const [id, label] = l.split('\t')
     return label ? [{ id: id.trim(), label: label.trim() }] : []
   })
-  return { signedIn: models.length > 0, account, models: models.length ? [{ id: '', label: 'Default' }, ...models] : [] }
+  const signedIn = models.length > 0
+  const auth = !signedIn ? null : provider === 'gemini' && process.env.GEMINI_API_KEY ? 'api-key' : 'google'
+  return { signedIn, account, auth, models: models.length ? [{ id: '', label: 'Default' }, ...models] : [] }
 }
 
 // /skills lists only skills; agy's own commands that run headless come after them.
