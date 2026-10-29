@@ -126,7 +126,7 @@ export function Settings({ project }: { project: Project }) {
   )
 }
 
-interface MovePlan { from: string; to: string; mode: 'move' | 'relink'; blockers: string[]; processes: { pid: number; command: string }[]; symlink: boolean; claudeSessions: number; worktrees: number }
+interface MovePlan { from: string; to: string; mode: 'move' | 'relink'; blockers: string[]; processes: { pid: number; command: string }[]; symlink: boolean; claudeSessions: number; worktrees: number; leaves: boolean }
 
 
 // Renaming or moving the folder, archiving it, or pointing the project at the place it already moved to.
@@ -154,6 +154,7 @@ function MoveSection({ project }: { project: Project }) {
     setBusy(true)
     try {
       const moved = await api<Project>('POST', `/projects/${project.id}/move`, { path: plan!.to, link, force: plan!.processes.length > 0 })
+      if (plan!.leaves) return go('/')
       setDone(t('The project is now at {path}.', { path: moved.path }))
       setTarget(moved.path)
       setPlan(null)
@@ -187,6 +188,7 @@ function MoveSection({ project }: { project: Project }) {
             {plan.mode === 'move' ? t('Moves the folder to {path}.', { path: plan.to }) : t('{path} already is this folder: the project points there.', { path: plan.to })}
             {plan.claudeSessions > 0 && ` ${plural(plan.claudeSessions, '{n} Claude Code session moves along.', '{n} Claude Code sessions move along.')}`}
             {plan.worktrees > 0 && ` ${plural(plan.worktrees, '{n} worktree gets repaired.', '{n} worktrees get repaired.')}`} {t('Savor\'s terminals of this project close.')}
+            {plan.leaves && ` ${t('The project then leaves Savor\'s list. Its folder and conversations stay; adding the folder again brings it back.')}`}
           </p>
           {plan.blockers.map((b) => (
             <p key={b} class="error-text">

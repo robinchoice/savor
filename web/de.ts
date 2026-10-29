@@ -619,6 +619,7 @@ const de: Record<string, string> = {
   'Moves the folder to {path}.': 'Verschiebt den Ordner nach {path}.',
   '{path} already is this folder: the project points there.': '{path} ist bereits dieser Ordner: Das Projekt zeigt dorthin.',
   'Savor\'s terminals of this project close.': 'Die Terminals von Savor in diesem Projekt schließen sich.',
+  'The project then leaves Savor\'s list. Its folder and conversations stay; adding the folder again brings it back.': 'Das Projekt verschwindet danach aus der Liste von Savor. Ordner und Chats bleiben; wer den Ordner wieder hinzufügt, bekommt alles zurück.',
   'Processes outside Savor work in the folder. They keep running in the old place:': 'Prozesse außerhalb von Savor arbeiten im Ordner. Sie laufen am alten Ort weiter:',
   'Leave a symlink at the old path': 'Symlink am alten Pfad hinterlassen',
   'Keep the symlink {path}': 'Symlink {path} behalten',

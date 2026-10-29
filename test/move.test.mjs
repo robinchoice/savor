@@ -12,7 +12,7 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..')
 
-test('a project folder moves, archives or follows its symlink, and its conversations, worktrees and Claude Code sessions come along', { timeout: 90_000 }, async () => {
+test('a project folder moves, archives or follows its symlink, its conversations, worktrees and Claude Code sessions come along, and moved out of its folder it leaves the list', { timeout: 90_000 }, async () => {
   const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'savor-move-')))
   const home = path.join(tmp, 'home')
   const dev = path.join(tmp, 'dev')
@@ -53,7 +53,7 @@ test('a project folder moves, archives or follows its symlink, and its conversat
     const project = async (id) => (await api('GET', '/projects')).body.find((p) => p.id === id)
     const commit = (dir) => execFileSync('git', ['commit', '-q', '--allow-empty', '-m', 'init'], { cwd: dir, stdio: 'pipe' })
 
-    // A real move: the folder goes to the archive, a symlink stays at the old path.
+    // A real move: the folder gets a new name next to the old one, a symlink stays at the old path.
     const alphaPath = path.join(dev, 'alpha')
     const alpha = (await api('POST', '/projects', { path: alphaPath, create: true, name: 'Alpha' })).body
     await api('PATCH', `/projects/${alpha.id}`, { agent: { provider: 'claude' } })
@@ -65,7 +65,7 @@ test('a project folder moves, archives or follows its symlink, and its conversat
     const sid = (await api('GET', `/projects/${alpha.id}/threads/${main.id}`)).body.thread.agentSessions[0].sessionId
     fs.mkdirSync(sessions(alphaPath), { recursive: true })
     fs.writeFileSync(path.join(sessions(alphaPath), `${sid}.jsonl`), '{}\n')
-    const archive = path.join(dev, '_archive', 'alpha')
+    const archive = path.join(dev, 'alpha-renamed')
 
     // A registered process blocks the move, one outside Savor only warns.
     client = new Client({ name: 'move-test', version: '1' })
@@ -84,6 +84,7 @@ test('a project folder moves, archives or follows its symlink, and its conversat
     assert.deepEqual(plan.processes.map((p) => p.pid), [outside.pid])
     assert.equal(plan.claudeSessions, 1)
     assert.equal(plan.worktrees, 1)
+    assert.equal(plan.leaves, false)
     const refused = await api('POST', `/projects/${alpha.id}/move`, { path: archive })
     assert.equal(refused.status, 400)
     assert.match(refused.body.error, /Processes outside Savor/)
@@ -114,12 +115,12 @@ test('a project folder moves, archives or follows its symlink, and its conversat
     const taken = (await api('POST', '/projects', { path: beta0, create: true, name: 'Taken' })).body
     assert.match((await api('POST', `/projects/${alpha.id}/move`, { path: beta0, dryRun: true })).body.blockers[0], /folder of the project Taken/)
 
-    // The case of a folder archived by hand behind a symlink: the project points at the real folder, the symlink goes.
-    const realBeta = path.join(dev, '_archive', 'beta')
+    // The case of a folder renamed by hand behind a symlink: the project points at the real folder, the symlink goes.
+    const realBeta = path.join(dev, 'beta-real')
     const linkBeta = path.join(dev, 'beta')
     fs.mkdirSync(realBeta, { recursive: true })
     execFileSync('git', ['init', '-q', realBeta])
-    fs.symlinkSync('_archive/beta', linkBeta)
+    fs.symlinkSync('beta-real', linkBeta)
     const beta = (await api('POST', '/projects', { path: linkBeta, name: 'Beta' })).body
     await api('PATCH', `/projects/${beta.id}`, { agent: { provider: 'claude' } })
     const old = (await api('POST', `/projects/${beta.id}/threads`, { text: 'hello beta' })).body
@@ -131,7 +132,7 @@ test('a project folder moves, archives or follows its symlink, and its conversat
     fs.writeFileSync(path.join(sessions(realBeta), 'other.jsonl'), '{}\n')
     assert.match((await api('POST', `/projects/${beta.id}/move`, { path: path.join(dev, 'elsewhere'), dryRun: true })).body.blockers[0], /is a symlink to/)
     plan = (await api('POST', `/projects/${beta.id}/move`, { path: realBeta, dryRun: true })).body
-    assert.deepEqual([plan.mode, plan.symlink, plan.claudeSessions, plan.blockers], ['relink', true, 1, []])
+    assert.deepEqual([plan.mode, plan.symlink, plan.claudeSessions, plan.blockers, plan.leaves], ['relink', true, 1, [], false])
 
     // In the settings: check, then point the project at the real folder without keeping the symlink.
     browser = await chromium.launch({ executablePath: process.env.SAVOR_CHROMIUM })
@@ -159,12 +160,24 @@ test('a project folder moves, archives or follows its symlink, and its conversat
     fs.mkdirSync(sessions(gammaPath), { recursive: true })
     fs.writeFileSync(path.join(sessions(gammaPath), 'g.jsonl'), '{}\n')
     const gammaMoved = path.join(dev, '_archive', 'gamma')
+    fs.mkdirSync(path.dirname(gammaMoved))
     fs.renameSync(gammaPath, gammaMoved)
     assert.equal(await project(gamma.id), undefined)
     assert.equal((await api('POST', '/projects', { path: gammaMoved })).body.id, gamma.id)
     assert.equal((await project(gamma.id)).path, gammaMoved)
     assert.equal((await api('GET', '/projects')).body.filter((p) => p.id === gamma.id).length, 1)
     assert.ok(fs.existsSync(path.join(sessions(gammaMoved), 'g.jsonl')))
+
+    // Moved out of its folder or into a `_` folder there, a project leaves the list; its folder keeps it and its conversations.
+    const deltaPath = path.join(dev, 'delta')
+    const delta = (await api('POST', '/projects', { path: deltaPath, create: true, name: 'Delta' })).body
+    assert.equal((await api('POST', `/projects/${delta.id}/move`, { path: path.join(dev, '_paused', 'delta'), dryRun: true })).body.leaves, true)
+    assert.equal((await api('POST', `/projects/${delta.id}/move`, { path: path.join(dev, 'nested', 'delta'), dryRun: true })).body.leaves, false)
+    const deltaMoved = path.join(tmp, 'elsewhere', 'delta')
+    assert.equal((await api('POST', `/projects/${delta.id}/move`, { path: deltaMoved, dryRun: true })).body.leaves, true)
+    assert.equal((await api('POST', `/projects/${delta.id}/move`, { path: deltaMoved, link: false })).status, 200)
+    assert.equal(await project(delta.id), undefined)
+    assert.equal(JSON.parse(fs.readFileSync(path.join(deltaMoved, '.savor', 'project.json'), 'utf8')).id, delta.id)
 
     // Agents move and remove projects only after the user approves it in their conversation.
     const answer = async (choice) => {
@@ -175,9 +188,18 @@ test('a project folder moves, archives or follows its symlink, and its conversat
     let call = client.callTool({ name: 'move_project', arguments: { project: taken.id, archive: true, link: false } })
     const card = await answer('allow')
     assert.equal(card.title, 'Move Taken?')
-    assert.match(card.detail, new RegExp(`Moves ${beta0} to ${path.join(dev, '_archive', 'taken')}\\.`))
-    assert.equal(JSON.parse((await call).content[0].text).path, path.join(dev, '_archive', 'taken'))
+    const takenArchived = path.join(dev, '_archive', 'taken')
+    assert.match(card.detail, new RegExp(`Moves ${beta0} to ${takenArchived}\\.`))
+    assert.match(card.detail, /leaves Savor's list/)
+    const archived = JSON.parse((await call).content[0].text)
+    assert.equal(archived.path, takenArchived)
+    assert.match(archived.removed, /left Savor's project list/)
     assert.ok(!fs.existsSync(beta0))
+    assert.equal(await project(taken.id), undefined)
+    // Added again it comes back, and taken out of the archive it stays.
+    assert.equal((await api('POST', '/projects', { path: takenArchived })).body.id, taken.id)
+    assert.equal((await api('POST', `/projects/${taken.id}/move`, { path: beta0, link: false })).body.path, beta0)
+    assert.equal((await project(taken.id)).path, beta0)
     call = client.callTool({ name: 'remove_project', arguments: { project: taken.id } })
     await answer('deny')
     assert.equal((await call).content[0].text, 'The user kept the project.')

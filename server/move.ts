@@ -26,6 +26,8 @@ export interface MovePlan {
   // Claude Code sessions that move to the folder's new name under ~/.claude/projects.
   claudeSessions: number
   worktrees: number
+  // The folder leaves its parent folder or goes into one of its `_` folders: the project leaves Savor's list.
+  leaves: boolean
 }
 
 export class MoveError extends Error {}
@@ -47,6 +49,15 @@ const projectIdIn = (dir: string) => {
   } catch {
     return null
   }
+}
+
+// Out of the parent folder, or into a folder below it starting with `_` such as `_archive` or `_paused`. Back out of
+// such a folder only another `_` folder counts. A rename next to the old place stays.
+function leavesList(from: string, to: string) {
+  const rel = path.relative(path.dirname(from), path.dirname(to))
+  const outside = rel === '..' || rel.startsWith('..' + path.sep) || path.isAbsolute(rel)
+  const stored = path.basename(path.dirname(from)).startsWith('_')
+  return rel.split(path.sep).some((d) => d.startsWith('_')) || (outside && !stored)
 }
 
 // Where archiving puts a project: `_archive` next to its folder.
@@ -118,6 +129,7 @@ export function planMove(p: Project, target: string): MovePlan {
     symlink: mode === 'relink' && isSymlink(from) && real(from) === toReal,
     claudeSessions: claudeSources(from, to).reduce((n, d) => n + fs.readdirSync(d).filter((f) => f.endsWith('.jsonl')).length, 0),
     worktrees: listWorktrees(p).length,
+    leaves: leavesList(from, to),
   }
 }
 
@@ -177,6 +189,8 @@ export function moveProject(p: Project, target: string, opts: { link: boolean; f
   }
   // The registration follows first, so the project stays reachable whatever fails after.
   const moved = store.setProjectPath(p.id, to)
+  // Its folder keeps the project and its conversations, so adding it again brings them back.
+  if (plan.leaves) store.removeProject(p.id)
   emit({ type: 'projects' })
   if (plan.mode === 'move' && opts.link) fs.symlinkSync(to, from)
   if (plan.symlink && !opts.link) fs.unlinkSync(from)

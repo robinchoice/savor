@@ -358,7 +358,7 @@ function buildServer(p: Project, tid: string) {
     'move_project',
     {
       description:
-        'Move or rename a project folder, archive it to `_archive/` next to it, or point the project at the place it already moved to (e.g. the target of a symlink). Conversations, git worktrees and Claude Code sessions follow. The user approves the move here first. Conversations of that project must not be at work, so it can\'t move the project this conversation runs in.',
+        'Move or rename a project folder, archive it to `_archive/` next to it, or point the project at the place it already moved to (e.g. the target of a symlink). Conversations, git worktrees and Claude Code sessions follow. Moved out of its parent folder or into a `_` folder there (`_archive`, `_paused`), the project leaves Savor\'s list like with remove_project; a rename in the same folder keeps it. The user approves the move here first. Conversations of that project must not be at work, so it can\'t move the project this conversation runs in.',
       inputSchema: {
         project: z.string().min(1).describe('Project id or absolute path, see list_projects'),
         path: z.string().min(1).optional().describe('New absolute path or ~/…'),
@@ -378,6 +378,7 @@ function buildServer(p: Project, tid: string) {
         plan.symlink && (keep ? `The symlink ${plan.from} stays.` : `Deletes the symlink ${plan.from}.`),
         plan.claudeSessions && `${plan.claudeSessions} Claude Code session${plan.claudeSessions === 1 ? '' : 's'} move along.`,
         plan.worktrees && `${plan.worktrees} worktree${plan.worktrees === 1 ? '' : 's'} get repaired.`,
+        plan.leaves && 'The project then leaves Savor\'s list. Its folder and conversations stay; adding the folder again brings it back.',
         plan.processes.length && `Processes outside Savor work in the folder:\n${plan.processes.map((pr) => `  ${pr.pid} ${pr.command}`).join('\n')}`,
       ].filter(Boolean).join('\n')
       if (!(await approved(`Move ${target.name}?`, detail, plan.processes.length ? 'Move anyway' : 'Move'))) return ok('The user cancelled the move.')
@@ -385,7 +386,7 @@ function buildServer(p: Project, tid: string) {
       const now = store.listProjects().find((q) => q.id === target.id)
       if (now?.path !== target.path) throw new Error(`${target.name} changed while waiting for the approval. Look again.`)
       const moved = move.moveProject(now, to, { link: keep, force: true })
-      return ok({ id: moved.id, name: moved.name, path: moved.path })
+      return ok({ id: moved.id, name: moved.name, path: moved.path, ...(plan.leaves && { removed: 'Moved out of its folder, so it left Savor\'s project list. Adding the folder again brings it back.' }) })
     },
   )
 
