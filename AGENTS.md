@@ -10,10 +10,6 @@
 - Demo instance for Apple's beta review: `demo/` (daemon with the fake agent and a sample project), Coolify on VPS 3, project `privat-savor`, application `savor-demo`, built from `main` and deployed by hand. It only connects out to the relay. Its pairing link is in the Coolify log, the code in its variable `SAVOR_DEMO_PAIRING`.
 - Robin's own instance runs as the systemd user service `savor.service` on `127.0.0.1:4317`, from the AppImage of the last release.
 
-## Feature freeze until 29 October 2026
-
-- Until and including 29 October 2026 the Savor core (sessions, queue and pacing, providers, fallbacks, store, workflow scheduler) gets only fixes, tests and simplifications, no new mechanisms, because it failed twice within 24 hours on 21 and 22 October (the budget queue blocked all background work, then a damaged activity log crashed the daemon 192 times). This also holds for workflows such as "Agent-Features übernehmen". A feature that seems urgent: ask Robin first. Launch content and texts are not affected. Remove this section on 30 October.
-
 ## Checks
 
 `npm run build && npm run typecheck && npm test`
