@@ -678,7 +678,7 @@ const limits = new Map<Provider, number>()
 // An agent known to be at a usage limit: a turn stopped at it and it has not reset, or a window of the agent's usage is full.
 function atLimit(id: Provider) {
   const at = limits.get(id)
-  return (!!at && at + LIMIT_MARGIN_MS > Date.now()) || knownUsage().some((u) => u.provider === id && u.windows.some((w) => w.percent >= 100))
+  return (!!at && at + LIMIT_MARGIN_MS > Date.now()) || knownUsage().some((u) => u.provider === id && u.windows.some((w) => (!w.limitId || w.limitId === 'codex') && w.percent >= 100 && (!w.resetsAt || w.resetsAt > Date.now())))
 }
 
 // The fallback setting, and the agents at a usage limit now, for the settings and for the composer of a new conversation.
@@ -722,7 +722,7 @@ async function fallBack(p: Project, tid: string, provider: Provider, resetsAt: n
   limited.set(provider, resetsAt)
   for (const [id, at] of limited) if (at + LIMIT_MARGIN_MS < Date.now()) limited.delete(id)
   const waits = store.getThread(p, tid).resumeAt
-  const [installed, usage] = await Promise.all([listAgents(), listUsage(true)])
+  const [installed] = await Promise.all([listAgents(), listUsage(true)])
   const thread = store.getThread(p, tid)
   const input = inputOf(p, tid)
   // New input or a stop while the agents were asked.
@@ -739,7 +739,7 @@ async function fallBack(p: Project, tid: string, provider: Provider, resetsAt: n
   }
   if (credit) store.updateThread(p, tid, { apiCredit: null })
   const full = (id: Provider) =>
-    limited.has(id) || atLimit(id) || !installed.some((a) => a.id === id && a.installed && a.signedIn) || usage.some((u) => u.provider === id && u.windows.some((w) => w.percent >= 100))
+    limited.has(id) || atLimit(id) || !installed.some((a) => a.id === id && a.installed && a.signedIn)
   const list = chain() ?? FALLBACK.map(([to, permissionMode]) => (to === p.agent.provider ? p.agent : mergeAgent(thread.agent, { provider: to, permissionMode })))
   const i = list.findIndex((a) => a.provider === provider)
   const agent = [...list.slice(i + 1), ...list.slice(0, i + 1)].find((a) => !full(a.provider))

@@ -361,14 +361,26 @@ export const probeCodex = () =>
   })
 
 // The account's rate limits: how much of each window is used and when it resets.
-export const codexUsage = () => probe(async (rpc) => (await rpc.request('account/rateLimits/read', {})).rateLimits)
+interface CodexLimit {
+  limitId?: string | null
+  limitName?: string | null
+  primary: { usedPercent: number; windowDurationMins: number; resetsAt: number | null } | null
+  secondary: CodexLimit['primary']
+}
+
+export const codexUsage = () => probe<CodexLimit[]>(async (rpc) => {
+  const result = await rpc.request('account/rateLimits/read', {})
+  const buckets = Object.entries<CodexLimit>(result.rateLimitsByLimitId ?? {}).map(([limitId, limit]) => ({ ...limit, limitId }))
+  return buckets.length ? buckets : result.rateLimits ? [result.rateLimits] : []
+})
 
 const usageLimit = (error: any) => JSON.stringify(error?.codexErrorInfo ?? '').includes('usageLimitExceeded')
 
 // When every used-up window has reset again (ms), or null when none is used up.
-function resetOf(limits: any) {
-  const spent = [limits?.primary, limits?.secondary].filter((w) => w && w.usedPercent >= 100 && w.resetsAt)
-  return spent.length ? Math.max(...spent.map((w) => w.resetsAt * 1000)) : null
+function resetOf(limits: CodexLimit[]) {
+  const limit = limits.find((l) => !l.limitId || l.limitId === 'codex')
+  const spent = [limit?.primary, limit?.secondary].filter((w) => w && w.usedPercent >= 100 && w.resetsAt && w.resetsAt * 1000 > Date.now())
+  return spent.length ? Math.max(...spent.map((w) => w!.resetsAt! * 1000)) : null
 }
 
 export const codexSkills = (cwd: string) => probe<SkillInfo[]>(async (rpc) => [...(await skillsIn(rpc, cwd)).map((s) => ({ name: s.name, description: s.description })), ...COMMANDS])

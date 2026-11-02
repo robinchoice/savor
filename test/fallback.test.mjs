@@ -122,6 +122,10 @@ test('unattended conversations switch agents at a usage limit, and wait when all
   server.kill()
   await new Promise((resolve) => server.on('exit', resolve))
   fs.rmSync(AGENT_LOG + '.full')
+  const resetsAt = Math.floor(Date.now() / 1000) + 3600
+  const codex = { limitId: 'codex', primary: { usedPercent: 100, windowDurationMins: 300, resetsAt: resetsAt - 3660 }, secondary: { usedPercent: 20, windowDurationMins: 10080, resetsAt } }
+  const other = { limitId: 'codex_other', primary: { usedPercent: 100, windowDurationMins: 10080, resetsAt }, secondary: null }
+  fs.writeFileSync(AGENT_LOG + '.codex-limits', JSON.stringify({ rateLimits: codex, rateLimitsByLimitId: { codex, codex_other: other } }))
   await startDaemon()
   const switched = await start('limit-later: switch')
   await until(async () => (await read(switched)).messages.some((m) => m.kind === 'conclusion'))
@@ -134,6 +138,7 @@ test('unattended conversations switch agents at a usage limit, and wait when all
   assert.equal(update.modelInfo.provider, 'codex')
   assert.deepEqual([r.thread.agent.provider, r.thread.agent.permissionMode, r.thread.resumeAt, r.thread.error], ['codex', 'auto-review', null, null])
   assert.equal(r.messages.filter((m) => m.kind === 'ack').length, 1)
+  fs.rmSync(AGENT_LOG + '.codex-limits')
 
   // The user's own conversation keeps waiting for the reset.
   const own = (await api('POST', t, { text: 'limit-later: mine' })).id

@@ -156,6 +156,11 @@ rl.on('line', (line) => {
     case 'account/read':
       return reply({ account: { type: 'chatgpt', email: 'fake@codex.test', planType: 'plus' }, requiresOpenaiAuth: true })
     case 'account/rateLimits/read': {
+      const limitsFile = process.env.FAKE_AGENT_LOG + '.codex-limits'
+      if (fs.existsSync(limitsFile)) {
+        const limits = JSON.parse(fs.readFileSync(limitsFile, 'utf8'))
+        return limits.error ? out({ jsonrpc: '2.0', id: msg.id, error: { code: -32603, message: limits.error } }) : reply(limits)
+      }
       const usedPercent = fs.existsSync(process.env.FAKE_AGENT_LOG + '.full') ? 100 : 20
       return reply({ rateLimits: { primary: { usedPercent, windowDurationMins: 300, resetsAt: Math.floor(Date.now() / 1000) + 3600 }, secondary: null } })
     }

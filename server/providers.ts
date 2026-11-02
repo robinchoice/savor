@@ -284,16 +284,16 @@ export async function listSkills(provider: string, cwd: string): Promise<SkillIn
 // How much of each subscription limit is used, as the agents report it: Claude Code's /usage, Codex's
 // rate limits and Antigravity's /usage. OpenCode has no subscription of its own. An agent without a
 // subscription, or one that does not answer, is left out.
-export interface UsageWindow { label: string; percent: number; resets: string | null }
+export interface UsageWindow { label: string; percent: number; resets: string | null; resetsAt?: number | null; limitId?: string | null }
 export interface Usage { provider: Provider; name: string; windows: UsageWindow[] }
 
 const USAGE_MS = 60_000
 // The last known usage is served right away; asking the agents takes several seconds. Values older
 // than two refresh intervals are marked stale while the new ones are being asked for.
-let usage: Usage[] = []
+let usage: (Usage & { stale: boolean })[] = []
 let usageAt = 0
 let usageDone = 0
-let usageRefresh: Promise<Usage[]> | null = null
+let usageRefresh: Promise<(Usage & { stale: boolean })[]> | null = null
 
 const windowLabel = (mins: number) => (mins === 10080 ? 'Weekly' : mins % 1440 === 0 ? `${mins / 1440} days` : mins % 60 === 0 ? `${mins / 60} hours` : `${mins} minutes`)
 const resetTime = (s: number) => new Date(s * 1000).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).replace(/\u202f?\s?([AP]M)$/, (_, m) => m.toLowerCase())
@@ -332,9 +332,15 @@ const usageProbes: Partial<Record<Provider, () => Promise<UsageWindow[]>>> = {
   },
   async codex() {
     const limits = await codexUsage()
-    return [limits?.primary, limits?.secondary]
-      .filter((w): w is { usedPercent: number; windowDurationMins: number; resetsAt: number | null } => !!w)
-      .map((w) => ({ label: windowLabel(w.windowDurationMins), percent: w.usedPercent, resets: w.resetsAt ? resetTime(w.resetsAt) : null }))
+    return limits.flatMap((l) => [l.primary, l.secondary]
+      .filter((w) => w !== null)
+      .map((w) => ({
+        label: `${windowLabel(w.windowDurationMins)}${l.limitId && l.limitId !== 'codex' ? ` · ${l.limitName || l.limitId}` : ''}`,
+        percent: w.usedPercent,
+        resets: w.resetsAt ? resetTime(w.resetsAt) : null,
+        resetsAt: w.resetsAt ? w.resetsAt * 1000 : null,
+        limitId: l.limitId,
+      })))
   },
   async antigravity() {
     return (await antigravityUsage()).map((w) => ({ label: w.label, percent: w.percent, resets: w.resetsAt ? resetTime(w.resetsAt / 1000) : null }))
@@ -356,7 +362,7 @@ export function listUsage(fresh = false): Promise<(Usage & { stale: boolean })[]
               .map(async (a) => {
                 const windows = await usageProbes[a.id]!().catch(() => [])
                 // An agent that does not answer this time keeps its last known values.
-                return { provider: a.id, name: a.name, windows: windows.length ? windows : (usage.find((u) => u.provider === a.id)?.windows ?? []) }
+                return { provider: a.id, name: a.name, windows: windows.length ? windows : (usage.find((u) => u.provider === a.id)?.windows ?? []), stale: !windows.length }
               }),
           )
         ).filter((u) => u.windows.length),
@@ -364,7 +370,7 @@ export function listUsage(fresh = false): Promise<(Usage & { stale: boolean })[]
       .then((list) => (usage = list), () => usage)
       .finally(() => ((usageRefresh = null), (usageDone = Date.now())))
   }
-  if ((fresh || !usage.length) && usageRefresh) return usageRefresh.then((list) => list.map((u) => ({ ...u, stale: false })))
+  if ((fresh || !usage.length) && usageRefresh) return usageRefresh
   const stale = !!usageRefresh && Date.now() - usageDone > 2 * USAGE_MS
-  return Promise.resolve(usage.map((u) => ({ ...u, stale })))
+  return Promise.resolve(usage.map((u) => ({ ...u, stale: u.stale || stale })))
 }
