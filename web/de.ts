@@ -1050,6 +1050,7 @@ const de: Record<string, string> = {
   'Run commands and edit files anywhere, with network access and no approval prompts.': 'Führt Befehle aus und ändert Dateien überall, mit Netzwerkzugriff und ohne Rückfragen.',
   'Build': 'Bauen',
   'Make changes in the project. Ask before files outside it.': 'Ändert im Projekt. Fragt vor Dateien außerhalb davon.',
+  'Make changes in the project. A model reviews risky commands and files outside the project instead of you.': 'Ändert im Projekt. Riskante Befehle und Dateien außerhalb davon prüft ein Modell statt dir.',
   'Explore and plan using OpenCode’s plan mode.': 'Erkundet und plant im Planmodus von OpenCode.',
   'Grok asks when an action needs approval.': 'Grok fragt, wenn eine Aktion eine Freigabe braucht.',
   'Explore and plan without changing files.': 'Erkundet und plant, ohne Dateien zu ändern.',

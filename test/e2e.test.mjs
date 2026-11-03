@@ -767,6 +767,16 @@ test('OpenCode runs through the Agent Client Protocol', async () => {
   await api('PATCH', `/projects/${project.id}`, { agent: project.agent })
 })
 
+test("in OpenCode's Auto mode its review plugin answers permission asks, not the user", async () => {
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
+  const thread = (await api('POST', `/projects/${project.id}/threads`, { text: 'reviewed: rm', agent: { provider: 'opencode', permissionMode: 'auto' } })).body
+  const t = `/projects/${project.id}/threads/${thread.id}`
+  await until(async () => (await api('GET', t)).body.messages.some((m) => m.text === 'ACP permission: cancelled'))
+  assert.ok(!(await api('GET', t)).body.messages.some((m) => m.approval))
+  await until(async () => !(await api('GET', t)).body.busy)
+  await api('PATCH', `/projects/${project.id}`, { agent: project.agent })
+})
+
 test('Antigravity continues its conversation with the chosen model, effort and mode, and reaches Savor through MCP', async () => {
   const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
   const thread = (await api('POST', `/projects/${project.id}/threads`, { text: 'hello agy', agent: { provider: 'antigravity', model: 'fake-claude', reasoning: 'high', permissionMode: 'plan' } })).body

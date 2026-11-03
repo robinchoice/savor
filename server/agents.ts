@@ -663,7 +663,7 @@ function resumeAfterLimit(p: Project, tid: string) {
 // Workflow runs and the conversations they start have no one who waits for a usage limit: they go on with
 // the next of these agents. Each runs in a mode that doesn't stop for approvals, or as the project sets it up.
 // With the fallback on this computer (state.json `fallback`), every conversation goes on with the agents set there instead.
-const FALLBACK: [Provider, string][] = [['claude', 'auto'], ['codex', 'auto-review'], ['antigravity', 'default'], ['opencode', 'build']]
+const FALLBACK: [Provider, string][] = [['claude', 'auto'], ['codex', 'auto-review'], ['antigravity', 'default'], ['opencode', 'auto']]
 
 export const unattended = (t: Thread) => !!t.workflow || !!t.unattended
 

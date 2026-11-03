@@ -18,11 +18,23 @@ const PLAN_DECISION: ApprovalOption[] = [
 
 const MIME: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp' }
 
+// OpenCode has no auto mode of its own: the plugin opencode-auto-permissions (MIT, hueyexe) lets the session's
+// model review what is set to ask. Pinned, since OpenCode loads it from npm; check a newer version before bumping it.
+// OpenCode applies the last matching rule, so the broad allow comes first.
+const AUTO = {
+  plugin: ['opencode-auto-permissions@0.2.15'],
+  permission: {
+    bash: { '*': 'allow', 'rm *': 'ask', 'sudo *': 'ask', 'git push*': 'ask', 'git reset --hard*': 'ask', 'git clean -f*': 'ask', 'curl * | *sh*': 'ask', 'wget * | *sh*': 'ask' },
+    external_directory: 'ask',
+  },
+}
+
 export function acpCommand(provider: Provider, projectId: string, threadId: string, mode = '') {
   const savor = { url: mcpUrl(projectId, threadId), headers: { Authorization: `Bearer ${store.state().mcpToken}` } }
   if (provider === 'opencode') {
     // Full access is OpenCode's build agent with every permission allowed, files outside the project included.
-    const permission = mode === 'full-access' ? { permission: 'allow' } : {}
+    // Auto is its build agent with the risky commands set to ask, and those asks answered by a reviewer model.
+    const permission = mode === 'full-access' ? { permission: 'allow' } : mode === 'auto' ? AUTO : {}
     return {
       bin: BIN.opencode,
       args: ['acp'],
@@ -44,8 +56,13 @@ export class AcpSession implements Session {
   private text = ''
   private thinking = false
   private stopping = false
+  // In OpenCode's Auto mode the plugin answers OpenCode's permission asks, which OpenCode still sends here too.
+  private readonly reviewer: boolean
+  // The asks waiting for the plugin, by tool call.
+  private reviews = new Map<string, () => void>()
 
   constructor(private host: Host, private thread: Thread) {
+    this.reviewer = thread.agent.provider === 'opencode' && thread.agent.permissionMode === 'auto'
     const { p } = host
     this.config = configKey(thread.agent)
     const cmd = acpCommand(thread.agent.provider, p.id, thread.id, thread.agent.permissionMode)
@@ -103,6 +120,7 @@ export class AcpSession implements Session {
         this.fresh = false
         return this.rpc.request('session/prompt', { sessionId: this.sessionId, prompt: [{ type: 'text', text }, ...images64] })
       })
+      .finally(() => this.reviews.forEach((done) => done()))
       .then((r) => this.host.ended(r.stopReason === 'refusal' ? { error: 'The agent refused this request.' } : { text: r.stopReason === 'cancelled' ? '' : this.text }))
       .catch(async (e: Error) => {
         if (e instanceof RpcError && e.code === -32000 && /auth/i.test(e.message)) return this.host.ended({ error: `${e.message} Sign in with the agent's CLI first.` })
@@ -147,6 +165,7 @@ export class AcpSession implements Session {
       else activity.start(u.toolCallId, u.kind === 'execute' ? 'command' : u.kind === 'edit' ? 'edit' : 'note', u.title ?? summarize(u.rawInput))
       if (['completed', 'failed', 'cancelled'].includes(u.status)) activity.finish(u.toolCallId)
     } else if (kind === 'tool_call_update') {
+      this.reviews.get(u.toolCallId)?.()
       if (['completed', 'failed', 'cancelled'].includes(u.status)) activity.finish(u.toolCallId)
     } else if (kind === 'usage_update') {
       if (u.used) this.host.context(u.used, u.size)
@@ -164,6 +183,7 @@ export class AcpSession implements Session {
       // Grok Build asks before every MCP tool, Savor's own included; those never need the user.
       const once = (params.options ?? []).find((o: any) => o.kind === 'allow_once')
       if (once && call.rawInput?.variant === 'UseTool' && String(call.rawInput.tool_name).startsWith('savor__')) return { outcome: { outcome: 'selected', optionId: once.optionId } }
+      if (this.reviewer && (await this.reviewed(call.toolCallId))) return { outcome: { outcome: 'cancelled' } }
       const choice = await this.host.approve({ title: call.title ?? 'Allow this action?', detail: summarize(call.rawInput ?? call.content ?? ''), options })
       return { outcome: { outcome: 'selected', optionId: choice } }
     }
@@ -174,7 +194,23 @@ export class AcpSession implements Session {
     }
     throw new RpcError(`Savor does not provide ${method}.`, -32601)
   }
+
+  // Whether the plugin has answered: the tool call it was asked for goes on or fails. OpenCode then ignores this
+  // answer. Without one in REVIEW_MS (the plugin gives a review up to a minute) the user decides.
+  private reviewed(id: string) {
+    return new Promise<boolean>((resolve) => {
+      const timer = setTimeout(() => done(false), REVIEW_MS)
+      const done = (ok: boolean) => {
+        clearTimeout(timer)
+        this.reviews.delete(id)
+        resolve(ok)
+      }
+      this.reviews.set(id, () => done(true))
+    })
+  }
 }
+
+const REVIEW_MS = 120_000
 
 // The usage limits Grok Build stops at, as its own UI tells them apart: 402, credits, the weekly or free usage
 // limit, the spending cap. A rate limit (429) passes within a minute and is no reason to wait for the period.

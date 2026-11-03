@@ -30,6 +30,16 @@ test("OpenCode's Full access mode allows every permission in its config", () => 
   assert.equal(config('build').permission, undefined)
 })
 
+test("OpenCode's Auto mode lets the pinned review plugin answer what is set to ask", () => {
+  const config = (mode) => JSON.parse(acpCommand('opencode', 'p', 't', mode).env.OPENCODE_CONFIG_CONTENT)
+  const auto = config('auto')
+  assert.match(auto.plugin[0], /^opencode-auto-permissions@\d+\.\d+\.\d+$/)
+  assert.equal(Object.keys(auto.permission.bash)[0], '*')
+  assert.equal(auto.permission.bash['rm *'], 'ask')
+  assert.equal(auto.permission.external_directory, 'ask')
+  assert.equal(config('build').plugin, undefined)
+})
+
 test("a usage limit resets at the end of the usage period Grok Build's _x.ai/billing reports", () => {
   const now = Date.parse('2026-10-21T12:00:00Z')
   // As Grok Build 1.0.62 answers on the free tier.

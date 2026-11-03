@@ -83,6 +83,7 @@ export const STATIC: Record<Provider, Static> = {
     defaultEffort: '',
     modes: [
       { id: 'build', label: 'Build', detail: 'Make changes in the project. Ask before files outside it.' },
+      { id: 'auto', label: 'Auto', detail: 'Make changes in the project. A model reviews risky commands and files outside the project instead of you.' },
       { id: 'plan', label: 'Plan', detail: 'Explore and plan using OpenCode’s plan mode.' },
       { id: 'full-access', label: 'Full access', detail: 'Run every action without asking, commands included. Use only in an isolated environment you trust.', unsafe: true },
     ],

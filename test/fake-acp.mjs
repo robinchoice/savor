@@ -2,6 +2,7 @@
 // Stand-in for an Agent Client Protocol agent (`opencode acp`) used by the end-to-end tests. It
 // finds Savor's MCP server in OPENCODE_CONFIG_CONTENT and in the session's mcpServers.
 // - "approve: <anything>" → session/request_permission with Allow once / Reject, then "ACP permission: <optionId>"
+// - "reviewed: <anything>" → the same ask, but the tool call fails right after it, as when OpenCode's review plugin rejects it
 // - "plan: <anything>" → _x.ai/exit_plan_mode like Grok Build, then "ACP plan: <outcome>"
 // - "limit: <anything>" → the prompt fails at Grok Build's weekly limit; _x.ai/billing says the period ends in two hours
 // - a prompt that starts with a slash command → "ACP command: <prompt>"
@@ -82,7 +83,8 @@ async function prompt(params, reply) {
     answer = `ACP aside: ${text.slice(text.lastIndexOf('Question: ') + 'Question: '.length)}`
     notify('session/update', { sessionId: params.sessionId, update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: answer } } })
     return reply({ stopReason: 'end_turn' })
-  } else if (input.startsWith('approve:')) {
+  } else if (input.startsWith('approve:') || input.startsWith('reviewed:')) {
+    if (input.startsWith('reviewed:')) setTimeout(() => notify('session/update', { sessionId, update: { sessionUpdate: 'tool_call_update', toolCallId: 'call2', status: 'failed' } }), 200)
     const r = await agentRequest('session/request_permission', {
       sessionId,
       toolCall: { toolCallId: 'call2', title: 'Run rm -rf build', kind: 'execute', status: 'pending', rawInput: { command: 'rm -rf build' } },
