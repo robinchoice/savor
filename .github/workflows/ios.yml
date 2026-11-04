@@ -1,0 +1,48 @@
+name: iOS compile
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'web/**'
+      - 'mobile/ios/**'
+      - 'capacitor.config.json'
+      - 'package*.json'
+      - '.github/workflows/ios.yml'
+      - '.github/workflows/mobile.yml'
+  pull_request:
+    paths:
+      - 'web/**'
+      - 'mobile/ios/**'
+      - 'capacitor.config.json'
+      - 'package*.json'
+      - '.github/workflows/ios.yml'
+      - '.github/workflows/mobile.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compile:
+    runs-on: xcode-27
+    timeout-minutes: 20
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - name: Show the pinned Xcode and SDKs
+        run: |
+          xcodebuild -version
+          xcodebuild -showsdks
+      - run: npm ci
+      - run: npx vite build && npx cap sync ios
+      - name: Compile without signing or publishing
+        run: >-
+          xcodebuild -project mobile/ios/App/App.xcodeproj -scheme App
+          -configuration Release -sdk iphoneos27.1 -destination generic/platform=iOS
+          CODE_SIGNING_ALLOWED=NO build

@@ -14,6 +14,8 @@
 
 `npm run build && npm run typecheck && npm test`
 
+`ios.yml` compiles the Capacitor iOS app after changes to the web client, native app, dependencies or mobile CI, and can run manually. It uses the standard `xcode-27` runner with stable Xcode 27.1 and the iOS 27.1 SDK, without signing, upload or tester distribution. This checks compilation only, not simulator or device behavior.
+
 `node scripts/upstream-check.mjs` runs Savor against the newest Claude Code, Codex, OpenCode, Grok Build and Antigravity with this computer's logins, weekly as the Savor workflow "Upstream check" (Mondays 05:00); agents whose CLI is not on this computer or that are not signed in are skipped, and names as arguments (`… upstream-check.mjs grok`) check only those. It is not part of the checks above: each run costs a few real agent turns.
 
 `scripts/upstream-preflight.mjs` is the preflight of "Upstream check" and "Agent-Features übernehmen" (`.workflow-checks/upstream.json`, `features.json`): work when npm or agy has a newer version than the last results of `upstream-check.mjs` (`~/.local/state/savor-upstream-check/last-run.json`) or the versions under „Zuletzt geprüft“ in the document "Claude/Codex-Abgleich", pending for a FAIL there or items under „Neu prüfen beim nächsten Lauf“ and „Als Auftrag gestartet“. Agents whose CLI is not on this computer are left out, open items included. Keep those headings. `scripts/savor-upstream-preflight.timer` runs it on Mondays at 04:50, linked into `~/.config/systemd/user`; the workflows accept it for 20 minutes, so a manual start of either workflow runs `node scripts/upstream-preflight.mjs` first.
@@ -24,6 +26,7 @@
 - Every push of a branch or tag also runs `secrets.yml`, a gitleaks scan of the new commits (a tag without new commits is skipped). Catch false positives narrowly: by fingerprint in `.gitleaksignore` or by path and rule in `.gitleaks.toml`, never switch off a whole rule. The repo and its CI logs are public, so a real finding is already out: tell Robin to rotate the secret, removing it from code or history is not enough.
 - The app and the relay ship only with a release, see below.
 - `mobile.yml` builds the phone apps on every tag `v*` and hands them to the testers: iOS to TestFlight (`mobile/testflight.mjs`, beta review for „Savor Tester“), Android to Play's internal track once the repo variable `PLAY_UPLOAD` is `true`. A manual run (`gh workflow run Mobile`) reaches only „Savor Intern“, `-f testers=true` both. Verify in App Store Connect → TestFlight and Play Console → Internal testing. `release.yml` builds the desktop app, publishes the GitHub release and deploys the relay image `ghcr.io/robinchoice/savor-relay:<version>`.
+- The iOS release job uses the standard `xcode-27` runner and pins stable Xcode 27.1 through `DEVELOPER_DIR`; never select the highest installed version, which may be an RC or beta. Use `ios.yml` for an unsigned compile check without publishing.
 
 ## Pitfalls
 

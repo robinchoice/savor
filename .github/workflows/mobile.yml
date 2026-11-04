@@ -21,21 +21,21 @@ env:
 
 jobs:
   ios:
-    runs-on: macos-15
+    runs-on: xcode-27
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
+      - name: Show the pinned Xcode and SDKs
+        run: |
+          xcodebuild -version
+          xcodebuild -showsdks
       - run: npm ci
       - run: npx vite build && npx cap sync ios
-
-      - name: Pick the newest Xcode
-        run: |
-          XCODE=$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)
-          sudo xcode-select -s "$XCODE/Contents/Developer"
-          xcodebuild -version
 
       - name: Store the App Store Connect key
         env:
