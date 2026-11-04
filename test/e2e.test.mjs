@@ -211,6 +211,43 @@ test('a new answer in an open conversation shows from its start', async () => {
   await until(async () => Math.abs((await answerTop()) - 20) < 5)
 })
 
+test('navigation menus stay reachable as a narrow window gets shorter', async (t) => {
+  t.after(() => page.setViewportSize({ width: 1400, height: 900 }))
+  await page.setViewportSize({ width: 844, height: 390 })
+  await page.click('.subbar-right > .more')
+  const menu = page.locator('.menu.more')
+  for (const height of [390, 200, 390]) {
+    await page.setViewportSize({ width: 844, height })
+    const bounds = await menu.boundingBox()
+    assert.ok(bounds.y >= 0 && bounds.y + bounds.height <= height - 8, JSON.stringify(bounds))
+  }
+  await page.setViewportSize({ width: 844, height: 200 })
+  await menu.getByText('Project settings', { exact: true }).click()
+  await page.waitForSelector('.form')
+  await page.click('.project-tab.active')
+})
+
+test('safe areas protect the page and fixed dialogs', async (t) => {
+  // Synthetic CSS insets test layout arithmetic, not a native device or its keyboard.
+  const insets = { top: 24, right: 44, bottom: 34, left: 44 }
+  const css = fs.readFileSync(path.join(ROOT, 'web/style.css'), 'utf8')
+    .replace(/env\(safe-area-inset-(top|right|bottom|left)\)/g, (_, side) => `${insets[side]}px`)
+  const style = await page.addStyleTag({ content: css })
+  t.after(async () => {
+    await style.evaluate((el) => el.remove())
+    await page.setViewportSize({ width: 1400, height: 900 })
+  })
+  for (const viewport of [{ width: 1024, height: 768 }, { width: 390, height: 844 }, { width: 844, height: 250 }]) {
+    await page.setViewportSize(viewport)
+    const main = await page.locator('.app main').boundingBox()
+    assert.ok(main.y + main.height <= viewport.height - insets.bottom, JSON.stringify(main))
+    await page.click('.account')
+    const bounds = await page.locator('.account-dialog').boundingBox()
+    assert.ok(bounds.x >= insets.left && bounds.y >= insets.top && bounds.x + bounds.width <= viewport.width - insets.right && bounds.y + bounds.height <= viewport.height - insets.bottom, JSON.stringify(bounds))
+    await page.getByRole('button', { name: 'Done', exact: true }).click()
+  }
+})
+
 test('agent settings fit the viewport and apply right away', async () => {
   await newConversation()
   for (const viewport of [{ width: 1400, height: 900 }, { width: 900, height: 600 }, { width: 390, height: 844 }]) {
