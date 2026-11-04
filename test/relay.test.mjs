@@ -385,6 +385,60 @@ test('a device paired with the setup code has the rights of this computer, and n
   assert.equal((await (await asOwner('GET', '/me')).json()).origin, 'local')
 })
 
+// cloud/install.sh writes the relay, the daemon's key and the setup code that cloud/new-instance.sh put in its link.
+test('a setup code given in state.json makes the setup link known in advance, and its pairing spends it for good', async () => {
+  const home = path.join(TMP, 'cloud-given')
+  const identity = tunnel.b64.enc(crypto.getRandomValues(new Uint8Array(32)))
+  const given = 'AB12CD34EF56AB12CD34EF56AB12CD34'
+  fs.mkdirSync(home, { recursive: true })
+  fs.writeFileSync(path.join(home, 'state.json'), JSON.stringify({ relay: { url: relayBase, enabled: true }, identity, setupCode: { code: given, expires: Date.now() + 60_000 } }))
+  let cloud = await startCloud(home)
+  assert.equal(setupCode(cloud), given)
+  assert.match(cloud.out, /Setup code for the owner's device, once, for a day: /)
+  const link = `${relayBase}/#/rpair/${tunnel.b64.enc(tunnel.keypairFrom(tunnel.b64.dec(identity)).pk)}/${given}`
+  await until(() => cloud.out.includes(`Setup link for the owner's device: ${link}`))
+
+  cloud.child.kill()
+  await new Promise((resolve) => cloud.child.once('exit', resolve))
+  cloud = await startCloud(home, {}, cloud.base)
+  assert.equal(setupCode(cloud), given)
+  await until(() => cloud.out.includes(`Setup link for the owner's device: ${link}`))
+
+  const phone = await browser.newPage({ locale: 'en-US' })
+  await phone.goto(link)
+  await phone.fill('input', 'Owner phone')
+  await phone.click('button:has-text("Pair")')
+  await phone.waitForSelector('text=Welcome to Savor')
+  await phone.close()
+  const state = () => JSON.parse(fs.readFileSync(path.join(home, 'state.json'), 'utf8'))
+  assert.deepEqual(state().devices.map((d) => [d.name, d.owner]), [['Owner phone', true]])
+  assert.equal(state().setupCode, undefined)
+
+  // Even with the owner gone, the link stays spent: the next start makes a new code.
+  cloud.child.kill()
+  await new Promise((resolve) => cloud.child.once('exit', resolve))
+  fs.writeFileSync(path.join(home, 'state.json'), JSON.stringify({ ...state(), devices: [] }))
+  cloud = await startCloud(home, {}, cloud.base)
+  assert.match(setupCode(cloud), /^[0-9A-F]{32}$/)
+  assert.notEqual(setupCode(cloud), given)
+  assert.equal((await pairLan(cloud.base, given)).status, 400)
+})
+
+test('a provisioned setup link retains its expiry across restarts', async () => {
+  const home = path.join(TMP, 'cloud-given-expired')
+  const code = 'AB12CD34EF56AB12CD34EF56AB12CD34'
+  const expires = Date.now() - 1
+  fs.mkdirSync(home, { recursive: true })
+  fs.writeFileSync(path.join(home, 'state.json'), JSON.stringify({ setupCode: { code, expires } }))
+  let cloud = await startCloud(home)
+  assert.equal((await pairLan(cloud.base, code)).status, 400)
+  cloud.child.kill()
+  await new Promise((resolve) => cloud.child.once('exit', resolve))
+  cloud = await startCloud(home, {}, cloud.base)
+  assert.notEqual(setupCode(cloud), code)
+  assert.equal((await pairLan(cloud.base, code)).status, 400)
+})
+
 test('an expired setup code lets no device in, and without SAVOR_SETUP there is none', async () => {
   const expired = await startCloud(path.join(TMP, 'cloud-expired'), { SAVOR_SETUP_MS: '1' })
   await new Promise((r) => setTimeout(r, 20))

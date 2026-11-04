@@ -258,6 +258,8 @@ interface State {
   // The daemon's long-term X25519 key for the relay tunnel (base64url secret key).
   identity: string
   relayToken: string
+  // A Savor Cloud instance's setup code from cloud/install.sh, until a device pairs with it (devices.ts).
+  setupCode?: { code: string; expires: number }
   // The daemon's VAPID key for Web Push (P-256, private JWK), created on first use.
   vapid?: crypto.webcrypto.JsonWebKey
   // Minutes a notice waits for being seen on another device before it goes to the phones (push.ts).

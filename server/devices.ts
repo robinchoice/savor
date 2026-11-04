@@ -24,13 +24,20 @@ const DEMO_CODE = process.env.SAVOR_DEMO_PAIRING?.toUpperCase()
 // A Savor Cloud instance has no one at the computer to allow the first device. With SAVOR_SETUP set and no
 // owner device yet, each start creates a setup code and prints it. The device that pairs with it comes in
 // without asking and becomes the owner, with the rights of this computer. The code works once, runs out after
-// a day and is too long to guess, so failed pairings don't void it.
+// a day and is too long to guess, so failed pairings don't void it. cloud/new-instance.sh gives the code in
+// state.json instead, so the setup link it prints works from the first start on and keeps its original expiry
+// across restarts.
 const SETUP_TTL_MS = Number(process.env.SAVOR_SETUP_MS ?? 24 * 60 * 60_000)
 let setup: { code: string; expires: number } | null = null
 
 export function createSetupCode() {
-  if (!process.env.SAVOR_SETUP || store.state().devices.some((d) => d.owner)) return null
-  setup = { code: crypto.randomBytes(16).toString('hex').toUpperCase(), expires: Date.now() + SETUP_TTL_MS }
+  const s = store.state()
+  if (!process.env.SAVOR_SETUP || s.devices.some((d) => d.owner)) return null
+  if (s.setupCode && s.setupCode.expires <= Date.now()) {
+    delete s.setupCode
+    store.saveState(s)
+  }
+  setup = s.setupCode ?? { code: crypto.randomBytes(16).toString('hex').toUpperCase(), expires: Date.now() + SETUP_TTL_MS }
   return setup.code
 }
 
@@ -94,6 +101,11 @@ export function requestApproval(code: string, name: string, via: PairingRequest[
   if (setup && store.safeEqual(code.toUpperCase(), setup.code)) {
     const valid = setup.expires > Date.now()
     setup = null
+    const s = store.state()
+    if (s.setupCode) {
+      delete s.setupCode
+      store.saveState(s)
+    }
     if (!valid) throw new Error('Pairing code invalid or expired.')
     return { approved: Promise.resolve(true), cancel: () => {}, owner: true }
   }

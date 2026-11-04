@@ -7,6 +7,8 @@
 #
 # or run it as root on the server. It can run again. Savor is built from the newest release tag that
 # carries Robin's signature, by the savor-update it installs; a timer runs that every night.
+# cloud/new-instance.sh sets SAVOR_IDENTITY (the daemon's relay key) and SAVOR_SETUP_CODE in a line of its
+# own after the first, so the setup link it prints works once the server is up.
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 # systemd and the firewall are missing in a container, where this script is tested.
@@ -90,6 +92,16 @@ chmod 755 /usr/local/bin/savor-update
 savor-update
 node /home/savor/savor/current/node_modules/playwright-core/cli.js install-deps chromium
 
+# Savor connects out to the relay from its first start on and fills in the rest of state.json itself.
+if [ ! -f /home/savor/.savor/state.json ]; then
+  install -d -o savor -g savor -m 700 /home/savor/.savor
+  jq -n --arg identity "${SAVOR_IDENTITY:-}" --arg code "${SAVOR_SETUP_CODE:-}" \
+    --argjson expires "${SAVOR_SETUP_EXPIRES:-null}" \
+    '{relay: {url: "https://savor.diespaetzles.lol", enabled: true}}
+      + (if $identity != "" then {identity: $identity} else {} end) + (if $code != "" then {setupCode: {code: $code, expires: $expires}} else {} end)' |
+    install -o savor -g savor -m 600 /dev/stdin /home/savor/.savor/state.json
+fi
+
 cat >/etc/systemd/system/savor.service <<'EOF'
 [Unit]
 Description=Savor
@@ -138,4 +150,4 @@ if booted; then
   systemctl daemon-reload
   systemctl enable --now savor.service savor-update.timer
 fi
-echo 'Savor Cloud is set up. Open it through an SSH tunnel: ssh -L 4317:127.0.0.1:4317 root@<server>, then the link with the token from: journalctl -u savor | grep token='
+echo "Savor Cloud is set up. The owner's device pairs with the setup link: journalctl -u savor -g 'Setup link'"
