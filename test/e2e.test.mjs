@@ -237,6 +237,33 @@ test('agent settings fit the viewport and apply right away', async () => {
   await page.waitForSelector('.agent-menu', { state: 'detached' })
 })
 
+test('changing provider or model selects automatic permissions on desktop and phone', async () => {
+  await newConversation()
+  for (const viewport of [{ width: 1400, height: 900 }, { width: 390, height: 844 }]) {
+    await page.setViewportSize(viewport)
+    await page.click('.agent-btn')
+    for (const [provider, mode] of [['Codex', 'Approve for me'], ['OpenCode', 'Auto'], ['Claude Code', 'Auto']]) {
+      await page.locator('.ap-agent', { hasText: provider }).click()
+      const automatic = page.getByRole('radio', { name: mode, exact: false })
+      await until(async () => await automatic.getAttribute('aria-checked') === 'true')
+      await page.getByRole('radiogroup', { name: 'Permissions', exact: true }).getByRole('radio').first().click()
+      await page.locator('.ap-model').last().click()
+      await until(async () => await automatic.getAttribute('aria-checked') === 'true')
+    }
+    for (const provider of ['Grok Build', 'Antigravity']) {
+      await page.locator('.ap-agent', { hasText: provider }).click()
+      const plan = page.getByRole('radio', { name: /^Plan/ })
+      await plan.click()
+      if (await page.locator('.ap-model').count()) await page.locator('.ap-model').last().click()
+      else await page.locator('.ap-pane input').fill('custom-model')
+      assert.equal(await plan.getAttribute('aria-checked'), 'true')
+    }
+    await page.keyboard.press('Escape')
+    await page.waitForSelector('.agent-menu', { state: 'detached' })
+  }
+  await page.setViewportSize({ width: 1400, height: 900 })
+})
+
 test('the status bar warns about what keeps Savor from working, after a delay for the relay', async () => {
   assert.equal(await page.locator('.status-health').count(), 0)
   await api('PUT', '/agent', { provider: 'grok' })
@@ -912,7 +939,7 @@ test('Ultracode is a switch next to the effort, and the old Ultracode effort bec
 })
 
 test('new projects start with the default agent set on this computer', async () => {
-  assert.equal((await api('GET', '/agent')).body.permissionMode, 'acceptEdits')
+  assert.equal((await api('GET', '/agent')).body.permissionMode, 'auto')
   assert.equal((await api('GET', '/me')).body.setup, false, 'this computer already has projects')
   assert.equal((await api('PUT', '/agent', { permissionMode: 'nope' })).status, 400)
   const agent = (await api('PUT', '/agent', { permissionMode: 'auto', reasoning: 'max' })).body

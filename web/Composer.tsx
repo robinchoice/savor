@@ -810,6 +810,7 @@ export function AgentMenu({ agent, agents, setAgent, close }: { agent: AgentConf
   const [presetName, setPresetName] = useState<string | null>(null)
   const [error, setError] = useState('')
   const set = (patch: Partial<AgentConfig>) => setAgent({ ...agent, ...patch })
+  const automaticMode = info?.modes.find((m) => m.id === 'auto' || m.id === 'auto-review')?.id ?? agent.permissionMode
   const choose = (p: ProviderInfo) => set({ provider: p.id, model: '', reasoning: p.defaultEffort, fast: false, ultracode: false, permissionMode: p.defaultMode })
   const efforts = effortsOf(agent, info)
   const models = info?.models ?? []
@@ -868,7 +869,7 @@ export function AgentMenu({ agent, agents, setAgent, close }: { agent: AgentConf
               {listed.map((m) => {
                 const { name, detail } = describeModel(m)
                 return (
-                  <button key={m.id} class={`ap-model ${agent.model === m.id ? 'selected' : ''}`} onClick={() => set({ model: m.id })}>
+                  <button key={m.id} class={`ap-model ${agent.model === m.id ? 'selected' : ''}`} onClick={() => set({ model: m.id, permissionMode: automaticMode })}>
                     <b>
                       {m.id === '' ? t('Default') : name}
                       {m.id === '' && name !== m.label && <span class="ap-tag">{name}</span>}
@@ -880,7 +881,7 @@ export function AgentMenu({ agent, agents, setAgent, close }: { agent: AgentConf
               })}
             </div>
           ) : (
-            <input placeholder={t('Default')} value={agent.model} onInput={(e) => set({ model: e.currentTarget.value })} />
+            <input placeholder={t('Default')} value={agent.model} onInput={(e) => set({ model: e.currentTarget.value, permissionMode: automaticMode })} />
           )}
           {efforts.length > 0 && (
             <>
