@@ -130,8 +130,10 @@ export function Composer(props: Props) {
   // A layout effect, so Escape works from the first frame the popover shows.
   useLayoutEffect(() => {
     if (!popover) return
+    // Each popover shares a .menu-anchor with its button; a click anywhere else, the text field included, closes it.
     const outside = (e: PointerEvent) => {
-      if (!composerRef.current?.contains(e.target as Node)) setPopover(null)
+      const anchor = (e.target as Element).closest('.menu-anchor')
+      if (!anchor || !composerRef.current?.contains(anchor)) setPopover(null)
     }
     const escape = (e: KeyboardEvent) => { if (e.key === 'Escape') setPopover(null) }
     document.addEventListener('pointerdown', outside)
