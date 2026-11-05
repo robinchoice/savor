@@ -63,6 +63,11 @@ if (quiet) {
 }
 
 for (const group of groups) {
+  // Apple refuses to assign builds to an internal group that gets every build anyway
+  if (group.attributes.isInternalGroup && group.attributes.hasAccessToAllBuilds) {
+    console.log(`"${group.attributes.name}" gets every build`)
+    continue
+  }
   const inGroup = (await api('GET', `/builds?filter[app]=${app.id}&filter[version]=${number}&filter[betaGroups]=${group.id}`)).data
   if (!inGroup.length) await api('POST', `/betaGroups/${group.id}/relationships/builds`, { data: [{ type: 'builds', id: build.id }] })
   console.log(`Build ${number} is in "${group.attributes.name}"`)
