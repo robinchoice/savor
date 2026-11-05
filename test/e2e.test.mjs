@@ -363,6 +363,10 @@ test('agent settings fit the viewport and apply right away', async () => {
   assert.match(await page.locator('.agent-btn').innerText(), /Low/)
   await page.click('.conv-head h2')
   await page.waitForSelector('.agent-menu', { state: 'detached' })
+  // A click beside the menu inside the composer closes it too.
+  await page.click('.agent-btn')
+  await page.click('.composer textarea')
+  await page.waitForSelector('.agent-menu', { state: 'detached' })
 })
 
 test('changing provider or model selects automatic permissions on desktop and phone', async () => {
@@ -910,7 +914,7 @@ test('OpenCode runs through the Agent Client Protocol', async () => {
   await until(async () => (await api('GET', t)).body.messages.some((m) => m.text === 'ACP command: /review now'))
   // The MCP token travelled inside the protocol, not on the command line.
   const run = fs.readFileSync(AGENT_LOG, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).find((r) => r.agent === 'opencode' && r.argv)
-  assert.deepEqual(run.argv.slice(2), ['acp'])
+  assert.deepEqual(run.argv.slice(2), ['acp', '--print-logs', '--log-level', 'ERROR'])
   // At Grok Build's usage limit the conversation waits for the end of the usage period.
   await until(async () => !(await api('GET', t)).body.busy)
   await api('POST', `${t}/messages`, { text: 'limit: weekly' })
@@ -919,7 +923,32 @@ test('OpenCode runs through the Agent Client Protocol', async () => {
   assert.ok(r.messages.some((m) => m.kind === 'error' && m.text === 'Internal error: status 402: You hit your weekly limit.'))
   assert.ok(Math.abs(Date.parse(r.thread.resumeAt) - (Date.now() + 2 * 3600_000 + 60_000)) < 30_000)
   await api('POST', `${t}/stop`)
+  // OpenCode 1.x only logs its free usage limit and never answers the prompt: the turn ends with that error and
+  // tries again in an hour, since OpenCode doesn't tell when the limit resets.
+  await until(async () => !(await api('GET', t)).body.busy)
+  await api('POST', `${t}/messages`, { text: 'stuck: free' })
+  await until(async () => (r = (await api('GET', t)).body).thread.resumeAt)
+  assert.ok(r.messages.some((m) => m.kind === 'error' && m.text === 'Free usage limit reached. Subscribe to OpenCode Go to keep going: https://opencode.ai/go'))
+  assert.ok(Math.abs(Date.parse(r.thread.resumeAt) - (Date.now() + 3600_000 + 60_000)) < 30_000)
+  await api('POST', `${t}/stop`)
   await api('PATCH', `/projects/${project.id}`, { agent: project.agent })
+})
+
+test("with the fallback on, OpenCode goes on with a model of another provider at its model's usage limit", async () => {
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
+  const opencode = (model) => ({ provider: 'opencode', model, reasoning: '', fast: false, ultracode: false, permissionMode: 'build' })
+  const before = (await api('GET', '/fallback')).body
+  await api('PUT', '/fallback', { on: true, agents: [opencode('free/small'), opencode('paid/big')] })
+  const thread = (await api('POST', `/projects/${project.id}/threads`, { text: 'stuck: switch', agent: opencode('free/small') })).body
+  const t = `/projects/${project.id}/threads/${thread.id}`
+  let r
+  await until(async () => (r = (await api('GET', t)).body).messages.some((m) => m.text === 'ACP echo: stuck: switch (paid/big)'))
+  assert.ok(r.messages.some((m) => m.kind === 'update' && m.text === 'OpenCode (free/small) reached its usage limit. OpenCode (paid/big) takes over.'))
+  assert.deepEqual([r.thread.agent.model, r.thread.preferred.model], ['paid/big', 'free/small'])
+  assert.ok((await api('GET', '/fallback')).body.limited.includes('opencode free'))
+  assert.ok(!(await api('GET', '/fallback')).body.limited.includes('opencode'))
+  await until(async () => !(await api('GET', t)).body.busy)
+  await api('PUT', '/fallback', { on: before.on, agents: before.agents })
 })
 
 test("in OpenCode's Auto mode its review plugin answers permission asks, not the user", async () => {
@@ -3856,7 +3885,8 @@ test('the All tab answers questions in place and starts what waits in the backlo
   const read = async (id) => (await api('GET', `${threads}/${id}`)).body
   const asked = (await api('POST', threads, { text: 'ask: Ship the footer?', agent: { provider: 'claude' } })).body
   const done = (await api('POST', threads, { text: 'plan the footer', agent: { provider: 'claude' } })).body
-  await until(async () => (await read(asked.id)).decisions.some((d) => !d.resolved) && (await read(done.id)).messages.some((m) => m.kind === 'conclusion') && !(await read(done.id)).busy)
+  const third = (await api('POST', threads, { text: 'plan the sidebar', agent: { provider: 'claude' } })).body
+  await until(async () => (await read(asked.id)).decisions.some((d) => !d.resolved) && (await read(done.id)).messages.some((m) => m.kind === 'conclusion') && !(await read(done.id)).busy && (await read(third.id)).messages.some((m) => m.kind === 'conclusion') && !(await read(third.id)).busy)
 
   // Savor starts without keys; Next gets J in the shortcuts dialog.
   await page.click('button.account')
@@ -3877,6 +3907,14 @@ test('the All tab answers questions in place and starts what waits in the backlo
   // The composer has the focus now, so J needs Alt.
   await page.keyboard.press('Alt+j')
   await page.waitForFunction((first) => location.hash !== first, first)
+  const second = await page.evaluate(() => location.hash)
+  await page.waitForSelector(`.conv-list .card.active[href="${second}"]`)
+  // Next walks on through the list instead of back to the first one you left unanswered.
+  await page.keyboard.press('Alt+j')
+  await page.waitForFunction((second) => location.hash !== second, second)
+  assert.notEqual(await page.evaluate(() => location.hash), first)
+  await page.click('.conv-list .prev-btn')
+  await page.waitForFunction((second) => location.hash === second, second)
   // Previous leads back to where Next came from.
   await page.click('.conv-list .prev-btn')
   await page.waitForFunction((first) => location.hash === first, first)

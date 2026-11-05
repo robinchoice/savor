@@ -196,20 +196,36 @@ export const byUrgency = <T extends Thread>(list: T[]) =>
 
 // Where Next came from, so Previous leads back. It lives in the module, the button remounts with every view.
 const trail: string[] = []
+// Conversations Next has left in this round. Next walks on to the first one it hasn't left yet instead of back to the
+// top of the list, so a conversation you don't answer right away doesn't keep coming back. Once it has left all of
+// them, a new round starts at the top.
+const passed = new Set<string>()
 
-// Opens the next conversation that needs you. Previous goes back along the conversations Next left.
 // Next skips the open one by the address, not by the last render: hashchange comes later, so a key pressed twice
 // would otherwise open the same conversation again.
+const nextOf = (paths: string[]) => {
+  const others = paths.filter((p) => `#${p}` !== location.hash)
+  return others.find((p) => !passed.has(p)) ?? others[0]
+}
+
+const goNext = (path: string) => {
+  const here = location.hash.slice(1)
+  if (passed.has(path)) passed.clear()
+  passed.add(here)
+  trail.push(here)
+  go(path)
+}
+
+// Opens the next conversation that needs you. Previous goes back along the conversations Next left.
 export function NextButton({ paths }: { paths: string[] }) {
   const latest = useRef(paths)
   latest.current = paths
   const [, setDepth] = useState(trail.length)
   const open = () => {
-    const path = latest.current.find((p) => `#${p}` !== location.hash)
+    const path = nextOf(latest.current)
     if (!path) return
-    trail.push(location.hash.slice(1))
+    goNext(path)
     setDepth(trail.length)
-    go(path)
   }
   const back = () => {
     let path = trail.pop()
@@ -1003,7 +1019,7 @@ export function ThreadView({ project, threadId, back, next, siblings, plain }: {
   const lastConclusion = [...messages].reverse().find((m) => m.kind === 'conclusion')
   const showNext = !busy && last?.kind === 'conclusion' && !asked.length && last.suggestions?.length
   const canComplete = plain !== 'main' && !busy && !thread.completed && last?.kind === 'conclusion' && !asked.length
-  const nextPath = next?.find((p) => `#${p}` !== location.hash)
+  const nextPath = next && nextOf(next)
   keys.current = { stop: stoppable ? stop : undefined, finish: canComplete ? () => patch({ completed: true }) : undefined }
   const queued = messages.filter((m) => m.kind === 'user' && m.delivered === false).length
   // A request's plan stands in front of what ended it: its conclusion or error, or the next input with a plan.
@@ -1093,10 +1109,7 @@ export function ThreadView({ project, threadId, back, next, siblings, plain }: {
       compact={floating}
       answering={answering}
       submitRef={sendAnswers}
-      onNext={nextPath ? () => {
-        trail.push(location.hash.slice(1))
-        go(nextPath)
-      } : undefined}
+      onNext={nextPath ? () => goNext(nextPath) : undefined}
       autoFocus
     />
   )
@@ -1311,7 +1324,7 @@ export function ThreadView({ project, threadId, back, next, siblings, plain }: {
                       {t('Finish')}
                     </button>
                     {nextPath && (
-                      <button class="mark-complete" onClick={() => patch({ completed: true }).then(() => go(nextPath))}>
+                      <button class="mark-complete" onClick={() => patch({ completed: true }).then(() => goNext(nextPath))}>
                         <span>
                           <ArrowRight size={16} />
                         </span>
@@ -1322,10 +1335,7 @@ export function ThreadView({ project, threadId, back, next, siblings, plain }: {
                 )}
                 {busy && nextPath && (
                   <div class="complete-actions">
-                    <button class="mark-complete" title={t('Open the next conversation that needs you')} onClick={() => {
-                      trail.push(location.hash.slice(1))
-                      go(nextPath)
-                    }}>
+                    <button class="mark-complete" title={t('Open the next conversation that needs you')} onClick={() => goNext(nextPath)}>
                       <span>
                         <ArrowRight size={16} />
                       </span>
