@@ -162,10 +162,10 @@ function App() {
     }
   }
   const terminal = project && terminalOpen && project.type !== 'academic-writing' && <TerminalPanel key={project.id} project={project} threadId={section === 't' ? rest[0] : undefined} />
-  const docked = (project || route[0] === 'all') && !narrow && !study
+  const hasDock = (project || route[0] === 'all') && !study
 
   return (
-    <div class={`app ${!docked && terminal && terminalMax ? 'terminal-max' : ''}`}>
+    <div class={`app ${!hasDock && terminal && terminalMax ? 'terminal-max' : ''}`}>
       {mode === 'relay' && !link.connected && <div class="link-banner">{t('Reconnecting to your computer…')}</div>}
       <UpdateBanner />
       <RestartBanner />
@@ -173,8 +173,8 @@ function App() {
       {project && <SubBar project={project} projects={projects ?? []} section={section} threadId={section === 't' ? rest[0] : undefined} />}
       {route[0] === 'all' && <AllBar section={route[1]} />}
       <main>
-        {docked ? (
-          <Dock>
+        {hasDock ? (
+          <Dock enabled={!narrow}>
             {panels ? main : <Panel id="main" title={cap((project ? section : route[1]) ?? 'overview')}>{main}</Panel>}
             {terminal && <Panel id="terminal">{terminal}</Panel>}
           </Dock>
@@ -182,7 +182,7 @@ function App() {
           main
         )}
       </main>
-      {!docked && terminal}
+      {!hasDock && terminal}
       {!narrow && <StatusBar />}
       {me.origin === 'local' && <PairingRequests />}
     </div>

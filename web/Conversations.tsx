@@ -1,4 +1,5 @@
 import { Fragment, render, type JSX } from 'preact'
+import { createPortal } from 'preact/compat'
 import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
@@ -830,8 +831,33 @@ export function ThreadView({ project, threadId, back, next, siblings, plain }: {
   const [activityOpen, setActivityOpen] = useState(false)
   // What the agent says while the chat is out of sight shows above the small composer.
   const [seen, setSeen] = useState(0)
+  const composerHost = useMemo(() => {
+    const el = document.createElement('div')
+    el.className = 'composer-slot'
+    return el
+  }, [])
+  const composerFocus = useRef<HTMLElement | null>(null)
+  const mountComposer = useMemo(() => {
+    const mount = () => {
+      let previous: HTMLDivElement | null = null
+      return (slot: HTMLDivElement | null) => {
+        const active = composerHost.contains(document.activeElement) ? document.activeElement as HTMLElement : null
+        if (!slot) {
+          if (composerHost.parentElement === previous) composerFocus.current = active
+          previous = null
+          return
+        }
+        previous = slot
+        if (composerHost.parentElement === slot) return
+        slot.appendChild(composerHost)
+        ;(active ?? composerFocus.current)?.focus({ preventScroll: true })
+        composerFocus.current = null
+      }
+    }
+    return { chat: mount(), floating: mount() }
+  }, [])
   const narrow = useNarrow()
-  // Moving the composer between chat and page starts it fresh, so a suggestion taken up earlier must not come back.
+  // A suggestion taken up earlier must not come back when the view changes.
   const setView = (v: 'chat' | 'browser' | 'changes') => {
     localStorage.setItem(viewKey, v)
     setViewState(v)
@@ -881,6 +907,7 @@ export function ThreadView({ project, threadId, back, next, siblings, plain }: {
   const floating = browserMode && (chatHidden || narrow)
   // Beside the page the conversation list makes room, as it always did.
   useHidePanel('list', browserMode)
+  useHidePanel('main', browserMode && chatHidden && !narrow)
   useEffect(() => setSeen(data?.messages.length ?? 0), [floating, !data])
   useEffect(() => {
     const el = listRef.current
@@ -893,7 +920,7 @@ export function ThreadView({ project, threadId, back, next, siblings, plain }: {
       opened.current = true
     })
     return () => cancelAnimationFrame(frame)
-  }, [data?.messages.length, data?.busy, browserMode, floating, activityOpen, Object.keys(plans ?? {}).length])
+  }, [data?.messages.length, data?.busy, browserMode, activityOpen, Object.keys(plans ?? {}).length])
   // Ctrl/⌘F searches the conversation instead of the page.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -1076,8 +1103,8 @@ export function ThreadView({ project, threadId, back, next, siblings, plain }: {
 
   return (
     <div class={`thread-layout ${browserMode ? 'browser' : ''}`}>
-      {!(browserMode && chatHidden && !narrow) && (
-        <Panel id="main" title={t('Chat')} class={`thread-layout ${browserMode ? 'browser' : ''}`}>
+      {createPortal(composer, composerHost)}
+      <Panel id="main" title={t('Chat')} class={`thread-layout ${browserMode ? 'browser' : ''}`}>
           <section class="thread">
             <header class="thread-head">
               {plain !== 'main' && (
@@ -1188,8 +1215,7 @@ export function ThreadView({ project, threadId, back, next, siblings, plain }: {
               </div>
             )}
             <ThreadWorkflows project={project} threadId={threadId} />
-            {!(browserMode && narrow) && (
-              <>
+            <div class="thread-body">
                 {find.open && (
                   <div class="find-bar">
                     <Search size={14} />
@@ -1308,9 +1334,8 @@ export function ThreadView({ project, threadId, back, next, siblings, plain }: {
                   </div>
                 )}
 
-                {composer}
-              </>
-            )}
+            </div>
+            {!floating && <div class="composer-slot" ref={mountComposer.chat} />}
           </section>
           {!browserMode && activityOpen && (
             <aside class="side-panel">
@@ -1323,8 +1348,7 @@ export function ThreadView({ project, threadId, back, next, siblings, plain }: {
               <ActivityLog events={activity ?? []} messages={attributedMessages} />
             </aside>
           )}
-        </Panel>
-      )}
+      </Panel>
       {browserMode && (
         <Panel id="stage" title={mode === 'changes' ? t('Changes') : t('Preview')}>
           <section class="stage">
@@ -1347,7 +1371,7 @@ export function ThreadView({ project, threadId, back, next, siblings, plain }: {
             {floating && (
               <div class="float">
                 {bubble}
-                {composer}
+                <div class="composer-slot" ref={mountComposer.floating} />
               </div>
             )}
           </section>

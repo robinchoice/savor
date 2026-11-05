@@ -91,8 +91,8 @@ export function StudyView({ project, threadId, isNew }: { project: Project; thre
     <StudyContext.Provider value={scope}>
     <div class={`study tab-${tab} ${swapped ? 'swapped' : ''}`}>
       <SourcesPane project={project} data={sourcesData} reload={reloadSources} selected={selected} setSelected={setSelected} openPdf={(path) => setOpen({ kind: 'pdf', path })} ask={ask} askAbout={askAbout} changed={() => setSourcesRev((n) => n + 1)} />
-      <div class="study-mid">{swapped ? doc : chat}</div>
-      <div class="study-side">{swapped ? chat : doc || work}</div>
+      <div class="study-mid">{chat}</div>
+      <div class="study-side">{doc || work}</div>
       {narrow && (
         <nav class="study-tabs">
           {([['sources', BookOpen, t('Sources')], ['chat', MessageSquare, t('Chat')], ['work', PenLine, t('Manuscript')]] as const).map(([id, Icon, label]) => (

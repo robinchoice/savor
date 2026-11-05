@@ -248,6 +248,97 @@ test('safe areas protect the page and fixed dialogs', async (t) => {
   }
 })
 
+test('window resizing keeps unsaved file edits, focus and selection', async (t) => {
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
+  const previous = page.url()
+  const file = path.join(PROJECT, 'resize.txt')
+  fs.writeFileSync(file, 'saved text')
+  t.after(async () => {
+    fs.rmSync(file, { force: true })
+    await page.setViewportSize({ width: 1400, height: 900 })
+    await page.goto(previous)
+  })
+  await page.goto(`${base}/#/p/${project.id}/files/f/resize.txt`)
+  await page.locator('.cm-content').fill('unsaved resize text')
+  await page.keyboard.press('Control+Home')
+  for (let i = 0; i < 7; i++) await page.keyboard.press('Shift+ArrowRight')
+  await page.evaluate(() => { window.resizeEditor = document.querySelector('.cm-content') })
+  for (const [width, height] of [[1024, 768], [860, 600], [390, 844], [844, 390], [861, 600], [1200, 800]]) {
+    await page.setViewportSize({ width, height })
+    await page.waitForTimeout(100)
+    assert.deepEqual(await page.evaluate(() => ({
+      same: window.resizeEditor === document.querySelector('.cm-content'),
+      focused: document.activeElement === window.resizeEditor,
+      selection: getSelection().toString(),
+      text: window.resizeEditor.textContent,
+    })), { same: true, focused: true, selection: 'unsaved', text: 'unsaved resize text' })
+    assert.equal(await page.getByText('Unsaved changes', { exact: true }).count(), 1)
+  }
+  await page.locator('.editor-page button[title="Save (Ctrl+S)"]').click()
+  await until(() => fs.readFileSync(file, 'utf8') === 'unsaved resize text')
+})
+
+test('window resizing keeps conversation search, text selection and scroll position', async (t) => {
+  const previous = page.url()
+  t.after(async () => {
+    await page.setViewportSize({ width: 1400, height: 900 })
+    await page.goto(previous)
+  })
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
+  const thread = (await api('POST', `/projects/${project.id}/threads`, { text: Array.from({ length: 120 }, (_, i) => `Resize line ${i}`).join('\n\n') })).body
+  await page.goto(`${base}/#/p/${project.id}/t/${thread.id}`)
+  await page.waitForSelector('.msg.conclusion')
+  await page.keyboard.press('Control+f')
+  await page.locator('.find-bar input').fill('Resize line')
+  await page.waitForTimeout(200)
+  await page.evaluate(() => {
+    const text = document.querySelector('.msg.conclusion .md p').firstChild
+    const range = document.createRange()
+    range.setStart(text, 0)
+    range.setEnd(text, 4)
+    getSelection().removeAllRanges()
+    getSelection().addRange(range)
+    window.resizeMessages = document.querySelector('.messages')
+    window.resizeMessages.scrollTop = 400
+  })
+  for (const [width, height] of [[861, 600], [860, 600], [390, 844], [844, 390], [1200, 800]]) {
+    await page.setViewportSize({ width, height })
+    await page.waitForTimeout(100)
+    assert.equal(await page.locator('.find-bar input').inputValue(), 'Resize line')
+    const state = await page.evaluate(() => ({ same: window.resizeMessages === document.querySelector('.messages'), selection: getSelection().toString(), scroll: window.resizeMessages.scrollTop }))
+    assert.equal(state.same, true)
+    assert.equal(state.selection, 'Echo')
+    assert.ok(Math.abs(state.scroll - 400) < 32, JSON.stringify(state))
+    if (height < 400) {
+      await page.locator('.composer').scrollIntoViewIfNeeded()
+      const composer = await page.locator('.composer').boundingBox()
+      const thread = await page.locator('.thread').boundingBox()
+      assert.ok(composer.y >= thread.y && composer.y + composer.height <= thread.y + thread.height + 1)
+    }
+  }
+  await page.click('.modes button[title="Browser"]')
+  await page.locator('.composer textarea').fill('browser resize draft')
+  await page.evaluate(() => {
+    window.resizeComposer = document.querySelector('.composer textarea')
+    window.resizeComposer.setSelectionRange(3, 9)
+    window.resizeMessages.scrollTop = 400
+  })
+  for (const [width, height] of [[390, 844], [844, 390], [1024, 768], [600, 400], [1200, 800]]) {
+    await page.setViewportSize({ width, height })
+    await page.waitForTimeout(100)
+    assert.deepEqual(await page.evaluate(() => ({
+      same: window.resizeComposer === document.querySelector('.composer textarea'),
+      focus: document.activeElement === window.resizeComposer,
+      start: window.resizeComposer.selectionStart,
+      end: window.resizeComposer.selectionEnd,
+      value: window.resizeComposer.value,
+    })), { same: true, focus: true, start: 3, end: 9, value: 'browser resize draft' })
+    assert.equal(await page.evaluate(() => window.resizeMessages === document.querySelector('.messages')), true)
+    if (width > 860) assert.ok(Math.abs(await page.locator('.messages').evaluate((el) => el.scrollTop) - 400) < 32)
+  }
+  await page.click('.modes button[title="Chat"]')
+})
+
 test('agent settings fit the viewport and apply right away', async () => {
   await newConversation()
   for (const viewport of [{ width: 1400, height: 900 }, { width: 900, height: 600 }, { width: 390, height: 844 }]) {
@@ -2080,6 +2171,15 @@ test('the terminal starts with a shell per folder and worktree, opens and closes
   await page.waitForFunction(() => document.activeElement?.closest('.terminal-screen'))
   await page.keyboard.type('pwd; echo $((6*7))-terminal\n')
   await page.waitForSelector('.terminal-screen >> text=42-terminal')
+  await page.evaluate(() => { window.resizeTerminal = document.querySelector('.terminal-screen .xterm') })
+  const resizeTerms = (await api('GET', t)).body.terminals.map((term) => term.id)
+  for (const [width, height] of [[860, 600], [390, 844], [844, 390], [1400, 900]]) {
+    await page.setViewportSize({ width, height })
+    await page.waitForTimeout(100)
+    assert.equal(await page.evaluate(() => window.resizeTerminal === document.querySelector('.terminal-screen .xterm')), true)
+    assert.deepEqual((await api('GET', t)).body.terminals.map((term) => term.id), resizeTerms)
+    assert.ok((await page.textContent('.terminal-screen')).includes('42-terminal'))
+  }
   // Back in the project with the panel still open, the conversation keeps it.
   await page.reload()
   await page.waitForFunction(() => document.querySelector('.terminal-screen .xterm-rows')?.textContent.trim())
@@ -2132,6 +2232,14 @@ test('the terminal starts with a shell per folder and worktree, opens and closes
   assert.equal((await api('GET', t, undefined, device)).status, 403)
 
   // Deleting the worktree ends its shell.
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.click('.terminal-bar button[title="Maximize"]')
+  await page.click('.terminal-bar button[title="Close"]')
+  await page.waitForSelector('.terminal-panel', { state: 'detached' })
+  assert.equal(await page.locator('.conversations').isVisible(), true)
+  await page.setViewportSize({ width: 1400, height: 900 })
+  await page.click('.subbar button[title="Terminal"]')
+  await page.click('.terminal-bar button[title="Restore"]')
   await page.click('.terminal-bar button[title="Close"]')
   await api('DELETE', `/projects/${project.id}/worktrees?path=${encodeURIComponent(wt)}`)
   assert.deepEqual((await api('GET', t)).body.terminals.map((x) => [x.path, x.running]), [[project.path, false]])
@@ -3093,7 +3201,17 @@ test('academic writing shows its sources, one chat and the work, and adds source
   await page.click('.work-chapter:has-text("Intro")')
   await page.waitForSelector('.study-side .study-doc .rich-content:has-text("Heat pumps work")')
   await page.click('.study-doc-bar button:has-text("Text in the middle")')
-  await page.waitForSelector('.study.swapped .study-mid .rich-content')
+  await page.waitForSelector('.study.swapped .study-doc .rich-content')
+  assert.ok((await page.locator('.study-doc').boundingBox()).x < (await page.locator('.study-chat').boundingBox()).x)
+  await page.locator('.study-doc .rich-content').fill('Resize manuscript draft')
+  await page.evaluate(() => { window.resizeManuscript = document.querySelector('.study-doc .rich-content') })
+  for (const [width, height] of [[1024, 768], [390, 844], [844, 390], [1400, 900]]) {
+    await page.setViewportSize({ width, height })
+    if (await page.locator('.study-tabs').isVisible()) await page.click('.study-tabs button:has-text("Manuscript")')
+    await page.waitForTimeout(100)
+    assert.equal(await page.evaluate(() => window.resizeManuscript === document.querySelector('.study-doc .rich-content')), true)
+    assert.equal((await page.locator('.study-doc .rich-content').innerText()).trim(), 'Resize manuscript draft')
+  }
   await page.click('.study-doc-bar button:has-text("Chat in the middle")')
   await page.click('.study-doc-bar button:has-text("Overview")')
   await page.waitForSelector('.study-side .study-work')

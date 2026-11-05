@@ -1,5 +1,4 @@
 import { createContext, type ComponentChildren } from 'preact'
-import { createPortal } from 'preact/compat'
 import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { GripVertical, PanelsTopLeft } from 'lucide-preact'
 import { setPrefs, usePrefs } from './prefs'
@@ -8,9 +7,8 @@ import { t } from './i18n'
 
 // On a computer the project's panels sit in a dock: the conversation list, the main view (a conversation's chat
 // or the current page), the stage beside the chat (preview or changes) and the terminal. Each panel renders through
-// a portal into a box that is created once and never moves in the DOM, so an iframe or a terminal keeps running
-// while the panels are resized or rearranged; only the position of its leaf changes. On a phone panels render in
-// place, as before.
+// a stable leaf in its original DOM location, so editors, iframes and terminals keep running across window sizes.
+// Wide windows position those leaves in the dock; narrow windows use the original flow.
 
 export type PanelId = 'list' | 'main' | 'stage' | 'terminal'
 export interface Split { dir: 'row' | 'col'; children: Node[]; sizes: number[] }
@@ -63,9 +61,7 @@ export const setArranging = (on: boolean) => {
   notify()
 }
 
-const Docked = createContext(false)
-const boxes = new Map<PanelId, HTMLElement>()
-const box = (id: PanelId) => boxes.get(id) ?? boxes.set(id, document.createElement('div')).get(id)!
+const Docked = createContext<((id: PanelId, cls: string, children: ComponentChildren) => ComponentChildren) | null>(null)
 
 export function Panel({ id, title = NAMES[id], class: cls = '', children }: { id: PanelId; title?: string; class?: string; children: ComponentChildren }) {
   const docked = useContext(Docked)
@@ -74,7 +70,7 @@ export function Panel({ id, title = NAMES[id], class: cls = '', children }: { id
     if (!docked) return
     shown.set(id, { owner, title })
     notify()
-  }, [docked, title])
+  }, [!!docked, title])
   // A panel that takes over the id, like the next conversation's chat, may mount before this one goes.
   useLayoutEffect(
     () => () => {
@@ -84,10 +80,7 @@ export function Panel({ id, title = NAMES[id], class: cls = '', children }: { id
     },
     [],
   )
-  if (!docked) return <>{children}</>
-  const el = box(id)
-  el.className = `dock-box ${cls}`
-  return createPortal(<>{children}</>, el)
+  return docked ? docked(id, cls, children) : <>{children}</>
 }
 
 // Keeps a panel out of view while `hide` holds, as the conversation list beside a preview. Arranging shows it.
@@ -197,8 +190,7 @@ const snap = (v: number) => Math.round(v / GRID) * GRID
 
 // ---- the dock ----
 
-// `children` render out of sight; what they put in a Panel shows in the dock.
-export function Dock({ children }: { children: ComponentChildren }) {
+export function Dock({ children, enabled }: { children: ComponentChildren; enabled: boolean }) {
   useStore()
   const prefs = usePrefs()
   const ref = useRef<HTMLDivElement>(null)
@@ -213,8 +205,8 @@ export function Dock({ children }: { children: ComponentChildren }) {
   const [drop, setDrop] = useState<{ id: PanelId; target: PanelId; side: Side } | null>(null)
   const [order, setOrder] = useState<PanelId[]>(IDS)
   const [moving, setMoving] = useState<Partial<Record<PanelId, Rect>> | null>(null)
-  const free = prefs.freeWindows
-  const editing = arranging && !free
+  const free = enabled && prefs.freeWindows
+  const editing = enabled && arranging && !free
   useEffect(() => {
     if (!editing) return
     const key = (e: KeyboardEvent) => e.key === 'Escape' && setArranging(false)
@@ -314,36 +306,34 @@ export function Dock({ children }: { children: ComponentChildren }) {
   const px = (r: Rect) => ({ left: r.x, top: r.y, width: r.w, height: r.h })
   const title = (id: PanelId) => shown.get(id)?.title ?? NAMES[id]
 
-  return (
-    <div class={`dock ${free ? 'free' : ''} ${editing ? 'arranging' : ''} ${draft ? 'resizing' : ''}`} ref={ref}>
-      {IDS.map((id) => {
-        const r = free && !prefs.terminalMax ? windowOf(id) : rects[id]
-        const on = visible.has(id) && r
-        return (
-          <div key={id} class={`dock-leaf ${free ? 'window' : ''}`} data-panel={id} style={on ? { ...px(free ? clamp(r) : r), zIndex: free ? order.indexOf(id) + 1 : undefined } : { display: 'none' }} onPointerDown={free ? () => raise(id) : undefined}>
-            {free && (
-              <div class="window-head" onPointerDown={(e) => moveWindow(e, id, 'move')}>
-                {title(id)}
-              </div>
-            )}
-            <div
-              class="dock-slot"
-              ref={(el) => {
-                if (el && box(id).parentElement !== el) el.appendChild(box(id))
-              }}
-            />
-            {free && <div class="window-size" title={t('Resize')} onPointerDown={(e) => moveWindow(e, id, 'size')} />}
-            {editing && on && (
-              <div class={`arrange-cover ${drop?.id === id ? 'dragging' : ''}`} onPointerDown={(e) => arrange(e, id)}>
-                <span>
-                  <GripVertical size={16} /> {title(id)}
-                </span>
-              </div>
-            )}
+  const panel = (id: PanelId, cls: string, content: ComponentChildren) => {
+    const r = free && !prefs.terminalMax ? windowOf(id) : rects[id]
+    const on = visible.has(id) && r
+    return (
+      <div key={id} class={`${enabled ? 'dock-leaf' : 'inline-panel'} ${free ? 'window' : ''}`} data-panel={id} style={!enabled ? undefined : on ? { ...px(free ? clamp(r) : r), zIndex: free ? order.indexOf(id) + 1 : undefined } : { display: 'none' }} onPointerDown={free ? () => raise(id) : undefined}>
+        {free && (
+          <div class="window-head" onPointerDown={(e) => moveWindow(e, id, 'move')}>
+            {title(id)}
           </div>
-        )
-      })}
-      {!free && gutters.map((g) => <div key={`${g.path.join('.')}:${g.a}`} class={`dock-gutter ${g.row ? 'row' : 'col'}`} style={px(g.rect)} onPointerDown={(e) => resize(e, g)} />)}
+        )}
+        <div key="content" class="dock-slot">
+          <div class={`dock-box ${cls}`}>{content}</div>
+        </div>
+        {free && <div class="window-size" title={t('Resize')} onPointerDown={(e) => moveWindow(e, id, 'size')} />}
+        {editing && on && (
+          <div class={`arrange-cover ${drop?.id === id ? 'dragging' : ''}`} onPointerDown={(e) => arrange(e, id)}>
+            <span>
+              <GripVertical size={16} /> {title(id)}
+            </span>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <div class={`dock ${!enabled ? 'narrow' : ''} ${prefs.terminalMax && visible.has('terminal') ? 'terminal-max' : ''} ${free ? 'free' : ''} ${editing ? 'arranging' : ''} ${draft ? 'resizing' : ''}`} ref={ref}>
+      {enabled && !free && gutters.map((g) => <div key={`${g.path.join('.')}:${g.a}`} class={`dock-gutter ${g.row ? 'row' : 'col'}`} style={px(g.rect)} onPointerDown={(e) => resize(e, g)} />)}
       {zoneRect && <div class="drop-zone" style={px(zoneRect)} />}
       {editing && (
         <div class="arrange-bar">
@@ -357,7 +347,7 @@ export function Dock({ children }: { children: ComponentChildren }) {
         </div>
       )}
       <div class="dock-source">
-        <Docked.Provider value={true}>{children}</Docked.Provider>
+        <Docked.Provider value={panel}>{children}</Docked.Provider>
       </div>
     </div>
   )
