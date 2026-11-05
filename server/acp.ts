@@ -4,6 +4,7 @@
 import { execFile, spawn } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
+import readline from 'node:readline'
 import * as store from './store.js'
 import type { ApprovalOption, Provider, Thread } from './store.js'
 import { BIN, command, mcpUrl, VERSION } from './config.js'
@@ -37,7 +38,8 @@ export function acpCommand(provider: Provider, projectId: string, threadId: stri
     const permission = mode === 'full-access' ? { permission: 'allow' } : mode === 'auto' ? AUTO : {}
     return {
       bin: BIN.opencode,
-      args: ['acp'],
+      // OpenCode 1.x logs an error of the model's API without answering the prompt; Savor reads it from the log (stuck).
+      args: ['acp', '--print-logs', '--log-level', 'ERROR'],
       env: { OPENCODE_CONFIG_CONTENT: JSON.stringify({ autoupdate: false, share: 'disabled', ...permission, mcp: { savor: { type: 'remote', ...savor, enabled: true } } }) },
     }
   }
@@ -60,6 +62,8 @@ export class AcpSession implements Session {
   private readonly reviewer: boolean
   // The asks waiting for the plugin, by tool call.
   private reviews = new Map<string, () => void>()
+  // Fails the running prompt when OpenCode logs that the model's API stopped it at a usage limit.
+  private stuck: (error: string) => void = () => {}
 
   constructor(private host: Host, private thread: Thread) {
     this.reviewer = thread.agent.provider === 'opencode' && thread.agent.permissionMode === 'auto'
@@ -68,6 +72,11 @@ export class AcpSession implements Session {
     const cmd = acpCommand(thread.agent.provider, p.id, thread.id, thread.agent.permissionMode)
     const child = spawn(...command(cmd.bin, cmd.args), { cwd: host.cwd, env: { ...process.env, ...cmd.env }, stdio: ['pipe', 'pipe', 'pipe'] })
     this.rpc = new Rpc(child, { notification: (m, params) => this.onNotification(m, params), request: (m, params) => this.onRequest(m, params) })
+    if (thread.agent.provider === 'opencode')
+      readline.createInterface({ input: child.stderr! }).on('line', (l) => {
+        const error = stuckOn(l, this.sessionId)
+        if (error) this.stuck(error)
+      })
     this.rpc.exited.then(({ code, signal }) => host.closed(this.stopping || signal === 'SIGTERM' ? STOPPED : `${cmd.bin} exited with ${code}: ${this.rpc.stderrTail}`))
     this.ready = this.init()
   }
@@ -118,9 +127,10 @@ export class AcpSession implements Session {
         // command goes alone, since the agent runs one only at the very start of a prompt.
         const text = this.fresh ? `${systemPrompt(this.host.p, store.getThread(this.host.p, this.host.tid))}\n\n${context}${input}` : input.startsWith('/') ? input : context + input
         this.fresh = false
-        return this.rpc.request('session/prompt', { sessionId: this.sessionId, prompt: [{ type: 'text', text }, ...images64] })
+        const stuck = new Promise<never>((_, reject) => (this.stuck = (error) => (this.interrupt(), reject(new Error(error)))))
+        return Promise.race([this.rpc.request('session/prompt', { sessionId: this.sessionId, prompt: [{ type: 'text', text }, ...images64] }), stuck])
       })
-      .finally(() => this.reviews.forEach((done) => done()))
+      .finally(() => ((this.stuck = () => {}), this.reviews.forEach((done) => done())))
       .then((r) => this.host.ended(r.stopReason === 'refusal' ? { error: 'The agent refused this request.' } : { text: r.stopReason === 'cancelled' ? '' : this.text }))
       .catch(async (e: Error) => {
         if (e instanceof RpcError && e.code === -32000 && /auth/i.test(e.message)) return this.host.ended({ error: `${e.message} Sign in with the agent's CLI first.` })
@@ -129,7 +139,9 @@ export class AcpSession implements Session {
         // Grok Build reports the usage period its limit belongs to on _x.ai/billing; other agents don't have it,
         // and an agent that has exited never answers.
         const billing = LIMIT.test(error) ? await Promise.race([this.rpc.request('_x.ai/billing', {}), new Promise((r) => setTimeout(r, 10_000))]).catch(() => null) : null
-        this.host.ended({ error, resetsAt: acpResets(billing) })
+        // OpenCode doesn't tell when its limit resets: Savor tries again after GUESS_MS, or switches with the fallback.
+        const guess = this.thread.agent.provider === 'opencode' && OPENCODE_LIMIT.test(error) ? Date.now() + GUESS_MS : null
+        this.host.ended({ error, resetsAt: acpResets(billing) ?? guess })
       })
   }
 
@@ -215,6 +227,19 @@ const REVIEW_MS = 120_000
 // The usage limits Grok Build stops at, as its own UI tells them apart: 402, credits, the weekly or free usage
 // limit, the spending cap. A rate limit (429) passes within a minute and is no reason to wait for the period.
 const LIMIT = /\b402\b|credits|usage (limit|balance)|weekly limit|spending (limit|cap)/i
+
+// The limits of OpenCode's own models (the free ones, Go, Zen) and of the providers behind it, not their rate limits,
+// which OpenCode retries itself. It says only "Free usage limit reached" so far, and no reset.
+const OPENCODE_LIMIT = /usage limit|quota|credits|\b402\b|insufficient (balance|funds)/i
+const GUESS_MS = 60 * 60_000
+
+// The error OpenCode logs when the model's API failed a prompt of this session at a usage limit, e.g.
+// message="stream error" … session.id=ses_… error.error="AI_APICallError: Free usage limit reached. …"
+export function stuckOn(line: string, sessionId: string) {
+  if (!sessionId || !line.includes('message="stream error"') || !line.split(' ').includes(`session.id=${sessionId}`)) return null
+  const error = line.match(/error\.error="((?:[^"\\]|\\.)*)"/)?.[1]?.replace(/\\(.)/g, '$1').replace(/^AI_\w+: /, '')
+  return error && OPENCODE_LIMIT.test(error) ? error : null
+}
 
 // When the usage period of a _x.ai/billing answer ends, unless it still has credit left.
 export function acpResets(billing: any, now = Date.now()) {

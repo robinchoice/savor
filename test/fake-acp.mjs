@@ -5,6 +5,8 @@
 // - "reviewed: <anything>" → the same ask, but the tool call fails right after it, as when OpenCode's review plugin rejects it
 // - "plan: <anything>" → _x.ai/exit_plan_mode like Grok Build, then "ACP plan: <outcome>"
 // - "limit: <anything>" → the prompt fails at Grok Build's weekly limit; _x.ai/billing says the period ends in two hours
+// - "stuck: <anything>" → on a model of the providers "fake" or "free", like OpenCode 1.x at its free limit: the error goes to the
+//   log on stderr and the prompt gets no answer; on other models "ACP echo: <input> (<model>)"
 // - a prompt that starts with a slash command → "ACP command: <prompt>"
 // - anything else → "ACP echo: <input>"
 // Like Grok Build, it asks with session/request_permission before it calls a Savor tool.
@@ -62,6 +64,9 @@ async function conclude(text) {
 
 const sessionId = 'fake-acp-session'
 let cancelled = false
+let model = ''
+// Only Grok Build has _x.ai/billing, so the fake answers it only after Grok's limit.
+let billing = false
 
 async function prompt(params, reply) {
   cancelled = false
@@ -75,7 +80,12 @@ async function prompt(params, reply) {
   notify('session/update', { sessionId, update: { sessionUpdate: 'tool_call_update', toolCallId: 'call3', status: 'completed' } })
   let answer
   if (input.startsWith('limit:')) {
+    billing = true
     return out({ jsonrpc: '2.0', id: params.id, error: { code: -32603, message: 'Internal error', data: 'status 402: You hit your weekly limit.' } })
+  } else if (input.startsWith('stuck:') && /^(fake|free)\//.test(model)) {
+    return void process.stderr.write(`timestamp=${new Date().toISOString()} level=ERROR run=1 message="stream error" providerID=fake modelID=${model} session.id=${params.sessionId} small=false agent=build mode=primary error.error="AI_APICallError: Free usage limit reached. Subscribe to OpenCode Go to keep going: https://opencode.ai/go"\n`)
+  } else if (input.startsWith('stuck:')) {
+    answer = `ACP echo: ${input} (${model})`
   } else if (text.startsWith('/')) {
     answer = `ACP command: ${text}`
   } else if (!input) {
@@ -133,11 +143,13 @@ rl.on('line', (line) => {
     case 'session/set_mode':
     case 'session/set_model':
     case 'session/set_config_option':
+      if (msg.method === 'session/set_model') model = msg.params.modelId
       log({ [msg.method]: msg.params.modeId ?? msg.params.modelId ?? `${msg.params.configId}=${msg.params.value}` })
       return reply({})
     case 'session/prompt':
       return void prompt({ ...msg.params, id: msg.id }, reply)
     case '_x.ai/billing': {
+      if (!billing) return out({ jsonrpc: '2.0', id: msg.id, error: { code: -32601, message: `unknown method ${msg.method}` } })
       const end = new Date(Date.now() + 2 * 3600_000).toISOString()
       return reply({ config: { currentPeriod: { type: 'USAGE_PERIOD_TYPE_WEEKLY', start: new Date(Date.now() - 86400_000).toISOString(), end }, billingPeriodEnd: end }, subscription_tier: 'Free' })
     }

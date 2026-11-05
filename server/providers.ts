@@ -1,6 +1,7 @@
 // What each agent can do (models, effort levels, permission modes) and whether it is installed and signed in.
 import { execFile } from 'node:child_process'
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { upgradeAgent, type AgentConfig, type Provider } from './store.js'
 import { BIN, command } from './config.js'
@@ -213,8 +214,9 @@ let cache: { at: number; list: Promise<ProviderInfo[]> } | null = null
 let known: ProviderInfo[] | null = null
 
 // OpenCode leaves a 4 MB library in the temp folder each time it starts (anomalyco/opencode#21427), so
-// its probe runs once per daemon start and again only when its binary changes. A missing agent is
-// likewise probed again only once its binary turns up.
+// its probe runs once per daemon start and again only when its binary or its sign-ins change (opencode
+// auth login adds the models of Go, Zen or a provider). A missing agent is likewise probed again only
+// once its binary turns up.
 const ONCE: Partial<Record<Provider, true>> = { opencode: true }
 const probed = new Map<Provider, { stamp: string; probe: Promise<Probe>; missing: boolean }>()
 
@@ -230,8 +232,17 @@ function stamp(bin: string) {
   return ''
 }
 
+const OPENCODE_AUTH = path.join(process.env.XDG_DATA_HOME || path.join(os.homedir(), '.local', 'share'), 'opencode', 'auth.json')
+const mtime = (file: string) => {
+  try {
+    return fs.statSync(file).mtimeMs
+  } catch {
+    return 0
+  }
+}
+
 function runProbe(id: Provider) {
-  const now = stamp(BIN[id])
+  const now = stamp(BIN[id]) + (id === 'opencode' ? ` ${mtime(OPENCODE_AUTH)}` : '')
   const hit = probed.get(id)
   if (hit?.stamp === now && (ONCE[id] || hit.missing)) return hit.probe
   const p = probes[id]()

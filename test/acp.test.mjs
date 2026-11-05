@@ -8,7 +8,7 @@ import path from 'node:path'
 const HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'savor-acp-'))
 process.env.SAVOR_HOME = HOME
 process.env.SAVOR_GROK_BIN = path.resolve('test/fake-acp.mjs')
-const { acpCommand, acpResets, grokModels } = await import('../server/acp.ts')
+const { acpCommand, acpResets, grokModels, stuckOn } = await import('../server/acp.ts')
 after(() => fs.rmSync(HOME, { recursive: true, force: true }))
 
 test('Grok models and their effort levels come from ACP initialize without a prompt', async () => {
@@ -21,7 +21,7 @@ test('Grok models and their effort levels come from ACP initialize without a pro
 test("Grok Build's Always approve mode is a flag of its agent process", () => {
   assert.deepEqual(acpCommand('grok', 'p', 't', 'default').args, ['--no-auto-update', 'agent', '--no-leader', 'stdio'])
   assert.deepEqual(acpCommand('grok', 'p', 't', 'always-approve').args, ['--no-auto-update', 'agent', '--always-approve', '--no-leader', 'stdio'])
-  assert.deepEqual(acpCommand('opencode', 'p', 't', 'always-approve').args, ['acp'])
+  assert.deepEqual(acpCommand('opencode', 'p', 't', 'always-approve').args, ['acp', '--print-logs', '--log-level', 'ERROR'])
 })
 
 test("OpenCode's Full access mode allows every permission in its config", () => {
@@ -50,4 +50,14 @@ test("a usage limit resets at the end of the usage period Grok Build's _x.ai/bil
   assert.equal(acpResets({ config: { ...billing.config, creditUsagePercent: 40 } }, now), null)
   assert.equal(acpResets(billing, Date.parse('2026-10-23T00:00:00Z')), null)
   assert.equal(acpResets(null, now), null)
+})
+
+test('OpenCode 1.x reports a usage limit only in its log, which Savor reads for its own session', () => {
+  const line = 'timestamp=2026-11-05T09:08:34.423Z level=ERROR run=f1 message="stream error" providerID=opencode modelID=big-pickle session.id=ses_a small=false agent=build mode=primary error.error="AI_APICallError: Free usage limit reached. Free models work in OpenCode (https://opencode.ai); subscribe to OpenCode Go to keep going: https://opencode.ai/go"'
+  assert.equal(stuckOn(line, 'ses_a'), 'Free usage limit reached. Free models work in OpenCode (https://opencode.ai); subscribe to OpenCode Go to keep going: https://opencode.ai/go')
+  assert.equal(stuckOn(line, 'ses_ab'), null)
+  assert.equal(stuckOn(line, ''), null)
+  // Rate limits and other errors OpenCode retries or answers itself.
+  assert.equal(stuckOn(line.replace(/error\.error=".*"/, 'error.error="AI_APICallError: Rate limit exceeded"'), 'ses_a'), null)
+  assert.equal(stuckOn(line.replace('stream error', 'process'), 'ses_a'), null)
 })

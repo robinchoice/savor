@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks'
 import { ArrowDown, ArrowUp, ArrowUpRight, Bot, Check, ChevronDown, ChevronRight, Laptop, MessageSquare, Mic, Plus, SlidersHorizontal, Smartphone, X } from 'lucide-preact'
-import { api, cap, desktop, go, PROVIDER_NAMES, useAgents, useApi, type AgentConfig, type Fallback, type Me } from './api'
+import { api, cap, desktop, go, poolOf, PROVIDER_NAMES, useAgents, useApi, type AgentConfig, type Fallback, type Me } from './api'
 import { native } from './native'
 import { AgentButton, AgentMenu } from './Composer'
 import { AgentStatusRow, ModeCards } from './Setup'
@@ -280,7 +280,7 @@ function FallbackList() {
     const p = agents?.find((a) => a.installed && !list.some((x) => x.provider === a.id)) ?? agents?.[0]
     if (p) save({ agents: [...list, { provider: p.id, model: '', reasoning: p.defaultEffort, fast: false, ultracode: false, permissionMode: p.defaultMode }] }).then(() => setMenu(list.length))
   }
-  const first = list.find((a) => !limited.includes(a.provider))
+  const first = list.find((a) => !limited.includes(poolOf(a)))
   return (
     <div class={`fallback ${on ? '' : 'off'}`}>
       <div class="setting">
@@ -305,7 +305,7 @@ function FallbackList() {
                   {name} {i === 0 && <span class="ap-tag">{t('Preferred')}</span>}
                 </b>
                 {mode && <small class="muted">{t(mode.label)}</small>}
-                <small class={limited.includes(a.provider) ? 'warn' : 'ok'}>{limited.includes(a.provider) ? t('At its usage limit') : on && i > 0 && a === first ? t('Takes over now') : t('Available')}</small>
+                <small class={limited.includes(poolOf(a)) ? 'warn' : 'ok'}>{limited.includes(poolOf(a)) ? t('At its usage limit') : on && i > 0 && a === first ? t('Takes over now') : t('Available')}</small>
               </span>
               <span class="fallback-tools">
                 <AgentButton agent={a} info={info} open={menu === i} toggle={() => setMenu(menu === i ? null : i)} />

@@ -34,8 +34,8 @@ export interface RequestState {
   ack?: { text: string; id: string }
   conclusion?: { key: string; id: string }
   updates: Map<string, { text: string; id: string }>
-  // The agents that stopped at a usage limit on this request, with when it resets (ms).
-  limited?: Map<Provider, number>
+  // The limits (poolOf) this request stopped at, with when each resets (ms).
+  limited?: Map<string, number>
   // Whether Claude Code went on with API credit on this request.
   credit?: boolean
 }
@@ -365,10 +365,10 @@ function endTurn(p: Project, tid: string, result: { text?: string; error?: strin
     post(p, tid, { kind: 'error', text: result.error, modelInfo: agent })
     const thread = store.getThread(p, tid)
     const credit = thread.apiCredit
-    if (resumeAt) limits.set(agent.provider, result.resetsAt!)
-    if (resumeAt && (unattended(thread) || chain())) void fallBack(p, tid, agent.provider, result.resetsAt!, result.error)
+    if (resumeAt) limits.set(poolOf(agent), result.resetsAt!)
+    if (resumeAt && (unattended(thread) || chain())) void fallBack(p, tid, agent, result.resetsAt!, result.error)
     // Whatever stops Claude Code on API credit (no credit left, its budget, the key) hands the request on.
-    else if (credit && unattended(thread) && result.error !== STOPPED && !request(p, tid).conclusion) void fallBack(p, tid, 'claude', credit.resetsAt, result.error)
+    else if (credit && unattended(thread) && result.error !== STOPPED && !request(p, tid).conclusion) void fallBack(p, tid, agent, credit.resetsAt, result.error)
     else if (resumeAt) notify(p, tid, 'error', result.error, 'Waits for a usage limit')
     else if (result.error !== STOPPED) notify(p, tid, 'error', result.error, 'Stopped with an error')
   } else {
@@ -672,11 +672,17 @@ const chain = () => {
   return f?.on && f.agents.length ? f.agents : null
 }
 
-// The usage limits turns of any conversation stopped at: when each resets (ms).
-const limits = new Map<Provider, number>()
+// What a usage limit belongs to: the agent's subscription, or with OpenCode its model's provider (its free models,
+// Go, an API key), so a conversation can go on with an OpenCode model of another provider. Also in web/api.ts.
+export const poolOf = (a: Pick<AgentConfig, 'provider' | 'model'>) => (a.provider === 'opencode' && a.model.includes('/') ? `opencode ${a.model.split('/')[0]}` : a.provider)
+// The agent and, with OpenCode, its model, for the messages about a switch.
+const named = (a: AgentConfig) => (a.provider === 'opencode' && a.model ? `${STATIC.opencode.name} (${a.model})` : STATIC[a.provider].name)
 
-// An agent known to be at a usage limit: a turn stopped at it and it has not reset, or a window of the agent's usage is full.
-function atLimit(id: Provider) {
+// The usage limits turns of any conversation stopped at, by poolOf: when each resets (ms).
+const limits = new Map<string, number>()
+
+// A limit known to be reached: a turn stopped at it and it has not reset, or a window of the agent's usage is full.
+function atLimit(id: string) {
   const at = limits.get(id)
   return (!!at && at + LIMIT_MARGIN_MS > Date.now()) || knownUsage().some((u) => u.provider === id && u.windows.some((w) => (!w.limitId || w.limitId === 'codex') && w.percent >= 100 && (!w.resetsAt || w.resetsAt > Date.now())))
 }
@@ -688,7 +694,7 @@ export async function fallbackSettings() {
   return {
     on: !!f?.on,
     agents: f?.agents ?? FALLBACK.map(([provider, permissionMode]) => mergeAgent(store.defaultAgent(), { provider, permissionMode })),
-    limited: (Object.keys(STATIC) as Provider[]).filter(atLimit),
+    limited: [...new Set([...Object.keys(STATIC), ...limits.keys()])].filter(atLimit),
   }
 }
 
@@ -698,14 +704,14 @@ function avoidLimits(p: Project, t: Thread): Thread {
   const list = chain()
   if (!list) return t
   void listUsage()
-  const free = (a: AgentConfig) => !atLimit(a.provider) && (knownAgents()?.some((k) => k.id === a.provider && k.installed && k.signedIn) ?? true)
+  const free = (a: AgentConfig) => !atLimit(poolOf(a)) && (knownAgents()?.some((k) => k.id === a.provider && k.installed && k.signedIn) ?? true)
   if (t.preferred && free(t.preferred)) {
-    post(p, t.id, { kind: 'update', text: `The usage limit of ${STATIC[t.preferred.provider].name} has reset. It takes over again.`, modelInfo: t.preferred })
+    post(p, t.id, { kind: 'update', text: `The usage limit of ${named(t.preferred)} has reset. It takes over again.`, modelInfo: t.preferred })
     return store.updateThread(p, t.id, { agent: t.preferred, preferred: null })
   }
-  const next = atLimit(t.agent.provider) && list.find(free)
+  const next = atLimit(poolOf(t.agent)) && list.find(free)
   if (!next) return t
-  post(p, t.id, { kind: 'update', text: `${STATIC[t.agent.provider].name} is at its usage limit. ${STATIC[next.provider].name} takes over.`, modelInfo: next })
+  post(p, t.id, { kind: 'update', text: `${named(t.agent)} is at its usage limit. ${named(next)} takes over.`, modelInfo: next })
   return store.updateThread(p, t.id, { agent: next, preferred: t.preferred ?? t.agent })
 }
 
@@ -716,10 +722,11 @@ const ON_CREDIT = `You stopped at a usage limit while working on the input below
 // After that, the next agent is installed, signed in, has not stopped at a limit on this request yet and is not at 100 %
 // of any window. With none left, the request waits for the earliest reset; if that is another agent's, the current one
 // stops at its limit again then, and the switch follows.
-async function fallBack(p: Project, tid: string, provider: Provider, resetsAt: number, error: string) {
+async function fallBack(p: Project, tid: string, from: AgentConfig, resetsAt: number, error: string) {
+  const { provider } = from
   const r = request(p, tid)
   const limited = (r.limited ??= new Map())
-  limited.set(provider, resetsAt)
+  limited.set(poolOf(from), resetsAt)
   for (const [id, at] of limited) if (at + LIMIT_MARGIN_MS < Date.now()) limited.delete(id)
   const waits = store.getThread(p, tid).resumeAt
   const [installed] = await Promise.all([listAgents(), listUsage(true)])
@@ -738,22 +745,21 @@ async function fallBack(p: Project, tid: string, provider: Provider, resetsAt: n
     return continueRequest(p, store.getThread(p, tid), input, ON_CREDIT + sameRequest(r))
   }
   if (credit) store.updateThread(p, tid, { apiCredit: null })
-  const full = (id: Provider) =>
-    limited.has(id) || atLimit(id) || !installed.some((a) => a.id === id && a.installed && a.signedIn)
+  const full = (a: AgentConfig) =>
+    limited.has(poolOf(a)) || atLimit(poolOf(a)) || !installed.some((k) => k.id === a.provider && k.installed && k.signedIn)
   const list = chain() ?? FALLBACK.map(([to, permissionMode]) => (to === p.agent.provider ? p.agent : mergeAgent(thread.agent, { provider: to, permissionMode })))
-  const i = list.findIndex((a) => a.provider === provider)
-  const agent = [...list.slice(i + 1), ...list.slice(0, i + 1)].find((a) => !full(a.provider))
+  const i = list.findIndex((a) => poolOf(a) === poolOf(from))
+  const agent = [...list.slice(i + 1), ...list.slice(0, i + 1)].find((a) => !full(a))
   if (!agent) {
     setResume(p, tid, new Date(Math.min(...limited.values()) + LIMIT_MARGIN_MS).toISOString())
     return notify(p, tid, 'error', error, 'Waits for a usage limit')
   }
-  const to = agent.provider
   setResume(p, tid, null)
   store.updateThread(p, tid, { agent, preferred: thread.preferred ?? thread.agent })
   // The switch shows in the conversation, so it is clear which agent did what.
-  const why = credit ? `${STATIC[provider].name} stopped on the API credit too.` : `${STATIC[provider].name} reached its usage limit.`
-  post(p, tid, { kind: 'update', text: `${why} ${STATIC[to].name} takes over.`, modelInfo: agent })
-  continueRequest(p, store.getThread(p, tid), input, takeOver(STATIC[provider].name) + sameRequest(r))
+  const why = credit ? `${named(from)} stopped on the API credit too.` : `${named(from)} reached its usage limit.`
+  post(p, tid, { kind: 'update', text: `${why} ${named(agent)} takes over.`, modelInfo: agent })
+  continueRequest(p, store.getThread(p, tid), input, takeOver(named(from)) + sameRequest(r))
 }
 
 // ---- waiting for CI ----
