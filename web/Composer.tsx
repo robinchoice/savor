@@ -53,9 +53,9 @@ interface Props {
   submitRef?: { current?: (next: boolean) => void }
 }
 
-const MAX_FILES = 8
+const MAX_FILES = 20
 // Characters of base64 per message: sealed for the relay it still fits into one frame, and the daemon takes up to 30 MB.
-const MAX_ATTACHMENTS = 20 * 1024 * 1024
+const MAX_ATTACHMENTS = 22 * 1024 * 1024
 
 const pickedContext = (picked: Picked[]) =>
   picked

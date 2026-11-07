@@ -1134,7 +1134,7 @@ test('files can be attached to a message', async () => {
   const r = await fetch(`${base}/api${t}/attachments/${first.files[0]}`, { headers: { cookie: `savor_token=${token}` } })
   assert.equal(r.headers.get('content-disposition'), 'attachment; filename="notes.txt"')
   assert.equal(await r.text(), 'hello from a file')
-  const tooMany = (await api('POST', `${t}/messages`, { text: 'x', attachments: Array(9).fill({ name: 'a.txt', dataUrl }) })).status
+  const tooMany = (await api('POST', `${t}/messages`, { text: 'x', attachments: Array(21).fill({ name: 'a.txt', dataUrl }) })).status
   assert.equal(tooMany, 400)
 })
 

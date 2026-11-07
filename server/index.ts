@@ -82,7 +82,7 @@ function agentFrom(ctx: Ctx, current: store.AgentConfig, patch: Partial<store.Ag
 const project = (params: Params) => store.getProject(params.pid)
 function inputFrom(b: any, ctx: Ctx, p: store.Project, tid: string): agents.Input {
   const attachments = (b.attachments ?? []) as { name: string; dataUrl: string }[]
-  if (attachments.length > 8) throw new BadRequest('Attach up to 8 files per message.')
+  if (attachments.length > 20) throw new BadRequest('Attach up to 20 files per message.')
   const saved = attachments.map((a) => store.saveAttachment(p, tid, a))
   return {
     text: String(b.text ?? ''),

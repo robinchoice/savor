@@ -91,9 +91,10 @@ export const readFileAsDataUrl = (f: Blob) =>
   })
 
 // Photos from a phone are several MB each, more than a message through the relay can carry by the
-// handful, and more than an agent looks at. They become JPEGs of at most PHOTO_EDGE pixels, HEIC
-// included. A photo the browser cannot decode stays as it is.
-const PHOTO_EDGE = 2560
+// handful, and more than an agent looks at: Claude scales images down to 1568 px, GPT to less. They
+// become JPEGs of at most PHOTO_EDGE pixels, HEIC included, so 20 fit into one message. A photo the
+// browser cannot decode stays as it is.
+const PHOTO_EDGE = 1600
 export async function attachmentFromFile(f: File): Promise<{ name: string; dataUrl: string; image: boolean }> {
   const image = f.type.startsWith('image/')
   const heic = /^image\/hei[cf]$/.test(f.type) || /\.hei[cf]$/i.test(f.name)
@@ -108,7 +109,7 @@ export async function attachmentFromFile(f: File): Promise<{ name: string; dataU
       canvas.width = Math.round(img.naturalWidth * scale)
       canvas.height = Math.round(img.naturalHeight * scale)
       canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height)
-      return { name: f.name.replace(/\.[^.]*$/, '') + '.jpg', dataUrl: canvas.toDataURL('image/jpeg', 0.85), image: true }
+      return { name: f.name.replace(/\.[^.]*$/, '') + '.jpg', dataUrl: canvas.toDataURL('image/jpeg', 0.8), image: true }
     } catch {
       // Not decodable here, e.g. HEIC outside Safari: sent as it is.
     } finally {
