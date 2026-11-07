@@ -21,8 +21,8 @@ last=$(git tag -l 'v*' --sort=-v:refname | head -1)
 IFS=. read -r major minor patch <<<"${last#v}"
 if [ $part = minor ]; then next=$major.$((minor + 1)).0; else next=$major.$minor.$((patch + 1)); fi
 
-# CI result of the newest tested commit on main. The screenshot commits release.yml pushes get no
-# CI run of their own, so commits after it may only touch those screenshots.
+# CI result of the newest tested commit on main. The commits release.yml pushes (screenshots and the
+# landing page's download links) get no CI run of their own, so commits after it may only touch those.
 head=$(git rev-parse origin/main)
 runs=$(gh run list --workflow ci.yml --branch main --limit 30 --json headSha,status,conclusion)
 ci=none
@@ -31,7 +31,7 @@ for sha in $(git rev-list -30 origin/main); do
   [ -n "$ci" ] && break
 done
 [ -n "$ci" ] || ci=none
-if [ "$ci" != none ] && ! git diff --quiet "$sha" "$head" -- . ':!docs/screenshots' ':!site/img'; then
+if [ "$ci" != none ] && ! git diff --quiet "$sha" "$head" -- . ':!docs/screenshots' ':!site/img' ':!site/index.html'; then
   ci="untested commits after ${sha:0:7}"
 fi
 
