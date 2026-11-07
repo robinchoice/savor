@@ -262,6 +262,8 @@ export function remote(profile: RemoteProfile, onState: (connected: boolean, err
     async request(method, path, body) {
       const { ws, channel } = await tunnel()
       const id = nextId++
+      // Refused here, the request fails on its own instead of cutting the connection for all others.
+      if (!t.fitsFrame({ id, method, path, body })) throw new Error(tr('This is too large to send through the relay. Send fewer or smaller files at once.'))
       return new Promise((resolve, reject) => {
         pending.set(id, { resolve, reject, buffer: '', path })
         ws.send(channel.seal({ id, method, path, body }))

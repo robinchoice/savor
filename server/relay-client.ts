@@ -222,8 +222,11 @@ class Conn {
     this.forward(req).catch((e) => this.reply({ id: req.id, status: 502, type: 'application/json', body: JSON.stringify({ error: String(e.message ?? e) }), end: true }))
   }
 
-  private reply(m: object) {
-    if (this.channel) this.send(this.channel.seal(m))
+  // A reply too large for one frame would make the relay drop this computer with every device on it.
+  private reply(m: { id: number; [key: string]: unknown }) {
+    if (!this.channel) return
+    if (!t.fitsFrame(m)) m = { id: m.id, status: 413, type: 'application/json', body: JSON.stringify({ error: 'Too large to send through the relay.' }), end: true }
+    this.send(this.channel.seal(m))
   }
 
   private async forward(req: Req) {

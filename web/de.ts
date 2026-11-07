@@ -164,6 +164,8 @@ const de: Record<string, string> = {
   '{n} file': '{n} Datei',
   '{n} files': '{n} Dateien',
   'Attach up to {n} files per message.': 'Hänge bis zu {n} Dateien pro Nachricht an.',
+  'The attachments are too large to send together ({size} MB, at most {max} MB). Send them in several messages.': 'Die Anhänge sind zusammen zu groß ({size} MB, höchstens {max} MB). Schick sie auf mehrere Nachrichten verteilt.',
+  'This is too large to send through the relay. Send fewer or smaller files at once.': 'Das ist zu groß für die Verbindung über das Relay. Schick weniger oder kleinere Dateien auf einmal.',
   'Stop': 'Stoppen',
   'Add to this turn (Ctrl+Enter): the agent reads it at its next step': 'Zu diesem Durchgang hinzufügen (Strg+Enter): Der Agent liest es bei seinem nächsten Schritt',
   'Send and open the next conversation that needs you (Alt+Enter)': 'Senden und das nächste Gespräch öffnen, das dich braucht (Alt+Enter)',

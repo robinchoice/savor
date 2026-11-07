@@ -31,6 +31,11 @@ import { bytesToUtf8, equalBytes, randomBytes, utf8ToBytes } from '@noble/cipher
 // v2: device key hidden in the hello. Relay web app and daemon must speak the same version.
 const PROTOCOL = utf8ToBytes('savor-relay-v2')
 
+// The relay closes a socket that sends a larger frame, and with it every request on that socket.
+export const MAX_FRAME = 32 * 1024 * 1024
+// Whether a message still fits into one frame once sealed: base64 of its JSON, plus the envelope.
+export const fitsFrame = (message: unknown) => (utf8ToBytes(JSON.stringify(message)).length * 4) / 3 + 4096 < MAX_FRAME
+
 export const b64 = {
   enc(bytes: Uint8Array) {
     let bin = ''

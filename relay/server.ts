@@ -11,7 +11,7 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { WebSocketServer, type WebSocket } from 'ws'
-import { daemonId, publicKey, relayChallenge } from '../shared/tunnel.js'
+import { daemonId, MAX_FRAME, publicKey, relayChallenge } from '../shared/tunnel.js'
 import { newNonce, securityHeaders, withNonce } from '../shared/headers.js'
 import * as usage from './usage.js'
 
@@ -21,7 +21,6 @@ const WEB = process.env.RELAY_WEB_DIR ?? [path.join(HERE, '..', 'dist', 'web'), 
 // Only behind a reverse proxy (Caddy, nginx) is X-Forwarded-For the client's address.
 const TRUST_PROXY = process.env.RELAY_TRUST_PROXY === '1'
 const HANDSHAKE_MS = Number(process.env.RELAY_HANDSHAKE_TIMEOUT_MS ?? 10_000)
-const MAX_FRAME = 32 * 1024 * 1024
 const MAX_DAEMONS = Number(process.env.RELAY_MAX_DAEMONS ?? 5000)
 const MAX_DEVICES_PER_DAEMON = 32
 const MAX_DEVICES_PER_IP_PER_DAEMON = 8

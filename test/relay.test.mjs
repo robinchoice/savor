@@ -3,6 +3,7 @@
 import { test, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync, spawn } from 'node:child_process'
+import crypto from 'node:crypto'
 import fs from 'node:fs'
 import http from 'node:http'
 import net from 'node:net'
@@ -229,6 +230,63 @@ test('pair through the relay and work on the project remotely', async () => {
   const tapped = fs.readFileSync(TAP, 'utf8')
   assert.ok(tapped.length > 1000, 'traffic went through the relay')
   for (const plain of ['hello through the relay', 'Echo:', 'Fake agent test', token]) assert.ok(!tapped.includes(plain), `relay saw "${plain}"`)
+})
+
+test('eight phone photos go through the relay in one message, and a reply too large for the relay leaves the connection up', async () => {
+  // A 12-megapixel photo, several MB like the ones from a phone.
+  const photo = Buffer.from(
+    await page.evaluate(async () => {
+      const noise = document.createElement('canvas')
+      noise.width = 672
+      noise.height = 504
+      const pixels = noise.getContext('2d').createImageData(noise.width, noise.height)
+      for (let i = 0; i < pixels.data.length; i += 65536) crypto.getRandomValues(pixels.data.subarray(i, i + 65536))
+      for (let i = 3; i < pixels.data.length; i += 4) pixels.data[i] = 255
+      noise.getContext('2d').putImageData(pixels, 0, 0)
+      const canvas = document.createElement('canvas')
+      canvas.width = 4032
+      canvas.height = 3024
+      canvas.getContext('2d').drawImage(noise, 0, 0, canvas.width, canvas.height)
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.95))
+      const bytes = new Uint8Array(await blob.arrayBuffer())
+      let bin = ''
+      for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
+      return btoa(bin)
+    }),
+    'base64',
+  )
+  assert.ok(photo.length > 3 * 1024 * 1024, `the test photo has ${photo.length} bytes`)
+  const photos = Array.from({ length: 8 }, (_, i) => path.join(TMP, `IMG_000${i}.JPG`))
+  for (const file of photos) fs.writeFileSync(file, photo)
+  await page.setInputFiles('.composer input[type=file]', photos)
+  await page.waitForFunction(() => document.querySelectorAll('.composer .thumb').length === 8)
+  await page.fill('.composer textarea', 'eight photos')
+  await page.keyboard.press('Enter')
+  await page.waitForSelector('text=Echo: eight photos', { timeout: 30_000 })
+  const [, pid, tid] = page.url().match(/#\/p\/(\w+)\/t\/(\w+)/)
+  const t = `/projects/${pid}/threads/${tid}`
+  const sent = (await local('GET', t)).messages.findLast((m) => m.kind === 'user')
+  assert.equal(sent.images.length, 8)
+  for (const name of sent.images) {
+    assert.match(name, /-IMG_000\d\.jpg$/)
+    const r = await fetch(`${daemonBase}/api${t}/attachments/${name}`, { headers: { cookie: `savor_token=${token}` } })
+    const size = (await r.arrayBuffer()).byteLength
+    assert.ok(size < 2.5 * 1024 * 1024, `${name} was made smaller (${size} bytes)`)
+  }
+
+  // An attachment that only fits the daemon's limit: the device's request for it gets an error, nothing else breaks.
+  await page.evaluate(() => {
+    window.lostConnection = false
+    new MutationObserver(() => (window.lostConnection ||= !!document.querySelector('.link-banner'))).observe(document.body, { subtree: true, childList: true })
+  })
+  const big = `data:image/png;base64,${crypto.randomBytes(20 * 1024 * 1024).toString('base64')}`
+  await local('POST', `${t}/messages`, { text: 'a huge image', attachments: [{ name: 'huge.png', dataUrl: big }] })
+  await page.waitForSelector('text=Echo: a huge image', { timeout: 30_000 })
+  await page.fill('.composer textarea', 'still connected')
+  await page.keyboard.press('Enter')
+  await page.waitForSelector('text=Echo: still connected')
+  assert.equal((await local('GET', '/relay')).state, 'online')
+  assert.equal(await page.evaluate(() => window.lostConnection), false)
 })
 
 test('the live preview streams through the tunnel', async () => {

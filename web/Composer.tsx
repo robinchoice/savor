@@ -1,6 +1,6 @@
 import { useContext, useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
 import { ArrowRight, ArrowUp, AtSign, CornerDownRight, Bookmark, Check, ChevronDown, Download, FileText, FolderGit2, GitBranch, ListPlus, MessageSquare, Mic, Paperclip, Plus, RotateCw, ShieldAlert, Sparkles, Split, Square, Workflow as WorkflowIcon, X, Zap, Crosshair, BookOpen } from 'lucide-preact'
-import { api, agentSummary, describeModel, effortLabel, modelName, PROVIDER_NAMES, readFileAsDataUrl, useAgents, useApi, type AgentConfig, type Attachment, type Doc, type Project, type ProviderInfo, type Preset, type Skill, type Workflow } from './api'
+import { api, agentSummary, attachmentFromFile, describeModel, effortLabel, modelName, PROVIDER_NAMES, useAgents, useApi, type AgentConfig, type Attachment, type Doc, type Project, type ProviderInfo, type Preset, type Skill, type Workflow } from './api'
 import { ProviderIcon } from './Conversations'
 import { useShortcut } from './Shortcuts'
 import { megabytes, ModelMissing, NothingHeard, record, type Recording, type VoiceModels } from './voice'
@@ -54,6 +54,8 @@ interface Props {
 }
 
 const MAX_FILES = 8
+// Characters of base64 per message: sealed for the relay it still fits into one frame, and the daemon takes up to 30 MB.
+const MAX_ATTACHMENTS = 20 * 1024 * 1024
 
 const pickedContext = (picked: Picked[]) =>
   picked
@@ -93,6 +95,8 @@ export function Composer(props: Props) {
     props.onImport?.()
   }, [props.importText])
   const [files, setFiles] = useState<(Attachment & { image: boolean })[]>([])
+  // Files still being read: sending before they are in would send the text without them.
+  const [reading, setReading] = useState(0)
   const [error, setError] = useState('')
   const [voiceSetup, setVoiceSetup] = useState(false)
   // What the running recording said so far.
@@ -182,7 +186,7 @@ export function Composer(props: Props) {
   const answers = props.answering
   const hasInput = !!(text.trim() || files.length || review.length)
   const allPicked = !!answers && answers.picked === answers.total
-  const canSend = answers ? allPicked || hasInput : hasInput && (!fanout || fanout.length > 1)
+  const canSend = !reading && (answers ? allPicked || hasInput : hasInput && (!fanout || fanout.length > 1))
   // A side question (/btw) is answered next to the conversation, also while the agent works, and stays out of it.
   const [aside, setAside] = useState<{ question: string; answer?: string; error?: string } | null>(null)
   const ask = (question: string) => {
@@ -198,6 +202,8 @@ export function Composer(props: Props) {
     if (!canSend) return
     const btw = props.threadId && !answers && text.match(/^\/btw\s+(\S[\s\S]*)$/)?.[1].trim()
     if (btw) return ask(btw)
+    const size = files.reduce((sum, f) => sum + f.dataUrl.length, 0)
+    if (size > MAX_ATTACHMENTS) return setError(t('The attachments are too large to send together ({size} MB, at most {max} MB). Send them in several messages.', { size: Math.ceil(size / 1024 ** 2), max: MAX_ATTACHMENTS / 1024 ** 2 }))
     // Picked sources narrow a question, not an answer to the agent's own question.
     const full = (text + pickedContext(props.picked ?? []) + reviewMessage(review) + (answers ? '' : focusContext(study?.focus ?? []))).trimStart()
     setText('')
@@ -231,7 +237,14 @@ export function Composer(props: Props) {
   const addFiles = async (list: FileList | File[], mention = false) => {
     const picked = [...list].slice(0, MAX_FILES - files.length)
     if (picked.length < list.length) setError(t('Attach up to {n} files per message.', { n: MAX_FILES }))
-    const added = await Promise.all(picked.map(async (f) => ({ name: f.name, dataUrl: await readFileAsDataUrl(f), image: f.type.startsWith('image/') })))
+    // One at a time: a phone has no memory for eight decoded photos at once.
+    const added: Awaited<ReturnType<typeof attachmentFromFile>>[] = []
+    setReading((n) => n + 1)
+    try {
+      for (const f of picked) added.push(await attachmentFromFile(f))
+    } finally {
+      setReading((n) => n - 1)
+    }
     setFiles((prev) => [...prev, ...added])
     if (mention) setText((t) => (t && !/\s$/.test(t) ? t + ' ' : t) + added.map((f) => `[${f.name}]`).join(' ') + ' ')
   }
