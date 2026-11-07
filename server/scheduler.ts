@@ -111,7 +111,7 @@ export function runWorkflow(projectId: string, workflowId: string, by: Origin, s
   const origin = by === 'remote' || graph.some((w) => w.origin === 'remote') || unfinished?.workflow?.origin === 'remote' || (unfinished && store.readMessages(p, unfinished.id).some((m) => m.origin === 'remote')) ? 'remote' : 'local'
   const steps = graph.map((w) => ({ id: w.id, name: w.name, startedAt: store.now() }))
   for (const w of graph) for (const id of w.next) if (!steps.some((s) => s.id === id)) steps.push({ id, name: id, startedAt: store.now() })
-  const thread = unfinished ?? store.createThread(p, { title: wf.name, label: wf.name, workflow: {
+  const thread = unfinished ?? store.createThread(p, { title: wf.name, label: wf.name, ...(wf.agent && { agent: wf.agent }), workflow: {
     id: wf.id, name: wf.name, ...start, origin, ...(wf.budgetUsd && { budgetUsd: wf.budgetUsd }),
     steps,
   } })

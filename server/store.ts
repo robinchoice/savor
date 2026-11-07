@@ -197,6 +197,8 @@ export interface Workflow {
   // Whether it also runs when the project's agent runs on a new model, and the model it last saw.
   onModelChange: boolean
   model: string | null
+  // The agent its runs start on; null for the project's default agent.
+  agent: AgentConfig | null
   origin: Origin
   // USD a single run may cost (agents that report cost and can stop there), and a month's runs together:
   // at 80 % Savor warns, at 100 % it pauses the workflow.
@@ -731,7 +733,7 @@ export function logAction(p: Project, action: Action) {
 
 const wfDir = (p: Project) => path.join(dataDir(p), 'workflows')
 // What workflows saved by earlier versions don't have yet.
-const wfDefaults = { next: [], collection: '', scheduleLabel: null, updatedAt: '', catchUp: true, button: false, settledAt: '', skipped: [], onModelChange: false, model: null, budgetUsd: null, monthlyBudgetUsd: null, threadId: null }
+const wfDefaults = { next: [], collection: '', scheduleLabel: null, updatedAt: '', catchUp: true, button: false, settledAt: '', skipped: [], onModelChange: false, model: null, agent: null, budgetUsd: null, monthlyBudgetUsd: null, threadId: null }
 
 export function listWorkflows(p: Project): Workflow[] {
   if (!fs.existsSync(wfDir(p))) return []
@@ -769,6 +771,7 @@ export function saveWorkflow(p: Project, wf: Partial<Workflow> & { name: string;
     skipped: [],
     onModelChange: false,
     model: null,
+    agent: null,
     origin: 'local',
     budgetUsd: null,
     monthlyBudgetUsd: null,
@@ -781,7 +784,7 @@ export function saveWorkflow(p: Project, wf: Partial<Workflow> & { name: string;
   if (prev && next.cron !== prev.cron && next.scheduleLabel === prev.scheduleLabel) next.scheduleLabel = null
   // A run only records its time; anything else is an edit.
   const edited = (['name', 'prompt', 'collection', 'cron', 'timezone', 'scheduleLabel', 'enabled', 'catchUp', 'button', 'onModelChange', 'budgetUsd', 'monthlyBudgetUsd'] as const).some((k) => next[k] !== prev?.[k])
-  if (prev && (edited || String(next.next) !== String(prev.next) || JSON.stringify(next.preflight) !== JSON.stringify(prev.preflight))) next.updatedAt = now()
+  if (prev && (edited || String(next.next) !== String(prev.next) || JSON.stringify(next.preflight) !== JSON.stringify(prev.preflight) || JSON.stringify(next.agent) !== JSON.stringify(prev.agent))) next.updatedAt = now()
   // A changed or re-enabled schedule counts from now: what it would have run before is not caught up.
   if (prev && (next.cron !== prev.cron || next.timezone !== prev.timezone || next.enabled !== prev.enabled)) next.settledAt = now()
   // Setting the trigger only notes the current model: the next one starts a run.

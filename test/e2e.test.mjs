@@ -2122,6 +2122,45 @@ test('agents set a project\'s default agent, but no mode that skips approvals an
   await api('DELETE', `/projects/${other.id}`)
 })
 
+test('a workflow with its own agent starts its runs on it, never in a mode that skips approvals', async () => {
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
+  const { mcpToken } = JSON.parse(fs.readFileSync(path.join(HOME, 'state.json'), 'utf8'))
+  const thread = (await api('POST', `/projects/${project.id}/threads`, { text: 'plan a workflow' })).body
+  await until(async () => (await api('GET', `/projects/${project.id}/threads/${thread.id}`)).body.messages.some((m) => m.text === 'Echo: plan a workflow'))
+  const client = new Client({ name: 'e2e', version: '1' })
+  await client.connect(new StreamableHTTPClientTransport(new URL(`${base}/mcp?project=${project.id}&thread=${thread.id}`), { requestInit: { headers: { authorization: `Bearer ${mcpToken}` } } }))
+  const call = async (name, args) => {
+    const r = await client.callTool({ name, arguments: args })
+    return { isError: !!r.isError, text: r.content[0].text }
+  }
+  const unsafe = await call('create_workflow', { name: 'Unsafe agent', prompt: 'x', agent: { provider: 'codex', permissionMode: 'full-access' } })
+  assert.ok(unsafe.isError && /skips approvals/.test(unsafe.text), unsafe.text)
+  const { id } = JSON.parse((await call('create_workflow', { name: 'Own agent', prompt: 'own agent run', agent: { provider: 'codex', reasoning: 'low' } })).text)
+  const wf = () => JSON.parse(fs.readFileSync(path.join(PROJECT, '.savor', 'workflows', `${id}.json`), 'utf8'))
+  assert.deepEqual([wf().agent.provider, wf().agent.reasoning, wf().agent.permissionMode], ['codex', 'low', 'auto-review'])
+  assert.notEqual(project.agent.provider, 'codex')
+  const runOn = async () => {
+    const run = JSON.parse((await call('run_workflow', { id })).text)
+    await until(async () => {
+      const { busy, messages } = (await api('GET', `/projects/${project.id}/threads/${run.threadId}`)).body
+      return !busy && messages.length > 1
+    })
+    await api('PATCH', `/projects/${project.id}/threads/${run.threadId}`, { completed: true })
+    return (await api('GET', `/projects/${project.id}/threads/${run.threadId}`)).body.thread.agent
+  }
+  assert.deepEqual(await runOn(), wf().agent)
+
+  // The settings page sets it the same way and refuses the same modes; null goes back to the project's agent.
+  assert.equal((await api('PUT', `/projects/${project.id}/workflows/${id}`, { agent: { provider: 'claude', permissionMode: 'bypassPermissions' } })).status, 400)
+  assert.equal((await api('PUT', `/projects/${project.id}/workflows/${id}`, { agent: null })).body.agent, null)
+  assert.equal((await runOn()).provider, project.agent.provider)
+  const revision = JSON.parse((await call('read_workflow', { id })).text).revision
+  assert.ok(!(await call('update_workflow', { id, revision, agent: { provider: 'codex' } })).isError)
+  assert.equal(wf().agent.provider, 'codex')
+  await client.close()
+  await api('DELETE', `/projects/${project.id}/workflows/${id}`)
+})
+
 test('list_conversations filters by state, change time and count', async () => {
   const project = (await api('POST', '/projects', { path: path.join(TMP, 'list-filter'), name: 'List Filter', create: true })).body
   const start = async (text) => (await api('POST', `/projects/${project.id}/threads`, { text })).body

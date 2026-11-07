@@ -609,6 +609,8 @@ const de: Record<string, string> = {
   'High — explain everything': 'Hoch – alles erklären',
   'Default agent': 'Standard-Agent',
   ' (not installed)': ' (nicht installiert)',
+  'The project’s default agent': 'Standard-Agent des Projekts',
+  'Runs start on it. At a usage limit they switch to another agent, as conversations do.': 'Läufe starten mit ihm. Am Nutzungslimit wechseln sie wie Unterhaltungen zu einem anderen Agenten.',
   'Pause project — scheduled workflows don\'t run': 'Projekt pausieren – geplante Workflows laufen nicht',
   'Saved.': 'Gespeichert.',
   'Remove project': 'Projekt entfernen',

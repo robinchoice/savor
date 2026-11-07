@@ -13,7 +13,7 @@ import * as browser from './browser.js'
 import * as processes from './processes.js'
 import { runWorkflow, runs, syncSchedules, validateCron } from './scheduler.js'
 import { beginStep, delegated, preflightSchema, recordResult, resultSchema, saveStep, settled } from './workflow-results.js'
-import { isUnsafe, listAgents, mergeAgent, STATIC } from './providers.js'
+import { isUnsafe, listAgents, mergeAgent, safeAgent, STATIC } from './providers.js'
 import { addWorktree, git, openProject } from './git.js'
 import * as ci from './ci.js'
 import * as move from './move.js'
@@ -29,6 +29,8 @@ function findProject(ref: string) {
   if (!found) throw new Error(`Unknown project ${ref}. Known projects: ${all.map((p) => `${p.id} (${p.name}, ${p.path})`).join('; ')}`)
   return found
 }
+
+const AGENT = z.object({ provider: z.enum(Object.keys(STATIC) as [string, ...string[]]).optional(), model: z.string().optional(), reasoning: z.string().optional(), fast: z.boolean().optional(), ultracode: z.boolean().optional(), permissionMode: z.string().optional() })
 
 const PROJECT = z.string().min(1).optional().describe('Project id or absolute path, see list_projects; defaults to this project')
 
@@ -193,7 +195,7 @@ function buildServer(p: Project, tid: string) {
 
   const wfUrl = (id: string) => appUrl(`/p/${p.id}/workflows/${id}`)
   // A workflow as an agent read it: update_workflow applies only while it is still that.
-  const revisionOf = (wf: store.Workflow) => store.hash(JSON.stringify([wf.name, wf.prompt, wf.collection, wf.cron, wf.timezone, wf.scheduleLabel, wf.enabled, wf.catchUp, wf.button, wf.onModelChange, wf.next, wf.preflight]))
+  const revisionOf = (wf: store.Workflow) => store.hash(JSON.stringify([wf.name, wf.prompt, wf.collection, wf.cron, wf.timezone, wf.scheduleLabel, wf.enabled, wf.catchUp, wf.button, wf.onModelChange, wf.next, wf.preflight, wf.agent]))
   const workflowShape = {
     name: z.string().min(1),
     prompt: z.string().min(1).describe('Instructions the agent receives on each run'),
@@ -207,7 +209,11 @@ function buildServer(p: Project, tid: string) {
     onModelChange: z.boolean().optional().describe('Whether it also runs once each time the project’s agent runs on a new model (default false)'),
     next: z.array(z.string()).optional().describe('IDs of workflows to continue with after this one (a chain)'),
     preflight: preflightSchema.optional().describe('Read a fresh JSON signal from .workflow-checks/<name>.json before starting the agent. No commands are executed. Null removes it.'),
+    agent: AGENT.nullable().optional().describe('The agent its runs start on, like for start_conversation (see list_agents); left out it changes nothing, null goes back to the project’s default agent. No mode that skips approvals'),
   }
+  // A workflow's agent starts from the one it has, else from the project's.
+  const wfAgent = (agent: z.infer<typeof AGENT> | null | undefined, current: store.AgentConfig | null) =>
+    agent === undefined ? current : agent && safeAgent(current ?? p.agent, agent as Partial<store.AgentConfig>)
 
   server.registerTool('list_workflows', { description: 'List workflows (saved prompts, optionally scheduled and chained).' }, async () =>
     ok(store.listWorkflows(p).map((wf) => ({ ...wf, url: wfUrl(wf.id) }))),
@@ -223,7 +229,7 @@ function buildServer(p: Project, tid: string) {
     { description: 'Save a workflow. With a cron expression Savor runs it on schedule in a new conversation.', inputSchema: workflowShape },
     async (wf) => {
       if (wf.cron) validateCron(wf.cron, wf.timezone)
-      const saved = store.saveWorkflow(p, { ...wf, threadId: tid }, agents.originOf(p, tid))
+      const saved = store.saveWorkflow(p, { ...wf, agent: wfAgent(wf.agent, null), threadId: tid }, agents.originOf(p, tid))
       syncSchedules()
       emit({ type: 'workflows', projectId: p.id })
       return ok({ id: saved.id, url: wfUrl(saved.id) })
@@ -241,7 +247,7 @@ function buildServer(p: Project, tid: string) {
       const prev = store.getWorkflow(p, id)
       if (revision !== revisionOf(prev)) throw new Error('The workflow changed since you read it. Read it again and apply your change to that.')
       const clean = Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined))
-      store.saveWorkflow(p, { ...prev, ...clean, threadId: tid }, agents.originOf(p, tid))
+      store.saveWorkflow(p, { ...prev, ...clean, agent: wfAgent(patch.agent, prev.agent), threadId: tid }, agents.originOf(p, tid))
       syncSchedules()
       emit({ type: 'workflows', projectId: p.id })
       return ok({ id, url: wfUrl(id) })
@@ -466,9 +472,7 @@ function buildServer(p: Project, tid: string) {
         'Set the default agent of this project, or of another one named by `project`. New conversations and workflow runs without their own agent start on it; conversations already open keep theirs. Settings left out keep their current value, except that another provider starts from its own defaults. Modes that skip approvals cannot be set this way.',
       inputSchema: {
         project: PROJECT,
-        agent: z
-          .object({ provider: z.enum(Object.keys(STATIC) as [string, ...string[]]).optional(), model: z.string().optional(), reasoning: z.string().optional(), fast: z.boolean().optional(), ultracode: z.boolean().optional(), permissionMode: z.string().optional() })
-          .describe('See list_agents for providers, models, reasoning levels and permission modes'),
+        agent: AGENT.describe('See list_agents for providers, models, reasoning levels and permission modes'),
       },
     },
     async ({ project, agent }) => {
@@ -476,8 +480,7 @@ function buildServer(p: Project, tid: string) {
       if (agents.originOf(p, tid) === 'remote') throw new Error('The default agent can only be changed from input on this computer.')
       const target = project ? findProject(project) : p
       const before = target.agent
-      const after = mergeAgent(before, agent as Partial<store.AgentConfig>)
-      if (isUnsafe(after.provider, after.permissionMode)) throw new Error(`${STATIC[after.provider].name}'s mode ${after.permissionMode} skips approvals and can only be chosen in the project settings.`)
+      const after = safeAgent(before, agent as Partial<store.AgentConfig>)
       if (JSON.stringify(after) === JSON.stringify(before)) return ok({ project: target.id, agent: after, unchanged: true })
       store.updateProject(target.id, { agent: after })
       emit({ type: 'projects' })

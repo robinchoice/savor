@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks'
 import { ArrowLeft, Play, Plus, Clock, Link2, Pencil, Trash2, LayoutGrid, Sparkles, MessageSquare } from 'lucide-preact'
-import { api, duration, go, runTrigger, useApi, type Project, type Run, type SavorEvent, type Thread, type Workflow } from './api'
+import { api, duration, go, PROVIDER_NAMES, runTrigger, useAgents, useApi, type AgentConfig, type Project, type Run, type SavorEvent, type Thread, type Workflow } from './api'
 import { CATEGORIES, RECIPES, recipe, type Recipe } from './recipes'
 import { describeCron } from './cron'
 import { t, tx } from './i18n'
@@ -268,6 +268,7 @@ function WorkflowForm({ base, projectId, workflow, recipe, all }: { base: string
     next: [] as string[],
     budgetUsd: null as number | null,
     monthlyBudgetUsd: null as number | null,
+    agent: null as AgentConfig | null,
     ...workflow,
     cron: workflow?.cron ?? recipe?.schedule ?? '',
   })
@@ -275,6 +276,7 @@ function WorkflowForm({ base, projectId, workflow, recipe, all }: { base: string
   const [error, setError] = useState('')
   const field = (k: 'name' | 'prompt' | 'collection' | 'cron' | 'timezone') => (e: Event) => setDraft({ ...draft, [k]: (e.currentTarget as HTMLInputElement).value })
   const usd = (k: 'budgetUsd' | 'monthlyBudgetUsd') => (e: Event) => setDraft({ ...draft, [k]: Number((e.currentTarget as HTMLInputElement).value) || null })
+  const agents = useAgents()
   const others = all.filter((w) => w.id !== workflow?.id)
   const collections = [...new Set(all.map((w) => w.collection).filter(Boolean))].sort((a, b) => a.localeCompare(b))
 
@@ -359,6 +361,29 @@ function WorkflowForm({ base, projectId, workflow, recipe, all }: { base: string
           </span>
         </label>
       )}
+      <label>
+        {t('Agent')}
+        <select
+          value={draft.agent?.provider ?? ''}
+          onChange={(e) => {
+            const id = e.currentTarget.value
+            const info = agents?.find((a) => a.id === id)
+            setDraft({ ...draft, agent: id ? { provider: id, model: '', reasoning: info?.defaultEffort ?? '', fast: false, ultracode: false, permissionMode: info?.defaultMode ?? 'default' } : null })
+          }}
+        >
+          <option value="">{t('The project’s default agent')}</option>
+          {Object.entries(PROVIDER_NAMES).map(([id, name]) => {
+            const info = agents?.find((a) => a.id === id)
+            return (
+              <option key={id} value={id}>
+                {name}
+                {info && !info.installed ? t(' (not installed)') : ''}
+              </option>
+            )
+          })}
+        </select>
+        <small class="muted">{t('Runs start on it. At a usage limit they switch to another agent, as conversations do.')}</small>
+      </label>
       <label class="check with-hint">
         <input type="checkbox" checked={draft.onModelChange} onChange={(e) => setDraft({ ...draft, onModelChange: e.currentTarget.checked })} />
         <span>

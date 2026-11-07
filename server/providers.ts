@@ -148,6 +148,13 @@ export function mergeAgent(current: AgentConfig, patch: Partial<AgentConfig>): A
   return upgradeAgent(next)
 }
 
+// mergeAgent for settings that hold without anyone at the computer, like an agent's own change or a workflow's agent: no mode that skips approvals.
+export function safeAgent(current: AgentConfig, patch: Partial<AgentConfig>): AgentConfig {
+  const next = mergeAgent(current, patch)
+  if (isUnsafe(next.provider, next.permissionMode)) throw new Error(`${STATIC[next.provider].name}'s mode ${next.permissionMode} skips approvals and cannot be set here.`)
+  return next
+}
+
 function run(bin: string, args: string[], timeout = 10_000) {
   return new Promise<{ ok: boolean; missing: boolean; out: string }>((resolve) => {
     execFile(...command(bin, args), { timeout, maxBuffer: 4 * 1024 * 1024 }, (err, stdout, stderr) => {
