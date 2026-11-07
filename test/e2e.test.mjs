@@ -2074,6 +2074,54 @@ test('agents add projects: a new folder gets a git repository, an existing proje
   await api('DELETE', `/projects/${made.id}`)
 })
 
+test('agents set a project\'s default agent, but no mode that skips approvals and not from a paired device', async () => {
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
+  const other = (await api('POST', '/projects', { path: path.join(TMP, 'agent-target'), create: true })).body
+  const { mcpToken } = JSON.parse(fs.readFileSync(path.join(HOME, 'state.json'), 'utf8'))
+  const connect = async (thread) => {
+    const client = new Client({ name: 'e2e', version: '1' })
+    await client.connect(new StreamableHTTPClientTransport(new URL(`${base}/mcp?project=${project.id}&thread=${thread.id}`), { requestInit: { headers: { authorization: `Bearer ${mcpToken}` } } }))
+    return client
+  }
+  const call = async (client, name, args) => {
+    const r = await client.callTool({ name, arguments: args })
+    return { isError: !!r.isError, text: r.content[0].text }
+  }
+  const agentOf = async () => (await api('GET', '/projects')).body.find((p) => p.id === other.id).agent
+  const before = await agentOf()
+  const thread = (await api('POST', `/projects/${project.id}/threads`, { text: 'switch the agent' })).body
+  await until(async () => (await api('GET', `/projects/${project.id}/threads/${thread.id}`)).body.messages.some((m) => m.text === 'Echo: switch the agent'))
+  const client = await connect(thread)
+
+  const unsafe = await call(client, 'set_project_agent', { project: other.id, agent: { provider: 'codex', permissionMode: 'full-access' } })
+  assert.ok(unsafe.isError && /skips approvals/.test(unsafe.text), unsafe.text)
+  assert.deepEqual(await agentOf(), before)
+  assert.ok((await call(client, 'set_project_agent', { project: other.id, agent: { provider: 'claude', permissionMode: 'nope' } })).isError)
+
+  const set = JSON.parse((await call(client, 'set_project_agent', { project: other.path, agent: { provider: 'codex', model: 'gpt-5.5', reasoning: 'medium' } })).text)
+  assert.deepEqual([set.agent.provider, set.agent.model, set.agent.reasoning, set.agent.permissionMode], ['codex', 'gpt-5.5', 'medium', 'auto-review'])
+  assert.deepEqual(await agentOf(), set.agent)
+  const update = (await api('GET', `/projects/${project.id}/threads/${thread.id}`)).body.messages.findLast((m) => m.kind === 'update')
+  assert.match(update.text, /^Default agent of agent-target: Claude Code, .* → Codex, gpt-5\.5, medium, auto-review\./)
+  const logged = fs.readFileSync(path.join(other.path, '.savor', 'actions.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l)).at(-1)
+  assert.deepEqual([logged.tool, logged.projectId, logged.threadId], ['set_project_agent', project.id, thread.id])
+  // A new conversation there starts on it.
+  const started = JSON.parse((await call(client, 'start_conversation', { prompt: 'on the new default', project: other.id })).text)
+  assert.equal((await api('GET', `/projects/${other.id}/threads/${started.id}`)).body.thread.agent.provider, 'codex')
+  await client.close()
+
+  const device = await pairDevice('CI agent phone')
+  const remote = (await api('POST', `/projects/${project.id}/threads`, { text: 'switch from the phone' }, device)).body
+  await until(async () => (await api('GET', `/projects/${project.id}/threads/${remote.id}`)).body.messages.some((m) => m.text === 'Echo: switch from the phone'))
+  const remoteClient = await connect(remote)
+  assert.ok((await call(remoteClient, 'set_project_agent', { project: other.id, agent: { provider: 'claude' } })).isError)
+  assert.equal((await agentOf()).provider, 'codex')
+  await remoteClient.close()
+
+  await api('DELETE', `/devices/${(await api('GET', '/devices')).body.find((d) => d.name === 'CI agent phone').id}`)
+  await api('DELETE', `/projects/${other.id}`)
+})
+
 test('list_conversations filters by state, change time and count', async () => {
   const project = (await api('POST', '/projects', { path: path.join(TMP, 'list-filter'), name: 'List Filter', create: true })).body
   const start = async (text) => (await api('POST', `/projects/${project.id}/threads`, { text })).body

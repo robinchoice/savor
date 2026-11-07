@@ -455,8 +455,37 @@ function buildServer(p: Project, tid: string) {
     },
   )
 
-  server.registerTool('list_agents', { description: 'The agents installed on this computer with their models, reasoning levels and permission modes, for start_conversation.' }, async () =>
+  server.registerTool('list_agents', { description: 'The agents installed on this computer with their models, reasoning levels and permission modes, for start_conversation and set_project_agent.' }, async () =>
     ok({ current: modelInfo(), agents: await listAgents() }),
+  )
+
+  change(
+    'set_project_agent',
+    {
+      description:
+        'Set the default agent of this project, or of another one named by `project`. New conversations and workflow runs without their own agent start on it; conversations already open keep theirs. Settings left out keep their current value, except that another provider starts from its own defaults. Modes that skip approvals cannot be set this way.',
+      inputSchema: {
+        project: PROJECT,
+        agent: z
+          .object({ provider: z.enum(Object.keys(STATIC) as [string, ...string[]]).optional(), model: z.string().optional(), reasoning: z.string().optional(), fast: z.boolean().optional(), ultracode: z.boolean().optional(), permissionMode: z.string().optional() })
+          .describe('See list_agents for providers, models, reasoning levels and permission modes'),
+      },
+    },
+    async ({ project, agent }) => {
+      // Like the project settings over the HTTP API: the default agent applies to every conversation there, so paired devices can't change it.
+      if (agents.originOf(p, tid) === 'remote') throw new Error('The default agent can only be changed from input on this computer.')
+      const target = project ? findProject(project) : p
+      const before = target.agent
+      const after = mergeAgent(before, agent as Partial<store.AgentConfig>)
+      if (isUnsafe(after.provider, after.permissionMode)) throw new Error(`${STATIC[after.provider].name}'s mode ${after.permissionMode} skips approvals and can only be chosen in the project settings.`)
+      if (JSON.stringify(after) === JSON.stringify(before)) return ok({ project: target.id, agent: after, unchanged: true })
+      store.updateProject(target.id, { agent: after })
+      emit({ type: 'projects' })
+      const describe = (a: store.AgentConfig) =>
+        [STATIC[a.provider].name, a.model || 'default model', a.reasoning, a.permissionMode, a.fast && 'fast', a.ultracode && 'ultracode'].filter(Boolean).join(', ')
+      agents.post(p, tid, { kind: 'update', text: `Default agent of ${target.name}: ${describe(before)} → ${describe(after)}. New conversations and workflow runs start on it.` })
+      return ok({ project: target.id, before, agent: after })
+    },
   )
 
   server.registerTool(
