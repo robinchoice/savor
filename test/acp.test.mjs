@@ -8,7 +8,7 @@ import path from 'node:path'
 const HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'savor-acp-'))
 process.env.SAVOR_HOME = HOME
 process.env.SAVOR_GROK_BIN = path.resolve('test/fake-acp.mjs')
-const { acpCommand, acpResets, grokModels, stuckOn } = await import('../server/acp.ts')
+const { acpCommand, acpResets, grokModels, stuckOn, todoSteps } = await import('../server/acp.ts')
 after(() => fs.rmSync(HOME, { recursive: true, force: true }))
 
 test('Grok models and their effort levels come from ACP initialize without a prompt', async () => {
@@ -60,4 +60,20 @@ test('OpenCode 1.x reports a usage limit only in its log, which Savor reads for 
   // Rate limits and other errors OpenCode retries or answers itself.
   assert.equal(stuckOn(line.replace(/error\.error=".*"/, 'error.error="AI_APICallError: Rate limit exceeded"'), 'ses_a'), null)
   assert.equal(stuckOn(line.replace('stream error', 'process'), 'ses_a'), null)
+})
+
+test("OpenCode's todowrite tool calls carry the todo list as their raw input, in every form ACP allows", () => {
+  // A JSON string, as the raw input the model produced, and an object, as a parsed tool input.
+  assert.deepEqual(todoSteps('{"todos":[{"content":"Read the code","status":"completed"},{"content":"Change it","status":"in_progress"},{"content":"Test it","status":"pending"}]}'), [
+    { text: 'Read the code', status: 'done' },
+    { text: 'Change it', status: 'active' },
+    { text: 'Test it', status: 'pending' },
+  ])
+  assert.deepEqual(todoSteps({ todos: [{ content: 'Only a text' }] }), [{ text: 'Only a text', status: 'pending' }])
+  // Other tools' inputs, with or without a todos field, are no todo list.
+  assert.equal(todoSteps({ command: 'ls -la' }), null)
+  assert.equal(todoSteps({ todos: [{ content: 'Read', status: 'done' }, { note: 'no content' }] }), null)
+  assert.equal(todoSteps({ todos: [] }), null)
+  assert.equal(todoSteps('not json'), null)
+  assert.equal(todoSteps(null), null)
 })

@@ -912,6 +912,25 @@ test('OpenCode runs through the Agent Client Protocol', async () => {
   await until(async () => !(await api('GET', t)).body.busy)
   await api('POST', `${t}/messages`, { text: '/review now' })
   await until(async () => (await api('GET', t)).body.messages.some((m) => m.text === 'ACP command: /review now'))
+  // OpenCode's todowrite tool calls become the request's plan; its ACP adapter never sends plan updates.
+  const prompts = () => fs.readFileSync(AGENT_LOG, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((r) => r.agent === 'opencode' && r.prompt)
+  assert.ok(prompts().some((r) => r.prompt.input === 'hello acp' && r.prompt.protocol))
+  assert.ok(prompts().some((r) => r.prompt.input === 'approve: this' && r.prompt.reminder && !r.prompt.protocol))
+  await until(async () => !(await api('GET', t)).body.busy)
+  await api('POST', `${t}/messages`, { text: 'todo: fix things' })
+  await until(async () => (await api('GET', t)).body.messages.some((m) => m.text === 'ACP todo: fix things'))
+  const todoInput = (await api('GET', t)).body.messages.filter((m) => m.kind === 'user').at(-1)
+  assert.deepEqual((await api('GET', `${t}/plans`)).body[todoInput.id].steps, [
+    { text: 'Read the code', status: 'done' },
+    { text: 'Change it', status: 'active' },
+    { text: 'Test it', status: 'pending' },
+  ])
+  assert.ok(prompts().some((r) => r.prompt.input === 'todo: fix things' && r.prompt.reminder && !r.prompt.protocol))
+  // The compaction dropped the protocol from the history: the next prompt carries it in full again.
+  await until(async () => !(await api('GET', t)).body.busy)
+  await api('POST', `${t}/messages`, { text: 'hello again' })
+  await until(async () => (await api('GET', t)).body.messages.some((m) => m.text === 'ACP echo: hello again'))
+  assert.ok(prompts().some((r) => r.prompt.input === 'hello again' && r.prompt.protocol && !r.prompt.reminder))
   // The MCP token travelled inside the protocol, not on the command line.
   const run = fs.readFileSync(AGENT_LOG, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).find((r) => r.agent === 'opencode' && r.argv)
   assert.deepEqual(run.argv.slice(2), ['acp', '--print-logs', '--log-level', 'ERROR'])

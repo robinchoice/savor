@@ -6,7 +6,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import readline from 'node:readline'
 import * as store from './store.js'
-import type { ApprovalOption, Provider, Thread } from './store.js'
+import type { ApprovalOption, PlanStep, Provider, Thread } from './store.js'
 import { BIN, command, mcpUrl, VERSION } from './config.js'
 import { Rpc, RpcError } from './jsonrpc.js'
 import { configKey, forkOf, rememberSession, sessionIdOf, STOPPED, summarize, systemPrompt, type Host, type Session, type TurnInput } from './session.js'
@@ -18,6 +18,29 @@ const PLAN_DECISION: ApprovalOption[] = [
 ]
 
 const MIME: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp' }
+
+// OpenCode's ACP adapter drops its session todo list: it never emits the plan sessionUpdate (anomalyco/opencode
+// #40745), and a todowrite call arrives only as a raw tool call. The call's input is the whole list, so Savor
+// reads it from there. Once OpenCode emits plan updates, the plan case in onNotification takes over.
+export function todoSteps(rawInput: unknown): PlanStep[] | null {
+  let input = rawInput
+  if (typeof input === 'string') {
+    try {
+      input = JSON.parse(input)
+    } catch {
+      return null
+    }
+  }
+  const todos = (input as any)?.todos
+  if (!Array.isArray(todos) || !todos.length || !todos.every((t: any) => t && typeof t.content === 'string')) return null
+  return todos.map((t: any) => ({ text: t.content, status: t.status === 'in_progress' ? 'active' : t.status === 'completed' ? 'done' : 'pending' }))
+}
+
+// ACP has no system prompt the protocol could ride on: the full protocol goes in front of the first prompt of a
+// session and again after a compaction, which drops it from the history, and every other prompt carries this
+// one-line reminder of it, so conclusions with questions and suggestions survive long sessions.
+const REMINDER =
+  'Savor reminder: the user sees only the savor MCP tools — acknowledge, then end the turn with send_conclusion_message (summary, text, questions, suggestions), and keep your todo list current.\n\n'
 
 // OpenCode has no auto mode of its own: the plugin opencode-auto-permissions (MIT, hueyexe) lets the session's
 // model review what is set to ask. Pinned, since OpenCode loads it from npm; check a newer version before bumping it.
@@ -123,9 +146,14 @@ export class AcpSession implements Session {
     const images64 = images.map((file) => ({ type: 'image', data: fs.readFileSync(file).toString('base64'), mimeType: MIME[path.extname(file).slice(1).toLowerCase()] ?? 'image/png' }))
     this.ready
       .then(() => {
-        // ACP has no system prompt: the protocol goes in front of the first prompt of a session. Later a slash
-        // command goes alone, since the agent runs one only at the very start of a prompt.
-        const text = this.fresh ? `${systemPrompt(this.host.p, store.getThread(this.host.p, this.host.tid))}\n\n${context}${input}` : input.startsWith('/') ? input : context + input
+        // ACP has no system prompt: the protocol goes in front of the first prompt of a session, and again
+        // after a compaction (`this.fresh` is set anew there). Later a slash command goes alone, since the
+        // agent runs one only at the very start of a prompt; every other prompt carries the reminder.
+        const text = this.fresh
+          ? `${systemPrompt(this.host.p, store.getThread(this.host.p, this.host.tid))}\n\n${context}${input}`
+          : input.startsWith('/')
+            ? input
+            : REMINDER + context + input
         this.fresh = false
         const stuck = new Promise<never>((_, reject) => (this.stuck = (error) => (this.interrupt(), reject(new Error(error)))))
         return Promise.race([this.rpc.request('session/prompt', { sessionId: this.sessionId, prompt: [{ type: 'text', text }, ...images64] }), stuck])
@@ -175,9 +203,13 @@ export class AcpSession implements Session {
       const grok = u._meta?.['x.ai/tool']
       if (grok) activity.tool(u.toolCallId, grok.kind === 'execute' ? 'command' : grok.kind === 'edit' ? 'edit' : String(u.rawInput?.tool_name ?? grok.name).replace(/^savor__/, ''), u.rawInput?.tool_input ?? u.rawInput)
       else activity.start(u.toolCallId, u.kind === 'execute' ? 'command' : u.kind === 'edit' ? 'edit' : 'note', u.title ?? summarize(u.rawInput))
+      const steps = todoSteps(grok ? u.rawInput?.tool_input : u.rawInput)
+      if (steps) this.host.plan.steps(steps)
       if (['completed', 'failed', 'cancelled'].includes(u.status)) activity.finish(u.toolCallId)
     } else if (kind === 'tool_call_update') {
       this.reviews.get(u.toolCallId)?.()
+      const steps = todoSteps(u.rawInput)
+      if (steps) this.host.plan.steps(steps)
       if (['completed', 'failed', 'cancelled'].includes(u.status)) activity.finish(u.toolCallId)
     } else if (kind === 'usage_update') {
       if (u.used) this.host.context(u.used, u.size)
@@ -185,6 +217,9 @@ export class AcpSession implements Session {
       if (u.cost?.currency === 'USD') this.host.spent({ usd: u.cost.amount })
     } else if (kind === 'plan') {
       this.host.plan.steps((u.entries ?? []).map((e: any) => ({ text: e.content, status: e.status === 'in_progress' ? 'active' : e.status === 'completed' ? 'done' : 'pending' })))
+    } else if (kind === 'compaction_summary_chunk') {
+      // The protocol from the first prompt went with the history it summarized: the next prompt carries it again.
+      this.fresh = true
     }
   }
 

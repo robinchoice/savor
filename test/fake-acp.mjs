@@ -4,6 +4,7 @@
 // - "approve: <anything>" → session/request_permission with Allow once / Reject, then "ACP permission: <optionId>"
 // - "reviewed: <anything>" → the same ask, but the tool call fails right after it, as when OpenCode's review plugin rejects it
 // - "plan: <anything>" → _x.ai/exit_plan_mode like Grok Build, then "ACP plan: <outcome>"
+// - "todo: <anything>" → a todowrite tool call with the todo list as its raw JSON input and a compaction, then "ACP todo: <input>"
 // - "limit: <anything>" → the prompt fails at Grok Build's weekly limit; _x.ai/billing says the period ends in two hours
 // - "stuck: <anything>" → on a model of the providers "fake" or "free", like OpenCode 1.x at its free limit: the error goes to the
 //   log on stderr and the prompt gets no answer; on other models "ACP echo: <input> (<model>)"
@@ -73,6 +74,9 @@ async function prompt(params, reply) {
   const text = params.prompt.find((p) => p.type === 'text')?.text ?? ''
   const at = text.indexOf('New input:\n')
   const input = at < 0 ? '' : text.slice(at + 'New input:\n'.length).trim()
+  // What the prompt carried of Savor's protocol: the full text on a session's first prompt and after a
+  // compaction, the one-line reminder on every other one.
+  if (input) log({ prompt: { input, protocol: text.startsWith('You are running inside Savor'), reminder: text.includes('Savor reminder') } })
   notify('session/update', { sessionId, update: { sessionUpdate: 'tool_call', toolCallId: 'call1', title: 'Reading files', kind: 'read', status: 'in_progress' } })
   notify('session/update', { sessionId, update: { sessionUpdate: 'tool_call_update', toolCallId: 'call1', status: 'completed' } })
   // Grok Build names only the tool in the title.
@@ -107,6 +111,13 @@ async function prompt(params, reply) {
   } else if (input.startsWith('plan:')) {
     const r = await agentRequest('_x.ai/exit_plan_mode', { sessionId, toolCallId: 'call4', planContent: '# Plan\n\nCreate hello.txt.' })
     answer = `ACP plan: ${r.outcome}`
+  } else if (input.startsWith('todo:')) {
+    // OpenCode 1.x: the whole todo list as the raw input of a todowrite tool call, as a JSON string, and a
+    // compaction that drops the protocol from the history before the turn ends.
+    notify('session/update', { sessionId, update: { sessionUpdate: 'tool_call', toolCallId: 'call5', title: 'Updating todos', kind: 'other', rawInput: JSON.stringify({ todos: [{ content: 'Read the code', status: 'completed' }, { content: 'Change it', status: 'in_progress' }, { content: 'Test it', status: 'pending' }] }) } })
+    notify('session/update', { sessionId, update: { sessionUpdate: 'tool_call_update', toolCallId: 'call5', status: 'completed' } })
+    notify('session/update', { sessionId, update: { sessionUpdate: 'compaction_summary_chunk', content: { type: 'text', text: 'Earlier conversation summarized.' } } })
+    answer = `ACP todo: ${input.slice(5).trim()}`
   } else {
     answer = `ACP echo: ${input}`
   }
