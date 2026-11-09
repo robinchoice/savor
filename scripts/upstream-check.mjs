@@ -170,10 +170,18 @@ async function check(a) {
   if (fs.existsSync(marker) === !!a.removes) throw new Error('the allowed command did not run')
 
   // An interrupt: "Send now" stops a long command, and the queued message gets its answer.
-  const long = await api('POST', `/projects/${p.id}/threads/${t.id}/messages`, { text: 'Run exactly this shell command in the foreground, not in the background: sleep 600. It is not a timer: this check stops it to test interrupting a running command. Then reply with "slept".' })
-  const asked = await until('the long command', async () => (await pendingApproval(p.id, t.id)) || ((await api('GET', `/projects/${p.id}/threads/${t.id}/activity`)).some((e) => e.type === 'command' && /sleep 600/.test(e.label)) && 'running'), 180_000)
+  // Not `sleep`: Claude Code 2.1.319 blocks a foreground `sleep N` before it runs.
+  const long = await api('POST', `/projects/${p.id}/threads/${t.id}/messages`, { text: 'Run exactly this shell command in the foreground, not in the background: tail -f /dev/null. It never ends on its own: this check stops it to test interrupting a running command. Then reply with "stopped".' })
+  const command = async () => (await api('GET', `/projects/${p.id}/threads/${t.id}/activity`)).find((e) => e.type === 'command' && /tail -f \/dev\/null/.test(e.label))
+  const asked = await until('the long command', async () => (await pendingApproval(p.id, t.id)) || ((await command()) && 'running'), 180_000)
   if (asked !== 'running') await approve(p.id, t.id, asked)
   await new Promise((r) => setTimeout(r, 5000))
+  // A turn that already ended would take the next message right away, and "Send now" would stop that one.
+  const ran = await command()
+  if (!ran || ran.finishedAt || !(await api('GET', `/projects/${p.id}/threads/${t.id}`)).busy) {
+    const said = (await api('GET', `/projects/${p.id}/threads/${t.id}`)).messages.filter((m) => m.kind === 'conclusion').at(-1)?.text ?? ''
+    throw new Error(`the long command ${ran?.finishedAt ? `ended after ${Date.parse(ran.finishedAt) - Date.parse(ran.time)} ms` : 'did not run'} before "Send now"${said ? `; the agent said: ${said.slice(0, 200)}` : ''}`)
+  }
   const next = await api('POST', `/projects/${p.id}/threads/${t.id}/messages`, { text: 'Stop waiting and reply with just "interrupted".' })
   await api('POST', `/projects/${p.id}/threads/${t.id}/send-now`)
   await answered(p.id, t.id, next.id, 240_000)
