@@ -166,12 +166,14 @@ export interface ProviderInfo {
 }
 export interface Skill { name: string; description: string }
 export interface Preset { id: string; name: string; agent: AgentConfig }
-// The agents every conversation goes on with at a usage limit, from the top, and the agents at a usage limit now.
-export interface Fallback { on: boolean; agents: AgentConfig[]; limited: string[] }
-// The agent a request starts on: this one, or with the fallback on and this one at its limit, the first free one of the fallback.
-// What a usage limit belongs to, as poolOf in server/agents.ts: the agent, or with OpenCode its model's provider.
+// The agents every conversation goes on with at a usage limit, from the top, the agents at a usage limit now and
+// the ones that cannot run here (not installed or signed out), as pools like `limited`.
+export interface Fallback { on: boolean; agents: AgentConfig[]; limited: string[]; unavailable: string[] }
+// The agent a request starts on: this one, or with the fallback on and this one at its limit or unable to run,
+// the first one of the fallback that can. What a usage limit belongs to, as poolOf in server/agents.ts:
+// the agent, or with OpenCode its model's provider.
 export const poolOf = (a: AgentConfig) => (a.provider === 'opencode' && a.model.includes('/') ? `opencode ${a.model.split('/')[0]}` : a.provider)
-export const freeAgent = (agent: AgentConfig, f?: Fallback) => (f?.on && f.limited.includes(poolOf(agent)) && f.agents.find((a) => !f.limited.includes(poolOf(a)))) || agent
+export const freeAgent = (agent: AgentConfig, f?: Fallback) => (f?.on && (f.limited.includes(poolOf(agent)) || f.unavailable.includes(poolOf(agent))) && f.agents.find((a) => !f.limited.includes(poolOf(a)) && !f.unavailable.includes(poolOf(a)))) || agent
 export interface Thread {
   id: string
   title: string

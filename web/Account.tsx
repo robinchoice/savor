@@ -263,7 +263,7 @@ function FallbackList() {
   const [menu, setMenu] = useState<number | null>(null)
   const [error, setError] = useState('')
   if (!fallback) return null
-  const { on, agents: list, limited } = fallback
+  const { on, agents: list, limited, unavailable } = fallback
   const save = (next: Partial<Fallback>) =>
     api('PUT', '/fallback', { on, agents: list, ...next }).then(
       () => (setError(''), reload()),
@@ -280,7 +280,7 @@ function FallbackList() {
     const p = agents?.find((a) => a.installed && !list.some((x) => x.provider === a.id)) ?? agents?.[0]
     if (p) save({ agents: [...list, { provider: p.id, model: '', reasoning: p.defaultEffort, fast: false, ultracode: false, permissionMode: p.defaultMode }] }).then(() => setMenu(list.length))
   }
-  const first = list.find((a) => !limited.includes(poolOf(a)))
+  const first = list.find((a) => !limited.includes(poolOf(a)) && !unavailable.includes(poolOf(a)))
   return (
     <div class={`fallback ${on ? '' : 'off'}`}>
       <div class="setting">
@@ -305,7 +305,7 @@ function FallbackList() {
                   {name} {i === 0 && <span class="ap-tag">{t('Preferred')}</span>}
                 </b>
                 {mode && <small class="muted">{t(mode.label)}</small>}
-                <small class={limited.includes(poolOf(a)) ? 'warn' : 'ok'}>{limited.includes(poolOf(a)) ? t('At its usage limit') : on && i > 0 && a === first ? t('Takes over now') : t('Available')}</small>
+                <small class={limited.includes(poolOf(a)) || unavailable.includes(poolOf(a)) ? 'warn' : 'ok'}>{limited.includes(poolOf(a)) ? t('At its usage limit') : unavailable.includes(poolOf(a)) ? t('Not installed or signed in') : on && i > 0 && a === first ? t('Takes over now') : t('Available')}</small>
               </span>
               <span class="fallback-tools">
                 <AgentButton agent={a} info={info} open={menu === i} toggle={() => setMenu(menu === i ? null : i)} />

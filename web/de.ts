@@ -70,6 +70,7 @@ const de: Record<string, string> = {
   'For open and new conversations in all projects on this computer': 'Für offene und neue Gespräche in allen Projekten auf diesem Computer',
   'Preferred': 'Bevorzugt',
   'At its usage limit': 'Limit erreicht',
+  'Not installed or signed in': 'Nicht installiert oder angemeldet',
   'Takes over now': 'Übernimmt jetzt',
   'Available': 'Verfügbar',
   'Move {name} up': '{name} nach oben',

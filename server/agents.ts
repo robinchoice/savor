@@ -690,12 +690,16 @@ function atLimit(id: string) {
 
 // The fallback setting, and the agents at a usage limit now, for the settings and for the composer of a new conversation.
 export async function fallbackSettings() {
-  await listUsage()
+  const [installed] = await Promise.all([listAgents(), listUsage()])
   const f = store.state().fallback
+  const agents = f?.agents ?? FALLBACK.map(([provider, permissionMode]) => mergeAgent(store.defaultAgent(), { provider, permissionMode }))
+  // Agents of the chain that cannot run: not installed or signed out. The composer of a new conversation skips them.
+  const unavailable = [...new Set(agents.filter((a) => !installed.some((k) => k.id === a.provider && k.installed && k.signedIn)).map(poolOf))]
   return {
     on: !!f?.on,
-    agents: f?.agents ?? FALLBACK.map(([provider, permissionMode]) => mergeAgent(store.defaultAgent(), { provider, permissionMode })),
+    agents,
     limited: [...new Set([...Object.keys(STATIC), ...limits.keys()])].filter(atLimit),
+    unavailable,
   }
 }
 
