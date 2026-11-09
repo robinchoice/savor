@@ -3,7 +3,7 @@
 // stream-json output) reaches Savor's MCP server through the "savor" stdio server Savor put into
 // mcp_config.json, answers "Antigravity echo: <input>" there and reports a tool step and the result.
 // `--version`, `models` and the slash commands /skills and /usage answer like the real CLI, other slash commands say they ran; /usage says the limit is
-// used up while the test's full file exists.
+// used up while the test's full file exists. An input with "everywhere" in it fails with "Invalid credential".
 import fs from 'node:fs'
 import path from 'node:path'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
@@ -45,6 +45,10 @@ if (prompt.startsWith('/')) {
   process.exit(0)
 }
 const input = prompt.slice(prompt.indexOf('New input:\n') + 'New input:\n'.length).trim()
+if (input.includes('everywhere')) {
+  process.stderr.write('Invalid credential\n')
+  process.exit(1)
+}
 const step = (i, s) => out({ event: 'step_update', step_update: { conversation_id: conversation, step_index: i, ...s } })
 out({ event: 'init', conversation_id: conversation, init: { model: flag('--model') ?? 'fake-gemini-high', cwd: process.cwd() } })
 // A turn that needs a command ends the way headless agy ends one it cannot ask for: no answer, a denied action.

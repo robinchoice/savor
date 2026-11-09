@@ -14,6 +14,7 @@
 // - mcpServer/oauth/login → a sign-in page on auth.example, then a successful mcpServer/oauthLogin/completed
 // - account/rateLimits/read → a five-hour window 20 % used, 100 % while the test's full file exists
 // - "plan: <text>" → a plan update with one step done and one in progress and a subagent that finished, then "Codex echo: <input>"
+// - an input with "everywhere" in it → exits with "Invalid credential", like a Codex whose sign-in has expired
 // - anything else → "Codex echo: <input>", with " (took over)" when Savor said it takes over from an agent at its limit
 import fs from 'node:fs'
 import readline from 'node:readline'
@@ -63,6 +64,10 @@ const released = async (input) => {
 async function runTurn(params) {
   const text = params.input.find((i) => i.type === 'text')?.text ?? ''
   const input = text.includes('New input:\n') ? text.slice(text.indexOf('New input:\n') + 'New input:\n'.length).trim() : text
+  if (input.includes('everywhere')) {
+    process.stderr.write('Invalid credential\n')
+    process.exit(1)
+  }
   const turn = { id: `turn-${nextId++}`, items: [], status: 'inProgress', error: null }
   turnId = turn.id
   notify('turn/started', { threadId, turn })

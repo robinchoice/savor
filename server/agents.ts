@@ -34,7 +34,7 @@ export interface RequestState {
   ack?: { text: string; id: string }
   conclusion?: { key: string; id: string }
   updates: Map<string, { text: string; id: string }>
-  // The limits (poolOf) this request stopped at, with when each resets (ms).
+  // The limits (poolOf) this request stopped at, with when each resets (ms), Infinity for an agent that failed on it.
   limited?: Map<string, number>
   // Whether Claude Code went on with API credit on this request.
   credit?: boolean
@@ -369,6 +369,7 @@ function endTurn(p: Project, tid: string, result: { text?: string; error?: strin
     if (resumeAt && (unattended(thread) || chain())) void fallBack(p, tid, agent, result.resetsAt!, result.error)
     // Whatever stops Claude Code on API credit (no credit left, its budget, the key) hands the request on.
     else if (credit && unattended(thread) && result.error !== STOPPED && !request(p, tid).conclusion) void fallBack(p, tid, agent, credit.resetsAt, result.error)
+    else if (unattended(thread) && unusable(p, tid, result.error, startedAt)) void fallBack(p, tid, agent, null, result.error)
     else if (resumeAt) notify(p, tid, 'error', result.error, 'Waits for a usage limit')
     else if (result.error !== STOPPED) notify(p, tid, 'error', result.error, 'Stopped with an error')
   } else {
@@ -715,18 +716,29 @@ function avoidLimits(p: Project, t: Thread): Thread {
   return store.updateThread(p, t.id, { agent: next, preferred: t.preferred ?? t.agent })
 }
 
-const takeOver = (from: string) => `${from} stopped at a usage limit while working on the input below, and you take over. Check what is already done before you repeat anything, then finish the work. `
+// Errors that keep an agent from working at all: its sign-in or key, a process that would not start or ended.
+// A refusal, the user's Stop and failed tool calls (they don't end a turn) don't match. Add classes here.
+const UNUSABLE = /invalid credential|invalid (x-)?api[ -]key|unauthori[sz]ed|\b401\b|authentication|not (signed|logged) in|run \/login|sign in with|\bexited with\b|\bENOENT\b|\bEACCES\b|too old for Savor/i
+
+// An agent that failed that way before it ran a command or edited a file hands the request on: another one
+// starting over risks no work done twice.
+const unusable = (p: Project, tid: string, error: string, since: string) =>
+  error !== STOPPED && UNUSABLE.test(error) && !request(p, tid).conclusion && !store.readActivity(p, tid).some((e) => (e.type === 'command' || e.type === 'edit') && e.time >= since)
+
+const takeOver = (from: string, why = 'stopped at a usage limit') => `${from} ${why} while working on the input below, and you take over. Check what is already done before you repeat anything, then finish the work. `
 const ON_CREDIT = `You stopped at a usage limit while working on the input below, and go on with API credit now. Check what is already done before you repeat anything, then finish the work. `
 
 // Unattended, Claude Code first goes on with API credit, once per request and where Savor has a key for it (state.json `apiCredit`).
 // After that, the next agent is installed, signed in, has not stopped at a limit on this request yet and is not at 100 %
 // of any window. With none left, the request waits for the earliest reset; if that is another agent's, the current one
 // stops at its limit again then, and the switch follows.
-async function fallBack(p: Project, tid: string, from: AgentConfig, resetsAt: number, error: string) {
+// Without `resetsAt` the agent failed (see unusable): it is used up for this request, and with no agent left the
+// request ends with its error.
+async function fallBack(p: Project, tid: string, from: AgentConfig, resetsAt: number | null, error: string) {
   const { provider } = from
   const r = request(p, tid)
   const limited = (r.limited ??= new Map())
-  limited.set(poolOf(from), resetsAt)
+  limited.set(poolOf(from), resetsAt ?? Infinity)
   for (const [id, at] of limited) if (at + LIMIT_MARGIN_MS < Date.now()) limited.delete(id)
   const waits = store.getThread(p, tid).resumeAt
   const [installed] = await Promise.all([listAgents(), listUsage(true)])
@@ -736,7 +748,7 @@ async function fallBack(p: Project, tid: string, from: AgentConfig, resetsAt: nu
   if (thread.resumeAt !== waits || requests.get(tid) !== r || busy.has(tid) || !input) return
   const credit = thread.apiCredit
   const budgetUsd = store.state().apiCredit?.budgetUsd ?? 15
-  if (provider === 'claude' && unattended(thread) && !credit && !r.credit && budgetUsd > 0 && creditEnv()) {
+  if (resetsAt !== null && provider === 'claude' && unattended(thread) && !credit && !r.credit && budgetUsd > 0 && creditEnv()) {
     r.credit = true
     const fromUsd = thread.spent?.find((s) => s.provider === 'claude')?.usd ?? 0
     setResume(p, tid, null)
@@ -751,15 +763,20 @@ async function fallBack(p: Project, tid: string, from: AgentConfig, resetsAt: nu
   const i = list.findIndex((a) => poolOf(a) === poolOf(from))
   const agent = [...list.slice(i + 1), ...list.slice(0, i + 1)].find((a) => !full(a))
   if (!agent) {
+    if (resetsAt === null) return notify(p, tid, 'error', error, 'Stopped with an error')
     setResume(p, tid, new Date(Math.min(...limited.values()) + LIMIT_MARGIN_MS).toISOString())
     return notify(p, tid, 'error', error, 'Waits for a usage limit')
   }
   setResume(p, tid, null)
   store.updateThread(p, tid, { agent, preferred: thread.preferred ?? thread.agent })
   // The switch shows in the conversation, so it is clear which agent did what.
-  const why = credit ? `${named(from)} stopped on the API credit too.` : `${named(from)} reached its usage limit.`
+  const broke = resetsAt === null
+  const why =
+    broke ? `${named(from)} stopped with an error: ${error.split('\n')[0].slice(0, 200).trim().replace(/[.:]?$/, '.')}`
+    : credit ? `${named(from)} stopped on the API credit too.`
+    : `${named(from)} reached its usage limit.`
   post(p, tid, { kind: 'update', text: `${why} ${named(agent)} takes over.`, modelInfo: agent })
-  continueRequest(p, store.getThread(p, tid), input, takeOver(named(from)) + sameRequest(r))
+  continueRequest(p, store.getThread(p, tid), input, takeOver(named(from), broke ? 'stopped with an error' : undefined) + sameRequest(r))
 }
 
 // ---- waiting for CI ----

@@ -1,6 +1,7 @@
 // Unattended runs at a usage limit: a conversation a workflow run started goes on with the next agent, and
 // waits like the user's own conversations only when every agent is used up. With a key for API credit, Claude
 // Code goes on with that first. With the fallback set on this computer, the user's conversations switch too.
+// An unattended agent that can't work at all (its sign-in, its process) hands the request on as well.
 import { test, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
@@ -235,4 +236,77 @@ test('with the fallback on, every conversation switches at a usage limit, skips 
   assert.equal(r.messages.findLast((m) => m.kind === 'update').text, 'The usage limit of Claude Code has reset. It takes over again.')
   assert.equal(r.messages.findLast((m) => m.kind === 'conclusion').text, 'Echo: back again')
   assert.deepEqual([r.thread.agent.provider, r.thread.preferred], ['claude', null])
+})
+
+test('unattended conversations hand over when an agent fails before it worked, not after a Stop, once it worked or in the user\'s own', { timeout: 120_000 }, async () => {
+  server.kill()
+  await new Promise((resolve) => server.on('exit', resolve))
+  await startDaemon()
+  const { token, mcpToken } = JSON.parse(fs.readFileSync(path.join(HOME, 'state.json'), 'utf8'))
+  const api = async (method, p, body) => {
+    const r = await fetch(`http://127.0.0.1:${port}/api${p}`, { method, headers: { cookie: `savor_token=${token}`, 'content-type': 'application/json' }, body: body && JSON.stringify(body) })
+    return r.json()
+  }
+  const [project] = await api('GET', '/projects')
+  const t = `/projects/${project.id}/threads`
+  const read = (id) => api('GET', `${t}/${id}`)
+  const updates = (r) => r.messages.filter((m) => m.kind === 'update').map((m) => m.text)
+  const [wf] = await api('GET', `/projects/${project.id}/workflows`)
+  const run = await api('POST', `/projects/${project.id}/workflows/${wf.id}/run`)
+  await until(async () => (await read(run.id)).messages.some((m) => m.kind === 'conclusion'))
+  const start = async (prompt) => {
+    const client = new Client({ name: 'fallback-test', version: '1' })
+    await client.connect(new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${port}/mcp?project=${project.id}&thread=${run.id}`), { requestInit: { headers: { authorization: `Bearer ${mcpToken}` } } }))
+    const { id } = JSON.parse((await client.callTool({ name: 'start_conversation', arguments: { prompt } })).content[0].text)
+    await client.close()
+    return id
+  }
+  // Settled: the turn has ended with an error and no switch follows.
+  const failed = async (id) => {
+    await until(async () => {
+      const r = await read(id)
+      return !r.busy && r.thread.error && !r.thread.resumeAt
+    })
+    await new Promise((r) => setTimeout(r, 1500))
+    return read(id)
+  }
+
+  // A sign-in that no longer works: the next agent of the fallback set in the last test takes over the same request.
+  const credential = await start('fail: Invalid credential')
+  await until(async () => (await read(credential)).messages.some((m) => m.kind === 'conclusion'))
+  await until(async () => !(await read(credential)).busy)
+  let r = await read(credential)
+  assert.equal(r.messages.find((m) => m.kind === 'conclusion').text, 'Codex echo: fail: Invalid credential (took over)')
+  assert.deepEqual(updates(r), ['Claude Code stopped with an error: Invalid credential. Codex takes over.'])
+  assert.deepEqual([r.thread.agent.provider, r.thread.resumeAt, r.thread.error], ['codex', null, null])
+
+  // Each agent that fails is used up for the request: with none left, it ends with the last error instead of starting over.
+  const everywhere = await start('fail: Invalid credential everywhere')
+  await until(async () => updates(await read(everywhere)).length === 2)
+  r = await failed(everywhere)
+  assert.deepEqual(updates(r), [
+    'Claude Code stopped with an error: Invalid credential everywhere. Codex takes over.',
+    'Codex stopped with an error: codex exited with 1: Invalid credential. Antigravity takes over.',
+  ])
+  assert.deepEqual([r.thread.agent.provider, r.thread.error], ['antigravity', 'Invalid credential'])
+  assert.ok(!r.messages.some((m) => m.kind === 'conclusion'))
+
+  // An agent that already ran a command keeps its error: another one could do that work twice.
+  const worked = await start('fail: Invalid credential after work')
+  r = await failed(worked)
+  assert.deepEqual([updates(r), r.thread.agent.provider, r.thread.error], [[], 'claude', 'Invalid credential after work'])
+
+  // The user's Stop hands nothing on.
+  const stopped = await start('slow: stop me')
+  await until(async () => (await read(stopped)).busy)
+  await api('POST', `${t}/${stopped}/stop`)
+  await until(async () => !(await read(stopped)).busy)
+  await new Promise((r) => setTimeout(r, 1500))
+  r = await read(stopped)
+  assert.deepEqual([updates(r), r.thread.agent.provider], [[], 'claude'])
+
+  // The user's own conversation keeps its error, even with the fallback on.
+  const mine = (await api('POST', t, { text: 'fail: Invalid credential' })).id
+  r = await failed(mine)
+  assert.deepEqual([updates(r), r.thread.agent.provider, r.thread.error], [[], 'claude', 'Invalid credential'])
 })

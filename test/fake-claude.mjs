@@ -30,6 +30,7 @@
 // - "/compact" alone, as Savor's idle compaction sends it → logs it, waits for the test's release file to say "/compact",
 //   then compacts the context of 38,000 tokens to 4,000
 // - "model: <id>" → answers on that model with the context unchanged, like a model switch mid-session, then echoes
+// - "fail: <error>" → ends the turn with that error ("… after work …" runs a command first)
 // - anything else → acknowledgement plus a conclusion echoing the input with one suggestion
 // While the test's outdated file exists it refuses to start, like a release that lacks an option.
 // `--version`, `auth status` and `-p /usage` answer like the real CLI, so Savor lists the fake as installed.
@@ -139,6 +140,10 @@ async function turn(text, command) {
 
   if (text.includes('"threadLabel":null')) await call('set_thread_label', { label: 'Fake agent test' })
   if (input.startsWith('fail:')) {
+    if (input.includes('after work')) {
+      out({ type: 'assistant', parent_tool_use_id: null, message: { content: [{ type: 'tool_use', id: 'toolu_work', name: 'Bash', input: { command: 'make' } }] } })
+      out({ type: 'user', parent_tool_use_id: null, message: { content: [{ type: 'tool_result', tool_use_id: 'toolu_work', content: 'ok' }] } })
+    }
     out({ type: 'result', subtype: 'error_during_execution', is_error: true, result: input.slice(5).trim() })
     return
   } else if (input.startsWith('ask:')) {
