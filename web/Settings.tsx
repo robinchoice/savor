@@ -2,11 +2,11 @@ import { useEffect, useState } from 'preact/hooks'
 import qrcode from 'qrcode-generator'
 import { Download, Smartphone, Trash2, X } from 'lucide-preact'
 import { api, formatDay, go, PROVIDER_NAMES, useApi, useAgents, type ImportableSession, type Project, type Thread } from './api'
-import { pairThroughRelay } from './transport'
+import { loadProfiles, pairThroughRelay, probePairing, switchProfile } from './transport'
 import { parsePairingLink, scanQrCode } from './native'
 import { TEMPLATES } from './templates'
 import { AntigravityWarning } from './Composer'
-import { plural, t } from './i18n'
+import { lang, plural, t } from './i18n'
 
 const TINTS = ['#b5654a', '#8b6bc7', '#3f9a78', '#c59a3d', '#c8577a', '#4a9bb8', '#7a8794']
 
@@ -551,12 +551,45 @@ function Waiting({ check }: { check: string }) {
   )
 }
 
+// About how long a new Savor Cloud instance takes until it is online, for its setup link's estimate.
+const SETUP_MINUTES = 8
+type SetupPhase = 'checking' | 'offline' | 'ready' | 'setup used' | 'setup expired'
+
 // Pairing a phone through the relay: the QR code carries the computer's public key and a one-time code.
-export function RemotePair({ daemonPk, code, relay }: { daemonPk: string; code: string; relay?: string }) {
+// A Savor Cloud setup link also carries when its instance was created, in seconds. Its page waits until the
+// instance is online, saying about how long that still takes, and says plainly when the link was used or ran out.
+export function RemotePair({ daemonPk, code, relay, created }: { daemonPk: string; code: string; relay?: string; created?: number }) {
+  const setup = !!created
+  const [phase, setPhase] = useState<SetupPhase>(setup ? 'checking' : 'ready')
+  const [now, setNow] = useState(Date.now())
+  const [renaming, setRenaming] = useState(!setup)
   const [name, setName] = useState(/iPhone|Android|iPad/.exec(navigator.userAgent)?.[0] ?? t('My phone'))
   const [busy, setBusy] = useState(false)
   const [check, setCheck] = useState('')
   const [error, setError] = useState('')
+  const closed = (reason: string) => (reason === 'setup used' || reason === 'setup expired' ? reason : null)
+  // Checks right away, then every 15 seconds while the instance is not online yet.
+  useEffect(() => {
+    if (phase !== 'checking' && phase !== 'offline') return
+    let stopped = false
+    const probe = () =>
+      probePairing(daemonPk, code, relay).then(
+        () => !stopped && setPhase('ready'),
+        (err) => {
+          if (stopped) return
+          // Its owner opening the link again goes straight to Savor.
+          const owner = loadProfiles().find((p) => p.daemonPk === daemonPk)
+          if ((err as Error).message === 'setup used' && owner) return switchProfile(owner)
+          setPhase(closed((err as Error).message) ?? 'offline')
+          setNow(Date.now())
+        },
+      )
+    const timer = setTimeout(probe, phase === 'checking' ? 0 : 15_000)
+    return () => {
+      stopped = true
+      clearTimeout(timer)
+    }
+  }, [phase, now])
   const submit = async (e: Event) => {
     e.preventDefault()
     setBusy(true)
@@ -564,25 +597,82 @@ export function RemotePair({ daemonPk, code, relay }: { daemonPk: string; code: 
       await pairThroughRelay(daemonPk, code, name, setCheck, relay)
       location.replace('/')
     } catch (err) {
-      setError((err as Error).message)
+      const reason = (err as Error).message
       setCheck('')
       setBusy(false)
+      if (setup && (closed(reason) || reason === 'daemon offline')) return setPhase(closed(reason) ?? 'offline')
+      setError(reason === 'daemon offline' ? t('Your computer is not reachable through the relay.') : reason)
     }
   }
   if (check) return <Waiting check={check} />
+  if (phase === 'checking') return <div class="gate"><img src="/icon.svg" alt="" /><p class="muted">{t('Looking for your Savor…')}</p></div>
+  if (phase === 'setup used')
+    return (
+      <div class="gate">
+        <img src="/icon.svg" alt="" />
+        <h1>{t('This link was used already')}</h1>
+        <p class="muted">{t('It works once. Open Savor on the device you used it with.')}</p>
+        <p class="error-text">{t("Wasn't you? Then someone else opened your link. Tell whoever sent it to you right away.")}</p>
+      </div>
+    )
+  if (phase === 'setup expired')
+    return (
+      <div class="gate">
+        <img src="/icon.svg" alt="" />
+        <h1>{t('This link has run out')}</h1>
+        <p class="muted">{t('Ask whoever sent it to you for a new one.')}</p>
+      </div>
+    )
+  if (phase === 'offline') {
+    const minutes = (now / 1000 - created!) / 60
+    const left = Math.ceil(SETUP_MINUTES - minutes)
+    if (minutes > 60)
+      return (
+        <div class="gate">
+          <img src="/icon.svg" alt="" />
+          <h1>{t('This Savor is not reachable')}</h1>
+          <p class="muted">{t('It was set up on {when} but is not online. Ask whoever sent you this link.', { when: new Date(created! * 1000).toLocaleString(lang, { dateStyle: 'medium', timeStyle: 'short' }) })}</p>
+        </div>
+      )
+    return (
+      <div class="gate">
+        <img src="/icon.svg" alt="" />
+        <h1>{t('Your Savor is being set up')}</h1>
+        <p class="muted">
+          {left > 0 ? plural(left, 'About one minute left.', 'About {n} minutes left.') : t('This takes longer than usual.')} {t('Leave this page open, it carries on by itself.')}
+        </p>
+        <div class="usage-bar setup-bar">
+          <i style={{ width: `${Math.min(95, Math.max(5, (minutes / SETUP_MINUTES) * 100))}%` }} />
+        </div>
+        <small class="muted">{t('You can also close it: the link works until you use it.')}</small>
+      </div>
+    )
+  }
   return (
     <div class="gate">
       <img src="/icon.svg" alt="" />
-      <h1>{t('Pair this device')}</h1>
-      <p class="muted">{t('The connection to your computer is end-to-end encrypted; the relay only passes it on.')}</p>
+      <h1>{setup ? t('Your Savor is ready') : t('Pair this device')}</h1>
+      <p class="muted">
+        {setup ? t('This device becomes its owner, with full access, the terminal included. You allow other devices from here later.') + ' ' : ''}
+        {t('The connection to your computer is end-to-end encrypted; the relay only passes it on.')}
+      </p>
       <form class="form" onSubmit={submit}>
-        <label>
-          {t('Device name')}
-          <input value={name} onInput={(e) => setName(e.currentTarget.value)} />
-        </label>
+        {renaming ? (
+          <label>
+            {t('Device name')}
+            <input value={name} onInput={(e) => setName(e.currentTarget.value)} />
+          </label>
+        ) : (
+          <small class="muted">
+            {t('Device name')}: <b>{name}</b> ·{' '}
+            <button type="button" class="link" onClick={() => setRenaming(true)}>
+              {t('Change')}
+            </button>
+          </small>
+        )}
         {error && <div class="error-text">{error}</div>}
         <button class="primary" disabled={busy}>
-          {busy ? t('Pairing…') : t('Pair')}
+          {busy ? t('Pairing…') : setup ? t('Open Savor') : t('Pair')}
         </button>
       </form>
     </div>

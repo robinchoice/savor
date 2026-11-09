@@ -97,8 +97,6 @@ function onRelayMessage(ws: WebSocket, m: any) {
   if (m.t === 'ready') {
     retryDelay = 2000
     setStatus({ state: 'online', id: m.id })
-    const setupCode = devices.openSetupCode()
-    if (setupCode) console.log(`Setup link for the owner's device: ${pairingLink(setupCode)}`)
   }
   if (typeof m.c !== 'string') return
   if (m.t === 'open' && !conns.has(m.c)) conns.set(m.c, new Conn(m.c, ws))
@@ -170,7 +168,8 @@ class Conn {
     }
     if (hello.mode === 'pair') {
       const codes = devices.openPairingCodes()
-      if (!codes.length) return this.fail('no pairing in progress')
+      // A setup link's page tells its holder whether it was used already or ran out.
+      if (!codes.length) return this.fail(devices.closedSetup() ?? 'no pairing in progress')
       const pairing = t.daemonPairing(identity(), hello, codes)
       this.pairing = pairing.candidates
       return this.send(JSON.stringify(pairing.welcome))

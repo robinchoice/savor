@@ -7,8 +7,8 @@
 #
 # or run it as root on the server. It can run again. Savor is built from the newest release tag that
 # carries Robin's signature, by the savor-update it installs; a timer runs that every night.
-# cloud/new-instance.sh sets SAVOR_IDENTITY (the daemon's relay key) and SAVOR_SETUP_CODE in a line of its
-# own after the first, so the setup link it prints works once the server is up.
+# cloud/new-instance.sh sets SAVOR_IDENTITY (the daemon's relay key), SAVOR_SETUP_CODE and SAVOR_SETUP_EXPIRES in
+# a line of its own after the first, so the setup link it made works once the server is up.
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 # systemd and the firewall are missing in a container, where this script is tested.
@@ -115,7 +115,7 @@ User=savor
 WorkingDirectory=/home/savor/savor/current
 Environment=PATH=/home/savor/.local/bin:/usr/local/bin:/usr/bin:/bin
 Environment=SAVOR_EXIT_ON_UPDATE=/home/savor/savor/current/package.json
-# Until the customer's first device is in, each start logs a setup code that lets it in as the owner.
+# Until the customer's first device is in, the setup code from new-instance.sh lets it in as the owner.
 Environment=SAVOR_SETUP=1
 ExecStart=/usr/bin/node dist/server/index.mjs
 Restart=always
@@ -150,4 +150,4 @@ if booted; then
   systemctl daemon-reload
   systemctl enable --now savor.service savor-update.timer
 fi
-echo "Savor Cloud is set up. The owner's device pairs with the setup link: journalctl -u savor -g 'Setup link'"
+echo "Savor Cloud is set up. The owner's device pairs with the setup link from new-instance.sh."

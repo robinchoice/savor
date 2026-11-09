@@ -154,6 +154,18 @@ async function welcome(ws: WebSocket, hello: object) {
   return reply
 }
 
+// Whether a pairing link works right now, without pairing: only the first half of the handshake. Throws the
+// reason when it doesn't, such as "daemon offline" from the relay or "setup used" from the computer.
+export async function probePairing(daemonPkText: string, code: string, relay?: string) {
+  const daemonPk = t.publicKey(daemonPkText)
+  const ws = relaySocket(daemonPk, relay)
+  try {
+    await welcome(ws, t.devicePairing(daemonPk, code).hello)
+  } finally {
+    ws.close()
+  }
+}
+
 // First contact: prove knowledge of the one-time code and register this device's key. The computer
 // asks before it lets the device in; onCheck gets the number both of them show meanwhile.
 export async function pairThroughRelay(daemonPkText: string, code: string, name: string, onCheck: (check: string) => void, relay?: string) {

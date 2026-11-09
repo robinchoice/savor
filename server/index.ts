@@ -1257,9 +1257,6 @@ http
     if (APPIMAGE) exitOnUpdate(APPIMAGE)
     agents.resumeInterrupted()
     started = true
-    // Before "Savor running", so whoever waits for that line finds the code too.
-    const setupCode = devices.createSetupCode()
-    if (setupCode) console.log(`Setup code for the owner's device, once, for a day: ${setupCode}`)
     console.log(`Savor running — open ${PUBLIC_URL}/?token=${store.state().token}`)
   })
 

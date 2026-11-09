@@ -683,6 +683,8 @@ main { flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
 .gate h1 { font-size: 36px; font-weight: 800; font-stretch: 76%; letter-spacing: -0.02em; }
 .empty-state h2 { font-size: 28px; }
 .gate .form { padding: 0; width: 100%; text-align: left; }
+.gate .setup-bar { align-self: stretch; margin: 6px 0; }
+.gate .setup-bar i { transition: width 1s; }
 
 /* ---- mobile ---- */
 

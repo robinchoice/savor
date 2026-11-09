@@ -11,13 +11,14 @@ export async function scanQrCode() {
   return ScanResult
 }
 
-// The pairing QR code holds https://<relay>/#/rpair/<computer's key>/<code>.
+// The pairing QR code holds https://<relay>/#/rpair/<computer's key>/<code>, a Savor Cloud setup link also
+// /<when its instance was created>.
 export function parsePairingLink(text: string) {
   try {
     const url = new URL(text.trim())
-    const [, route, daemonPk, code] = url.hash.split('/')
+    const [, route, daemonPk, code, created] = url.hash.split('/')
     if (!/^https?:$/.test(url.protocol) || route !== 'rpair' || !daemonPk || !code) return null
-    return { relay: url.origin, daemonPk, code }
+    return { relay: url.origin, daemonPk, code, created: Number(created) || undefined }
   } catch {
     return null
   }

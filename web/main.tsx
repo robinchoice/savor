@@ -100,7 +100,7 @@ function App() {
   }, [route.join('/')])
 
   if (route[0] === 'pair') return <Pair code={route[1]} />
-  if (route[0] === 'rpair') return <RemotePair daemonPk={route[1]} code={route[2]} />
+  if (route[0] === 'rpair') return <RemotePair daemonPk={route[1]} code={route[2]} created={Number(route[3]) || undefined} />
   if (native && (route[0] === 'scan' || !loadProfile())) return <AppPair />
   if (mode === 'relay' && !loadProfile())
     return (

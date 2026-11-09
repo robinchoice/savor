@@ -21,27 +21,24 @@ let failedPairings = 0
 // every device in without asking. Never set it on a computer with real work on it.
 const DEMO_CODE = process.env.SAVOR_DEMO_PAIRING?.toUpperCase()
 
-// A Savor Cloud instance has no one at the computer to allow the first device. With SAVOR_SETUP set and no
-// owner device yet, each start creates a setup code and prints it. The device that pairs with it comes in
-// without asking and becomes the owner, with the rights of this computer. The code works once, runs out after
-// a day and is too long to guess, so failed pairings don't void it. cloud/new-instance.sh gives the code in
-// state.json instead, so the setup link it prints works from the first start on and keeps its original expiry
-// across restarts.
-const SETUP_TTL_MS = Number(process.env.SAVOR_SETUP_MS ?? 24 * 60 * 60_000)
-let setup: { code: string; expires: number } | null = null
+// A Savor Cloud instance has no one at the computer to allow the first device. cloud/new-instance.sh puts a
+// setup code in state.json and its link in Robin's vault; Savor never prints or logs it. With SAVOR_SETUP set
+// and no owner device yet, the device that pairs with it comes in without asking and becomes the owner, with the
+// rights of this computer. The code works once, until the expiry new-instance.sh gave it, and is too long to
+// guess, so failed pairings don't void it.
+const ownerPaired = (s: ReturnType<typeof store.state>) => s.devices.some((d) => d.owner)
 
-export function createSetupCode() {
+export function openSetupCode() {
   const s = store.state()
-  if (!process.env.SAVOR_SETUP || s.devices.some((d) => d.owner)) return null
-  if (s.setupCode && s.setupCode.expires <= Date.now()) {
-    delete s.setupCode
-    store.saveState(s)
-  }
-  setup = s.setupCode ?? { code: crypto.randomBytes(16).toString('hex').toUpperCase(), expires: Date.now() + SETUP_TTL_MS }
-  return setup.code
+  if (!process.env.SAVOR_SETUP || ownerPaired(s) || !s.setupCode || s.setupCode.expires <= Date.now()) return null
+  return s.setupCode.code
 }
 
-export const openSetupCode = () => (setup && setup.expires > Date.now() ? setup.code : null)
+// Why a setup link no longer works, for its page to say so: its device is in already, or it ran out.
+export function closedSetup() {
+  if (!process.env.SAVOR_SETUP || openSetupCode()) return null
+  return ownerPaired(store.state()) ? 'setup used' : 'setup expired'
+}
 
 export interface PairingRequest { id: string; name: string; via: 'relay' | 'lan'; check: string }
 const requests = new Map<string, PairingRequest & { decide(approved: boolean): void }>()
@@ -98,15 +95,11 @@ const deviceName = (name: string) => name.slice(0, 60) || 'Device'
 // The setup code is spent here too and lets its device in as the owner.
 export function requestApproval(code: string, name: string, via: PairingRequest['via'], check: string) {
   if (DEMO_CODE && code.toUpperCase() === DEMO_CODE) return { approved: Promise.resolve(true), cancel: () => {}, owner: false }
-  if (setup && store.safeEqual(code.toUpperCase(), setup.code)) {
-    const valid = setup.expires > Date.now()
-    setup = null
+  const setup = openSetupCode()
+  if (setup && store.safeEqual(code.toUpperCase(), setup)) {
     const s = store.state()
-    if (s.setupCode) {
-      delete s.setupCode
-      store.saveState(s)
-    }
-    if (!valid) throw new Error('Pairing code invalid or expired.')
+    delete s.setupCode
+    store.saveState(s)
     return { approved: Promise.resolve(true), cancel: () => {}, owner: true }
   }
   takeCode(code)

@@ -382,7 +382,8 @@ test('a demo instance lets every device in with its fixed code, without asking',
   assert.deepEqual(await demo('GET', '/devices/requests'), [])
 })
 
-// A cloud instance: the daemon started with SAVOR_SETUP, and its output so far.
+// A cloud instance: the daemon started with SAVOR_SETUP, and its output so far. Like cloud/install.sh, the
+// state it starts with holds the relay, the daemon's key and the setup code cloud/new-instance.sh put in its link.
 async function startCloud(home, env = {}, base) {
   base ??= `http://127.0.0.1:${await freePort()}`
   const child = spawn(process.execPath, [path.join(ROOT, 'dist/server/index.mjs')], {
@@ -394,40 +395,63 @@ async function startCloud(home, env = {}, base) {
   child.stdout.on('data', (d) => (daemon.out += d))
   return until(() => daemon.out.includes('Savor running')).then(() => daemon)
 }
-const setupCode = (daemon) => daemon.out.match(/Setup code for the owner's device, once, for a day: (\w+)/)?.[1]
+async function stopCloud(cloud) {
+  cloud.child.kill()
+  await new Promise((resolve) => cloud.child.once('exit', resolve))
+}
+function provision(home, expires = Date.now() + 60_000) {
+  const identity = tunnel.b64.enc(crypto.getRandomValues(new Uint8Array(32)))
+  const code = 'AB12CD34EF56AB12CD34EF56AB12CD34'
+  fs.mkdirSync(home, { recursive: true })
+  fs.writeFileSync(path.join(home, 'state.json'), JSON.stringify({ relay: { url: relayBase, enabled: true }, identity, setupCode: { code, expires } }))
+  const created = Math.floor(Date.now() / 1000) - 60
+  return { code, link: `${relayBase}/#/rpair/${tunnel.b64.enc(tunnel.keypairFrom(tunnel.b64.dec(identity)).pk)}/${code}/${created}` }
+}
 const pairLan = (base, code, name = 'Owner laptop') =>
   fetch(`${base}/api/pair`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code, name, check: '042137' }) })
 
-test('the setup code lets the first device in through the relay as the owner, once', async () => {
+test('a setup link waits for its instance, lets the first device in as the owner once, and then says it was used', async () => {
   const home = path.join(TMP, 'cloud')
-  const cloud = await startCloud(home)
-  const code = setupCode(cloud)
-  assert.match(code, /^[0-9A-F]{32}$/)
-  const owner = call(cloud.base, JSON.parse(fs.readFileSync(path.join(home, 'state.json'), 'utf8')).token)
-  await owner('PUT', '/relay', { url: relayBase, enabled: true })
-  await until(() => cloud.out.includes("Setup link for the owner's device: "))
-  const link = cloud.out.match(/Setup link for the owner's device: (\S+)/)[1]
-  assert.equal(link, `${relayBase}/#/rpair/${(await owner('GET', '/relay')).publicKey}/${code}`)
-
+  const { code, link } = provision(home)
   const phone = await browser.newPage({ locale: 'en-US' })
   await phone.goto(link)
+  await phone.waitForSelector('text=Your Savor is being set up')
+  assert.match(await phone.textContent('.gate'), /About \d+ minutes left/)
+
+  let cloud = await startCloud(home)
+  await phone.goto('about:blank')
+  await phone.goto(link)
+  await phone.waitForSelector('text=Your Savor is ready')
+  await phone.click('button:has-text("Change")')
   await phone.fill('input', 'Owner phone')
-  await phone.click('button:has-text("Pair")')
+  await phone.click('button:has-text("Open Savor")')
   // Through the tunnel the owner counts as this computer, which alone gets the first-start setup.
   await phone.waitForSelector('text=Welcome to Savor')
   await phone.close()
-  assert.deepEqual((await owner('GET', '/devices')).map((d) => [d.name, d.via, d.owner]), [['Owner phone', 'relay', true]])
-  assert.deepEqual(await owner('GET', '/devices/requests'), [])
+  const state = () => JSON.parse(fs.readFileSync(path.join(home, 'state.json'), 'utf8'))
+  assert.deepEqual(state().devices.map((d) => [d.name, d.owner]), [['Owner phone', true]])
+  assert.equal(state().setupCode, undefined)
+  assert.ok(!cloud.out.includes(code), 'the setup code is never logged')
 
-  const again = await pairLan(cloud.base, code)
-  assert.equal(again.status, 400)
-  assert.equal((await owner('GET', '/devices')).length, 1)
+  const again = await browser.newPage({ locale: 'en-US' })
+  await again.goto(link)
+  await again.waitForSelector('text=This link was used already')
+  await again.close()
+  assert.equal((await pairLan(cloud.base, code)).status, 400)
+
+  // Even with the owner gone, the link stays spent, also across restarts.
+  await stopCloud(cloud)
+  fs.writeFileSync(path.join(home, 'state.json'), JSON.stringify({ ...state(), devices: [] }))
+  cloud = await startCloud(home, {}, cloud.base)
+  assert.equal((await pairLan(cloud.base, code)).status, 400)
+  assert.deepEqual(state().devices, [])
 })
 
-test('a device paired with the setup code has the rights of this computer, and no new code is made once it is in', async () => {
+test('a device paired with the setup code has the rights of this computer, also after a restart', async () => {
   const home = path.join(TMP, 'cloud-lan')
+  const { code } = provision(home)
   let cloud = await startCloud(home)
-  const reply = await pairLan(cloud.base, setupCode(cloud))
+  const reply = await pairLan(cloud.base, code)
   assert.equal(reply.status, 200)
   const cookie = reply.headers.get('set-cookie').split(';')[0]
   const asOwner = (method, p) => fetch(`${cloud.base}/api${p}`, { method, headers: { cookie, 'content-type': 'application/json' } })
@@ -436,73 +460,25 @@ test('a device paired with the setup code has the rights of this computer, and n
   assert.equal(listed.status, 200)
   assert.deepEqual((await listed.json()).map((d) => [d.name, d.via, d.owner]), [['Owner laptop', 'lan', true]])
 
-  cloud.child.kill()
-  await new Promise((resolve) => cloud.child.once('exit', resolve))
+  await stopCloud(cloud)
   cloud = await startCloud(home, {}, cloud.base)
-  assert.equal(setupCode(cloud), undefined)
   assert.equal((await (await asOwner('GET', '/me')).json()).origin, 'local')
 })
 
-// cloud/install.sh writes the relay, the daemon's key and the setup code that cloud/new-instance.sh put in its link.
-test('a setup code given in state.json makes the setup link known in advance, and its pairing spends it for good', async () => {
-  const home = path.join(TMP, 'cloud-given')
-  const identity = tunnel.b64.enc(crypto.getRandomValues(new Uint8Array(32)))
-  const given = 'AB12CD34EF56AB12CD34EF56AB12CD34'
-  fs.mkdirSync(home, { recursive: true })
-  fs.writeFileSync(path.join(home, 'state.json'), JSON.stringify({ relay: { url: relayBase, enabled: true }, identity, setupCode: { code: given, expires: Date.now() + 60_000 } }))
-  let cloud = await startCloud(home)
-  assert.equal(setupCode(cloud), given)
-  assert.match(cloud.out, /Setup code for the owner's device, once, for a day: /)
-  const link = `${relayBase}/#/rpair/${tunnel.b64.enc(tunnel.keypairFrom(tunnel.b64.dec(identity)).pk)}/${given}`
-  await until(() => cloud.out.includes(`Setup link for the owner's device: ${link}`))
-
-  cloud.child.kill()
-  await new Promise((resolve) => cloud.child.once('exit', resolve))
-  cloud = await startCloud(home, {}, cloud.base)
-  assert.equal(setupCode(cloud), given)
-  await until(() => cloud.out.includes(`Setup link for the owner's device: ${link}`))
-
+test('an expired setup code lets no device in and its link says so; without SAVOR_SETUP no code works', async () => {
+  const home = path.join(TMP, 'cloud-expired')
+  const { code, link } = provision(home, Date.now() - 1)
+  const expired = await startCloud(home)
+  assert.equal((await pairLan(expired.base, code)).status, 400)
   const phone = await browser.newPage({ locale: 'en-US' })
   await phone.goto(link)
-  await phone.fill('input', 'Owner phone')
-  await phone.click('button:has-text("Pair")')
-  await phone.waitForSelector('text=Welcome to Savor')
+  await phone.waitForSelector('text=This link has run out')
   await phone.close()
-  const state = () => JSON.parse(fs.readFileSync(path.join(home, 'state.json'), 'utf8'))
-  assert.deepEqual(state().devices.map((d) => [d.name, d.owner]), [['Owner phone', true]])
-  assert.equal(state().setupCode, undefined)
 
-  // Even with the owner gone, the link stays spent: the next start makes a new code.
-  cloud.child.kill()
-  await new Promise((resolve) => cloud.child.once('exit', resolve))
-  fs.writeFileSync(path.join(home, 'state.json'), JSON.stringify({ ...state(), devices: [] }))
-  cloud = await startCloud(home, {}, cloud.base)
-  assert.match(setupCode(cloud), /^[0-9A-F]{32}$/)
-  assert.notEqual(setupCode(cloud), given)
-  assert.equal((await pairLan(cloud.base, given)).status, 400)
-})
-
-test('a provisioned setup link retains its expiry across restarts', async () => {
-  const home = path.join(TMP, 'cloud-given-expired')
-  const code = 'AB12CD34EF56AB12CD34EF56AB12CD34'
-  const expires = Date.now() - 1
-  fs.mkdirSync(home, { recursive: true })
-  fs.writeFileSync(path.join(home, 'state.json'), JSON.stringify({ setupCode: { code, expires } }))
-  let cloud = await startCloud(home)
-  assert.equal((await pairLan(cloud.base, code)).status, 400)
-  cloud.child.kill()
-  await new Promise((resolve) => cloud.child.once('exit', resolve))
-  cloud = await startCloud(home, {}, cloud.base)
-  assert.notEqual(setupCode(cloud), code)
-  assert.equal((await pairLan(cloud.base, code)).status, 400)
-})
-
-test('an expired setup code lets no device in, and without SAVOR_SETUP there is none', async () => {
-  const expired = await startCloud(path.join(TMP, 'cloud-expired'), { SAVOR_SETUP_MS: '1' })
-  await new Promise((r) => setTimeout(r, 20))
-  assert.equal((await pairLan(expired.base, setupCode(expired))).status, 400)
-  const plain = await startCloud(path.join(TMP, 'cloud-plain'), { SAVOR_SETUP: '' })
-  assert.equal(setupCode(plain), undefined)
+  const plainHome = path.join(TMP, 'cloud-plain')
+  const plain = provision(plainHome)
+  const cloud = await startCloud(plainHome, { SAVOR_SETUP: '' })
+  assert.equal((await pairLan(cloud.base, plain.code)).status, 400)
 })
 
 test('idle sockets cannot lock real devices out', async () => {
