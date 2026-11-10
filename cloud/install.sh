@@ -15,7 +15,20 @@ export DEBIAN_FRONTEND=noninteractive
 booted() { [ -d /run/systemd/system ]; }
 
 apt-get update
-apt-get install -y ca-certificates curl git gnupg build-essential python3 gh jq sudo ufw unattended-upgrades
+apt-get install -y ca-certificates curl git gnupg build-essential python3 gh jq sudo ufw unattended-upgrades bubblewrap socat
+
+# Claude Code's Bash sandbox runs commands in bubblewrap, which needs user namespaces. Ubuntu 24.04 only
+# allows them to programs with an AppArmor profile that says so.
+cat >/etc/apparmor.d/bwrap <<'EOF'
+abi <abi/4.0>,
+include <tunables/global>
+
+profile bwrap /usr/bin/bwrap flags=(unconfined) {
+  userns,
+  include if exists <local/bwrap>
+}
+EOF
+if booted; then apparmor_parser -r /etc/apparmor.d/bwrap; fi
 
 # Node 24 from NodeSource, updated by unattended-upgrades like the system's security patches, which
 # reboot the server at 04:00 when they need to. Savor continues the turns a reboot cuts off.
@@ -66,6 +79,9 @@ cat >/usr/local/bin/savor-update <<'EOF'
 # Builds the newest signed Savor release into ~/savor/releases/<tag>, points ~/savor/current at it and
 # updates the agents' CLIs. The running Savor sees current/package.json change (SAVOR_EXIT_ON_UPDATE),
 # gives working agents five minutes and exits; systemd starts the new version.
+# A tag in ~/savor/pin keeps Savor on that release, the way back from a broken one:
+#   echo v0.6.44 > ~/savor/pin && ln -sfn releases/v0.6.44 ~/savor/current
+# Removing the file returns to the newest release with the next run.
 set -euo pipefail
 [ "$(id -un)" = savor ] || exec sudo -iu savor "$0" "$@"
 KEY=0AFDD4D64A9C88CA79406F3F830E8CDEA8C84A38
@@ -75,7 +91,7 @@ mkdir -p "$ROOT/releases"
 git -C "$ROOT/repo" fetch --quiet --force origin 'refs/tags/v*:refs/tags/v*'
 npm install -g --no-fund --no-audit @openai/codex@latest opencode-ai@latest >/dev/null
 
-tag=$(git -C "$ROOT/repo" tag --list 'v*' --sort=-v:refname | head -1)
+tag=$(cat "$ROOT/pin" 2>/dev/null || git -C "$ROOT/repo" tag --list 'v*' --sort=-v:refname | head -1)
 [ "$(readlink "$ROOT/current" || true)" = "releases/$tag" ] && exit 0
 git -C "$ROOT/repo" verify-tag --raw "$tag" 2>&1 | grep -q "VALIDSIG $KEY " || { echo "$tag is not signed with $KEY" >&2; exit 1; }
 
@@ -86,7 +102,7 @@ git -C "$ROOT/repo" archive "$tag" | tar -x -C "$dir"
 ln -sfn "releases/$tag" "$ROOT/current.new" && mv -T "$ROOT/current.new" "$ROOT/current"
 echo "Savor $tag installed"
 # Keep the release before as a way back.
-ls -1 "$ROOT/releases" | sort -V | head -n -2 | while read -r old; do rm -rf "${ROOT:?}/releases/$old"; done
+ls -1 "$ROOT/releases" | sort -V | head -n -2 | { grep -vxF "$tag" || true; } | while read -r old; do rm -rf "${ROOT:?}/releases/$old"; done
 EOF
 chmod 755 /usr/local/bin/savor-update
 savor-update
