@@ -211,6 +211,36 @@ Savor reads the key from the file (`NAME=value` or `export NAME=value` lines) ea
 
 Antigravity runs `agy --print` once per turn and continues the conversation with `--conversation`. agy reads MCP servers only from its own settings, so Savor adds a `savor` stdio server to `~/.gemini/config/mcp_config.json` that forwards to the conversation it runs for, and allows its tools with `mcp(savor/*)` in `~/.gemini/antigravity-cli/settings.json`. Headless agy cannot ask for approval: whatever the chosen mode doesn't allow is denied, and the activity log names it.
 
+### Open and self-hosted models
+
+Savor doesn't need a model from a big provider. OpenCode, which Savor drives over the Agent Client Protocol, runs any model behind an OpenAI-compatible endpoint: Ollama, llama.cpp's `llama-server`, vLLM or a host of your choice. Add the endpoint to `~/.config/opencode/opencode.json` (or `opencode.json` in a project):
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "ollama": {
+      "name": "Ollama",
+      "npm": "@ai-sdk/openai-compatible",
+      "options": { "baseURL": "http://127.0.0.1:11434/v1" },
+      "models": { "qwen3-coder:30b": { "name": "Qwen3 Coder 30B" } }
+    },
+    "llamacpp": {
+      "name": "llama.cpp",
+      "npm": "@ai-sdk/openai-compatible",
+      "options": { "baseURL": "http://127.0.0.1:8080/v1" },
+      "models": { "local": { "name": "llama-server" } }
+    }
+  }
+}
+```
+
+`opencode models` then lists them, and Savor's agent picker offers them under OpenCode, for conversations, workflows and presets. Savor's message protocol is plain MCP tool calls, so a model has to call tools reliably; small models forget the acknowledgement or the conclusion more often. When a model sends no message at all, Savor shows its final text as the result.
+
+### Open standards
+
+Savor builds on open protocols and formats instead of its own where one exists: the [Model Context Protocol](https://modelcontextprotocol.io) for the tools every agent reports back with, the [Agent Client Protocol](https://agentclientprotocol.com) for OpenCode and Grok Build, `AGENTS.md` for project instructions (the uplift check maintains it), git for code and worktrees, Markdown, JSON and JSONL in plain files for all state, Web Push (RFC 8030, 8291, 8292) sent straight from your computer to the browser's push service, and for academic writing OpenAlex, DOI content negotiation (BibTeX from Crossref and DataCite), CSL styles, BibTeX and pandoc.
+
 ## How it works
 
 ```mermaid
