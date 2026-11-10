@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from 'preact/hooks'
-import { transport } from './transport'
+import { useCallback, useEffect, useMemo, useState } from 'preact/hooks'
+import { direct, transport } from './transport'
 import { plural, t } from './i18n'
 
 export class Unauthorized extends Error {}
@@ -78,8 +78,41 @@ export function useApi<T>(path: string | null, refetchOn: (e: SavorEvent) => boo
     setError(undefined)
     load()
   }, [load])
-  useEvent((e) => (e.type === 'connected' || refetchOn(e)) && load(), [load])
+  const refetch = useMemo(() => coalesce(load), [load])
+  useEffect(() => refetch.stop, [refetch])
+  useEvent((e) => (e.type === 'connected' || refetchOn(e)) && refetch(), [refetch])
   return [data, load, error]
+}
+
+// Agents at work send several events a second, and each would fetch a whole list again: a project's
+// conversations are a few hundred KB, which a phone decrypts, parses and renders per event. A refetch waits for
+// the one in flight and runs once after it, through the relay at most once a second.
+function coalesce(run: () => Promise<void>) {
+  let running = false
+  let again = false
+  let stopped = false
+  let last = 0
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const go = async () => {
+    timer = undefined
+    if (stopped) return
+    running = true
+    again = false
+    last = Date.now()
+    await run()
+    running = false
+    if (again) schedule()
+  }
+  const schedule = () => {
+    if (running) return void (again = true)
+    timer ??= setTimeout(go, Math.max(0, last + (transport === direct ? 0 : 1000) - Date.now()))
+  }
+  return Object.assign(schedule, {
+    stop: () => {
+      stopped = true
+      clearTimeout(timer)
+    },
+  })
 }
 
 export const readFileAsDataUrl = (f: Blob) =>
