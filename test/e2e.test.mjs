@@ -23,8 +23,9 @@ const PROJECT = path.join(TMP, 'project')
 const AGENT_LOG = path.join(TMP, 'agents.jsonl') // the fake agents log their command lines here
 let server, browser, page, port, token, base
 
-// Stands in for the Pleasance API that files bug reports as issues, and for OpenAlex, doi.org and a
-// publisher's PDF in the sources of academic writing.
+// Stands in for the Pleasance API that files bug reports as issues, and for OpenAlex, Crossref, ORCID,
+// doi.org and a publisher's PDF in the sources of academic writing. A search for "limited" finds OpenAlex
+// out of budget, one for "offline" Crossref down as well.
 const reports = []
 // A PDF with one line of text per page, enough for pdf.js.
 function pdfOf(pages) {
@@ -42,12 +43,23 @@ const SCHOLAR = {
   '/openalex/works/doi:10.1000/heat.1': { best_oa_location: null, locations: [{ pdf_url: 'http://127.0.0.1:0/gone.pdf' }, { pdf_url: '/pdf/heat.pdf' }] },
   '/doi/10.1000/heat.1': '@article{Miara_2022, title={Heat pumps in {old} buildings}, author={Miara, Ada and Ruhl, Ben}, journal={Energy Journal}, year={2022}, pages={10--12}, DOI={10.1000/heat.1}}',
   '/doi/10.1000/xmp.2': '@article{Ghost_2020, title={Ghosts in the machine}, author={Ghost, Anna}, year={2020}, DOI={10.1000/xmp.2}}',
+  '/doi/10.1000/orcid.4': '@article{Ruhl_2021, title={District heating}, author={Ruhl, Ben}, year={2021}, DOI={10.1000/orcid.4}}',
   '/pdf/heat.pdf': pdfOf(['Heat pumps in old buildings.', 'Old buildings need lower flow temperatures.', 'Conclusions.']),
 }
 const feedbackApi = http.createServer(async (req, res) => {
   let body = ''
   for await (const c of req) body += c
   const url = decodeURIComponent(req.url)
+  if (url.startsWith('/openalex/works?') && /limited|offline/.test(url)) return res.writeHead(429).end()
+  if (url.startsWith('/crossref/works?')) {
+    if (url.includes('offline')) return res.writeHead(503).end()
+    const items = [{ DOI: '10.1000/Cross.3', title: ['Heat <i>networks</i>'], author: [{ given: 'Ada', family: 'Miara' }, { name: 'Heat Lab' }], issued: { 'date-parts': [[2019, 4]] }, 'container-title': ['Energy Journal'], 'is-referenced-by-count': 7, URL: 'https://doi.org/10.1000/cross.3' }]
+    return res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ message: { items } }))
+  }
+  if (url === '/orcid/v3.0/0000-0002-1825-0097/works') {
+    const group = (doi, title, year) => ({ 'external-ids': { 'external-id': doi ? [{ 'external-id-type': 'doi', 'external-id-value': doi, 'external-id-relationship': 'self' }] : [] }, 'work-summary': [{ 'put-code': title.length, title: { title: { value: title } }, 'publication-date': { year: { value: String(year) } }, 'journal-title': { value: 'Energy Journal' } }] })
+    return res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ group: [group(null, 'A talk without a DOI', 2023), group('https://doi.org/10.1000/orcid.4', 'District heating', 2021)] }))
+  }
   if (url.startsWith('/openalex/works?')) {
     const work = (id, doi, title, pdf) => ({ id: `https://openalex.org/${id}`, doi: doi && `https://doi.org/${doi}`, title, publication_year: 2022, authorships: [{ author: { display_name: 'Ada Miara' } }], primary_location: { source: { display_name: 'Energy Journal' } }, cited_by_count: 42, best_oa_location: pdf ? { pdf_url: pdf } : null })
     return res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ results: [work('W1', '10.1000/heat.1', 'Heat pumps in old buildings', '/pdf/heat.pdf'), work('W2', null, 'A work without a DOI')] }))
@@ -127,6 +139,8 @@ async function startDaemon() {
       SAVOR_FEEDBACK_URL: `http://127.0.0.1:${feedbackApi.address().port}/savor/feedback`,
       SAVOR_OPENALEX_URL: `http://127.0.0.1:${feedbackApi.address().port}/openalex`,
       SAVOR_DOI_URL: `http://127.0.0.1:${feedbackApi.address().port}/doi`,
+      SAVOR_CROSSREF_URL: `http://127.0.0.1:${feedbackApi.address().port}/crossref`,
+      SAVOR_ORCID_URL: `http://127.0.0.1:${feedbackApi.address().port}/orcid`,
       FAKE_AGENT_LOG: AGENT_LOG,
       CLAUDE_CONFIG_DIR: path.join(TMP, 'claude'),
       CODEX_HOME: path.join(TMP, 'codex'),
@@ -3331,6 +3345,33 @@ test('academic writing shows its sources, one chat and the work, and adds source
   await page.click('.study-source:has-text("Ghosts in the machine")')
   await page.waitForSelector('.study-detail >> text=doi.org/10.1000/xmp.2')
   await page.click('.study-detail button:has-text("All sources")')
+
+  // Without OpenAlex, Crossref searches, and the page says so; when neither answers, the error does.
+  await page.fill('.study-search input', 'heat limited')
+  await page.press('.study-search input', 'Enter')
+  await page.waitForSelector('.study-search >> text=these results come from Crossref')
+  await page.waitForSelector('.study-search >> text=in Crossref')
+  await page.waitForSelector('.study-hit:has-text("Heat networks") >> text=Ada Miara, Heat Lab · 2019 · Energy Journal')
+  assert.equal(await page.locator('.study-hit:has-text("Heat networks") .tag:has-text("PDF")').count(), 0, 'Crossref does not know open PDFs')
+  await page.waitForSelector('.study-hit:has-text("Heat networks") >> text=7 citations')
+  const hits = (await api('GET', `/projects/${project.id}/sources/search?q=heat%20limited&sort=cited`)).body
+  assert.deepEqual([hits.via, hits.hits[0].doi, hits.hits[0].pdf, hits.hits[0].added], ['crossref', '10.1000/cross.3', null, false])
+  const down = await api('GET', `/projects/${project.id}/sources/search?q=offline`)
+  assert.deepEqual([down.status, down.body.error], [400, 'Neither OpenAlex nor Crossref is answering right now. Try again later.'])
+
+  // An ORCID iD lists its works; one with a DOI comes in the usual way, one without only shows.
+  await page.fill('.study-search input', 'https://orcid.org/0000-0002-1825-0097')
+  await page.press('.study-search input', 'Enter')
+  await page.waitForSelector('.study-search >> text=The works in this ORCID record')
+  assert.deepEqual(await page.locator('.study-hit .title').allTextContents(), ['A talk without a DOI', 'District heating'])
+  assert.equal(await page.locator('.study-search .ws-chip').count(), 0, 'ORCID has nothing to sort by')
+  assert.ok(await page.locator('.study-hit:has-text("A talk without a DOI") button').isDisabled())
+  await page.waitForSelector('.study-hit:has-text("A talk without a DOI") .tag:has-text("no DOI")')
+  await page.click('.study-hit:has-text("District heating") button')
+  await page.waitForSelector('.study-note:has-text("Added ruhl2021 to the bibliography")')
+  assert.match(fs.readFileSync(path.join(dir, 'references.bib'), 'utf8'), /@article\{ruhl2021, title=\{District heating\}/)
+  assert.equal((await api('GET', `/projects/${project.id}/sources/search?q=0000-0002-1825-0097`)).body.hits[1].added, true)
+  assert.deepEqual((await api('GET', `/projects/${project.id}/sources/search?q=0000-0001-0000-000X`)).body.error, 'ORCID has no record 0000-0001-0000-000X.')
 
   // A chapter opens on the right, and in the middle for those who rather write.
   await page.click('.work-chapter:has-text("Intro")')

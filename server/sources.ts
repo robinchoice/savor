@@ -4,11 +4,14 @@ import type { Project } from './store.js'
 import { chapters, CITE, CROSSREF, read, yamlGet } from './workspace.js'
 
 // The sources of academic writing: the entries of the bibliography, the PDFs in sources/ and how often
-// the manuscript cites each. Search and the BibTeX of a DOI come from open services (OpenAlex, doi.org);
-// what gets added lands in the same files the agents read, so the page and the agents see one state.
+// the manuscript cites each. Search and the BibTeX of a DOI come from open services (OpenAlex, Crossref,
+// ORCID, doi.org); what gets added lands in the same files the agents read, so the page and the agents
+// see one state.
 
 const OPENALEX = process.env.SAVOR_OPENALEX_URL ?? 'https://api.openalex.org'
 const DOI_ORG = process.env.SAVOR_DOI_URL ?? 'https://doi.org'
+const CROSSREF_API = process.env.SAVOR_CROSSREF_URL ?? 'https://api.crossref.org'
+const ORCID = process.env.SAVOR_ORCID_URL ?? 'https://pub.orcid.org'
 const UA = { 'user-agent': 'Savor (https://savor.pleasance.org)' }
 const DOI = /^10\.\d{4,9}\/\S+$/
 const MAX_PDF = 50 * 1024 * 1024
@@ -161,16 +164,37 @@ const getJson = async (url: string) => {
   return res.json() as Promise<any>
 }
 
+const ORCID_ID = /^(?:https?:\/\/orcid\.org\/)?(\d{4}-\d{4}-\d{4}-\d{3}[\dX])$/i
+
 // Titles and abstracts, the best matches first, the most cited or the newest; a DOI finds its work directly.
+// Without a key OpenAlex shares a small daily budget per address, so when it refuses or fails, Crossref
+// searches instead. An ORCID iD lists that person's works. `via` tells the page where the hits come from;
+// `cited` and `pdf` are null where that service doesn't know them.
 export async function search(p: Project, q: string, sort: string) {
   const query = q.trim()
-  if (!query) return []
+  if (!query) return { via: 'openalex', hits: [] }
+  const have = new Set(entriesOf(p).map((e) => cleanDoi(e.fields.doi)))
+  const orcid = query.match(ORCID_ID)?.[1].toUpperCase()
+  if (orcid) return { via: 'orcid', hits: await orcidWorks(orcid, have) }
   const doi = cleanDoi(query)
-  const filter = doi && DOI.test(doi) ? `doi:${doi}` : `title_and_abstract.search:${query.replace(/[,:|]/g, ' ')}`
+  const byDoi = doi && DOI.test(doi) ? doi : null
+  try {
+    return { via: 'openalex', hits: await openAlex(query, byDoi, sort, have) }
+  } catch (e) {
+    console.warn(`[sources] OpenAlex: ${(e as Error).message} Searching Crossref.`)
+    const hits = await crossref(query, byDoi, sort, have).catch((e2) => {
+      console.warn(`[sources] Crossref: ${(e2 as Error).message}`)
+      throw new Error('Neither OpenAlex nor Crossref is answering right now. Try again later.')
+    })
+    return { via: 'crossref', hits }
+  }
+}
+
+async function openAlex(query: string, doi: string | null, sort: string, have: Set<string | undefined>) {
+  const filter = doi ? `doi:${doi}` : `title_and_abstract.search:${query.replace(/[,:|]/g, ' ')}`
   const order = sort === 'new' ? '&sort=publication_date:desc' : sort === 'cited' ? '&sort=cited_by_count:desc' : ''
   const select = 'id,doi,title,publication_year,authorships,primary_location,cited_by_count,best_oa_location'
   const data = await getJson(`${OPENALEX}/works?filter=${encodeURIComponent(filter)}${order}&per_page=20&select=${select}`)
-  const have = new Set(entriesOf(p).map((e) => cleanDoi(e.fields.doi)))
   return (data.results as any[]).map((w) => ({
     id: String(w.id).split('/').pop(),
     doi: cleanDoi(w.doi) ?? null,
@@ -184,6 +208,59 @@ export async function search(p: Project, q: string, sort: string) {
     url: w.best_oa_location?.pdf_url ?? w.best_oa_location?.landing_page_url ?? w.doi ?? null,
     added: !!w.doi && have.has(cleanDoi(w.doi)),
   }))
+}
+
+// Crossref knows every DOI and its citations, but not whether a PDF is open.
+async function crossref(query: string, doi: string | null, sort: string, have: Set<string | undefined>) {
+  const find = doi ? `filter=doi:${encodeURIComponent(doi)}` : `query=${encodeURIComponent(query)}`
+  const order = sort === 'new' ? '&sort=published&order=desc' : sort === 'cited' ? '&sort=is-referenced-by-count&order=desc' : ''
+  const select = 'DOI,title,author,issued,container-title,publisher,is-referenced-by-count,URL'
+  const data = await getJson(`${CROSSREF_API}/works?${find}${order}&rows=20&select=${select}`)
+  return (data.message.items as any[]).map((w) => {
+    const authors = (w.author ?? []) as any[]
+    return {
+      id: w.DOI,
+      doi: cleanDoi(w.DOI) ?? null,
+      title: (w.title?.[0] ?? '').replace(/<[^>]+>/g, ''),
+      year: w.issued?.['date-parts']?.[0]?.[0] ?? null,
+      authors: authors.slice(0, 3).map((a) => a.name ?? [a.given, a.family].filter(Boolean).join(' ')).filter(Boolean),
+      moreAuthors: authors.length > 3,
+      venue: w['container-title']?.[0] ?? w.publisher ?? '',
+      cited: w['is-referenced-by-count'] ?? 0,
+      pdf: null,
+      url: w.URL ?? null,
+      added: have.has(cleanDoi(w.DOI)),
+    }
+  })
+}
+
+// The works in a public ORCID record, newest first. ORCID lists no authors or citations; works without
+// a DOI are shown, but only those with one can be added.
+async function orcidWorks(id: string, have: Set<string | undefined>) {
+  const res = await fetch(`${ORCID}/v3.0/${id}/works`, { headers: { ...UA, accept: 'application/json' }, signal: AbortSignal.timeout(20_000) })
+  if (res.status === 404) throw new Error(`ORCID has no record ${id}.`)
+  if (!res.ok) throw new Error(`${new URL(ORCID).host} answered ${res.status}.`)
+  const data = (await res.json()) as any
+  const hits = (data.group as any[]).map((g) => {
+    const w = g['work-summary'][0]
+    const ids = (g['external-ids']?.['external-id'] ?? []) as any[]
+    const doi = cleanDoi(ids.find((x) => x['external-id-type'] === 'doi' && x['external-id-relationship'] === 'self')?.['external-id-value'] ?? ids.find((x) => x['external-id-type'] === 'doi')?.['external-id-value'])
+    const valid = doi && DOI.test(doi) ? doi : null
+    return {
+      id: String(w['put-code']),
+      doi: valid,
+      title: w.title?.title?.value ?? '',
+      year: Number(w['publication-date']?.year?.value) || null,
+      authors: [] as string[],
+      moreAuthors: false,
+      venue: w['journal-title']?.value ?? '',
+      cited: null,
+      pdf: null,
+      url: valid ? `https://doi.org/${valid}` : w.url?.value ?? null,
+      added: !!valid && have.has(valid),
+    }
+  })
+  return hits.sort((a, b) => (b.year ?? 0) - (a.year ?? 0))
 }
 
 const ascii = (s: string) => s.normalize('NFD').replace(/[^\p{L}\p{N}]/gu, '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase()

@@ -14,7 +14,8 @@ import { authorLine, pdfPage, StudyContext, type Source, type StudyScope } from 
 // for those who rather write than chat. Everything shown comes from the project's files.
 
 interface Sources { bibliography: string; sources: Source[]; missing: { key: string; cited: number }[] }
-interface Hit { id: string; doi: string | null; title: string; year: number | null; authors: string[]; moreAuthors: boolean; venue: string; cited: number; pdf: boolean; url: string | null; added: boolean }
+interface Hit { id: string; doi: string | null; title: string; year: number | null; authors: string[]; moreAuthors: boolean; venue: string; cited: number | null; pdf: boolean | null; url: string | null; added: boolean }
+type Via = 'openalex' | 'crossref' | 'orcid'
 interface Check { level: 'ok' | 'error' | 'warn' | 'info'; text: string; file?: string; line?: number }
 interface Work { format: string; style: string | null; outline: { path: string; title: string; words: number }[]; words: number; target: number; title: string | null; kind: string | null; deadline: string | null; checks: Check[]; missingTools: string[] }
 // `jump` counts the citations followed, so the same one again goes back to its page.
@@ -256,6 +257,7 @@ function SourceSearch({ project, added }: { project: Project; added: (r: { key: 
   const [q, setQ] = useState('')
   const [sort, setSort] = useState<'best' | 'cited' | 'new'>('best')
   const [hits, setHits] = useState<Hit[] | null>(null)
+  const [via, setVia] = useState<Via>('openalex')
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState('')
   const run = async (s = sort) => {
@@ -263,7 +265,9 @@ function SourceSearch({ project, added }: { project: Project; added: (r: { key: 
     setBusy('search')
     setError('')
     try {
-      setHits(await api<Hit[]>('GET', `/projects/${project.id}/sources/search?q=${encodeURIComponent(q)}&sort=${s}`))
+      const r = await api<{ via: Via; hits: Hit[] }>('GET', `/projects/${project.id}/sources/search?q=${encodeURIComponent(q)}&sort=${s}`)
+      setVia(r.via)
+      setHits(r.hits)
     } catch (e) {
       setError(tx((e as Error).message))
     }
@@ -282,16 +286,18 @@ function SourceSearch({ project, added }: { project: Project; added: (r: { key: 
   }
   return (
     <div class="study-search">
-      <input autoFocus placeholder={t('Topic, title, author or DOI')} value={q} onInput={(e) => setQ(e.currentTarget.value)} onKeyDown={(e) => e.key === 'Enter' && run()} />
+      <input autoFocus placeholder={t('Topic, title, author, DOI or ORCID iD')} value={q} onInput={(e) => setQ(e.currentTarget.value)} onKeyDown={(e) => e.key === 'Enter' && run()} />
       <div class="row small">
-        {(['best', 'cited', 'new'] as const).map((s) => (
+        {via !== 'orcid' && (['best', 'cited', 'new'] as const).map((s) => (
           <button key={s} class={`ws-chip ${sort === s ? 'on' : ''}`} onClick={() => (setSort(s), hits && run(s))}>
             {s === 'best' ? t('Best match') : s === 'cited' ? t('Most cited') : t('Newest')}
           </button>
         ))}
         <span class="spacer" />
-        <span class="muted">{t('in OpenAlex')}</span>
+        <span class="muted">{via === 'orcid' ? t('in ORCID') : via === 'crossref' ? t('in Crossref') : t('in OpenAlex')}</span>
       </div>
+      {hits && busy !== 'search' && via === 'crossref' && <p class="muted small">{t('OpenAlex is not answering right now, so these results come from Crossref. It does not know which PDFs are open.')}</p>}
+      {hits && busy !== 'search' && via === 'orcid' && hits.length > 0 && <p class="muted small">{t('The works in this ORCID record, newest first. Savor adds those with a DOI.')}</p>}
       {error && <div class="error-text small">{error}</div>}
       {busy === 'search' && <p class="muted small">{t('Searching…')}</p>}
       {hits && busy !== 'search' && (
@@ -305,8 +311,9 @@ function SourceSearch({ project, added }: { project: Project; added: (r: { key: 
                   {[h.authors.join(', ') + (h.moreAuthors ? ' …' : ''), h.year, h.venue].filter(Boolean).join(' · ')}
                 </div>
                 <div class="tags">
-                  <span class="tag">{plural(h.cited, '{n} citation', '{n} citations')}</span>
-                  {h.pdf ? <span class="tag ok">{t('open PDF')}</span> : <span class="tag">{t('no open PDF')}</span>}
+                  {h.cited !== null && <span class="tag">{plural(h.cited, '{n} citation', '{n} citations')}</span>}
+                  {h.pdf !== null && (h.pdf ? <span class="tag ok">{t('open PDF')}</span> : <span class="tag">{t('no open PDF')}</span>)}
+                  {!h.doi && <span class="tag">{t('no DOI')}</span>}
                   {h.url && (
                     <a class="tag" href={h.url} target="_blank" rel="noreferrer">
                       {t('open')} <ExternalLink size={10} />
