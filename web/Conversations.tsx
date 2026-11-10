@@ -8,7 +8,7 @@ import {
   BookOpen, CircleAlert, ArrowUp, ArrowLeft, Pencil, MessageSquarePlus, ArrowRight, Smartphone, Monitor, Bot, ShieldQuestion, X, ChevronUp, ChevronDown, ChevronRight, Paperclip, GitBranch, GitFork, GitMerge, Trash2, Copy, FileDiff, Split, SquareArrowOutUpRight, Workflow as WorkflowIcon, Mail, MailOpen, SquareTerminal, RotateCcw,
 } from 'lucide-preact'
 import {
-  api, avatarStyle, cap, desktop, duration, effortLabel, formatStamp, formatTime, freeAgent, go, initial, lastThreadKey, PROVIDER_NAMES, runTrigger, useApi, kindOf, noticeOf, NOTICES, RINGS, type ActivityEvent, type AgentConfig, type Approval, type ApprovalOption, type Attachment, type Decision, type Fallback, type Message, type Plan, type PlanAgent, type PlanStep, type Proc, type Project, type Reason, type Thread, type Workflow, type Worktree,
+  api, returnSends, avatarStyle, cap, desktop, duration, effortLabel, formatStamp, formatTime, freeAgent, go, initial, lastThreadKey, PROVIDER_NAMES, runTrigger, useApi, kindOf, noticeOf, NOTICES, RINGS, type ActivityEvent, type AgentConfig, type Approval, type ApprovalOption, type Attachment, type Decision, type Fallback, type Message, type Plan, type PlanAgent, type PlanStep, type Proc, type Project, type Reason, type Thread, type Workflow, type Worktree,
 } from './api'
 import { Composer, quoteInComposer, type Picked } from './Composer'
 import { transport } from './transport'
@@ -731,7 +731,7 @@ export function RunElsewhereDialog({ projects, from, threadId, text: selected, o
                 autoFocus
                 value={text}
                 onInput={(e) => setText(e.currentTarget.value)}
-                onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && !e.isComposing && (e.preventDefault(), e.currentTarget.form!.requestSubmit())}
+                onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && !e.isComposing && returnSends && (e.preventDefault(), e.currentTarget.form!.requestSubmit())}
               />
             </label>
             {origin && (
@@ -1711,7 +1711,7 @@ function Questions({ decisions, active, answers, setAnswer, send }: { decisions:
       class="questions"
       // A click on an option leaves the focus there, so Enter sends from the options like from the comment box, Alt+Enter also opens the next conversation.
       onKeyDown={(e) => {
-        if (open && e.key === 'Enter' && !e.shiftKey && !e.isComposing && ['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement).tagName)) {
+        if (open && e.key === 'Enter' && !e.shiftKey && !e.isComposing && (returnSends ? ['INPUT', 'TEXTAREA'] : ['INPUT']).includes((e.target as HTMLElement).tagName)) {
           e.preventDefault()
           send(e.altKey)
         }

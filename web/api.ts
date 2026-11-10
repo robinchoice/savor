@@ -6,6 +6,9 @@ export class Unauthorized extends Error {}
 
 export const go = (path: string) => (location.hash = path)
 
+// On touch screens Return in a text box makes a new line and the Send button sends (in the composer also Cmd/Ctrl+Return).
+export const returnSends = !matchMedia('(hover: none) and (pointer: coarse)').matches
+
 // The conversation that was open when a project was left; its tab opens it again, otherwise a new one.
 export const lastThreadKey = (pid: string) => `savor-last-thread:${pid}`
 

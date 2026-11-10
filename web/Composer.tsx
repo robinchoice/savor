@@ -1,6 +1,6 @@
 import { useContext, useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
 import { ArrowRight, ArrowUp, AtSign, CornerDownRight, Bookmark, Check, ChevronDown, Download, FileText, FolderGit2, GitBranch, ListPlus, MessageSquare, Mic, Paperclip, Plus, RotateCw, ShieldAlert, Sparkles, Split, Square, Workflow as WorkflowIcon, X, Zap, Crosshair, BookOpen } from 'lucide-preact'
-import { api, agentSummary, attachmentFromFile, describeModel, effortLabel, modelName, PROVIDER_NAMES, useAgents, useApi, type AgentConfig, type Attachment, type Doc, type Project, type ProviderInfo, type Preset, type Skill, type Workflow } from './api'
+import { api, returnSends, agentSummary, attachmentFromFile, describeModel, effortLabel, modelName, PROVIDER_NAMES, useAgents, useApi, type AgentConfig, type Attachment, type Doc, type Project, type ProviderInfo, type Preset, type Skill, type Workflow } from './api'
 import { ProviderIcon } from './Conversations'
 import { useShortcut } from './Shortcuts'
 import { megabytes, ModelMissing, NothingHeard, record, type Recording, type VoiceModels } from './voice'
@@ -423,7 +423,7 @@ export function Composer(props: Props) {
               pickSkill(pick)
             } else if (slash !== null && e.key === 'Escape') {
               setSlashOpen(false)
-            } else if (e.key === 'Enter' && !e.shiftKey) {
+            } else if (e.key === 'Enter' && !e.shiftKey && (returnSends || e.ctrlKey || e.metaKey)) {
               e.preventDefault()
               submit(e.ctrlKey || e.metaKey, e.altKey)
             }
