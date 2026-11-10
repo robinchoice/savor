@@ -30,6 +30,12 @@ test("OpenCode's Full access mode allows every permission in its config", () => 
   assert.equal(config('build').permission, undefined)
 })
 
+test("OpenCode takes Savor's protocol as an instructions file for its system prompt", () => {
+  const config = (file) => JSON.parse(acpCommand('opencode', 'p', 't', 'build', file).env.OPENCODE_CONFIG_CONTENT)
+  assert.deepEqual(config('/tmp/protocol.md').instructions, ['/tmp/protocol.md'])
+  assert.equal(config(undefined).instructions, undefined)
+})
+
 test("OpenCode's Auto mode lets the pinned review plugin answer what is set to ask", () => {
   const config = (mode) => JSON.parse(acpCommand('opencode', 'p', 't', mode).env.OPENCODE_CONFIG_CONTENT)
   const auto = config('auto')

@@ -8,6 +8,7 @@
 // - "limit: <anything>" → the prompt fails at Grok Build's weekly limit; _x.ai/billing says the period ends in two hours
 // - "stuck: <anything>" → on a model of the providers "fake" or "free", like OpenCode 1.x at its free limit: the error goes to the
 //   log on stderr and the prompt gets no answer; on other models "ACP echo: <input> (<model>)"
+// - "forget: <anything>" → acknowledges and ends the turn without a conclusion; asked for it, "ACP remembered: <input>"
 // - a prompt that starts with a slash command → "ACP command: <prompt>"
 // - anything else → "ACP echo: <input>"
 // Like Grok Build, it asks with session/request_permission before it calls a Savor tool.
@@ -29,7 +30,9 @@ if (args[0] === 'models') {
   process.exit(0)
 }
 if (args[0] === 'session') process.exit(0)
-log({ argv: process.argv })
+// Whether Savor's protocol came as an instructions file for OpenCode's system prompt.
+const instructions = JSON.parse(process.env.OPENCODE_CONFIG_CONTENT ?? '{}').instructions ?? []
+log({ argv: process.argv, instructions: instructions.map((f) => fs.readFileSync(f, 'utf8').startsWith('You are running inside Savor')) })
 
 const out = (m) => process.stdout.write(JSON.stringify(m) + '\n')
 const notify = (method, params) => out({ jsonrpc: '2.0', method, params })
@@ -44,7 +47,7 @@ const agentRequest = (method, params) =>
 
 let mcp = null
 let client = null
-async function conclude(text) {
+async function conclude(text, tool = 'send_conclusion_message') {
   client ??= await (async () => {
     const c = new Client({ name: 'fake-acp', version: '1' })
     await c.connect(new StreamableHTTPClientTransport(new URL(mcp.url), { requestInit: { headers: Object.fromEntries(mcp.headers.map((h) => [h.name, h.value])) } }))
@@ -52,7 +55,7 @@ async function conclude(text) {
   })()
   const r = await agentRequest('session/request_permission', {
     sessionId,
-    toolCall: { toolCallId: 'mcp', title: 'savor__send_conclusion_message', kind: 'other', status: 'pending', rawInput: { variant: 'UseTool', tool_name: 'savor__send_conclusion_message', tool_input: { text } } },
+    toolCall: { toolCallId: 'mcp', title: `savor__${tool}`, kind: 'other', status: 'pending', rawInput: { variant: 'UseTool', tool_name: `savor__${tool}`, tool_input: { text } } },
     options: [
       { optionId: 'always-allow', name: 'always allow', kind: 'allow_always' },
       { optionId: 'allow-once', name: 'allow once', kind: 'allow_once' },
@@ -60,7 +63,7 @@ async function conclude(text) {
     ],
   })
   log({ mcpPermission: r.outcome.optionId })
-  if (r.outcome.optionId !== 'reject-once') await client.callTool({ name: 'send_conclusion_message', arguments: { text } })
+  if (r.outcome.optionId !== 'reject-once') await client.callTool({ name: tool, arguments: { text, ...(tool === 'send_acknowledgement_message' && { summary: text }) } })
 }
 
 const sessionId = 'fake-acp-session'
@@ -90,6 +93,12 @@ async function prompt(params, reply) {
     return void process.stderr.write(`timestamp=${new Date().toISOString()} level=ERROR run=1 message="stream error" providerID=fake modelID=${model} session.id=${params.sessionId} small=false agent=build mode=primary error.error="AI_APICallError: Free usage limit reached. Subscribe to OpenCode Go to keep going: https://opencode.ai/go"\n`)
   } else if (input.startsWith('stuck:')) {
     answer = `ACP echo: ${input} (${model})`
+  } else if (input.startsWith('forget:') && text.includes('without send_conclusion_message')) {
+    answer = `ACP remembered: ${input}`
+  } else if (input.startsWith('forget:')) {
+    await conclude(`Working on ${input}`, 'send_acknowledgement_message')
+    notify('session/update', { sessionId, update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Done, I think.' } } })
+    return reply({ stopReason: 'end_turn' })
   } else if (text.startsWith('/')) {
     answer = `ACP command: ${text}`
   } else if (!input) {

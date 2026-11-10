@@ -38,6 +38,8 @@ export interface RequestState {
   limited?: Map<string, number>
   // Whether Claude Code went on with API credit on this request.
   credit?: boolean
+  // Whether Savor already asked the agent for the conclusion it forgot.
+  nudged?: boolean
 }
 
 const requests = new Map<string, RequestState>()
@@ -356,6 +358,7 @@ function beginTurn(p: Project, tid: string) {
 function endTurn(p: Project, tid: string, result: { text?: string; error?: string; resetsAt?: number | null }, agent: AgentConfig) {
   const startedAt = busy.get(tid)
   if (!startedAt) return
+  let nudge = false
   if (result.error) {
     // A reset that is already well past can't explain the error: no second try then.
     const resumeAt = result.resetsAt && result.resetsAt + LIMIT_MARGIN_MS > Date.now() ? new Date(result.resetsAt + LIMIT_MARGIN_MS).toISOString() : null
@@ -378,18 +381,35 @@ function endTurn(p: Project, tid: string, result: { text?: string; error?: strin
     // acknowledged and ended its turn without a conclusion is waiting for background work, and so is one
     // whose own background work (subagents, shell commands) still runs: its text is no result yet.
     const r = request(p, tid)
-    if (!r.ack && !r.conclusion && !r.updates.size && result.text?.trim() && !runsBackground(tid)) {
+    const surface = () => {
       const msg = post(p, tid, { kind: 'conclusion', text: result.text, modelInfo: agent })
       r.conclusion = { key: '', id: msg.id }
       markConcluded(tid, msg.id)
       store.updateThread(p, tid, { unread: true })
-      notify(p, tid, 'result', result.text, 'Finished')
+      notify(p, tid, 'result', result.text!, 'Finished')
+    }
+    if (!r.ack && !r.conclusion && !r.updates.size && result.text?.trim() && !runsBackground(tid)) surface()
+    // Agents without background work of their own (ACP, Antigravity) that acknowledged and stopped without a
+    // conclusion, a process or CI to wait for forgot it: Savor asks once, and after that shows their text.
+    else if (
+      NUDGED.includes(agent.provider) &&
+      r.ack &&
+      !r.conclusion &&
+      !store.listProcs(p).some((pr) => pr.threadId === tid) &&
+      store.getThread(p, tid).ciWatch?.inputId !== r.inputId
+    ) {
+      if (!r.nudged) nudge = r.nudged = true
+      else if (result.text?.trim()) surface()
     }
   }
   const mid = turnConclusion.get(tid)
   // Work time counts from the input, including time spent waiting for background tasks.
   if (mid) store.updateMessage(p, tid, mid, { workTiming: { startedAt: request(p, tid).startedAt ?? startedAt, finishedAt: store.now() } })
   busy.delete(tid)
+  if (nudge) {
+    const input = store.readMessages(p, tid).find((m) => m.id === request(p, tid).inputId)
+    if (input) return continueRequest(p, store.getThread(p, tid), input, NUDGE)
+  }
   // An agent that waits for background work still owes its conclusion: the mark stays, so a restart
   // picks the request up again.
   if (result.error || request(p, tid).conclusion || !awaitsBackground(p, tid)) store.updateThread(p, tid, { workingSince: null })
@@ -398,6 +418,10 @@ function endTurn(p: Project, tid: string, result: { text?: string; error?: strin
   maybeClose(p, tid)
   pump(p, tid)
 }
+
+// The agents whose forgotten conclusion Savor asks for: none of them keeps working in the background after its turn.
+const NUDGED: Provider[] = ['opencode', 'grok', 'antigravity']
+const NUDGE = `You acknowledged the input below and ended your turn without send_conclusion_message, so the user has not seen a result yet. If the work is done, send the conclusion now with what you did, and any questions. If it is not done, finish it first. This is still the same request: do not acknowledge it again.\n\n`
 
 // ---- prompts ----
 

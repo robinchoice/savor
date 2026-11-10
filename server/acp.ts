@@ -36,9 +36,10 @@ export function todoSteps(rawInput: unknown): PlanStep[] | null {
   return todos.map((t: any) => ({ text: t.content, status: t.status === 'in_progress' ? 'active' : t.status === 'completed' ? 'done' : 'pending' }))
 }
 
-// ACP has no system prompt the protocol could ride on: the full protocol goes in front of the first prompt of a
-// session and again after a compaction, which drops it from the history, and every other prompt carries this
-// one-line reminder of it, so conclusions with questions and suggestions survive long sessions.
+// ACP has no system prompt the protocol could ride on. OpenCode takes it as an instructions file in its system
+// prompt (as it reads AGENTS.md), so it holds in every request; for Grok Build the full protocol goes in front of the
+// first prompt of a session and again after a compaction, which drops it from the history. Every other prompt
+// carries this one-line reminder of it, so conclusions with questions and suggestions survive long sessions.
 const REMINDER =
   'Savor reminder: the user sees only the savor MCP tools — acknowledge, then end the turn with send_conclusion_message (summary, text, questions, suggestions), and keep your todo list current.\n\n'
 
@@ -53,7 +54,8 @@ const AUTO = {
   },
 }
 
-export function acpCommand(provider: Provider, projectId: string, threadId: string, mode = '') {
+// `instructions` is a file OpenCode adds to its system prompt.
+export function acpCommand(provider: Provider, projectId: string, threadId: string, mode = '', instructions?: string) {
   const savor = { url: mcpUrl(projectId, threadId), headers: { Authorization: `Bearer ${store.state().mcpToken}` } }
   if (provider === 'opencode') {
     // Full access is OpenCode's build agent with every permission allowed, files outside the project included.
@@ -63,7 +65,7 @@ export function acpCommand(provider: Provider, projectId: string, threadId: stri
       bin: BIN.opencode,
       // OpenCode 1.x logs an error of the model's API without answering the prompt; Savor reads it from the log (stuck).
       args: ['acp', '--print-logs', '--log-level', 'ERROR'],
-      env: { OPENCODE_CONFIG_CONTENT: JSON.stringify({ autoupdate: false, share: 'disabled', ...permission, mcp: { savor: { type: 'remote', ...savor, enabled: true } } }) },
+      env: { OPENCODE_CONFIG_CONTENT: JSON.stringify({ autoupdate: false, share: 'disabled', ...(instructions && { instructions: [instructions] }), ...permission, mcp: { savor: { type: 'remote', ...savor, enabled: true } } }) },
     }
   }
   // Grok Build takes only plan as a mode over ACP; approving everything is a flag of the agent process.
@@ -87,12 +89,20 @@ export class AcpSession implements Session {
   private reviews = new Map<string, () => void>()
   // Fails the running prompt when OpenCode logs that the model's API stopped it at a usage limit.
   private stuck: (error: string) => void = () => {}
+  // OpenCode's file with Savor's protocol for its system prompt, while its process runs.
+  private readonly instructions: string | undefined
 
   constructor(private host: Host, private thread: Thread) {
     this.reviewer = thread.agent.provider === 'opencode' && thread.agent.permissionMode === 'auto'
     const { p } = host
     this.config = configKey(thread.agent)
-    const cmd = acpCommand(thread.agent.provider, p.id, thread.id, thread.agent.permissionMode)
+    if (thread.agent.provider === 'opencode') {
+      // One per process: the next process of the conversation may start before this one has ended.
+      this.instructions = path.join(store.HOME, 'prompts', `${thread.id}-${Date.now()}.md`)
+      fs.mkdirSync(path.dirname(this.instructions), { recursive: true })
+      fs.writeFileSync(this.instructions, systemPrompt(p, thread))
+    }
+    const cmd = acpCommand(thread.agent.provider, p.id, thread.id, thread.agent.permissionMode, this.instructions)
     const child = spawn(...command(cmd.bin, cmd.args), { cwd: host.cwd, env: { ...process.env, ...cmd.env }, stdio: ['pipe', 'pipe', 'pipe'] })
     this.rpc = new Rpc(child, { notification: (m, params) => this.onNotification(m, params), request: (m, params) => this.onRequest(m, params) })
     if (thread.agent.provider === 'opencode')
@@ -100,7 +110,10 @@ export class AcpSession implements Session {
         const error = stuckOn(l, this.sessionId)
         if (error) this.stuck(error)
       })
-    this.rpc.exited.then(({ code, signal }) => host.closed(this.stopping || signal === 'SIGTERM' ? STOPPED : `${cmd.bin} exited with ${code}: ${this.rpc.stderrTail}`))
+    this.rpc.exited.then(({ code, signal }) => {
+      if (this.instructions) fs.rmSync(this.instructions, { force: true })
+      host.closed(this.stopping || signal === 'SIGTERM' ? STOPPED : `${cmd.bin} exited with ${code}: ${this.rpc.stderrTail}`)
+    })
     this.ready = this.init()
   }
 
@@ -146,10 +159,10 @@ export class AcpSession implements Session {
     const images64 = images.map((file) => ({ type: 'image', data: fs.readFileSync(file).toString('base64'), mimeType: MIME[path.extname(file).slice(1).toLowerCase()] ?? 'image/png' }))
     this.ready
       .then(() => {
-        // ACP has no system prompt: the protocol goes in front of the first prompt of a session, and again
-        // after a compaction (`this.fresh` is set anew there). Later a slash command goes alone, since the
-        // agent runs one only at the very start of a prompt; every other prompt carries the reminder.
-        const text = this.fresh
+        // Without a system prompt (Grok Build) the protocol goes in front of the first prompt of a session, and
+        // again after a compaction (`this.fresh` is set anew there). Otherwise a slash command goes alone, since
+        // the agent runs one only at the very start of a prompt; every other prompt carries the reminder.
+        const text = this.fresh && !this.instructions
           ? `${systemPrompt(this.host.p, store.getThread(this.host.p, this.host.tid))}\n\n${context}${input}`
           : input.startsWith('/')
             ? input

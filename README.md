@@ -235,7 +235,7 @@ Savor doesn't need a model from a big provider. OpenCode, which Savor drives ove
 }
 ```
 
-`opencode models` then lists them, and Savor's agent picker offers them under OpenCode, for conversations, workflows and presets. Savor's message protocol is plain MCP tool calls, so a model has to call tools reliably; small models forget the acknowledgement or the conclusion more often. When a model sends no message at all, Savor shows its final text as the result.
+`opencode models` then lists them, and Savor's agent picker offers them under OpenCode, for conversations, workflows and presets. Savor's message protocol is plain MCP tool calls, so a model has to call tools reliably; small models forget the acknowledgement or the conclusion more often. OpenCode gets Savor's protocol in its system prompt, as an instructions file, so it holds in every request. An OpenCode, Grok Build or Antigravity turn that acknowledged and stopped without a conclusion, with no process or CI to wait for, gets asked for it once; when a model sends no message at all, or still none after that question, Savor shows its final text as the result.
 
 ### Open standards
 

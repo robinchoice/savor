@@ -928,7 +928,8 @@ test('OpenCode runs through the Agent Client Protocol', async () => {
   await until(async () => (await api('GET', t)).body.messages.some((m) => m.text === 'ACP command: /review now'))
   // OpenCode's todowrite tool calls become the request's plan; its ACP adapter never sends plan updates.
   const prompts = () => fs.readFileSync(AGENT_LOG, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((r) => r.agent === 'opencode' && r.prompt)
-  assert.ok(prompts().some((r) => r.prompt.input === 'hello acp' && r.prompt.protocol))
+  // OpenCode gets the protocol as an instructions file for its system prompt; its prompts carry the reminder.
+  assert.ok(prompts().some((r) => r.prompt.input === 'hello acp' && r.prompt.reminder && !r.prompt.protocol))
   assert.ok(prompts().some((r) => r.prompt.input === 'approve: this' && r.prompt.reminder && !r.prompt.protocol))
   await until(async () => !(await api('GET', t)).body.busy)
   await api('POST', `${t}/messages`, { text: 'todo: fix things' })
@@ -940,14 +941,22 @@ test('OpenCode runs through the Agent Client Protocol', async () => {
     { text: 'Test it', status: 'pending' },
   ])
   assert.ok(prompts().some((r) => r.prompt.input === 'todo: fix things' && r.prompt.reminder && !r.prompt.protocol))
-  // The compaction dropped the protocol from the history: the next prompt carries it in full again.
+  // The protocol in the system prompt outlasts a compaction: the next prompt still carries only the reminder.
   await until(async () => !(await api('GET', t)).body.busy)
   await api('POST', `${t}/messages`, { text: 'hello again' })
   await until(async () => (await api('GET', t)).body.messages.some((m) => m.text === 'ACP echo: hello again'))
-  assert.ok(prompts().some((r) => r.prompt.input === 'hello again' && r.prompt.protocol && !r.prompt.reminder))
+  assert.ok(prompts().some((r) => r.prompt.input === 'hello again' && r.prompt.reminder && !r.prompt.protocol))
   // The MCP token travelled inside the protocol, not on the command line.
   const run = fs.readFileSync(AGENT_LOG, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).find((r) => r.agent === 'opencode' && r.argv)
   assert.deepEqual(run.argv.slice(2), ['acp', '--print-logs', '--log-level', 'ERROR'])
+  // The conversation's process got the protocol file; short processes that only ask the agent something don't.
+  assert.ok(fs.readFileSync(AGENT_LOG, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).some((r) => r.agent === 'opencode' && r.instructions?.[0] === true))
+  // An agent that acknowledged and stopped without a conclusion is asked for it once.
+  await until(async () => !(await api('GET', t)).body.busy)
+  await api('POST', `${t}/messages`, { text: 'forget: the result' })
+  await until(async () => (await api('GET', t)).body.messages.some((m) => m.kind === 'conclusion' && m.text === 'ACP remembered: forget: the result'))
+  const forgot = (await api('GET', t)).body.messages
+  assert.equal(forgot.filter((m) => m.kind === 'ack' && m.text === 'Working on forget: the result').length, 1)
   // At Grok Build's usage limit the conversation waits for the end of the usage period.
   await until(async () => !(await api('GET', t)).body.busy)
   await api('POST', `${t}/messages`, { text: 'limit: weekly' })
