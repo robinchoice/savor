@@ -1166,7 +1166,7 @@ details.box[open] > summary .chev { transform: rotate(180deg); }
 }
 .mode-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
 .mode-card { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 10px 12px; border-radius: 10px; border: 1.5px solid var(--line); background: var(--card); text-align: left; font-size: 13px; }
-.mode-card small { color: var(--muted); font-size: 12px; }
+.mode-card small { color: var(--muted); font-size: 12px; overflow-wrap: break-word; hyphens: auto; }
 .mode-card:hover { border-color: var(--line-strong); }
 .box .mode-card { background: var(--panel); }
 .mode-card.selected { border-color: var(--link); background: var(--raised); }
@@ -1183,14 +1183,29 @@ details.box[open] > summary .chev { transform: rotate(180deg); }
 .setup-eyebrow { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
 .setup-list { display: flex; flex-direction: column; gap: 6px; }
 .setup-list .setting { padding: 10px 12px; border-radius: 10px; background: var(--card); border: 1.5px solid transparent; }
-.setup-list .setting.pick.selected { border-color: var(--link); background: var(--raised); }
+.setup-list .setting.agent-pick.selected { border-color: var(--link); background: var(--raised); }
 .install-help { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; }
 .copy-line { display: flex; align-items: center; gap: 6px; padding: 2px 2px 2px 10px; border-radius: 8px; background: var(--raised); }
+.signin { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 2px 12px 10px; }
+.signin .row { align-self: stretch; display: flex; gap: 6px; }
+.signin .row .grow { flex: 1; min-width: 0; }
+.signin .button.primary { text-decoration: none; }
+.signin-code { align-self: stretch; text-align: center; font: 600 24px var(--mono, ui-monospace, monospace); letter-spacing: 0.12em; padding: 8px; border-radius: 8px; background: var(--raised); user-select: all; }
+.signin small { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.setup-list .signin { margin-top: -6px; }
+.clone-repo { display: flex; flex-direction: column; gap: 8px; }
+.repo-list { display: flex; flex-direction: column; gap: 4px; max-height: 320px; overflow-y: auto; }
+.repo-list .repo { display: flex; align-items: center; gap: 10px; text-align: left; padding: 8px 10px; border-radius: 8px; background: var(--card); border: 0; color: inherit; }
+.repo-list .repo span { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.repo-list .repo small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.setup-dialog h3 { font-size: 14px; margin: 8px 0 0; }
 .copy-line code { flex: 1; overflow-x: auto; white-space: nowrap; background: none; }
 .setup-project { display: flex; flex-direction: column; gap: 8px; }
 .setup-project form { display: flex; flex-direction: column; gap: 8px; }
 .setup-dialog .setting select { width: auto; max-width: 60%; }
 .setup-summary { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; }
+.setup-summary .setting > span:first-child { flex: none; }
+.setup-summary .setting b { flex: 1; min-width: 0; text-align: right; }
 
 @media (max-width: 860px) {
   .topbar-right .wide-only, .account-dialog .wide-only { display: none; }

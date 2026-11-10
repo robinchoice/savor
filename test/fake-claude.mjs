@@ -51,9 +51,21 @@ if (args[0] === '--version') {
   console.log('9.9.9 (Fake Claude)')
   process.exit(0)
 }
+// With $FAKE_CLAUDE_LOGIN set, it is signed in once that file exists, which `auth login` writes when it is
+// given the code "good#code" on stdin, like the code from the end of Claude's sign-in page.
+const login = process.env.FAKE_CLAUDE_LOGIN
 if (args[0] === 'auth' && args[1] === 'status') {
-  console.log(JSON.stringify({ loggedIn: true, email: 'fake@claude.test' }))
+  console.log(JSON.stringify(!login || fs.existsSync(login) ? { loggedIn: true, email: 'fake@claude.test' } : { loggedIn: false }))
   process.exit(0)
+}
+if (args[0] === 'auth' && args[1] === 'login') {
+  console.log("Opening browser to sign in…\nIf the browser didn't open, visit: https://claude.test/oauth/authorize?code=true&state=fake")
+  process.stdout.write('Paste code here if prompted > ')
+  const code = await new Promise((resolve) => readline.createInterface({ input: process.stdin }).once('line', resolve))
+  const good = code.trim() === 'good#code'
+  if (good) fs.writeFileSync(login, 'signed in')
+  process.stdout.write(good ? 'Login successful.\n' : "Login failed: That code wasn't accepted.\n", () => process.exit(good ? 0 : 1))
+  await new Promise(() => {})
 }
 // A side question: one answer as JSON, about the session it was resumed from.
 if (args.includes('--no-session-persistence')) {

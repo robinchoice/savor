@@ -426,7 +426,7 @@ test('a setup link waits for its instance, lets the first device in as the owner
   await phone.fill('input', 'Owner phone')
   await phone.click('button:has-text("Open Savor")')
   // Through the tunnel the owner counts as this computer, which alone gets the first-start setup.
-  await phone.waitForSelector('text=Welcome to Savor')
+  await phone.waitForSelector('text=Welcome to your Savor')
   await phone.close()
   const state = () => JSON.parse(fs.readFileSync(path.join(home, 'state.json'), 'utf8'))
   assert.deepEqual(state().devices.map((d) => [d.name, d.owner]), [['Owner phone', true]])
@@ -463,6 +463,70 @@ test('a device paired with the setup code has the rights of this computer, also 
   await stopCloud(cloud)
   cloud = await startCloud(home, {}, cloud.base)
   assert.equal((await (await asOwner('GET', '/me')).json()).origin, 'local')
+})
+
+test('the owner of a cloud instance signs Claude Code and GitHub in from the setup and starts with a repository', async () => {
+  const home = path.join(TMP, 'cloud-signin')
+  const { code } = provision(home)
+  const file = path.join(home, 'state.json')
+  fs.writeFileSync(file, JSON.stringify({ ...JSON.parse(fs.readFileSync(file, 'utf8')), projectsDir: path.join(home, 'projects') }))
+  const missing = path.join(home, 'missing')
+  const cloud = await startCloud(home, {
+    FAKE_CLAUDE_LOGIN: path.join(home, 'claude-login'),
+    SAVOR_GH_BIN: path.join(ROOT, 'test/fake-gh.mjs'),
+    FAKE_GH_LOGIN: path.join(home, 'gh-login'),
+    ...Object.fromEntries(['CODEX', 'OPENCODE', 'GROK', 'ANTIGRAVITY'].map((a) => [`SAVOR_${a}_BIN`, missing])),
+  })
+  const [name, value] = (await pairLan(cloud.base, code)).headers.get('set-cookie').split(';')[0].split('=')
+  const context = await browser.newContext({ locale: 'en-US', viewport: { width: 390, height: 844 } })
+  await context.addCookies([{ name, value, url: cloud.base }])
+  const phone = await context.newPage()
+  await phone.goto(cloud.base)
+
+  // Only installed agents show; nothing goes on before one is signed in.
+  await phone.waitForSelector('text=Welcome to your Savor')
+  await phone.waitForSelector('button:has-text("Sign in with Claude")')
+  await phone.waitForSelector('button:has-text("Connect GitHub")')
+  assert.deepEqual(await phone.locator('.setup-list .agent-status b').allTextContents(), ['Claude Code', 'GitHub'])
+  assert.ok(await phone.locator('.dialog-foot button:has-text("Continue")').isDisabled())
+
+  // Claude Code: its page opens on the phone, and the code from its end goes back to the server.
+  await phone.click('button:has-text("Sign in with Claude")')
+  assert.match(await phone.getAttribute('a:has-text("Open Claude\'s sign-in page")', 'href'), /^https:\/\/claude\.test\/oauth\/authorize/)
+  await phone.fill('input[placeholder="Paste the code"]', 'wrong')
+  await phone.click('button:has-text("Done")')
+  await phone.waitForSelector("text=Login failed: That code wasn't accepted.")
+  await phone.click('button:has-text("Sign in with Claude")')
+  await phone.fill('input[placeholder="Paste the code"]', 'good#code')
+  await phone.click('button:has-text("Done")')
+  await phone.waitForSelector('.agent-status:has-text("Claude Code") >> text=Signed in')
+
+  // GitHub: a one-time code to enter on GitHub's page, then Savor notices the sign-in on its own.
+  await phone.click('button:has-text("Connect GitHub")')
+  await phone.waitForSelector('.signin-code:has-text("FA4E-C0DE")')
+  assert.equal(await phone.getAttribute('a:has-text("Copy code and open the page")', 'href'), 'https://github.com/login/device')
+  await phone.waitForSelector('text=@octo')
+
+  // The agent and how much it may do are one step, then the first project comes from GitHub.
+  await phone.click('.dialog-foot button:has-text("Continue")')
+  await phone.waitForSelector('text=Which agent should start?')
+  await phone.waitForSelector('.mode-card.selected:has-text("Auto")')
+  await phone.click('.dialog-foot button:has-text("Continue")')
+  await phone.waitForSelector('text=Where do you want to start?')
+  assert.equal(await phone.locator('text=Open any folder').count(), 0)
+  await phone.click('button:has-text("Get a repository from GitHub")')
+  await phone.waitForSelector('.repo-list .repo')
+  assert.deepEqual(await phone.locator('.repo-list .repo b').allTextContents(), ['octo/shop', 'octo/old-site'])
+  await phone.fill('input[placeholder="Search your repositories"]', 'shop')
+  await phone.click('.repo:has-text("octo/shop")')
+  await phone.waitForURL(/#\/p\//)
+  await phone.waitForSelector('.setup-dialog', { state: 'detached' })
+  const state = JSON.parse(fs.readFileSync(file, 'utf8'))
+  assert.deepEqual(state.projects.map((p) => p.path), [path.join(home, 'projects', 'shop')])
+  assert.equal(state.agent.provider, 'claude')
+  assert.ok(fs.existsSync(path.join(home, 'projects', 'shop', 'README.md')))
+  await context.close()
+  await stopCloud(cloud)
 })
 
 test('an expired setup code lets no device in and its link says so; without SAVOR_SETUP no code works', async () => {

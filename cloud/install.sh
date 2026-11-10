@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Sets up a Savor Cloud instance on a fresh Ubuntu 24.04 server: Node, git, gh, Chromium for the
-# preview, the agents' CLIs (unmodified; the customer signs in to them in Savor's terminal) and Savor
+# preview, the agents' CLIs (unmodified; the customer signs in to them in Savor's setup) and Savor
 # as a service on 127.0.0.1 that connects out to the relay. Nothing listens on the internet but SSH.
 #
 #   hcloud server create --image ubuntu-24.04 --user-data-from-file cloud/install.sh ...

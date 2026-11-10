@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'preact/hooks'
 import { ArrowDown, ArrowUp, ArrowUpRight, Bot, Check, ChevronDown, ChevronRight, Laptop, MessageSquare, Mic, Plus, SlidersHorizontal, Smartphone, X } from 'lucide-preact'
-import { api, cap, desktop, go, poolOf, PROVIDER_NAMES, useAgents, useApi, type AgentConfig, type Fallback, type Me } from './api'
+import { api, cap, desktop, fetchAgents, go, poolOf, PROVIDER_NAMES, useAgents, useApi, type AgentConfig, type Fallback, type Me } from './api'
 import { native } from './native'
 import { AgentButton, AgentMenu } from './Composer'
 import { AgentStatusRow, ModeCards } from './Setup'
+import { GitHubRow, useGitHub } from './SignIn'
 import { useNotificationToggle } from './notify'
 import { PleasanceFooter } from './PleasanceFooter'
 import { setPrefs, usePrefs, type Density, type Prefs, type Theme } from './prefs'
@@ -206,8 +207,10 @@ function MyDevices({ me, projects }: { me: Me; projects: number }) {
 }
 
 // Which agent CLIs are installed on this computer and signed in, and the agent new projects start with.
-function Agents() {
-  const agents = useAgents()
+function Agents({ cloud }: { cloud: boolean }) {
+  const [again, setAgain] = useState(0)
+  const agents = useAgents(again)
+  const [gh, reloadGh] = useGitHub(cloud)
   const [agent, reload] = useApi<AgentConfig>('/agent', () => false)
   const [menu, setMenu] = useState(false)
   const [error, setError] = useState('')
@@ -247,9 +250,11 @@ function Agents() {
         )}
         {menu && agent && info && <AgentMenu agent={agent} agents={agents ?? []} setAgent={setAgent} close={() => setMenu(false)} />}
         <FallbackList />
+        {/* Signed out agents sign in here too, like in the setup; on a Savor Cloud server, so does GitHub. */}
         {agents?.map((a) => (
-          <AgentStatusRow key={a.id} agent={a} />
+          <AgentStatusRow key={a.id} agent={a} onSignedIn={() => void fetchAgents(true).then(() => setAgain(again + 1))} />
         ))}
+        {cloud && <GitHubRow gh={gh} onDone={reloadGh} />}
       </div>
     </details>
   )
@@ -551,7 +556,7 @@ export function AccountDialog({ me, projects, toggleAwake, open, onClose }: { me
           )}
           {!local && loadProfile() && <Computers />}
           {local && <MyDevices me={me} projects={projects} />}
-          {local && <Agents />}
+          {local && <Agents cloud={!!me.cloud} />}
           {local && <VoiceInput />}
           <details class="box">
             <summary>

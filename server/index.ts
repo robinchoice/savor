@@ -15,6 +15,7 @@ import * as devices from './devices.js'
 import * as files from './files.js'
 import * as awake from './awake.js'
 import * as terminal from './terminal.js'
+import * as signin from './signin.js'
 import { closeDevice, pairingLink, relayStatus, startRelay } from './relay-client.js'
 import { startUsagePing, usageAvailable } from './usage.js'
 import { newNonce, securityHeaders, withNonce } from '../shared/headers.js'
@@ -104,6 +105,8 @@ route('GET', '/me', (_, __, ctx) => ({
   version: VERSION,
   system: SYSTEM,
   projectsDir: store.projectsDir(),
+  // A Savor Cloud instance (cloud/install.sh): a server of its own, reached only from devices.
+  cloud: !!process.env.SAVOR_SETUP,
   // First start on this computer: no projects yet and no default agent chosen, so the UI offers the setup.
   setup: ctx.auth.origin === 'local' && !store.state().agent && !store.state().projects.length,
 }))
@@ -174,6 +177,21 @@ route('GET', '/agents', async (_, __, ctx) => {
   emit({ type: 'health' })
   return list
 })
+// Signing the agents and gh in without a terminal, see signin.ts.
+const toolOf = (params: Params) => {
+  if (!signin.TOOLS.includes(params.tool as signin.Tool)) throw new BadRequest('Savor cannot sign that in.')
+  return params.tool as signin.Tool
+}
+route('GET', '/signin/:tool', (params, _, ctx) => (localOnly(ctx), signin.status(toolOf(params))))
+route('POST', '/signin/:tool', (params, _, ctx) => (localOnly(ctx), signin.start(toolOf(params))))
+route('POST', '/signin/:tool/code', (params, b, ctx) => {
+  localOnly(ctx)
+  if (typeof b.code !== 'string' || !b.code.trim()) throw new BadRequest('Paste the code from the sign-in page.')
+  return signin.submit(toolOf(params), b.code)
+})
+route('DELETE', '/signin/:tool', (params, _, ctx) => (localOnly(ctx), signin.cancel(toolOf(params)), signin.status(toolOf(params))))
+route('GET', '/github', (_, __, ctx) => (localOnly(ctx), signin.github()))
+route('GET', '/github/repos', (_, __, ctx) => (localOnly(ctx), signin.repos()))
 route('GET', '/usage', () => listUsage())
 route('GET', '/ci', () => ci.liveRuns())
 route('POST', '/ci/dismiss', (_, b) => (ci.dismiss(b.ids.map(Number)), { ok: true }))
@@ -334,6 +352,20 @@ route('POST', '/projects', (_, b, ctx) => {
     p = store.updateProject(p.id, { type: b.type })
   }
   return p
+})
+// A repository of the GitHub account gh is signed in to, cloned into the projects folder.
+route('POST', '/projects/clone', async (_, b, ctx) => {
+  localOnly(ctx)
+  const repo = typeof b.repo === 'string' ? b.repo : ''
+  // Owner and name as GitHub has them; neither may pass for an option of gh or a step up in the path.
+  if (!/^\w[\w.-]*\/\w[\w.-]*$/.test(repo)) throw new BadRequest('Choose a repository.')
+  const root = store.expand(store.projectsDir())
+  const dir = path.join(root, repo.split('/')[1])
+  if (fs.lstatSync(dir, { throwIfNoEntry: false })) throw new BadRequest(`The folder ${dir} exists already.`)
+  fs.mkdirSync(root, { recursive: true })
+  // A clone that failed halfway would block the next try.
+  await signin.clone(repo, dir).catch((err) => (fs.rmSync(dir, { recursive: true, force: true }), Promise.reject(err)))
+  return git.openProject(dir, undefined, false)
 })
 route('PUT', '/projects/order', (_, b) => {
   store.fixProjects((b.ids ?? []).map(String))

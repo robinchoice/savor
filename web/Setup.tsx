@@ -1,5 +1,5 @@
 import { useState } from 'preact/hooks'
-import { Archive, Check, Code, Copy, Folder, GraduationCap, Plus, RefreshCw } from 'lucide-preact'
+import { Archive, Check, Code, Copy, Folder, FolderGit2, GraduationCap, Plus, RefreshCw } from 'lucide-preact'
 import { api, describeModel, desktop, effortLabel, fetchAgents, go, modelName, useAgents, type AgentConfig, type Me, type Project, type ProviderInfo } from './api'
 import { ProviderIcon } from './Conversations'
 import { AntigravityWarning, effortsOf } from './Composer'
@@ -8,6 +8,7 @@ import { setPrefs, usePrefs } from './prefs'
 import { STANDARD } from './Shortcuts'
 import { CODE, TEMPLATES } from './templates'
 import { lang, t } from './i18n'
+import { canSignIn, CloneRepo, GitHubRow, SignInFlow, useGitHub } from './SignIn'
 import { FORMATS, STYLES } from './Workspace'
 
 // The mode a provider works best in for most people; the others still show.
@@ -17,8 +18,9 @@ const HIDDEN_MODES = ['plan', 'dontAsk']
 
 export const agentStatus = (a: ProviderInfo) => (!a.installed ? t('Not installed') : a.signedIn ? t('Signed in') : a.signedIn === false ? t('Signed out') : t('Installed'))
 
-// One agent CLI on this computer, with what to run when it is not signed in.
-export function AgentStatusRow({ agent: a }: { agent: ProviderInfo }) {
+// One agent CLI on this computer, with what to run when it is not signed in. With onSignedIn, Savor
+// can sign Claude Code and Codex in itself.
+export function AgentStatusRow({ agent: a, onSignedIn }: { agent: ProviderInfo; onSignedIn?: () => void }) {
   return (
     <>
       <div class="setting agent-status">
@@ -26,7 +28,7 @@ export function AgentStatusRow({ agent: a }: { agent: ProviderInfo }) {
         <span>
           <b>{a.name}</b>
           <small class="muted">
-            {a.installed && a.signedIn === false ? (
+            {a.installed && a.signedIn === false && !(onSignedIn && canSignIn(a.id)) ? (
               <>
                 {t('Sign in:')} <code>{a.signIn}</code>
               </>
@@ -37,6 +39,7 @@ export function AgentStatusRow({ agent: a }: { agent: ProviderInfo }) {
         </span>
         <span class={a.signedIn ? 'ok' : a.signedIn === false ? 'warn' : 'muted'}>{agentStatus(a)}</span>
       </div>
+      {onSignedIn && a.installed && a.signedIn === false && canSignIn(a.id) && <SignInFlow tool={a.id} onDone={onSignedIn} />}
       <AntigravityWarning agent={a} />
     </>
   )
@@ -131,7 +134,7 @@ const AREAS: [string, string][] = [
 
 // Start a new project or open a folder: in the Projects menu and in the last step of the setup.
 export function AddProject({ me, setMe, onAdded }: { me: Me; setMe: (m: Me) => void; onAdded: () => void }) {
-  const [step, setStep] = useState<'new' | 'details' | 'open' | null>(null)
+  const [step, setStep] = useState<'new' | 'details' | 'open' | 'clone' | null>(null)
   const [template, setTemplate] = useState(CODE)
   const [academic, setAcademic] = useState({ author: '', question: '', kind: 'term-paper', language: lang, style: 'apa', format: 'docx', length: '', deadline: '' })
   const [kontor, setKontor] = useState({ covers: 'household', areas: ['finance', 'contracts', 'insurance'], briefing: true })
@@ -218,7 +221,7 @@ export function AddProject({ me, setMe, onAdded }: { me: Me; setMe: (m: Me) => v
               <b class="mono">
                 {dir}/{folder || '…'}
               </b>{' '}
-              {me.origin === 'local' && <>{' '}·{' '}
+              {me.origin === 'local' && !me.cloud && <>{' '}·{' '}
                 <button type="button" class="link" onClick={changeDir}>
                   {t('Change folder')}
                 </button>
@@ -340,6 +343,8 @@ export function AddProject({ me, setMe, onAdded }: { me: Me; setMe: (m: Me) => v
             <button class="primary">{t('Create project')}</button>
           </div>
         </form>
+      ) : step === 'clone' ? (
+        <CloneRepo onAdded={onAdded} onCancel={() => setStep(null)} />
       ) : step === 'open' ? (
         <form class="menu-form" onSubmit={(e) => (e.preventDefault(), add({ path }))}>
           <input autoFocus placeholder="/path/to/project" value={path} onInput={(e) => setPath(e.currentTarget.value)} />
@@ -352,9 +357,20 @@ export function AddProject({ me, setMe, onAdded }: { me: Me; setMe: (m: Me) => v
           <button class="ghost wide" onClick={() => setStep('new')}>
             <Plus size={16} /> {t('Start new project')}
           </button>
-          {me.origin === 'local' && <button class="ghost wide" onClick={openFolder}>
-            <Folder size={16} /> {t('Open any folder')}
-          </button>}
+          {/* A Savor Cloud server has no folders of its own yet, but GitHub has the customer's code. */}
+          {me.cloud ? (
+            me.origin === 'local' && (
+              <button class="ghost wide" onClick={() => setStep('clone')}>
+                <FolderGit2 size={16} /> {t('Get a repository from GitHub')}
+              </button>
+            )
+          ) : (
+            me.origin === 'local' && (
+              <button class="ghost wide" onClick={openFolder}>
+                <Folder size={16} /> {t('Open any folder')}
+              </button>
+            )
+          )}
         </>
       )}
       {error && <div class="error-text">{error}</div>}
@@ -362,7 +378,12 @@ export function AddProject({ me, setMe, onAdded }: { me: Me; setMe: (m: Me) => v
   )
 }
 
-const STEPS = [t('Agents'), t('Default agent'), t('Permissions'), t('Shortcuts'), t('First project')]
+type Step = 'agents' | 'agent' | 'permissions' | 'shortcuts' | 'project'
+const STEPS: Record<Step, string> = { agents: t('Agents'), agent: t('Default agent'), permissions: t('Permissions'), shortcuts: t('Shortcuts'), project: t('First project') }
+// A Savor Cloud server is set up from a phone: its agents are signed in with buttons, the agent and how
+// much it may do are one step, and keyboard shortcuts wait for the settings.
+const DESKTOP: Step[] = ['agents', 'agent', 'permissions', 'shortcuts', 'project']
+const CLOUD: Step[] = ['agents', 'agent', 'project']
 
 // First start on this computer: finds the agents, then asks which one new projects start with, how much
 // it may do alone, whether to start with keyboard shortcuts, and where to begin. Skipping keeps Savor's
@@ -371,14 +392,21 @@ export function SetupWizard({ me, setMe }: { me: Me; setMe: (m: Me) => void }) {
   const found = useAgents()
   const [rechecked, setRechecked] = useState<ProviderInfo[]>()
   const agents = rechecked ?? found
+  const recheck = async () => setRechecked(await fetchAgents(true))
+  const [gh, reloadGh] = useGitHub(!!me.cloud)
+  const steps = me.cloud ? CLOUD : DESKTOP
   const [step, setStep] = useState(0)
+  const at = steps[step]
+  const last = step === steps.length - 1
   const [draft, setDraft] = useState<AgentConfig | null>(null)
   const [error, setError] = useState('')
   const installed = agents?.filter((a) => a.installed) ?? []
   // Until something is picked: the first signed-in agent, in its recommended mode.
-  const first = installed.find((a) => a.signedIn) ?? installed[0] ?? agents?.[0]
+  const first = installed.find((a) => a.signedIn) ?? (me.cloud ? undefined : (installed[0] ?? agents?.[0]))
   const fresh = (a: ProviderInfo): AgentConfig => ({ provider: a.id, model: '', reasoning: a.defaultEffort, fast: false, ultracode: false, permissionMode: RECOMMENDED[a.id] ?? a.defaultMode })
-  const agent = draft ?? (first && fresh(first))
+  // In the cloud only a signed-in agent can be picked, also after going back to sign one out.
+  const picked = draft && (!me.cloud || installed.some((a) => a.id === draft.provider && a.signedIn)) ? draft : null
+  const agent = picked ?? (first && fresh(first))
   const info = agents?.find((a) => a.id === agent?.provider)
   const set = (patch: Partial<AgentConfig>) => agent && setDraft({ ...agent, ...patch })
   const save = (body: Partial<AgentConfig>) =>
@@ -387,10 +415,14 @@ export function SetupWizard({ me, setMe }: { me: Me; setMe: (m: Me) => void }) {
       (e) => (setError((e as Error).message), false),
     )
   const skip = async () => (await save({})) && setMe({ ...me, setup: false })
+  // The agent is saved with the step that asks how much it may do.
   const next = async () => {
-    if (step === 2 && !(agent && (await save(agent)))) return
+    if ((at === 'permissions' || (me.cloud && at === 'agent')) && !(agent && (await save(agent)))) return
     setStep(step + 1)
   }
+  // In the cloud only installed agents show, and one has to be signed in to go on.
+  const listed = me.cloud ? installed : [...installed, ...(agents ?? []).filter((a) => !a.installed)]
+  const ready = me.cloud ? installed.some((a) => a.signedIn) : installed.length > 0
   const efforts = agent ? effortsOf(agent, info) : []
   const suggested = Object.keys(usePrefs().shortcuts).length > 0
 
@@ -399,35 +431,40 @@ export function SetupWizard({ me, setMe }: { me: Me; setMe: (m: Me) => void }) {
       <div class="dialog setup-dialog">
         <div class="dialog-body">
           <div class="setup-steps">
-            {STEPS.map((s, i) => (
+            {steps.map((s, i) => (
               <i key={s} class={i <= step ? 'on' : ''} />
             ))}
           </div>
           <div class="setup-eyebrow">
-            {t('Step {n} of {total}', { n: step + 1, total: STEPS.length })} · {STEPS[step]}
+            {t('Step {n} of {total}', { n: step + 1, total: steps.length })} · {STEPS[at]}
           </div>
-          {step === 0 && (
+          {at === 'agents' && (
             <>
-              <h2>{t('Welcome to Savor')}</h2>
-              <p class="muted">{t('Savor runs the coding agents already on this computer. This is what it found:')}</p>
+              <h2>{me.cloud ? t('Welcome to your Savor') : t('Welcome to Savor')}</h2>
+              <p class="muted">
+                {me.cloud
+                  ? t('Sign in to at least one agent with your plan. Savor runs on your own server, and the sign-in stays there.')
+                  : t('Savor runs the coding agents already on this computer. This is what it found:')}
+              </p>
               {!agents && <p class="muted">{t('Looking for agents…')}</p>}
               <div class="setup-list">
-                {[...installed, ...(agents ?? []).filter((a) => !a.installed)].map((a) => (
-                  <AgentStatusRow key={a.id} agent={a} />
+                {listed.map((a) => (
+                  <AgentStatusRow key={a.id} agent={a} onSignedIn={recheck} />
                 ))}
+                {me.cloud && <GitHubRow gh={gh} onDone={reloadGh} />}
               </div>
-              {agents && !installed.some((a) => a.signedIn) && (
-                <InstallHelp system={me.system} claude={agents.find((a) => a.id === 'claude')} onCheck={async () => setRechecked(await fetchAgents(true))} />
+              {agents && !me.cloud && !installed.some((a) => a.signedIn) && (
+                <InstallHelp system={me.system} claude={agents.find((a) => a.id === 'claude')} onCheck={recheck} />
               )}
             </>
           )}
-          {step === 1 && agent && info && (
+          {at === 'agent' && agent && info && (
             <>
               <h2>{t('Which agent should start?')}</h2>
               <p class="muted">{t('New projects start with it. You can switch in any conversation.')}</p>
               <div class="setup-list">
-                {installed.map((a) => (
-                  <button key={a.id} class={`setting agent-status pick ${agent.provider === a.id ? 'selected' : ''}`} onClick={() => a.id !== agent.provider && setDraft(fresh(a))}>
+                {installed.filter((a) => !me.cloud || a.signedIn).map((a) => (
+                  <button key={a.id} class={`setting agent-status agent-pick ${agent.provider === a.id ? 'selected' : ''}`} onClick={() => a.id !== agent.provider && setDraft(fresh(a))}>
                     <ProviderIcon provider={a.id} size={16} />
                     <span>
                       <b>{a.name}</b>
@@ -438,7 +475,14 @@ export function SetupWizard({ me, setMe }: { me: Me; setMe: (m: Me) => void }) {
                 ))}
               </div>
               <AntigravityWarning agent={info} />
-              {info.models.length > 0 && (
+              {me.cloud && (
+                <>
+                  <h3>{t('How much may the agent do on its own?')}</h3>
+                  <ModeCards agent={agent} info={info} onPick={(permissionMode) => set({ permissionMode })} />
+                  <small class="muted">{t('Model, effort and permissions can change in every conversation.')}</small>
+                </>
+              )}
+              {!me.cloud && info.models.length > 0 && (
                 <label class="setting">
                   <span>{t('Model')}</span>
                   <select value={agent.model} onChange={(e) => set({ model: e.currentTarget.value })}>
@@ -451,7 +495,7 @@ export function SetupWizard({ me, setMe }: { me: Me; setMe: (m: Me) => void }) {
                   </select>
                 </label>
               )}
-              {efforts.length > 0 && (
+              {!me.cloud && efforts.length > 0 && (
                 <div class="setting">
                   <span>
                     {t('Effort')}
@@ -468,7 +512,7 @@ export function SetupWizard({ me, setMe }: { me: Me; setMe: (m: Me) => void }) {
               )}
             </>
           )}
-          {step === 2 && agent && info && (
+          {at === 'permissions' && agent && info && (
             <>
               <h2>{t('How much may the agent do on its own?')}</h2>
               <p class="muted">{t('Fewer questions mean faster work, but less control. Each conversation can still switch.')}</p>
@@ -479,7 +523,7 @@ export function SetupWizard({ me, setMe }: { me: Me; setMe: (m: Me) => void }) {
               )}
             </>
           )}
-          {step === 3 && (
+          {at === 'shortcuts' && (
             <>
               <h2>{t('Keyboard shortcuts?')}</h2>
               <p class="muted">{t('Savor starts without any, so you can choose your own. This computer › App settings › Keyboard shortcuts changes them any time.')}</p>
@@ -495,7 +539,7 @@ export function SetupWizard({ me, setMe }: { me: Me; setMe: (m: Me) => void }) {
               </div>
             </>
           )}
-          {step === 4 && agent && info && (
+          {at === 'project' && agent && info && (
             <>
               <h2>{t('Where do you want to start?')}</h2>
               <p class="muted">
@@ -522,9 +566,8 @@ export function SetupWizard({ me, setMe }: { me: Me; setMe: (m: Me) => void }) {
           {error && <p class="error-text">{error}</p>}
         </div>
         <div class="dialog-foot">
-          <button class="ghost" onClick={step === 4 ? () => setMe({ ...me, setup: false }) : skip}>
-            {step === 4 ? t('Later') : t('Skip setup')}
-
+          <button class="ghost" onClick={last ? () => setMe({ ...me, setup: false }) : skip}>
+            {last ? t('Later') : t('Skip setup')}
           </button>
           <span class="spacer" />
           {step > 0 && (
@@ -532,8 +575,8 @@ export function SetupWizard({ me, setMe }: { me: Me; setMe: (m: Me) => void }) {
               {t('Back')}
             </button>
           )}
-          {step < 4 && (
-            <button class="primary" disabled={!agent || !installed.length} onClick={next}>
+          {!last && (
+            <button class="primary" disabled={!agent || !ready} onClick={next}>
               {t('Continue')}
             </button>
           )}
