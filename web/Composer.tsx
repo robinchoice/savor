@@ -1055,7 +1055,7 @@ function BranchPicker({ project, threadId, worktree, setWorktree, open, toggle }
   return (
     <div class="menu-anchor">
       <button class="branch-btn" onClick={toggle}>
-        <GitBranch size={14} /> {git.branch} <ChevronDown size={13} />
+        <GitBranch size={14} /> <span class="branch-name">{git.branch}</span> <ChevronDown size={13} />
       </button>
       {open && (
         <div class="menu up">

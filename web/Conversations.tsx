@@ -284,6 +284,10 @@ export function Conversations({ project, threadId, fanoutId, isNew }: { project:
   useEffect(() => {
     if (!narrow && threads && location.hash === `#/p/${project.id}`) location.replace(`#/p/${project.id}/${top ? `t/${top.id}` : 'new'}`)
   }, [narrow, threadId, fanoutId, isNew, !!threads, top?.id])
+  // A phone shows either the list or what is open, never both.
+  const detail = !!(threadId || fanoutId || isNew)
+  useHidePanel('list', narrow && detail)
+  useHidePanel('main', narrow && !detail)
 
   // Worktrees and fan-outs keep their actions below the conversations; their conversations carry the branch.
   const fanouts = new Map<string, Thread[]>()
@@ -317,7 +321,7 @@ export function Conversations({ project, threadId, fanoutId, isNew }: { project:
     )
 
   return (
-    <div class={`conversations ${threadId || fanoutId || isNew ? 'has-detail' : ''}`}>
+    <div class={`conversations ${detail ? 'has-detail' : ''}`}>
       <Panel id="list">
         <aside class="conv-list">
           <div class="conv-head">

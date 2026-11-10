@@ -731,6 +731,19 @@ main { flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
   .composer { width: calc(100% - 16px); margin: 0 auto 8px; }
   .new-thread { padding: 24px 8px 0; }
   .voice small { display: none; }
+  /* One row: the agent and the branch shrink, the microphone and Send keep their place at its end. */
+  .composer-bottom { flex-wrap: nowrap; gap: 4px; }
+  .composer-bottom > .menu-anchor { min-width: 0; }
+  .composer-bottom > .menu-anchor:first-child { flex: none; }
+  .composer-bottom > :not(.menu-anchor, .spacer, .branch-btn) { flex: none; }
+  .composer-bottom .agent-btn, .composer-bottom .branch-btn { max-width: 100%; }
+  .composer-bottom > .menu-anchor:has(> .branch-btn) { flex-shrink: 4; }
+  .composer-bottom .agent-btn > :not(b), .composer-bottom .branch-btn > svg { flex: none; }
+  .composer-bottom .agent-btn b { min-width: 4em; }
+  .branch-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .branch-btn.worktree small { display: none; }
+  /* Long spoken or pasted text scrolls inside the field, so the bar with Send stays in view above the keyboard. */
+  .composer textarea { max-height: 30dvh; overflow-y: auto; }
   .complete-actions { margin-left: 12px; }
   .doc, .form { padding: 16px; }
   .menu.wide, .procs, .mention { width: min(92vw, 380px); min-width: 0; }

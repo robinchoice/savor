@@ -42,7 +42,8 @@ export function useNarrow() {
 // ---- which panels are there ----
 
 const shown = new Map<PanelId, { owner: object; title: string }>()
-const hidden = new Set<PanelId>()
+// How many places keep each panel out of view right now.
+const hidden = new Map<PanelId, number>()
 let arranging = false
 const listeners = new Set<() => void>()
 const notify = () => listeners.forEach((l) => l())
@@ -84,13 +85,16 @@ export function Panel({ id, title = NAMES[id], class: cls = '', children }: { id
 }
 
 // Keeps a panel out of view while `hide` holds, as the conversation list beside a preview. Arranging shows it.
+// In narrow windows the panel gets display: none of its own, so what a phone shows doesn't hang on CSS selectors.
 export function useHidePanel(id: PanelId, hide: boolean) {
   useLayoutEffect(() => {
     if (!hide) return
-    hidden.add(id)
+    hidden.set(id, (hidden.get(id) ?? 0) + 1)
     notify()
     return () => {
-      hidden.delete(id)
+      const n = hidden.get(id)! - 1
+      if (n) hidden.set(id, n)
+      else hidden.delete(id)
       notify()
     }
   }, [hide])
@@ -310,7 +314,7 @@ export function Dock({ children, enabled }: { children: ComponentChildren; enabl
     const r = free && !prefs.terminalMax ? windowOf(id) : rects[id]
     const on = visible.has(id) && r
     return (
-      <div key={id} class={`${enabled ? 'dock-leaf' : 'inline-panel'} ${free ? 'window' : ''}`} data-panel={id} style={!enabled ? undefined : on ? { ...px(free ? clamp(r) : r), zIndex: free ? order.indexOf(id) + 1 : undefined } : { display: 'none' }} onPointerDown={free ? () => raise(id) : undefined}>
+      <div key={id} class={`${enabled ? 'dock-leaf' : 'inline-panel'} ${free ? 'window' : ''}`} data-panel={id} style={!enabled ? (hidden.has(id) ? { display: 'none' } : undefined) : on ? { ...px(free ? clamp(r) : r), zIndex: free ? order.indexOf(id) + 1 : undefined } : { display: 'none' }} onPointerDown={free ? () => raise(id) : undefined}>
         {free && (
           <div class="window-head" onPointerDown={(e) => moveWindow(e, id, 'move')}>
             {title(id)}
