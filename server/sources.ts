@@ -221,7 +221,7 @@ async function crossref(query: string, doi: string | null, sort: string, have: S
     return {
       id: w.DOI,
       doi: cleanDoi(w.DOI) ?? null,
-      title: (w.title?.[0] ?? '').replace(/<[^>]+>/g, ''),
+      title: (w.title?.[0] ?? '').replace(/<[^>]+>/g, '') || w.DOI,
       year: w.issued?.['date-parts']?.[0]?.[0] ?? null,
       authors: authors.slice(0, 3).map((a) => a.name ?? [a.given, a.family].filter(Boolean).join(' ')).filter(Boolean),
       moreAuthors: authors.length > 3,
@@ -244,12 +244,13 @@ async function orcidWorks(id: string, have: Set<string | undefined>) {
   const hits = (data.group as any[]).map((g) => {
     const w = g['work-summary'][0]
     const ids = (g['external-ids']?.['external-id'] ?? []) as any[]
-    const doi = cleanDoi(ids.find((x) => x['external-id-type'] === 'doi' && x['external-id-relationship'] === 'self')?.['external-id-value'] ?? ids.find((x) => x['external-id-type'] === 'doi')?.['external-id-value'])
+    // Only the work's own DOI: a chapter also lists its book's as `part-of`.
+    const doi = cleanDoi(ids.find((x) => x['external-id-type'] === 'doi' && x['external-id-relationship'] === 'self')?.['external-id-value'])
     const valid = doi && DOI.test(doi) ? doi : null
     return {
       id: String(w['put-code']),
       doi: valid,
-      title: w.title?.title?.value ?? '',
+      title: w.title?.title?.value || valid || '',
       year: Number(w['publication-date']?.year?.value) || null,
       authors: [] as string[],
       moreAuthors: false,

@@ -57,8 +57,8 @@ const feedbackApi = http.createServer(async (req, res) => {
     return res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ message: { items } }))
   }
   if (url === '/orcid/v3.0/0000-0002-1825-0097/works') {
-    const group = (doi, title, year) => ({ 'external-ids': { 'external-id': doi ? [{ 'external-id-type': 'doi', 'external-id-value': doi, 'external-id-relationship': 'self' }] : [] }, 'work-summary': [{ 'put-code': title.length, title: { title: { value: title } }, 'publication-date': { year: { value: String(year) } }, 'journal-title': { value: 'Energy Journal' } }] })
-    return res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ group: [group(null, 'A talk without a DOI', 2023), group('https://doi.org/10.1000/orcid.4', 'District heating', 2021)] }))
+    const group = (doi, title, year, relationship = 'self') => ({ 'external-ids': { 'external-id': doi ? [{ 'external-id-type': 'doi', 'external-id-value': doi, 'external-id-relationship': relationship }] : [] }, 'work-summary': [{ 'put-code': title.length, title: { title: { value: title } }, 'publication-date': { year: { value: String(year) } }, 'journal-title': { value: 'Energy Journal' } }] })
+    return res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ group: [group(null, 'A talk without a DOI', 2023), group('https://doi.org/10.1000/orcid.4', 'District heating', 2021), group('10.1000/book.5', 'A chapter in a book', 2020, 'part-of')] }))
   }
   if (url.startsWith('/openalex/works?')) {
     const work = (id, doi, title, pdf) => ({ id: `https://openalex.org/${id}`, doi: doi && `https://doi.org/${doi}`, title, publication_year: 2022, authorships: [{ author: { display_name: 'Ada Miara' } }], primary_location: { source: { display_name: 'Energy Journal' } }, cited_by_count: 42, best_oa_location: pdf ? { pdf_url: pdf } : null })
@@ -3363,7 +3363,8 @@ test('academic writing shows its sources, one chat and the work, and adds source
   await page.fill('.study-search input', 'https://orcid.org/0000-0002-1825-0097')
   await page.press('.study-search input', 'Enter')
   await page.waitForSelector('.study-search >> text=The works in this ORCID record')
-  assert.deepEqual(await page.locator('.study-hit .title').allTextContents(), ['A talk without a DOI', 'District heating'])
+  assert.deepEqual(await page.locator('.study-hit .title').allTextContents(), ['A talk without a DOI', 'District heating', 'A chapter in a book'])
+  assert.ok(await page.locator('.study-hit:has-text("A chapter in a book") button').isDisabled(), "the book's DOI is not the chapter's")
   assert.equal(await page.locator('.study-search .ws-chip').count(), 0, 'ORCID has nothing to sort by')
   assert.ok(await page.locator('.study-hit:has-text("A talk without a DOI") button').isDisabled())
   await page.waitForSelector('.study-hit:has-text("A talk without a DOI") .tag:has-text("no DOI")')

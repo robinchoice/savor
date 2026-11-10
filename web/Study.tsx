@@ -264,6 +264,8 @@ function SourceSearch({ project, added }: { project: Project; added: (r: { key: 
     if (!q.trim()) return
     setBusy('search')
     setError('')
+    setHits(null)
+    setVia('openalex')
     try {
       const r = await api<{ via: Via; hits: Hit[] }>('GET', `/projects/${project.id}/sources/search?q=${encodeURIComponent(q)}&sort=${s}`)
       setVia(r.via)
