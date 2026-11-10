@@ -241,6 +241,8 @@ Savor doesn't need a model from a big provider. OpenCode, which Savor drives ove
 
 Savor builds on open protocols and formats instead of its own where one exists: the [Model Context Protocol](https://modelcontextprotocol.io) for the tools every agent reports back with, the [Agent Client Protocol](https://agentclientprotocol.com) for OpenCode and Grok Build, `AGENTS.md` for project instructions (the uplift check maintains it), git for code and worktrees, Markdown, JSON and JSONL in plain files for all state, Web Push (RFC 8030, 8291, 8292) sent straight from your computer to the browser's push service, and for academic writing OpenAlex, DOI content negotiation (BibTeX from Crossref and DataCite), CSL styles, BibTeX and pandoc.
 
+The message protocol itself (acknowledgement, conclusion, blocking questions, origin of an input) is written down as an open specification other workspaces and agents can implement: [Agent Feedback Protocol, draft v0.1](docs/protocol.md), CC BY 4.0.
+
 ## How it works
 
 ```mermaid
