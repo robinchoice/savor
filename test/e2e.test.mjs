@@ -1548,6 +1548,8 @@ test('a workflow run stops at its budget, and the month’s runs pause the workf
 test('a workflow button runs it early, in place of its next scheduled time', async () => {
   const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
   const list = `/projects/${project.id}/workflows`
+  // Start just after a scheduled time, so the next one cannot come before the click.
+  await new Promise((r) => setTimeout(r, 10_200 - (Date.now() % 10_000)))
   const wf = (await api('POST', list, { name: 'Wrap-up', prompt: 'wrap up', cron: '*/10 * * * * *', button: true })).body
   const w = `${list}/${wf.id}`
   await page.goto(`${base}/#/p/${project.id}/workflows`)
