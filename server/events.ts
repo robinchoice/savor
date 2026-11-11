@@ -2,8 +2,11 @@ import type { ServerResponse } from 'node:http'
 import { VERSION } from './config.js'
 
 export interface SavorEvent {
-  type: 'connected' | 'message' | 'thread' | 'status' | 'activity' | 'plan' | 'documents' | 'workflows' | 'processes' | 'projects' | 'browser' | 'devices' | 'notify' | 'presets' | 'terminal' | 'review' | 'backlog' | 'restart' | 'settings' | 'voice' | 'ci' | 'health'
+  type: 'connected' | 'message' | 'thread' | 'status' | 'activity' | 'plan' | 'documents' | 'workflows' | 'processes' | 'projects' | 'browser' | 'devices' | 'notify' | 'presets' | 'terminal' | 'review' | 'backlog' | 'restart' | 'settings' | 'voice' | 'ci' | 'health' | 'draft'
   projectId?: string
+  // A 'draft' carries what the agent wrote so far itself (agents.setDraft), null once it is sent.
+  draft?: unknown
+  lane?: string
   threadId?: string
   title?: string
   body?: string

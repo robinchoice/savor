@@ -34,7 +34,11 @@
 // - anything else → acknowledgement plus a conclusion echoing the input with one suggestion
 // While the test's outdated file exists it refuses to start, like a release that lacks an option.
 // `--version`, `auth status` and `-p /usage` answer like the real CLI, so Savor lists the fake as installed.
-// With --no-session-persistence it answers a side question (/btw) on stdin.
+// With --no-session-persistence it answers a side question (/btw) on stdin; with --safe-mode as well it is Savor's fast
+// lane: it streams "Quick: <question>" as partial messages, with the prompt in front of it for "quick-recall",
+// "HANDOFF" for a question that says "handoff", and waits for the test's release file to say "slow-quick" first.
+// - "labelled: <text>" → concludes with the conversation's label in the same call
+// - "stream: <text>" → streams the conclusion's arguments as partial messages, waits for the test's release file, then concludes
 // Started without an MCP config it is Savor's probe and answers the initialize request with its models and
 // commands, and get_usage with the limits in the test's limits file.
 import readline from 'node:readline'
@@ -66,6 +70,25 @@ if (args[0] === 'auth' && args[1] === 'login') {
   if (good) fs.writeFileSync(login, 'signed in')
   process.stdout.write(good ? 'Login successful.\n' : "Login failed: That code wasn't accepted.\n", () => process.exit(good ? 0 : 1))
   await new Promise(() => {})
+}
+if (args.includes('--safe-mode')) {
+  if (process.env.FAKE_AGENT_LOG) fs.appendFileSync(process.env.FAKE_AGENT_LOG, JSON.stringify({ agent: 'claude-fast', argv: process.argv }) + '\n')
+  const send = (e) => process.stdout.write(JSON.stringify(e) + '\n')
+  for await (const line of readline.createInterface({ input: process.stdin })) {
+    const prompt = JSON.parse(line).message.content[0].text
+    const question = prompt.slice(prompt.lastIndexOf('Question:\n') + 'Question:\n'.length)
+    const answer = question.includes('handoff') ? 'HANDOFF' : question.includes('quick-recall') ? `Quick: ${question} after ${prompt.slice(0, prompt.lastIndexOf('Question:'))}` : `Quick: ${question}`
+    send({ type: 'assistant', message: { model: 'fake-sonnet', content: [] } })
+    const half = Math.ceil(answer.length / 2)
+    send({ type: 'stream_event', event: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: answer.slice(0, half) } } })
+    if (question.includes('slow-quick')) {
+      const release = process.env.FAKE_AGENT_LOG + '.release'
+      while (!fs.existsSync(release) || fs.readFileSync(release, 'utf8') !== 'slow-quick') await new Promise((r) => setTimeout(r, 20))
+    }
+    send({ type: 'stream_event', event: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: answer.slice(half) } } })
+    send({ type: 'result', subtype: 'success', is_error: false, result: answer })
+  }
+  process.exit(0)
 }
 // A side question: one answer as JSON, about the session it was resumed from.
 if (args.includes('--no-session-persistence')) {
@@ -150,7 +173,7 @@ async function turn(text, command) {
   out({ type: 'assistant', parent_tool_use_id: null, message: { model: 'fake-fable', usage: { input_tokens: 1200, cache_read_input_tokens: 30000, cache_creation_input_tokens: 6800 }, content: [{ type: 'text', text: 'working' }] } })
   out({ type: 'assistant', parent_tool_use_id: 'toolu_subagent', message: { model: 'fake-haiku', usage: { input_tokens: 150000 }, content: [] } })
 
-  if (text.includes('"threadLabel":null')) await call('set_thread_label', { label: 'Fake agent test' })
+  if (text.includes('"threadLabel":null') && !input.startsWith('labelled:')) await call('set_thread_label', { label: 'Fake agent test' })
   if (input.startsWith('fail:')) {
     if (input.includes('after work')) {
       out({ type: 'assistant', parent_tool_use_id: null, message: { content: [{ type: 'tool_use', id: 'toolu_work', name: 'Bash', input: { command: 'make' } }] } })
@@ -204,7 +227,7 @@ async function turn(text, command) {
     const verdict = await control({ subtype: 'elicitation', mcp_server_name: 'docs', message: input.slice('fill-form:'.length).trim(), mode: 'form', requested_schema: SCHEMA })
     await call('send_conclusion_message', { text: `Form: ${verdict?.action ?? 'refused'} ${JSON.stringify(verdict?.content ?? null)}` })
   } else if (input.startsWith('recall')) {
-    const handed = text.includes('Earlier in this conversation')
+    const handed = text.includes('Earlier in this conversation') || text.includes('Quick questions the user asked')
     await call('send_conclusion_message', { text: `Handed over: ${handed ? text.slice(0, text.indexOf('Savor context:')).trim() : 'nothing'}` })
   } else if (input.startsWith('context:')) {
     await call('send_conclusion_message', { text: `Context: ${text.match(/Savor context:\n(.*)\n/)[1]}` })
@@ -268,6 +291,21 @@ async function turn(text, command) {
     tool('TaskUpdate', { taskId: '3', status: 'completed' }, 'Updated task #3 status')
     out({ type: 'system', subtype: 'task_notification', task_id: 'cmd1', status: 'completed' })
     await call('send_conclusion_message', { text: `Echo: ${input}` })
+  } else if (input.startsWith('labelled:')) {
+    await call('send_conclusion_message', { text: 'Labelled.', label: 'Labelled with the answer' })
+  } else if (input.startsWith('stream:')) {
+    const text = `Streamed: ${input.slice(7).trim()} "done"`
+    const json = JSON.stringify({ summary: 'Stream it.', text })
+    const stream = (event) => out({ type: 'stream_event', parent_tool_use_id: null, event })
+    stream({ type: 'message_start', message: { model: 'fake-fable' } })
+    stream({ type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: 'toolu_stream', name: 'mcp__savor__send_conclusion_message', input: {} } })
+    // Cut inside an escape, so Savor has to wait for the rest of it.
+    const cut = json.indexOf('\\"') + 1
+    stream({ type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: json.slice(0, cut) } })
+    await released(input)
+    stream({ type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: json.slice(cut) } })
+    stream({ type: 'content_block_stop', index: 0 })
+    await call('send_conclusion_message', { text })
   } else if (input.startsWith('slow:')) {
     await call('send_acknowledgement_message', { text: 'On it.', summary: 'Work on the request.' })
     const release = process.env.FAKE_AGENT_LOG + '.release'

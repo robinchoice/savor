@@ -5,9 +5,8 @@ import { emit } from './events.js'
 
 export const PROTOCOL = `You are running inside Savor, a local workspace for coding agents. The user only sees messages sent through the savor MCP tools. Your plain assistant text is hidden and only shows up in the activity log.
 
-- When threadLabel in the Savor context is null, your first action must be set_thread_label with a short 3–6 word label.
 - If you can answer right away, call send_conclusion_message directly. Otherwise call send_acknowledgement_message before starting work and send_conclusion_message with the final result.
-- Give the first of those two calls for an input a summary: one short sentence on what the input asks for, so the conversation list shows where you are.
+- Give the first of those two calls for an input a summary: one short sentence on what the input asks for, so the conversation list shows where you are. When threadLabel in the Savor context is null, also give it a label: a short 3–6 word label for the conversation.
 - Every input gets one acknowledgement and one conclusion. Input the user sends while you work waits in a queue and reaches you as the next input after your conclusion.
 - The user can also add input to the current request while you work. It reaches you mid-turn, starting with "The user adds this to the current request while you work:". It gets no acknowledgement of its own: take it into account and cover it in the conclusion of the current request.
 - Use send_user_requested_message only for updates or extra messages the user explicitly asked for. Give each distinct message its own idempotencyKey and reuse key and text when retrying.
@@ -61,6 +60,8 @@ export interface Host {
   backgroundChanged(): void
   // The agent started work on its own (e.g. a background task finished): count the thread as working.
   working(): void
+  // A message the agent is still writing, as far as it has come; null once it is sent or given up.
+  draft(d: { kind: DraftKind; text: string } | null): void
   // The agent's last request held this many tokens; `window` is the size of the model's context window when the agent names it.
   context(tokens: number, window?: number | null): void
   // The model the agent runs on, as it names it.
@@ -171,6 +172,32 @@ export function formContent(fields: FormField[], input: unknown) {
     content[f.name] = v
   }
   return content
+}
+
+// The messages an agent writes through Savor's tools, which the user can watch grow while the agent writes them.
+export type DraftKind = 'ack' | 'update' | 'conclusion'
+export const DRAFTED: Record<string, DraftKind> = { send_acknowledgement_message: 'ack', send_user_requested_message: 'update', send_conclusion_message: 'conclusion' }
+
+// The `text` argument of a tool call whose JSON is still arriving, as far as it has come, or null before it starts.
+// The schemas of the message tools name no other field `text`, and a quote inside a string value is escaped.
+export function partialText(json: string) {
+  const m = /[{,]\s*"text"\s*:\s*"/.exec(json)
+  if (!m) return null
+  let s = json.slice(m.index + m[0].length)
+  for (let i = 0; i < s.length; i++) {
+    if (s[i] === '\\') i++
+    else if (s[i] === '"') {
+      s = s.slice(0, i)
+      break
+    }
+  }
+  // An escape sequence cut off at the end (`\`, `\u00`) waits for the rest.
+  for (let cut = 0; cut <= 5 && cut <= s.length; cut++) {
+    try {
+      return JSON.parse(`"${s.slice(0, s.length - cut)}"`) as string
+    } catch {}
+  }
+  return null
 }
 
 // Only web pages are offered as links; anything else could run script in Savor's page.

@@ -64,7 +64,12 @@ export interface Message {
   key?: string
   // Savor compacted the agent's context after this message while the conversation was idle: tokens before and after.
   compacted?: { from: number; to: number }
+  // A question to the fast lane and its answer, which the agent doesn't see as a request of its own (fastlane.ts).
+  lane?: Lane
+  // A question the fast lane passed on to the agent.
+  handedOff?: boolean
 }
+export type Lane = 'fast'
 // What a notice about a conversation is: a question or approval, a result, a workflow run, an error,
 // failed CI or a message from another project.
 export type NoticeType = 'ask' | 'result' | 'run' | 'error' | 'ci' | 'message'

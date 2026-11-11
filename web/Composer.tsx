@@ -1,5 +1,5 @@
 import { useContext, useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
-import { ArrowRight, ArrowUp, AtSign, CornerDownRight, Bookmark, Check, ChevronDown, Download, FileText, FolderGit2, GitBranch, ListPlus, MessageSquare, Mic, Paperclip, Plus, RotateCw, ShieldAlert, Sparkles, Split, Square, Workflow as WorkflowIcon, X, Zap, Crosshair, BookOpen } from 'lucide-preact'
+import { ArrowRight, ArrowUp, AtSign, CornerDownRight, Bookmark, Check, ChevronDown, Download, FileText, FolderGit2, GitBranch, ListPlus, MessageSquare, Mic, Paperclip, Plus, RotateCw, ShieldAlert, Sparkles, Split, Square, Workflow as WorkflowIcon, X, Zap, Crosshair, BookOpen, Rabbit } from 'lucide-preact'
 import { api, returnSends, agentSummary, attachmentFromFile, describeModel, effortLabel, modelName, PROVIDER_NAMES, useAgents, useApi, type AgentConfig, type Attachment, type Doc, type Project, type ProviderInfo, type Preset, type Skill, type Workflow } from './api'
 import { ProviderIcon } from './Conversations'
 import { useShortcut } from './Shortcuts'
@@ -16,7 +16,10 @@ interface Props {
   project: Project
   agent: AgentConfig
   setAgent: (a: AgentConfig) => Promise<unknown> | void
-  onSend: (text: string, attachments: Attachment[]) => Promise<void> | void
+  // `fast`: the fast lane answers, without waiting for the agent (quick).
+  onSend: (text: string, attachments: Attachment[], opts?: { fast: true }) => Promise<void> | void
+  // Offers the fast lane: a quick answer from a fast model without tools, which passes on what needs the agent.
+  quick?: boolean
   // While the agent works: send into its running turn instead of queueing.
   onSteer?: (text: string, attachments: Attachment[]) => Promise<void>
   busy?: boolean
@@ -187,6 +190,11 @@ export function Composer(props: Props) {
   const hasInput = !!(text.trim() || files.length || review.length)
   const allPicked = !!answers && answers.picked === answers.total
   const canSend = !reading && (answers ? allPicked || hasInput : hasInput && (!fanout || fanout.length > 1))
+  // The fast lane stays chosen on this device, until it is switched off again.
+  const [quickOn, setQuickState] = useState(() => localStorage.getItem('savor-quick') === '1')
+  const setQuick = (on: boolean) => (on ? localStorage.setItem('savor-quick', '1') : localStorage.removeItem('savor-quick'), setQuickState(on))
+  const quick = !!props.quick && quickOn && !fanout && !answers
+  const queues = props.busy && !quick
   // A side question (/btw) is answered next to the conversation, also while the agent works, and stays out of it.
   const [aside, setAside] = useState<{ question: string; answer?: string; error?: string } | null>(null)
   const ask = (question: string) => {
@@ -211,7 +219,7 @@ export function Composer(props: Props) {
     props.clearPicked?.(-1)
     try {
       const attachments = files.map(({ name, dataUrl }) => ({ name, dataUrl }))
-      await (answers ? answers.send(full, attachments) : steer && props.onSteer ? props.onSteer(full, attachments) : props.onSend(full, attachments))
+      await (answers ? answers.send(full, attachments) : steer && props.onSteer ? props.onSteer(full, attachments) : props.onSend(full, attachments, quick ? { fast: true } : undefined))
       // Kept until the message is accepted, so a refused one doesn't lose them.
       if (review.length) props.setReview?.([])
       setError('')
@@ -275,7 +283,7 @@ export function Composer(props: Props) {
           <Square size={13} />
         </button>
       )}
-      {!answers && props.busy && props.onSteer && (
+      {!answers && queues && props.onSteer && (
         <button class="send" title={t('Add to this turn (Ctrl+Enter): the agent reads it at its next step')} disabled={!canSend} onClick={() => submit(true)}>
           <CornerDownRight size={16} />
         </button>
@@ -290,8 +298,8 @@ export function Composer(props: Props) {
           {allPicked || !hasInput ? t('Send answers') : t('Send comment')} <ArrowUp size={16} />
         </button>
       ) : (
-        <button class={`send ${fanout ? 'wide' : ''}`} title={props.busy ? t('Queue (Enter): sent after the current turn') : fanout ? t('Start one conversation per agent') : t('Send')} disabled={!canSend} onClick={() => submit()}>
-          {props.busy ? <ListPlus size={16} /> : <ArrowUp size={16} />}
+        <button class={`send ${fanout ? 'wide' : ''}`} title={queues ? t('Queue (Enter): sent after the current turn') : fanout ? t('Start one conversation per agent') : quick ? t('Ask the fast lane') : t('Send')} disabled={!canSend} onClick={() => submit()}>
+          {queues ? <ListPlus size={16} /> : <ArrowUp size={16} />}
           {fanout && t('Start {n}', { n: fanout.length })}
         </button>
       )}
@@ -397,7 +405,7 @@ export function Composer(props: Props) {
           ref={ref}
           rows={1}
           value={text}
-          placeholder={props.answering ? t('Add a comment (optional)…') : props.placeholder}
+          placeholder={props.answering ? t('Add a comment (optional)…') : quick ? t('Ask a quick question…') : props.placeholder}
           onInput={(e) => {
             setText(e.currentTarget.value)
             setSlashOpen(true)
@@ -515,6 +523,11 @@ export function Composer(props: Props) {
             </div>
           )}
           {!fanout && <BranchPicker project={props.project} threadId={props.threadId} worktree={props.worktree} setWorktree={props.setWorktree} open={popover === 'branch'} toggle={() => setPopover(popover === 'branch' ? null : 'branch')} />}
+          {props.quick && !fanout && (
+            <button class={`quick-btn ${quick ? 'on' : ''}`} aria-pressed={quick} title={t('Quick answer: a fast model without tools answers right away and passes the question to the agent when it needs the project')} onClick={() => setQuick(!quickOn)}>
+              <Rabbit size={15} /> <span>{t('Quick')}</span>
+            </button>
+          )}
           <div class="spacer" />
           {!props.voice && <VoiceButton onText={insertVoice} onHeard={setHeard} onError={setError} onSetup={setVoiceSetup} />}
           {sendButtons}

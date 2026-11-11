@@ -9,6 +9,7 @@ import * as store from './store.js'
 import { emit, subscribe } from './events.js'
 import { BIN, HOST, PORT, PUBLIC_URL, VERSION } from './config.js'
 import * as agents from './agents.js'
+import * as fastlane from './fastlane.js'
 import * as browser from './browser.js'
 import * as processes from './processes.js'
 import * as devices from './devices.js'
@@ -462,7 +463,7 @@ route('POST', '/projects/:pid/threads', (params, b, ctx) => {
   const t = store.createThread(p, { title: b.text || 'New conversation', agent, worktree, inbox: b.inbox === true })
   if (b.agent && ctx.auth.origin === 'local') store.updateProject(p.id, { agent })
   emit({ type: 'thread', projectId: p.id, threadId: t.id })
-  agents.send(p, t.id, inputFrom(b, ctx, p, t.id))
+  ;(b.fast === true ? fastlane.send : agents.send)(p, t.id, inputFrom(b, ctx, p, t.id))
   return t
 })
 // The same prompt to several agents, each in a new worktree of its own, to compare what they make of it.
@@ -520,6 +521,9 @@ route('GET', '/projects/:pid/threads/:tid', (params, _, ctx) => {
     waiting: agents.waiting(p, thread),
     background: agents.runsBackground(thread.id),
     startedAt: agents.startedAt(thread.id),
+    // What the agent and the fast lane are writing right now, and whether the fast lane works on an answer.
+    drafts: agents.draftsOf(thread.id),
+    answering: fastlane.isAnswering(thread.id),
     messages: store.readMessages(p, thread.id),
     decisions: store.listDecisions(p, thread.id),
     processes: store.listProcs(p).filter((pr) => pr.threadId === thread.id),
@@ -588,6 +592,7 @@ route('DELETE', '/projects/:pid/threads/:tid', (params) => {
   const thread = threads.find((t) => t.id === params.tid)
   // The agent's own transcripts go too, unless another conversation still resumes or forks from them.
   const shared = new Set(threads.filter((t) => t !== thread).flatMap((t) => [...t.agentSessions.map((s) => s.sessionId), t.fork?.sessionId]))
+  fastlane.stop(params.tid)
   agents.forget(params.tid)
   store.deleteThread(p, params.tid)
   deleteSessions(thread?.agentSessions.filter((s) => !shared.has(s.sessionId)) ?? [])
@@ -596,7 +601,9 @@ route('DELETE', '/projects/:pid/threads/:tid', (params) => {
 })
 route('POST', '/projects/:pid/threads/:tid/messages', (params, b, ctx) => {
   const p = project(params)
-  return agents.send(p, store.getThread(p, params.tid).id, inputFrom(b, ctx, p, params.tid))
+  const tid = store.getThread(p, params.tid).id
+  // A question for the fast lane doesn't wait for the agent.
+  return (b.fast === true ? fastlane.send : agents.send)(p, tid, inputFrom(b, ctx, p, tid))
 })
 route('GET', '/projects/:pid/threads/:tid/review', (params) => {
   const p = project(params)
@@ -619,6 +626,7 @@ route('DELETE', '/projects/:pid/threads/:tid/messages/:mid', (params) => {
   return {}
 })
 route('POST', '/projects/:pid/threads/:tid/stop', (params) => {
+  fastlane.stop(params.tid)
   agents.stopAgent(project(params), params.tid)
   return {}
 })

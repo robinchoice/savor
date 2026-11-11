@@ -3056,6 +3056,102 @@ test('/btw asks a copy of the agent session, also while it works, and stays out 
   await api('PATCH', `/projects/${project.id}`, { agent: project.agent })
 })
 
+test('a message streams into the conversation while Claude writes it, on screen and in the event stream', async () => {
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
+  const events = await fetch(`${base}/api/events`, { headers: { cookie: `savor_token=${token}` } })
+  const reader = events.body.getReader()
+  let seen = ''
+  const reading = (async () => {
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) return
+      seen += new TextDecoder().decode(value)
+    }
+  })().catch(() => {})
+  const thread = (await api('POST', `/projects/${project.id}/threads`, { text: 'stream: hello world', agent: { provider: 'claude' } })).body
+  const url = `/projects/${project.id}/threads/${thread.id}`
+  // The escape cut off at the end waits for the rest.
+  await until(async () => (await api('GET', url)).body.drafts[0]?.text === 'Streamed: hello world ')
+  assert.equal((await api('GET', url)).body.drafts[0].kind, 'conclusion')
+  await page.goto(`${base}/#/p/${project.id}/t/${thread.id}`)
+  await page.waitForSelector('.msg.drafting.conclusion >> text=Streamed: hello world')
+  fs.writeFileSync(AGENT_LOG + '.release', 'stream: hello world')
+  await until(async () => (await api('GET', url)).body.messages.some((m) => m.kind === 'conclusion' && m.text === 'Streamed: hello world "done"'))
+  assert.deepEqual((await api('GET', url)).body.drafts, [])
+  await until(async () => (await page.locator('.msg.drafting').count()) === 0)
+  await page.waitForSelector('.msg.conclusion >> text=Streamed: hello world "done"')
+  await until(() => seen.includes('"draft":null'))
+  assert.match(seen, /"type":"draft","projectId":"[^"]+","threadId":"[^"]+","draft":\{"kind":"conclusion","text":"Streamed: hello world "/)
+  await reader.cancel()
+  await reading
+  const run = fs.readFileSync(AGENT_LOG, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((r) => r.agent === 'claude').at(-1)
+  assert.ok(run.argv.includes('--include-partial-messages'))
+
+  // The label comes with the first message, without a call of its own.
+  const labelled = (await api('POST', `/projects/${project.id}/threads`, { text: 'labelled: x', agent: { provider: 'claude' } })).body
+  await until(async () => (await api('GET', `/projects/${project.id}/threads/${labelled.id}`)).body.messages.some((m) => m.text === 'Labelled.'))
+  assert.equal((await api('GET', `/projects/${project.id}/threads/${labelled.id}`)).body.thread.label.name, 'Labelled with the answer')
+})
+
+test('the fast lane answers right away without tools, beside the agent, and passes on what needs the project', async () => {
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
+  // A new conversation's first question: no agent turn, the answer streams.
+  const thread = (await api('POST', `/projects/${project.id}/threads`, { text: 'slow-quick: capital of France?', agent: { provider: 'claude' }, fast: true })).body
+  const url = `/projects/${project.id}/threads/${thread.id}`
+  await until(async () => (await api('GET', url)).body.drafts.some((d) => d.lane === 'fast'))
+  let data = (await api('GET', url)).body
+  assert.equal(data.answering, true)
+  assert.equal(data.busy, false)
+  assert.deepEqual(data.drafts.map((d) => [d.lane, d.kind, d.text]), [['fast', 'conclusion', 'Quick: slow-quick: ']])
+  await page.goto(`${base}/#/p/${project.id}/t/${thread.id}`)
+  await page.waitForSelector('.msg.fast-lane.drafting >> text=Quick: slow-quick:')
+  fs.writeFileSync(AGENT_LOG + '.release', 'slow-quick')
+  await until(async () => (await api('GET', url)).body.messages.some((m) => m.kind === 'conclusion' && m.lane === 'fast'))
+  data = (await api('GET', url)).body
+  assert.deepEqual(data.messages.map((m) => [m.kind, m.lane, m.text]), [['user', 'fast', 'slow-quick: capital of France?'], ['conclusion', 'fast', 'Quick: slow-quick: capital of France?']])
+  assert.equal(data.messages[1].modelInfo.model, 'fake-sonnet')
+  assert.deepEqual(data.thread.agentSessions, [])
+  await page.waitForSelector('.msg.conclusion.fast-lane >> text=Fast lane')
+  // No tools, MCP servers, hooks or project instructions.
+  const fast = fs.readFileSync(AGENT_LOG, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((r) => r.agent === 'claude-fast').at(-1)
+  for (const flag of ['--safe-mode', '--strict-mcp-config', '--no-session-persistence']) assert.ok(fast.argv.includes(flag), flag)
+  assert.equal(fast.argv[fast.argv.indexOf('--tools') + 1], '')
+  assert.ok(!fast.argv.includes('--mcp-config'))
+
+  // A question that needs the project goes on to the agent, which also learns what the lane answered.
+  await api('POST', `${url}/messages`, { text: 'recall, please handoff', fast: true })
+  await until(async () => (await api('GET', url)).body.messages.some((m) => m.kind === 'conclusion' && !m.lane && m.text.startsWith('Handed over:')))
+  data = (await api('GET', url)).body
+  const handed = data.messages.find((m) => m.text === 'recall, please handoff')
+  assert.equal(handed.handedOff, true)
+  assert.equal(handed.lane, undefined)
+  assert.match(data.messages.at(-1).text, /capital of France\?\n\n\[agent\] Quick: slow-quick: capital of France\?/)
+  await page.waitForSelector('.lane-chip >> text=Passed to the agent')
+
+  // While the agent works, the lane answers in between, and the agent's request stays its own.
+  await api('POST', `${url}/messages`, { text: 'slow: long job' })
+  await until(async () => (await api('GET', url)).body.busy)
+  await api('POST', `${url}/messages`, { text: 'quick-recall two plus two', fast: true })
+  await until(async () => (await api('GET', url)).body.messages.some((m) => m.lane === 'fast' && m.kind === 'conclusion' && m.text.includes('two plus two')))
+  const recalled = (await api('GET', url)).body.messages.findLast((m) => m.lane === 'fast' && m.kind === 'conclusion').text
+  assert.match(recalled, /\[agent\] Handed over:/)
+  fs.writeFileSync(AGENT_LOG + '.release', 'slow: long job')
+  await until(async () => (await api('GET', url)).body.messages.some((m) => m.text === 'Echo: long job'))
+  // The agent's next input names the quick exchange it didn't see.
+  await api('POST', `${url}/messages`, { text: 'recall' })
+  await until(async () => (await api('GET', url)).body.messages.filter((m) => m.text?.startsWith('Handed over:')).length === 2)
+  assert.match((await api('GET', url)).body.messages.at(-1).text, /Quick questions the user asked Savor's fast lane since your last input[\s\S]*\[user\] quick-recall two plus two\n\n\[fast lane\] Quick:/)
+
+  // The switch in the composer sends to the lane and stays on, on this device.
+  await page.click('.quick-btn')
+  assert.equal(await page.getAttribute('.quick-btn', 'aria-pressed'), 'true')
+  await send('from the switch')
+  await until(async () => (await api('GET', url)).body.messages.some((m) => m.lane === 'fast' && m.kind === 'conclusion' && m.text === 'Quick: from the switch'))
+  await page.click('.quick-btn')
+  assert.equal(await page.getAttribute('.quick-btn', 'aria-pressed'), 'false')
+  await api('PATCH', `/projects/${project.id}`, { agent: project.agent })
+})
+
 test('input added to the running turn reaches the agent at its next step and belongs to the same request', async () => {
   const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
   for (const agent of [{ provider: 'claude' }, { provider: 'codex', permissionMode: 'default' }]) {

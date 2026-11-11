@@ -621,8 +621,8 @@ function StartAnywhere({ projects, initial, autoFocus, importText }: { projects:
     history.replaceState(null, '', `${location.pathname}${location.search}${route}${params.size ? `?${params}` : ''}`)
     dispatchEvent(new HashChangeEvent('hashchange'))
   }
-  const send = async (text: string, attachments: Attachment[]) => {
-    const t = await api<Thread>('POST', `/projects/${project.id}/threads`, { text, attachments, agent: agent ?? project.agent, inbox: automatic })
+  const send = async (text: string, attachments: Attachment[], opts?: { fast: true }) => {
+    const t = await api<Thread>('POST', `/projects/${project.id}/threads`, { text, attachments, agent: agent ?? project.agent, inbox: automatic, ...opts })
     go(`/all/inbox/${project.id}/${t.id}`)
   }
   const choose = (pid: string) => {
@@ -648,7 +648,7 @@ function StartAnywhere({ projects, initial, autoFocus, importText }: { projects:
         )}
       </div>
       {imported && <p class="muted">{t('From your shortcut · review and send')}</p>}
-      <Composer key={project.id} project={project} agent={agent ?? project.agent} setAgent={setAgent} onSend={send} placeholder={automatic ? t('What needs doing? Projects are chosen automatically…') : t('Start a conversation in {name}…', { name: project.name })} autoFocus={autoFocus} importText={importText} onImport={consumeImport} />
+      <Composer key={project.id} project={project} agent={agent ?? project.agent} setAgent={setAgent} onSend={send} quick placeholder={automatic ? t('What needs doing? Projects are chosen automatically…') : t('Start a conversation in {name}…', { name: project.name })} autoFocus={autoFocus} importText={importText} onImport={consumeImport} />
     </div>
   )
 }

@@ -75,12 +75,21 @@ function buildServer(p: Project, tid: string) {
 
   // ---- messages ----
 
+  // Claude Code loads these with its first request instead of searching for them first: every input needs them, and
+  // the search cost a round trip before the user saw anything.
+  const ALWAYS = { 'anthropic/alwaysLoad': true }
+  // The label also comes with the first message for an input, which saves the agent a call before the user sees anything.
+  const LABEL = z.string().min(1).max(80).optional().describe('A short 3–6 word label for this conversation, when threadLabel is null')
+  const setLabel = (label: string) => {
+    store.updateThread(p, tid, { label: { name: label, hue: store.hueFor(label) } })
+    touchThread()
+  }
+
   server.registerTool(
     'set_thread_label',
-    { description: 'Set a short 3–6 word label for this conversation. Call first when threadLabel is null.', inputSchema: { label: z.string().min(1).max(80) } },
+    { description: 'Set a short 3–6 word label for this conversation. Call first when threadLabel is null.', inputSchema: { label: z.string().min(1).max(80) }, _meta: ALWAYS },
     async ({ label }) => {
-      store.updateThread(p, tid, { label: { name: label, hue: store.hueFor(label) } })
-      touchThread()
+      setLabel(label)
       return ok({ label })
     },
   )
@@ -89,12 +98,14 @@ function buildServer(p: Project, tid: string) {
     'send_acknowledgement_message',
     {
       description: 'Tell the user you received their input and are starting work. One per input; retrying with the same text is safe.',
-      inputSchema: { text: z.string().min(1), summary: SUMMARY },
+      inputSchema: { text: z.string().min(1), summary: SUMMARY, label: LABEL },
+      _meta: ALWAYS,
     },
-    async ({ text, summary }) => {
+    async ({ text, summary, label }) => {
       const r = agents.request(p, tid)
       if (r.ack && r.ack.text !== text) throw new Error('This request already has a different acknowledgement message.')
       if (summary) store.updateThread(p, tid, { summary })
+      if (label) setLabel(label)
       r.ack ??= { text, id: agents.post(p, tid, { kind: 'ack', text, modelInfo: modelInfo() }).id }
       return ok({ id: r.ack.id })
     },
@@ -130,9 +141,12 @@ function buildServer(p: Project, tid: string) {
         suggestions: z.array(z.string()).max(3).optional(),
         commits: z.array(z.string().regex(/^[0-9a-f]{40}([0-9a-f]{24})?$/)).optional(),
         summary: SUMMARY.optional(),
+        label: LABEL,
       },
+      _meta: ALWAYS,
     },
-    async ({ text, questions, suggestions, commits, summary }) => {
+    async ({ text, questions, suggestions, commits, summary, label }) => {
+      if (label) setLabel(label)
       if (!text && !questions?.length) throw new Error('Provide text, questions, or both.')
       const unrecommended = questions?.find((q) => q.options.length && (q.recommended ?? Infinity) >= q.options.length)
       if (unrecommended) throw new Error(`Set recommended to the index of the option you recommend for "${unrecommended.title}" and explain why in its body.`)

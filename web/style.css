@@ -513,6 +513,12 @@ main { flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
   .ap-pane { overflow: visible; }
   .ap-models { grid-template-columns: 1fr; }
 }
+.quick-btn { flex: none; display: inline-flex; align-items: center; gap: 5px; font-size: 13px; color: var(--muted); padding: 5px 8px; border-radius: 8px; }
+.quick-btn:hover { background: var(--raised); }
+.quick-btn.on { background: var(--accent); color: var(--accent-ink); }
+.lane-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: var(--muted); }
+.msg.drafting .md > :last-child::after { content: '▍'; margin-left: 1px; color: var(--muted); animation: caret 1s steps(2) infinite; }
+@keyframes caret { 50% { opacity: 0; } }
 .branch-btn { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; color: var(--muted); padding: 5px 8px; border-radius: 8px; }
 .send { width: 30px; height: 30px; border-radius: 50%; background: var(--raised); display: flex; align-items: center; justify-content: center; color: var(--muted); transition: background 0.18s ease, color 0.18s ease; }
 .send:not(:disabled) { background: var(--grad); color: var(--on-grad); }
@@ -742,6 +748,7 @@ main { flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
   .composer-bottom .agent-btn b { min-width: 4em; }
   .branch-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .branch-btn.worktree small { display: none; }
+  .quick-btn span { display: none; }
   /* Long spoken or pasted text scrolls inside the field, so the bar with Send stays in view above the keyboard. */
   .composer textarea { max-height: 30dvh; overflow-y: auto; }
   .complete-actions { margin-left: 12px; }

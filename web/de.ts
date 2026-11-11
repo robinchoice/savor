@@ -1,5 +1,14 @@
 // German texts, keyed by the English ones in t('…'). Placeholders such as {n} stay as they are.
 const de: Record<string, string> = {
+  'Quick': 'Schnell',
+  'Quick answer: a fast model without tools answers right away and passes the question to the agent when it needs the project': 'Schnellantwort: Ein schnelles Modell ohne Werkzeuge antwortet sofort und gibt die Frage an den Agenten weiter, wenn sie das Projekt braucht',
+  'Ask the fast lane': 'Die Schnellspur fragen',
+  'Ask a quick question…': 'Kurze Frage stellen…',
+  'Fast lane': 'Schnellspur',
+  'Quick question': 'Schnellfrage',
+  'The fast lane passed this on to the agent: it needs the project, tools or actions': 'Die Schnellspur hat das an den Agenten weitergegeben: Es braucht das Projekt, Werkzeuge oder Aktionen',
+  'Passed to the agent': 'An den Agenten übergeben',
+  'The fast lane is answering…': 'Die Schnellspur antwortet…',
   'Successful': 'Erfolgreich',
   'Partial': 'Teilweise',
   'Blocked': 'Blockiert',

@@ -3,10 +3,10 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import * as store from './store.js'
-import type { AgentConfig, Message, NoticeType, Origin, Project, Provider, Question, Thread } from './store.js'
+import type { AgentConfig, Lane, Message, NoticeType, Origin, Project, Provider, Question, Thread } from './store.js'
 import { emit } from './events.js'
 import { appUrl } from './config.js'
-import { Activity, PlanTracker, configKey, forkOf, sessionIdOf, STOPPED, type Answer, type ApprovalRequest, type Host, type Session, type TurnInput } from './session.js'
+import { Activity, PlanTracker, configKey, forkOf, sessionIdOf, STOPPED, type Answer, type ApprovalRequest, type DraftKind, type Host, type Session, type TurnInput } from './session.js'
 import { ClaudeSession, claudeAside, creditEnv, idleCompaction } from './claude.js'
 import { CodexSession, codexAside } from './codex.js'
 import { AcpSession, acpAside } from './acp.js'
@@ -81,7 +81,8 @@ export const conclusionKey = (m: Pick<Message, 'text' | 'questions' | 'suggestio
 export function request(p: Project, tid: string) {
   let r = requests.get(tid)
   if (r) return r
-  const msgs = store.readMessages(p, tid)
+  // The fast lane's questions and answers are no part of the agent's requests.
+  const msgs = store.readMessages(p, tid).filter((m) => !m.lane)
   let i = msgs.length - 1
   while (i >= 0 && !(msgs[i].kind === 'user' && msgs[i].delivered !== false)) i--
   const sent = i < 0 ? [] : msgs.slice(i + 1)
@@ -99,8 +100,75 @@ export function request(p: Project, tid: string) {
 
 export function post(p: Project, tid: string, m: Omit<Message, 'id' | 'ts'>) {
   const msg = store.appendMessage(p, tid, { modelInfo: store.getThread(p, tid).agent, ...m })
+  // The message replaces its draft; the UI keeps showing the draft until it has the message.
+  if (m.kind !== 'user') setDraft(p, tid, null, m.lane)
   emit({ type: 'message', projectId: p.id, threadId: tid })
   return msg
+}
+
+// ---- drafts ----
+
+// What an agent is writing to the user right now, before the message is sent, per conversation and lane. The UI gets
+// it with each change, at most every DRAFT_MS, through the event stream, which also reaches devices through the relay.
+export interface Draft { kind: DraftKind; text: string; lane?: Lane; modelInfo?: AgentConfig }
+const DRAFT_MS = 100
+// A longer draft stops growing on screen; the message itself brings all of it.
+const DRAFT_MAX = 16_000
+const drafts = new Map<string, { draft: Draft; at: number; timer?: NodeJS.Timeout }>()
+const draftKey = (tid: string, lane?: Lane) => (lane ? `${tid}:${lane}` : tid)
+
+export function setDraft(p: Project, tid: string, draft: Draft | null, lane = draft?.lane) {
+  const key = draftKey(tid, lane)
+  const d = drafts.get(key)
+  const send = (next: Draft | null) => emit({ type: 'draft', projectId: p.id, threadId: tid, lane, draft: next })
+  if (!draft) {
+    if (!d) return
+    clearTimeout(d.timer)
+    drafts.delete(key)
+    return send(null)
+  }
+  if (d && d.draft.text.length >= DRAFT_MAX) return
+  const next = { ...draft, text: draft.text.slice(0, DRAFT_MAX) }
+  const entry = d ?? { draft: next, at: 0 }
+  entry.draft = next
+  drafts.set(key, entry)
+  if (entry.timer) return
+  const wait = entry.at + DRAFT_MS - Date.now()
+  const flush = () => {
+    entry.timer = undefined
+    if (drafts.get(key) !== entry) return
+    entry.at = Date.now()
+    send(entry.draft)
+  }
+  if (wait <= 0) flush()
+  else entry.timer = setTimeout(flush, wait)
+}
+
+export const draftsOf = (tid: string) => [...drafts.entries()].filter(([k]) => k === tid || k.startsWith(`${tid}:`)).map(([, d]) => d.draft)
+
+// ---- the fast lane ----
+
+// A question the fast lane passed on (it needs the project, tools or actions) joins the agent's queue like any input,
+// and the agent gets what the fast lane already answered in front of it (turnInput).
+export function handOff(p: Project, tid: string, mid: string) {
+  store.updateMessage(p, tid, mid, { lane: undefined, handedOff: true, delivered: false })
+  setResume(p, tid, null)
+  stopped.delete(tid)
+  if (busy.has(tid) || compacting.has(tid)) return emit({ type: 'message', projectId: p.id, threadId: tid })
+  pump(p, tid)
+}
+
+// The fast lane's questions and answers since the agent's last input, also those after a queued input: the agent doesn't
+// know them otherwise.
+function fastSince(p: Project, thread: Thread, input: Message) {
+  const msgs = store.readMessages(p, thread.id)
+  const lines: string[] = []
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    const m = msgs[i]
+    if (m.kind === 'user' && !m.lane && m.delivered !== false && m.id !== input.id) break
+    if (m.lane === 'fast' && m.text && m.kind !== 'error') lines.unshift(`[${m.kind === 'user' ? 'user' : 'fast lane'}] ${m.text.slice(0, 2000)}`)
+  }
+  return lines.length ? `Quick questions the user asked Savor's fast lane since your last input, with its answers (a model without tools; the user saw them):\n${lines.join('\n\n')}\n\n` : ''
 }
 
 // A notice is unread until it is seen. `status` is what a push says, besides a question it can answer.
@@ -274,6 +342,7 @@ export function forget(tid: string) {
   clearTimeout(compactTimers.get(tid))
   compacting.get(tid)?.kill()
   for (const state of [busy, requests, turnConclusion, preparing, resumeTimers, ciTimers, compactTimers, compacting]) state.delete(tid)
+  for (const key of [draftKey(tid), draftKey(tid, 'fast')]) clearTimeout(drafts.get(key)?.timer), drafts.delete(key)
   stopped.delete(tid)
 }
 
@@ -358,6 +427,7 @@ function beginTurn(p: Project, tid: string) {
 function endTurn(p: Project, tid: string, result: { text?: string; error?: string; resetsAt?: number | null }, agent: AgentConfig) {
   const startedAt = busy.get(tid)
   if (!startedAt) return
+  setDraft(p, tid, null)
   let nudge = false
   if (result.error) {
     // A reset that is already well past can't explain the error: no second try then.
@@ -459,7 +529,7 @@ function turnInput(p: Project, thread: Thread, msg: Message, note = ''): TurnInp
   const files = (msg.files ?? []).map((f) => path.join(dir, f))
   const attached = files.length ? `\n\nAttached files:\n${files.join('\n')}` : ''
   const routing = thread.inbox ? `This conversation is a shared inbox. Use list_projects to identify the right repositories. Route clearly scoped work through start_conversation with the target project and a concise, self-contained task; use a separate worktree for code changes. Split independent tasks across projects. Check the conversation history before delegating again. Handle notes and general questions here; ask the user when the project or intent is unclear. Do not change repository code in this inbox. Link every started conversation in your conclusion. Preserve the user's requested scope and permissions.\n\n` : ''
-  return { context: `${handover(p, thread, msg)}Savor context:\n${JSON.stringify(context)}\n\n${routing}${note}New input:\n`, input: `${msg.text}${attached}`, images: (msg.images ?? []).map((f) => path.join(dir, f)) }
+  return { context: `${handover(p, thread, msg) || fastSince(p, thread, msg)}Savor context:\n${JSON.stringify(context)}\n\n${routing}${note}New input:\n`, input: `${msg.text}${attached}`, images: (msg.images ?? []).map((f) => path.join(dir, f)) }
 }
 
 // ---- sessions ----
@@ -544,6 +614,7 @@ function hostFor(p: Project, thread: Thread, holder: { session?: Session }): Hos
       emit({ type: 'status', projectId: p.id, threadId: tid })
       maybeClose(p, tid)
     },
+    draft: (d) => mine() && setDraft(p, tid, d && { ...d, modelInfo: thread.agent }),
     ended: (result) => mine() && endTurn(p, tid, result, thread.agent),
     closed: (error) => {
       if (!mine()) return
@@ -901,6 +972,7 @@ function compact(p: Project, tid: string) {
     backgroundChanged: () => {},
     working: () => {},
     model: () => {},
+    draft: () => {},
     // What the context holds after the compaction. The conversation shows it below the message it followed.
     context: (to) => {
       if (!mine()) return

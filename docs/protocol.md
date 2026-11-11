@@ -204,7 +204,7 @@ An extension is a group of tools a host MAY offer. The agent finds out which one
 
 ### 8.3 Conversation label
 
-`set_thread_label` (`label`, 1–80 characters, 3–6 words). The agent calls it first when `threadLabel` is null.
+`set_thread_label` (`label`, 1–80 characters, 3–6 words). When `threadLabel` is null, the agent gives the label with its first message for the input, as `label` of `send_acknowledgement_message` or `send_conclusion_message`, or calls `set_thread_label` before it.
 
 ### 8.4 CI
 

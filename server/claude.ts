@@ -10,7 +10,7 @@ import path from 'node:path'
 import * as store from './store.js'
 import type { ApprovalOption, PlanAgent, PlanStep, Thread } from './store.js'
 import { BIN, command, mcpUrl } from './config.js'
-import { budgetReached, configKey, forkOf, formFields, OPEN_PAGE, rememberSession, STOPPED, SUBMIT_FORM, sessionIdOf, summarize, systemPrompt, webUrl, type Host, type Session, type TurnInput } from './session.js'
+import { budgetReached, configKey, DRAFTED, forkOf, formFields, OPEN_PAGE, partialText, rememberSession, STOPPED, SUBMIT_FORM, sessionIdOf, summarize, systemPrompt, webUrl, type DraftKind, type Host, type Session, type TurnInput } from './session.js'
 import type { ModelInfo, SkillInfo } from './providers.js'
 
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
@@ -102,6 +102,9 @@ export class ClaudeSession implements Session {
   private creates = new Map<string, PlanStep>()
   // Tasks Claude starts by itself (watchers): no work the user asked for.
   private ambient = new Set<string>()
+  // The message tool call Claude is writing, and the one whose draft the user sees until its result.
+  private block: { index: number; id: string; kind: DraftKind; json: string } | null = null
+  private drafting: string | null = null
   constructor(private host: Host, thread: Thread) {
     const { p } = host
     const a = thread.agent
@@ -117,6 +120,8 @@ export class ClaudeSession implements Session {
       '--input-format', 'stream-json',
       '--output-format', 'stream-json',
       '--verbose',
+      // The user watches a message to them grow while Claude writes it.
+      '--include-partial-messages',
       '--append-system-prompt', systemPrompt(p, thread) + UNAVAILABLE_NOTE + BACKGROUND_NOTE,
       '--mcp-config', mcpConfig,
       '--allowedTools', 'mcp__savor',
@@ -218,6 +223,7 @@ export class ClaudeSession implements Session {
       return
     }
     const { p, tid, activity } = this.host
+    if (ev.type === 'stream_event') return this.stream(ev)
     // Claude names the background tasks that still run (shell commands, subagents) whenever that list changes.
     // Ambient ones (watchers it starts by itself) are no work the user could want to stop.
     if (ev.type === 'system' && ev.subtype === 'background_tasks_changed') {
@@ -250,6 +256,8 @@ export class ClaudeSession implements Session {
     } else if (ev.type === 'user') {
       for (const c of ev.message?.content ?? []) if (c.type === 'tool_result') {
         activity.finish(c.tool_use_id)
+        // A message tool Savor refused leaves no message behind its draft.
+        if (this.drafting === c.tool_use_id) this.endDraft()
         const created = this.creates.get(c.tool_use_id)
         const id = !c.is_error && resultText(c.content).match(/^Task #(\S+) created successfully/)?.[1]
         this.creates.delete(c.tool_use_id)
@@ -265,9 +273,35 @@ export class ClaudeSession implements Session {
       if (typeof ev.total_cost_usd === 'number') this.host.spent({ usd: ev.total_cost_usd })
       const interrupted = this.interrupted
       this.interrupted = false
+      this.endDraft()
       if (ev.subtype === 'error_max_budget_usd') return this.host.ended({ error: this.credit ? `Claude Code used the $${this.credit} of API credit it may spend on this takeover.` : budgetReached(this.budget) })
       this.host.ended(ev.is_error && !interrupted ? { error: ev.result || ev.subtype, resetsAt: this.limit } : { text: ev.is_error ? '' : ev.result ?? '' })
     }
+  }
+
+  // The arguments of a message tool as Claude writes them (--include-partial-messages): its text becomes the draft
+  // the user watches. Subagents write no messages to the user.
+  private stream(ev: any) {
+    const e = ev.event
+    if (ev.parent_tool_use_id || !e) return
+    if (e.type === 'content_block_start') {
+      const kind = e.content_block?.type === 'tool_use' && DRAFTED[String(e.content_block.name).replace(/^mcp__savor__/, '')]
+      this.block = kind ? { index: e.index, id: e.content_block.id, kind, json: '' } : null
+    } else if (e.type === 'content_block_delta' && e.delta?.type === 'input_json_delta' && this.block && this.block.index === e.index) {
+      const block = this.block
+      block.json += e.delta.partial_json ?? ''
+      const text = partialText(block.json)
+      if (text) {
+        this.drafting = block.id
+        this.host.draft({ kind: block.kind, text })
+      }
+    } else if (e.type === 'content_block_stop' && this.block?.index === e.index) this.block = null
+  }
+
+  private endDraft() {
+    if (!this.drafting) return
+    this.drafting = null
+    this.host.draft(null)
   }
 
   private todo(useId: string, tool: string, input: any) {

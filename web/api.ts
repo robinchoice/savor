@@ -43,7 +43,7 @@ export async function apiBlob(path: string) {
   throw new Error(data.error ?? t('Request failed ({status})', { status: r.status }))
 }
 
-export type SavorEvent = { type: string; projectId?: string; threadId?: string; title?: string; body?: string; version?: string }
+export type SavorEvent = { type: string; projectId?: string; threadId?: string; title?: string; body?: string; version?: string; lane?: string; draft?: Draft | null }
 type Listener = (e: SavorEvent) => void
 const listeners = new Set<Listener>()
 
@@ -179,7 +179,12 @@ export interface Message {
   from?: { projectId: string; project: string; threadId: string; label: string }
   delivered?: boolean
   compacted?: { from: number; to: number }
+  // A question to the fast lane and its answer; a question it passed on to the agent is handedOff.
+  lane?: 'fast'
+  handedOff?: boolean
 }
+// A message the agent or the fast lane is still writing, as far as it has come.
+export interface Draft { kind: 'ack' | 'update' | 'conclusion'; text: string; lane?: 'fast'; modelInfo?: AgentConfig }
 export interface Attachment { name: string; dataUrl: string }
 export interface ModeInfo { id: string; label: string; detail: string; unsafe?: boolean }
 export interface ModelInfo { id: string; label: string; detail?: string; efforts?: string[]; ultracode?: boolean }

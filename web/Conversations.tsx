@@ -5,10 +5,10 @@ import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import {
   Asterisk, Hexagon, Code2, Sparkles, Orbit, Plus, Search, MessageSquare, Check, MoreHorizontal, PanelLeft, PanelRight, FileText, Globe,
-  BookOpen, CircleAlert, ArrowUp, ArrowLeft, Pencil, MessageSquarePlus, ArrowRight, Smartphone, Monitor, Bot, ShieldQuestion, X, ChevronUp, ChevronDown, ChevronRight, Paperclip, GitBranch, GitFork, GitMerge, Trash2, Copy, FileDiff, Split, SquareArrowOutUpRight, Workflow as WorkflowIcon, Mail, MailOpen, SquareTerminal, RotateCcw,
+  BookOpen, CircleAlert, ArrowUp, ArrowLeft, Pencil, MessageSquarePlus, ArrowRight, Smartphone, Monitor, Bot, ShieldQuestion, X, ChevronUp, ChevronDown, ChevronRight, Paperclip, GitBranch, GitFork, GitMerge, Trash2, Copy, FileDiff, Split, SquareArrowOutUpRight, Workflow as WorkflowIcon, Mail, MailOpen, SquareTerminal, RotateCcw, Rabbit,
 } from 'lucide-preact'
 import {
-  api, returnSends, avatarStyle, cap, desktop, duration, effortLabel, formatStamp, formatTime, freeAgent, go, initial, lastThreadKey, PROVIDER_NAMES, runTrigger, useApi, kindOf, noticeOf, NOTICES, RINGS, type ActivityEvent, type AgentConfig, type Approval, type ApprovalOption, type Attachment, type Decision, type Fallback, type Message, type Plan, type PlanAgent, type PlanStep, type Proc, type Project, type Reason, type Thread, type Workflow, type Worktree,
+  api, returnSends, avatarStyle, cap, desktop, duration, effortLabel, formatStamp, formatTime, freeAgent, go, initial, lastThreadKey, PROVIDER_NAMES, runTrigger, useApi, useEvent, kindOf, noticeOf, NOTICES, RINGS, type ActivityEvent, type AgentConfig, type Approval, type ApprovalOption, type Attachment, type Decision, type Draft, type Fallback, type Message, type Plan, type PlanAgent, type PlanStep, type Proc, type Project, type Reason, type Thread, type Workflow, type Worktree,
 } from './api'
 import { Composer, quoteInComposer, type Picked } from './Composer'
 import { transport } from './transport'
@@ -787,13 +787,13 @@ function NewConversation({ project }: { project: Project }) {
     addEventListener('hashchange', on)
     return () => removeEventListener('hashchange', on)
   }, [])
-  const send = async (text: string, attachments: Attachment[]) => {
+  const send = async (text: string, attachments: Attachment[], opts?: { fast: true }) => {
     if (fanout) {
       const [first] = await api<Thread[]>('POST', `/projects/${project.id}/fanout`, { text, attachments, agents: fanout })
       go(`/p/${project.id}/fan/${first.fanout!.id}`)
       return
     }
-    const t = await api<Thread>('POST', `/projects/${project.id}/threads`, { text, attachments, agent: chosen ?? project.agent, worktree })
+    const t = await api<Thread>('POST', `/projects/${project.id}/threads`, { text, attachments, agent: chosen ?? project.agent, worktree, ...opts })
     go(`/p/${project.id}/t/${t.id}`)
   }
   return (
@@ -804,7 +804,7 @@ function NewConversation({ project }: { project: Project }) {
           {t('Start a conversation in {name}. Each conversation gets its own agent session.', { name: project.name })}
         </p>
       </div>
-      <Composer project={project} agent={agent} setAgent={setAgent} onSend={send} placeholder={t('Describe what you want…')} worktree={worktree} setWorktree={setWorktree} fanout={fanout} setFanout={setFanout} voice={voice} autoFocus />
+      <Composer project={project} agent={agent} setAgent={setAgent} onSend={send} quick placeholder={t('Describe what you want…')} worktree={worktree} setWorktree={setWorktree} fanout={fanout} setFanout={setFanout} voice={voice} autoFocus />
     </section>
   )
 }
@@ -816,7 +816,7 @@ const waitingFor = (th: Thread) =>
 // What the daemon records as the error of a turn the user stopped. That is not a failure.
 export const STOPPED = 'Turn stopped.'
 
-interface ThreadData { thread: Thread; busy: boolean; waiting: boolean; background: boolean; startedAt?: string; messages: Message[]; decisions: Decision[]; processes: Proc[] }
+interface ThreadData { thread: Thread; busy: boolean; waiting: boolean; background: boolean; startedAt?: string; drafts: Draft[]; answering: boolean; messages: Message[]; decisions: Decision[]; processes: Proc[] }
 
 // How full the agent's context window is: a share of it once the agent has named its size, the tokens until then.
 function ContextUse({ context: c }: { context: NonNullable<Thread['context']> }) {
@@ -843,6 +843,27 @@ export function ThreadView({ project, threadId, back, next, siblings, plain }: {
   }, [reload])
   const [activity] = useApi<ActivityEvent[]>(`${base}/activity`, (e) => e.threadId === threadId && (e.type === 'activity' || e.type === 'status'))
   const [plans] = useApi<Record<string, Plan>>(`${base}/plans`, (e) => e.threadId === threadId && (e.type === 'plan' || e.type === 'status'))
+  // What the agent and the fast lane are writing, by lane, as it grows. A finished draft stays until the conversation
+  // has reloaded with its message, so the answer doesn't blink away in between.
+  const [drafts, setDrafts] = useState<Record<string, Draft & { done?: boolean }>>({})
+  useEffect(() => {
+    setDrafts((local) => {
+      const next: Record<string, Draft> = {}
+      for (const d of data?.drafts ?? []) next[d.lane ?? 'agent'] = d
+      // A reload may have started before the latest growth arrived, or before the draft began.
+      for (const [lane, mine] of Object.entries(local)) {
+        const d = next[lane]
+        const writing = lane === 'fast' ? data?.answering : data?.busy
+        if (!mine.done && writing && (!d || (mine.kind === d.kind && mine.text.startsWith(d.text)))) next[lane] = mine
+      }
+      return next
+    })
+  }, [data])
+  useEvent((e) => {
+    if (e.type !== 'draft' || e.threadId !== threadId) return
+    const lane = e.lane ?? 'agent'
+    setDrafts((ds) => (e.draft ? { ...ds, [lane]: e.draft } : ds[lane] ? { ...ds, [lane]: { ...ds[lane], done: true } } : ds))
+  }, [threadId])
   const [links] = useApi<{ source: { project: { id: string; name: string; tint: string }; thread: Thread } | null; targets: { project: { id: string; name: string; tint: string }; thread: Thread }[] }>(data?.thread.inbox || data?.thread.routedFrom ? `${base}/links` : null, (e) => ['thread', 'status', 'projects'].includes(e.type))
   // Chat, browser or changes: the first preview of a conversation opens the browser, after that the last choice stands.
   const viewKey = `savor-view:${threadId}`
@@ -941,6 +962,11 @@ export function ThreadView({ project, threadId, back, next, siblings, plain }: {
     })
     return () => cancelAnimationFrame(frame)
   }, [data?.messages.length, data?.busy, browserMode, activityOpen, Object.keys(plans ?? {}).length])
+  // A growing answer stays in view while the user reads along at the end.
+  useEffect(() => {
+    const el = listRef.current
+    if (el && el.scrollHeight - el.scrollTop - el.clientHeight < 160) el.scrollTop = el.scrollHeight
+  }, [drafts.agent?.text, drafts.fast?.text, data?.answering])
   // Ctrl/⌘F searches the conversation instead of the page.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -990,7 +1016,7 @@ export function ThreadView({ project, threadId, back, next, siblings, plain }: {
     return { ...m, modelInfo: messageAgent }
   })
   const elapsed = data.startedAt ? duration(Math.max(0, clock - Date.parse(data.startedAt))) : ''
-  const send = (text: string, attachments: Attachment[] = []) => api('POST', `${base}/messages`, { text, attachments })
+  const send = (text: string, attachments: Attachment[] = [], opts?: { fast: true }) => api('POST', `${base}/messages`, { text, attachments, ...opts })
   // Claude Code and Codex take input within a running turn; it is queued first, so it is not lost when the turn just ended.
   const steer = async (text: string, attachments: Attachment[]) => {
     const m = await api<Message>('POST', `${base}/messages`, { text, attachments })
@@ -1006,7 +1032,7 @@ export function ThreadView({ project, threadId, back, next, siblings, plain }: {
   }
 
   // Another agent's input leaves earlier questions open; the user's own passes over them.
-  const lastUser = messages.map((m) => m.kind === 'user' && !m.from).lastIndexOf(true)
+  const lastUser = messages.map((m) => m.kind === 'user' && !m.from && !m.lane).lastIndexOf(true)
   const last = messages[messages.length - 1]
   const askedIds = new Set(messages.flatMap((m, i) => (i > lastUser || m.kind === 'question' ? m.decisionIds ?? [] : [])))
   const asked = decisions.filter((d) => !d.resolved && askedIds.has(d.id))
@@ -1101,6 +1127,7 @@ export function ThreadView({ project, threadId, back, next, siblings, plain }: {
       agent={thread.agent}
       setAgent={setAgent}
       onSend={send}
+      quick={!plain}
       onSteer={['claude', 'codex'].includes(thread.agent.provider) ? steer : undefined}
       busy={busy}
       onStop={stoppable ? stop : undefined}
@@ -1291,6 +1318,15 @@ export function ThreadView({ project, threadId, back, next, siblings, plain }: {
                     </Fragment>
                   ))}
                   {openPlan && planCard(openPlan, busy || waiting)}
+                  {['agent', 'fast'].map((lane) => {
+                    const d = drafts[lane]
+                    return d && <MessageItem key={`draft-${lane}`} m={{ id: `draft-${lane}`, ts: new Date().toISOString(), kind: d.kind, text: d.text, modelInfo: d.modelInfo, lane: d.lane }} drafting thread={thread} decisions={[]} active={false} answers={answers} setAnswer={() => {}} send={() => {}} base={base} highlight="" match="" onCommit={() => {}} />
+                  })}
+                  {data.answering && !drafts.fast && (
+                    <div class="working-row fast">
+                      <span class="spinner" /> <Rabbit size={14} /> {t('The fast lane is answering…')}
+                    </div>
+                  )}
                   {(busy || waiting) && (
                     <button class="working-row" title={t('Show activity')} onClick={showActivity}>
                       <span class="spinner" /> {busy ? workingLabel : waitingFor(thread)}{elapsed && <span class="muted"> · {elapsed}</span>} <ChevronRight size={13} />
@@ -1524,7 +1560,7 @@ function ApprovalForm({ a, submit }: { a: Approval; submit: (choice: string, con
   )
 }
 
-function MessageItem({ m, thread, workflow, decisions, active, answers, setAnswer, send, base, highlight, match, onCommit, preview, onPreview }: { m: Message; thread: Thread; workflow?: NonNullable<Thread['workflow']> & { href: string }; decisions: Decision[]; active: boolean; answers: Record<string, Pick>; setAnswer: (id: string, a: Pick) => void; send: (next: boolean) => void; base: string; highlight: string; match: string; onCommit: (hash: string) => void; preview?: string | false | null; onPreview?: () => void }) {
+function MessageItem({ m, thread, workflow, decisions, active, answers, setAnswer, send, base, highlight, match, onCommit, preview, onPreview, drafting }: { drafting?: boolean; m: Message; thread: Thread; workflow?: NonNullable<Thread['workflow']> & { href: string }; decisions: Decision[]; active: boolean; answers: Record<string, Pick>; setAnswer: (id: string, a: Pick) => void; send: (next: boolean) => void; base: string; highlight: string; match: string; onCommit: (hash: string) => void; preview?: string | false | null; onPreview?: () => void }) {
   const [copyState, setCopyState] = useState('')
   useEffect(() => {
     if (!copyState) return
@@ -1539,7 +1575,7 @@ function MessageItem({ m, thread, workflow, decisions, active, answers, setAnswe
       setCopyState(t('Could not copy'))
     }
   }
-  const who = m.kind === 'user' ? (m.origin === 'remote' ? `${t('You')} · ${m.device ?? t('remote device')}` : t('You')) : PROVIDER_NAMES[m.modelInfo?.provider ?? thread.agent.provider]
+  const who = m.kind === 'user' ? (m.origin === 'remote' ? `${t('You')} · ${m.device ?? t('remote device')}` : t('You')) : m.lane ? t('Fast lane') : PROVIDER_NAMES[m.modelInfo?.provider ?? thread.agent.provider]
   const worked = m.workTiming && Date.parse(m.workTiming.finishedAt) - Date.parse(m.workTiming.startedAt)
   const queued = m.kind === 'user' && m.delivered === false
   const [open, setOpen] = useState(false)
@@ -1603,7 +1639,7 @@ function MessageItem({ m, thread, workflow, decisions, active, answers, setAnswe
   }
 
   return (
-    <div class={`msg ${m.kind} ${m.from ? 'from-agent' : ''} ${queued ? 'queued' : ''} ${match}`} id={`msg-${m.id}`}>
+    <div class={`msg ${m.kind} ${m.from ? 'from-agent' : ''} ${queued ? 'queued' : ''} ${drafting ? 'drafting' : ''} ${m.lane ? 'fast-lane' : ''} ${match}`} id={`msg-${m.id}`} aria-busy={drafting || undefined}>
       <div class="msg-head">
         <Avatar m={m} thread={thread} />{' '}
         {m.from ? (
@@ -1616,6 +1652,8 @@ function MessageItem({ m, thread, workflow, decisions, active, answers, setAnswe
         <span class="muted">{formatTime(m.ts)}</span>
         {worked ? <span class="muted">{t('Worked for {time}', { time: duration(worked) })}</span> : null}
         {m.kind === 'question' && <span class="muted">{t('Your turn')}</span>}
+        {m.kind === 'user' && m.lane && <span class="lane-chip"><Rabbit size={12} /> {t('Quick question')}</span>}
+        {m.handedOff && <span class="lane-chip" title={t('The fast lane passed this on to the agent: it needs the project, tools or actions')}><Rabbit size={12} /> {t('Passed to the agent')}</span>}
         {m.modelInfo?.model && <span class="muted">{m.modelInfo.model}{m.modelInfo.reasoning && ` · ${t('{level} effort', { level: effortLabel(m.modelInfo.reasoning) })}`}</span>}
         {m.text && <button class="icon-btn copy-message" title={copyState || t('Copy message')} aria-label={copyState || t('Copy message')} onClick={copy}>{copyState === 'Copied' ? <Check size={13} /> : <Copy size={13} />}</button>}
         {copyState && <span class="muted" role="status">{copyState}</span>}
