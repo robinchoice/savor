@@ -2317,7 +2317,9 @@ test('agents send messages to conversations in other projects, marked as theirs,
   await api('DELETE', `/projects/${other.id}`)
 })
 
-test('the terminal starts with a shell per folder and worktree, opens and closes more, on paired devices only once allowed here', async () => {
+test('the terminal starts with a shell per folder and worktree, opens and closes more, on paired devices only once allowed here', async (ctx) => {
+  // A failure in the middle must not leave a phone-sized window to the tests after it.
+  ctx.after(() => page.setViewportSize({ width: 1400, height: 900 }))
   const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
   const t = `/projects/${project.id}/terminal`
   const thread = (await api('POST', `/projects/${project.id}/threads`, { text: 'terminal work', worktree: 'term/wt' })).body
@@ -2336,7 +2338,9 @@ test('the terminal starts with a shell per folder and worktree, opens and closes
   for (const [width, height] of [[860, 600], [390, 844], [844, 390], [1400, 900]]) {
     await page.setViewportSize({ width, height })
     await page.waitForTimeout(100)
-    assert.equal(await page.evaluate(() => window.resizeTerminal === document.querySelector('.terminal-screen .xterm')), true)
+    // Says what happened when it fails now and then in CI: which terminal is shown and whether the old one is still on the page.
+    const shown = await page.evaluate(() => ({ same: window.resizeTerminal === document.querySelector('.terminal-screen .xterm'), connected: window.resizeTerminal?.isConnected, screens: document.querySelectorAll('.terminal-screen').length, on: document.querySelector('.terminal-place.on')?.textContent }))
+    assert.ok(shown.same, `the terminal was drawn anew at ${width}x${height}: ${JSON.stringify(shown)}`)
     assert.deepEqual((await api('GET', t)).body.terminals.map((term) => term.id), resizeTerms)
     assert.ok((await page.textContent('.terminal-screen')).includes('42-terminal'))
   }
