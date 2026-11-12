@@ -43,6 +43,10 @@ const ALLOW_SESSION_DENY: ApprovalOption[] = [
   { id: 'decline', label: 'Deny', kind: 'deny' },
 ]
 
+// Codex can't stream the arguments of a tool call, only its own text: a direct answer as its final message reaches the
+// user while it is written (agents.endTurn posts it as the conclusion).
+const ANSWER = `- Codex streams only your own text, not tool arguments. So when you can answer right away and have no questions, suggestions or commits for the user, write the answer as your final message instead of calling send_conclusion_message: Savor shows that final message to the user as your conclusion while you write it. When threadLabel in the Savor context is null, call set_thread_label first.`
+
 const CODEX_AGENT: Record<string, PlanAgent['status']> = { pendingInit: 'running', running: 'running', completed: 'done', shutdown: 'done', errored: 'failed', notFound: 'failed', interrupted: 'stopped' }
 
 export class CodexSession implements Session {
@@ -54,6 +58,8 @@ export class CodexSession implements Session {
   private threadId = ''
   private turnId: string | null = null
   private lastText = ''
+  // The final answer Codex is writing: Savor shows it while it streams, if it is to become the conclusion (endTurn).
+  private answer: { id: string; text: string } | null = null
   private failure: string | null = null
   private limited = false
   private stopping = false
@@ -77,7 +83,7 @@ export class CodexSession implements Session {
     await this.rpc.request('initialize', { clientInfo: CLIENT, capabilities: CAPABILITIES })
     this.rpc.notify('initialized', {})
     const mode = MODES[a.permissionMode] ?? MODES.default
-    const settings = { cwd: this.host.cwd, ...mode, model: a.model || null, developerInstructions: systemPrompt(p, this.thread) }
+    const settings = { cwd: this.host.cwd, ...mode, model: a.model || null, developerInstructions: `${systemPrompt(p, this.thread)}\n${ANSWER}` }
     const sid = sessionIdOf(this.thread, 'codex')
     const fork = forkOf(p, this.thread, 'codex')
     const r = sid
@@ -192,9 +198,15 @@ export class CodexSession implements Session {
       this.host.context(params.tokenUsage.last.totalTokens, params.tokenUsage.modelContextWindow)
       // The thread's total, which Codex keeps across resumes.
       if (params.tokenUsage.total) this.host.spent({ tokens: params.tokenUsage.total.totalTokens })
+    } else if (method === 'item/agentMessage/delta') {
+      const answer = this.answer
+      if (!answer || params.itemId !== answer.id) return
+      answer.text += params.delta ?? ''
+      if (answer.text.trim()) this.host.draft({ kind: 'conclusion', text: answer.text.trimStart(), final: true })
     } else if (method === 'item/started') {
       const item = params.item
       this.subagents(item)
+      if (item.type === 'agentMessage') this.answer = item.phase === 'final_answer' ? { id: item.id, text: '' } : null
       if (item.type === 'commandExecution') activity.start(item.id, 'command', item.command)
       else if (item.type === 'mcpToolCall') activity.start(item.id, 'note', `${item.tool} · ${summarize(item.arguments)}`)
       else if (item.type === 'dynamicToolCall') activity.start(item.id, 'note', `${item.tool} · ${summarize(item.arguments)}`)

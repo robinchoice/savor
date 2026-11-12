@@ -4,6 +4,8 @@
 // bearer token comes from the environment variable they name).
 // - "approve: <anything>" → item/commandExecution/requestApproval, then "Codex permission: <decision>"
 // - "ask-native: <question>" → item/tool/requestUserInput with the options Red/Blue, then "Codex answered: <label>"
+// - "answer: <text>" → a commentary, then "Codex answer: <text>" as its final message without a conclusion, streamed; its
+//   second half waits for the test's release file
 // - "slow: <text>" → waits for the test's release file, then "Codex echo: <text>" plus what turn/steer added meanwhile
 // - "open-page: <url>" → an MCP server asks through a URL elicitation to open that page, then "Codex page: <action>"
 // - "fill-form: <message>" → an MCP server asks through a form elicitation for a name and a color, then "Codex form: <action> <content>"
@@ -75,6 +77,7 @@ async function runTurn(params) {
   notify('thread/tokenUsage/updated', { threadId, turnId, tokenUsage: { total: last, last, modelContextWindow: 256000 } })
   notify('item/started', { threadId, turnId, item: { type: 'commandExecution', id: 'cmd1', command: 'echo hi', cwd: '.', status: 'inProgress' } })
   notify('item/completed', { threadId, turnId, item: { type: 'commandExecution', id: 'cmd1', command: 'echo hi', cwd: '.', status: 'completed' } })
+  if (input.startsWith('answer:')) return answerTurn(turn, input)
   const skill = params.input.find((i) => i.type === 'skill')
   let reply
   if (skill) {
@@ -124,7 +127,28 @@ async function runTurn(params) {
   if (added.length) reply += ` (added: ${added.join(', ')})`
   added = []
   await conclude(reply)
-  notify('item/completed', { threadId, turnId, item: { type: 'agentMessage', id: 'msg1', text: reply, phase: 'final' } })
+  // Its final text after a conclusion stays in the activity log.
+  notify('item/started', { threadId, turnId, item: { type: 'agentMessage', id: 'msg1', text: '', phase: 'final_answer' } })
+  notify('item/agentMessage/delta', { threadId, turnId, itemId: 'msg1', delta: reply })
+  notify('item/completed', { threadId, turnId, item: { type: 'agentMessage', id: 'msg1', text: reply, phase: 'final_answer' } })
+  notify('turn/completed', { threadId, turn: { ...turn, status: 'completed' } })
+  turnId = null
+}
+
+// A direct answer as Codex's final message, without send_conclusion_message: a commentary first, then the answer, whose
+// second half waits for the test's release file.
+async function answerTurn(turn, input) {
+  const message = (id, phase, text) => notify('item/completed', { threadId, turnId, item: { type: 'agentMessage', id, text, phase } })
+  notify('item/started', { threadId, turnId, item: { type: 'agentMessage', id: 'c1', text: '', phase: 'commentary' } })
+  notify('item/agentMessage/delta', { threadId, turnId, itemId: 'c1', delta: 'Looking around.' })
+  message('c1', 'commentary', 'Looking around.')
+  const reply = `Codex answer: ${input.slice('answer:'.length).trim()}`
+  const half = Math.ceil(reply.length / 2)
+  notify('item/started', { threadId, turnId, item: { type: 'agentMessage', id: 'a1', text: '', phase: 'final_answer' } })
+  notify('item/agentMessage/delta', { threadId, turnId, itemId: 'a1', delta: reply.slice(0, half) })
+  await released(input)
+  notify('item/agentMessage/delta', { threadId, turnId, itemId: 'a1', delta: reply.slice(half) })
+  message('a1', 'final_answer', reply)
   notify('turn/completed', { threadId, turn: { ...turn, status: 'completed' } })
   turnId = null
 }

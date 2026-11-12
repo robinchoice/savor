@@ -3101,8 +3101,6 @@ test('a message streams into the conversation while Claude writes it, on screen 
   await page.waitForSelector('.msg.conclusion >> text=Streamed: hello world "done"')
   await until(() => seen.includes('"draft":null'))
   assert.match(seen, /"type":"draft","projectId":"[^"]+","threadId":"[^"]+","draft":\{"kind":"conclusion","text":"Streamed: hello world "/)
-  await reader.cancel()
-  await reading
   const run = fs.readFileSync(AGENT_LOG, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((r) => r.agent === 'claude').at(-1)
   assert.ok(run.argv.includes('--include-partial-messages'))
 
@@ -3110,6 +3108,25 @@ test('a message streams into the conversation while Claude writes it, on screen 
   const labelled = (await api('POST', `/projects/${project.id}/threads`, { text: 'labelled: x', agent: { provider: 'claude' } })).body
   await until(async () => (await api('GET', `/projects/${project.id}/threads/${labelled.id}`)).body.messages.some((m) => m.text === 'Labelled.'))
   assert.equal((await api('GET', `/projects/${project.id}/threads/${labelled.id}`)).body.thread.label.name, 'Labelled with the answer')
+
+  // Codex streams only its own text: a direct answer as its final message, not the commentary before it.
+  const codex = (await api('POST', `/projects/${project.id}/threads`, { text: 'answer: hello codex', agent: { provider: 'codex', permissionMode: 'default' } })).body
+  const codexUrl = `/projects/${project.id}/threads/${codex.id}`
+  await until(async () => (await api('GET', codexUrl)).body.drafts[0]?.text === 'Codex answer:')
+  assert.equal((await api('GET', codexUrl)).body.drafts.length, 1)
+  assert.equal((await api('GET', codexUrl)).body.drafts[0].kind, 'conclusion')
+  fs.writeFileSync(AGENT_LOG + '.release', 'answer: hello codex')
+  await until(async () => (await api('GET', codexUrl)).body.messages.some((m) => m.kind === 'conclusion' && m.text === 'Codex answer: hello codex'))
+  assert.deepEqual((await api('GET', codexUrl)).body.drafts, [])
+  // Its final text after a conclusion of its own stays hidden.
+  const concluded = (await api('POST', `/projects/${project.id}/threads`, { text: 'hello', agent: { provider: 'codex', permissionMode: 'default' } })).body
+  const concludedUrl = `/projects/${project.id}/threads/${concluded.id}`
+  await until(async () => !(await api('GET', concludedUrl)).body.busy && (await api('GET', concludedUrl)).body.messages.some((m) => m.text === 'Codex echo: hello'))
+  assert.equal((await api('GET', concludedUrl)).body.messages.filter((m) => m.kind === 'conclusion').length, 1)
+  assert.ok(!seen.includes('"text":"Codex echo: hello"'))
+  await reader.cancel()
+  await reading
+  await api('PATCH', `/projects/${project.id}`, { agent: project.agent })
 })
 
 test('the fast lane answers right away without tools, beside the agent, and passes on what needs the project', async () => {

@@ -614,7 +614,13 @@ function hostFor(p: Project, thread: Thread, holder: { session?: Session }): Hos
       emit({ type: 'status', projectId: p.id, threadId: tid })
       maybeClose(p, tid)
     },
-    draft: (d) => mine() && setDraft(p, tid, d && { ...d, modelInfo: thread.agent }),
+    draft: (d) => {
+      if (!mine()) return
+      // An agent's final text reaches the user only for a request it sent no message for (endTurn).
+      const r = d?.final && request(p, tid)
+      if (r && (r.ack || r.conclusion || r.updates.size)) return
+      setDraft(p, tid, d && { kind: d.kind, text: d.text, modelInfo: thread.agent })
+    },
     ended: (result) => mine() && endTurn(p, tid, result, thread.agent),
     closed: (error) => {
       if (!mine()) return

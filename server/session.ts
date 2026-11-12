@@ -60,8 +60,9 @@ export interface Host {
   backgroundChanged(): void
   // The agent started work on its own (e.g. a background task finished): count the thread as working.
   working(): void
-  // A message the agent is still writing, as far as it has come; null once it is sent or given up.
-  draft(d: { kind: DraftKind; text: string } | null): void
+  // A message the agent is still writing, as far as it has come; null once it is sent or given up. `final` marks the
+  // agent's final text, which reaches the user only for a request it sent no message for.
+  draft(d: { kind: DraftKind; text: string; final?: boolean } | null): void
   // The agent's last request held this many tokens; `window` is the size of the model's context window when the agent names it.
   context(tokens: number, window?: number | null): void
   // The model the agent runs on, as it names it.

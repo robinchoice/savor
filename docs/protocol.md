@@ -91,6 +91,7 @@ The protocol is a set of tools of a [Model Context Protocol](https://modelcontex
 1. When a turn ends without an error, without an acknowledgement, update or conclusion for its request, and without background work of the agent still running, the host MUST show the agent's final output text as the conclusion and notify the user as for any conclusion.
 2. A conclusion sent after that MUST be refused like any second conclusion.
 3. When a turn ends with an error, the host MUST show the error and MUST NOT turn the agent's text into a conclusion.
+4. A host MAY ask an agent that can stream only its own text, not tool arguments, to give a direct answer without questions, suggestions or commits as that final text, and MAY show the text as it is written while the request has no acknowledgement, update or conclusion. Savor does so for Codex.
 
 ## 6. The context object
 
