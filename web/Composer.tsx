@@ -523,7 +523,7 @@ export function Composer(props: Props) {
             </div>
           )}
           {!fanout && <BranchPicker project={props.project} threadId={props.threadId} worktree={props.worktree} setWorktree={props.setWorktree} open={popover === 'branch'} toggle={() => setPopover(popover === 'branch' ? null : 'branch')} />}
-          {props.quick && !fanout && (
+          {props.quick && !fanout && !answers && (
             <button class={`quick-btn ${quick ? 'on' : ''}`} aria-pressed={quick} title={t('Quick answer: a fast model without tools answers right away and passes the question to the agent when it needs the project')} onClick={() => setQuick(!quickOn)}>
               <Rabbit size={15} /> <span>{t('Quick')}</span>
             </button>

@@ -745,7 +745,11 @@ main { flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
   .composer-bottom .agent-btn, .composer-bottom .branch-btn { max-width: 100%; }
   .composer-bottom > .menu-anchor:has(> .branch-btn) { flex-shrink: 4; }
   .composer-bottom .agent-btn > :not(b), .composer-bottom .branch-btn > svg { flex: none; }
+  .composer-bottom .agent-btn { overflow: hidden; }
   .composer-bottom .agent-btn b { min-width: 4em; }
+  /* "Send answers" takes the room: the agent keeps only its icon and what is left of the model's name. */
+  .composer.answering .agent-btn b { min-width: 0; }
+  .composer.answering .agent-effort { display: none; }
   .branch-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .branch-btn.worktree small { display: none; }
   .quick-btn span { display: none; }

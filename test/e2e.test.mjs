@@ -499,10 +499,25 @@ test('historical approvals render and failed conversation loads can be retried',
   }
 })
 
-test('questions are answered in one reply', async () => {
+test('questions are answered in one reply', async (t) => {
   await newConversation()
   await send('ask: Ship it?')
   await page.waitForSelector('.option')
+  // On a phone "Send answers" fits into the bar without the buttons before it running into each other.
+  t.after(() => page.setViewportSize({ width: 1400, height: 900 }))
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.waitForSelector('.composer.answering .composer-bottom')
+  const overlaps = await page.locator('.composer-bottom').evaluate((bar) => {
+    const items = [...bar.children].filter((el) => el.getClientRects().length).map((el) => [el.className, el.getBoundingClientRect()])
+    const agent = bar.querySelector('.agent-btn')
+    return [
+      ...items.filter(([, r], i) => i && r.left < items[i - 1][1].right - 1).map(([name]) => name),
+      ...(agent.scrollWidth > agent.clientWidth + 1 ? ['agent-btn content'] : []),
+      ...(bar.scrollWidth > bar.clientWidth + 1 ? ['bar'] : []),
+    ]
+  })
+  assert.deepEqual(overlaps, [])
+  await page.setViewportSize({ width: 1400, height: 900 })
   await page.waitForSelector('.sec.for-you .card.active .chip.blocked >> text=Question')
   // The filters show one group as a flat list.
   await page.click('.conv-list .filter:has-text("For you")')
