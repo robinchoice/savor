@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'preact/hooks'
 import qrcode from 'qrcode-generator'
 import { Download, Smartphone, Trash2, X } from 'lucide-preact'
-import { api, formatDay, go, PROVIDER_NAMES, useApi, useAgents, type ImportableSession, type Project, type Thread } from './api'
+import { api, desktop, formatDay, go, PROVIDER_NAMES, useApi, useAgents, type ImportableSession, type Project, type Thread } from './api'
 import { loadProfiles, pairThroughRelay, probePairing, switchProfile } from './transport'
 import { parsePairingLink, scanQrCode } from './native'
 import { TEMPLATES } from './templates'
 import { AntigravityWarning } from './Composer'
+import { DesktopSwitch } from './Account'
 import { lang, plural, t } from './i18n'
 
 const TINTS = ['#b5654a', '#8b6bc7', '#3f9a78', '#c59a3d', '#c8577a', '#4a9bb8', '#7a8794']
@@ -551,6 +552,9 @@ function Waiting({ check }: { check: string }) {
   )
 }
 
+// The desktop app pairs under the name of the computer it runs on.
+const useDeviceName = (set: (name: string) => void) => useEffect(() => void desktop?.deviceName?.().then((name) => name && set(name)), [])
+
 // About how long a new Savor Cloud instance takes until it is online, for its setup link's estimate.
 const SETUP_MINUTES = 8
 type SetupPhase = 'checking' | 'offline' | 'ready' | 'setup used' | 'setup expired'
@@ -564,6 +568,7 @@ export function RemotePair({ daemonPk, code, relay, created }: { daemonPk: strin
   const [now, setNow] = useState(Date.now())
   const [renaming, setRenaming] = useState(!setup)
   const [name, setName] = useState(/iPhone|Android|iPad/.exec(navigator.userAgent)?.[0] ?? t('My phone'))
+  useDeviceName(setName)
   const [busy, setBusy] = useState(false)
   const [check, setCheck] = useState('')
   const [error, setError] = useState('')
@@ -675,6 +680,7 @@ export function RemotePair({ daemonPk, code, relay, created }: { daemonPk: strin
           {busy ? t('Pairing…') : setup ? t('Open Savor') : t('Pair')}
         </button>
       </form>
+      {error && <DesktopSwitch pair={false} />}
     </div>
   )
 }
@@ -722,6 +728,7 @@ export function AppPair() {
 export function Pair({ code: initial }: { code?: string }) {
   const [code, setCode] = useState(initial ?? '')
   const [name, setName] = useState(/iPhone|Android|iPad/.exec(navigator.userAgent)?.[0] ?? t('My device'))
+  useDeviceName(setName)
   const [check, setCheck] = useState('')
   const [error, setError] = useState('')
   const submit = async (e: Event) => {
@@ -753,6 +760,7 @@ export function Pair({ code: initial }: { code?: string }) {
           {t('Pair')}
         </button>
       </form>
+      {error && <DesktopSwitch pair={false} />}
     </div>
   )
 }

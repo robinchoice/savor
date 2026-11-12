@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks'
-import { ArrowDown, ArrowUp, ArrowUpRight, Bot, Check, ChevronDown, ChevronRight, Laptop, MessageSquare, Mic, Plus, SlidersHorizontal, Smartphone, X } from 'lucide-preact'
-import { api, cap, desktop, fetchAgents, go, poolOf, PROVIDER_NAMES, useAgents, useApi, type AgentConfig, type Fallback, type Me } from './api'
+import { ArrowDown, ArrowUp, ArrowUpRight, Bot, Check, ChevronDown, ChevronRight, Laptop, MessageSquare, Mic, Plus, SlidersHorizontal, Smartphone, Trash2, X } from 'lucide-preact'
+import { api, cap, desktop, fetchAgents, go, poolOf, PROVIDER_NAMES, useAgents, useApi, type AgentConfig, type DesktopComputerList, type Fallback, type Me } from './api'
 import { native } from './native'
 import { AgentButton, AgentMenu } from './Composer'
 import { AgentStatusRow, ModeCards } from './Setup'
@@ -493,6 +493,116 @@ function Computers() {
   )
 }
 
+// The computers of the desktop app: this one and the ones paired with it, directly or through a relay. The app
+// shows one at a time, each with its own page, so a paired computer treats the app like any paired device.
+function useDesktopComputers() {
+  const [computers, setComputers] = useState<DesktopComputerList | null>(null)
+  const load = () => void desktop?.computers?.().then(setComputers)
+  useEffect(load, [])
+  return [computers, load] as const
+}
+
+const VIA: Record<string, string> = { direct: t('Direct'), relay: t('Via relay') }
+
+export function DesktopComputers() {
+  const [computers, load] = useDesktopComputers()
+  if (!computers) return null
+  const forget = (c: DesktopComputerList['list'][number]) =>
+    confirm(t('Remove {name} from this app? To end its access, revoke the device in Savor on {name} too.', { name: c.name })) && desktop!.forgetComputer!(c.id).then(load)
+  return (
+    <details class="box" open>
+      <summary>
+        <span class="tile">
+          <Laptop size={16} />
+        </span>
+        {t('Computers')} <ChevronDown size={16} class="chev" />
+      </summary>
+      <div class="box-body">
+        {computers.list.map((c) => (
+          <div key={c.id} class="setting computer">
+            <span>
+              {c.via === 'local' ? t('This computer') : c.name}
+              <small class="muted">{c.via === 'local' ? c.name : VIA[c.via]}</small>
+            </span>
+            {c.id === computers.current ? (
+              <span class="muted">{t('Connected')}</span>
+            ) : (
+              <button class="ghost small" onClick={() => desktop!.openComputer!(c.id)}>
+                {t('Switch')}
+              </button>
+            )}
+            {c.via !== 'local' && (
+              <button class="icon-btn" title={t('Remove from this app')} onClick={() => forget(c)}>
+                <Trash2 size={14} />
+              </button>
+            )}
+          </div>
+        ))}
+        <PairComputer />
+        <div class="setting run-here">
+          <span>
+            {t('Run Savor on this computer')}
+            <small class="muted">{t('Off: the app starts no Savor here and is only a client of the computers paired with it.')}</small>
+          </span>
+          <button class={`switch ${computers.server ? 'on' : ''}`} role="switch" aria-checked={computers.server} onClick={() => desktop!.setServer!(!computers.server).then(load)}>
+            <i />
+          </button>
+        </div>
+      </div>
+    </details>
+  )
+}
+
+// Pairing the desktop app with another computer: its pairing link opens in the window, and its page pairs.
+export function PairComputer() {
+  const [open, setOpen] = useState(false)
+  const [link, setLink] = useState('')
+  const [error, setError] = useState('')
+  if (!open)
+    return (
+      <button class="setting" onClick={() => setOpen(true)}>
+        <span>{t('Pair another computer')}</span>
+        <ChevronRight size={15} />
+      </button>
+    )
+  const pair = async (e: Event) => {
+    e.preventDefault()
+    if (!(await desktop!.pairComputer!(link))) setError(t('That is not a Savor pairing link.'))
+  }
+  return (
+    <form class="form pair-computer" onSubmit={pair}>
+      <label>
+        {t('Pairing link')}
+        <small class="muted">{t('Open Savor on the other computer, go to Devices & remote access → Pair a device, and copy the link.')}</small>
+        <input autoFocus value={link} onInput={(e) => setLink(e.currentTarget.value)} placeholder="https://…/#/pair/…" />
+      </label>
+      {error && <div class="error-text">{error}</div>}
+      <button class="primary" disabled={!link.trim()}>
+        {t('Pair')}
+      </button>
+    </form>
+  )
+}
+
+// On a page that can't go on (its computer is offline or let this app go), the desktop app offers its other computers.
+// The page of a pairing link only switches, it can't pair another.
+export function DesktopSwitch({ pair = true }: { pair?: boolean }) {
+  const [computers] = useDesktopComputers()
+  if (!computers) return null
+  return (
+    <>
+      {computers.list
+        .filter((c) => c.id !== computers.current)
+        .map((c) => (
+          <button key={c.id} class="ghost" onClick={() => desktop!.openComputer!(c.id)}>
+            {t('Switch to {host}', { host: c.via === 'local' ? t('This computer') : c.name })}
+          </button>
+        ))}
+      {pair && <PairComputer />}
+    </>
+  )
+}
+
 // Savor has no accounts: this is the computer it runs on, or on a paired device, that device.
 export function AccountDialog({ me, projects, toggleAwake, open, onClose }: { me: Me; projects: number; toggleAwake: () => void; open: (what: 'feedback' | 'appearance' | 'shortcuts') => void; onClose: () => void }) {
   const local = me.origin === 'local'
@@ -515,7 +625,7 @@ export function AccountDialog({ me, projects, toggleAwake, open, onClose }: { me
     <div class="overlay" onClick={onClose}>
       <div class="dialog account-dialog" onClick={(e) => e.stopPropagation()}>
         <header class="dialog-head">
-          {local ? <Laptop size={18} /> : <Smartphone size={18} />}
+          {local || desktop ? <Laptop size={18} /> : <Smartphone size={18} />}
           <div class="dialog-title">
             <b>{local ? t('This computer') : t('This device')}</b>
           </div>
@@ -542,9 +652,7 @@ export function AccountDialog({ me, projects, toggleAwake, open, onClose }: { me
             </div>
           ) : (
             <div class="box row-item">
-              <span class="tile">
-                <Smartphone size={17} />
-              </span>
+              <span class="tile">{desktop ? <Laptop size={17} /> : <Smartphone size={17} />}</span>
               <div>
                 <b>{me.device}</b>
                 <small class="muted">
@@ -554,7 +662,7 @@ export function AccountDialog({ me, projects, toggleAwake, open, onClose }: { me
               </div>
             </div>
           )}
-          {!local && loadProfile() && <Computers />}
+          {desktop?.computers ? <DesktopComputers /> : !local && loadProfile() && <Computers />}
           {local && <MyDevices me={me} projects={projects} />}
           {local && <Agents cloud={!!me.cloud} />}
           {local && <VoiceInput />}
@@ -652,7 +760,7 @@ export function AccountDialog({ me, projects, toggleAwake, open, onClose }: { me
         <footer class="dialog-foot">
           <PleasanceFooter />
           <div class="row">
-            {loadProfile() && (
+            {loadProfile() && !desktop?.computers && (
               <button class="ghost danger" onClick={forget}>
                 {t('Forget this computer')}
               </button>

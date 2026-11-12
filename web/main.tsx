@@ -1,7 +1,7 @@
 import './monitoring'
 import { Fragment, render } from 'preact'
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
-import { ArrowDownAZ, Coffee, Download, Lock, FolderOpen, Monitor, Pin, PinOff, RefreshCw, Search, Files as FilesIcon, MessageSquare, Moon, Server, SlidersHorizontal, SquareKanban, Sun, Workflow as WorkflowIcon, ChevronDown, Inbox, Layers, LayoutList, Smartphone, X, CalendarCheck, FileDown, MoreHorizontal, SquareTerminal, GraduationCap } from 'lucide-preact'
+import { ArrowDownAZ, Coffee, Download, Lock, FolderOpen, Monitor, Pin, PinOff, RefreshCw, Search, Files as FilesIcon, MessageSquare, Moon, Server, SlidersHorizontal, SquareKanban, Sun, Workflow as WorkflowIcon, ChevronDown, Inbox, Laptop, Layers, LayoutList, Smartphone, X, CalendarCheck, FileDown, MoreHorizontal, SquareTerminal, GraduationCap } from 'lucide-preact'
 import { api, avatarStyle, cap, connectEvents, desktop, go, initial, lastThreadKey, Unauthorized, useApi, useEvent, type Me, type Project } from './api'
 import { ContextActions, Conversations } from './Conversations'
 import { FilesView } from './Files'
@@ -16,7 +16,7 @@ import { setTerminalOpen, TerminalButton, TerminalPanel } from './Terminal'
 import { ArrangeButton, Dock, Panel, useNarrow } from './Layout'
 import { useNotifications } from './notify'
 import { native } from './native'
-import { AccountDialog, AppearanceMenu, FeedbackDialog } from './Account'
+import { AccountDialog, AppearanceMenu, DesktopSwitch, FeedbackDialog } from './Account'
 import { BugButton } from './BugButton'
 import { AddProject, SetupWizard } from './Setup'
 import { usePrefs } from './prefs'
@@ -77,6 +77,8 @@ function App() {
     api<Me>('GET', '/me').then(
       (m) => {
         if (mode === 'relay') rememberHost(m.host)
+        // The desktop app adds a computer it was paired with to its list once its page is in.
+        desktop?.connected?.({ host: m.host, ...(mode === 'relay' && { daemonPk: loadProfile()?.daemonPk }) })
         setMe(m)
         connectEvents()
       },
@@ -108,6 +110,7 @@ function App() {
         <img src="/icon.svg" alt="" />
         <h1>{t('Savor')}</h1>
         <p>{t('This is a Savor relay. To reach your computer from here, open Savor on it, go to Devices & remote access → Pair a device, and scan the QR code.')}</p>
+        <DesktopSwitch />
       </div>
     )
   if (me === null)
@@ -116,13 +119,17 @@ function App() {
         <img src="/icon.svg" alt="" />
         <h1>{t('Connecting…')}</h1>
         <p class="muted">{link.error ?? t('Reaching your computer through the relay.')}</p>
-        {loadProfiles()
-          .filter((p) => p.daemonPk !== loadProfile()!.daemonPk)
-          .map((p) => (
-            <button key={p.daemonPk} class="ghost" onClick={() => switchProfile(p)}>
-              {t('Switch to {host}', { host: p.host ?? t('your other computer') })}
-            </button>
-          ))}
+        {desktop?.computers ? (
+          <DesktopSwitch />
+        ) : (
+          loadProfiles()
+            .filter((p) => p.daemonPk !== loadProfile()!.daemonPk)
+            .map((p) => (
+              <button key={p.daemonPk} class="ghost" onClick={() => switchProfile(p)}>
+                {t('Switch to {host}', { host: p.host ?? t('your other computer') })}
+              </button>
+            ))
+        )}
       </div>
     ) : null
   if (me === false)
@@ -131,6 +138,7 @@ function App() {
         <img src="/icon.svg" alt="" />
         <h1>Savor</h1>
         <p>{t('Open the link with ?token=… that the daemon printed on start, or pair this device from Settings → Devices on your computer.')}</p>
+        <DesktopSwitch />
       </div>
     )
 
@@ -370,7 +378,7 @@ function TopBar({ projects, active, all, me, setMe }: { projects: Project[]; act
           {menu === 'appearance' && <AppearanceMenu close={() => closeMenu('appearance')} />}
         </div>
         <button class="account" title={me.origin === 'local' ? t('This computer') : t('Remote device: {name}', { name: me.device ?? '' })} onClick={() => setDialog('account')}>
-          {me.origin === 'local' ? 'S' : <Smartphone size={15} />}
+          {me.origin === 'local' ? 'S' : desktop ? <Laptop size={15} /> : <Smartphone size={15} />}
           <span class="online" />
         </button>
         {dialog === 'account' && <AccountDialog me={me} projects={projects.length} toggleAwake={toggleAwake} open={open} onClose={() => setDialog(null)} />}
@@ -610,5 +618,14 @@ function Welcome({ me, setMe }: { me: Me; setMe: (m: Me) => void }) {
   )
 }
 
-render(<App />, document.getElementById('app')!)
+// The desktop app opens a computer paired through this relay by its key (desktop/computers.cjs): that one
+// becomes the active profile, and the page loads again with it.
+function openComputer() {
+  const pk = /^#\/computer\/([\w-]+)$/.exec(location.hash)?.[1]
+  const profile = pk && loadProfiles().find((p) => p.daemonPk === pk)
+  if (profile) switchProfile(profile)
+  return !!profile
+}
+addEventListener('hashchange', openComputer)
+if (!openComputer()) render(<App />, document.getElementById('app')!)
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js')

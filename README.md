@@ -168,6 +168,8 @@ SAVOR_HOST=0.0.0.0 SAVOR_PUBLIC_URL=http://my-desktop.tailnet.ts.net:4317 npm st
 
 Without a connected relay, the pairing QR code points at `SAVOR_PUBLIC_URL`.
 
+**From the desktop app on another computer**, for example a laptop that uses Savor on a headless machine. In the app's account menu, **Computers → Pair another computer** takes a pairing link from **Devices & remote access → Pair a device** on that machine, a direct one (`SAVOR_PUBLIC_URL`, quickest over Tailscale) or a relay link. The window then shows that computer's own page, and it asks there for approval like any device: requests from the app count as `remote`, and the terminal stays off until you allow it there. The menu switches between **This computer** and the paired ones; the app opens the last one on its next start. With **Run Savor on this computer** off, the app starts no daemon of its own and is only a client; with nothing paired yet, or when a computer is unreachable, it shows a page to paste a link or pick another computer. The list lives in `computers.json` in the app's data folder (`desktop/computers.cjs`). Removing a computer there drops the app's login for a direct one; revoke the device on that computer too.
+
 ## Usage ping
 
 The desktop app counts its installations with one anonymous ping a day to the relay at `savor.diespaetzles.lol`. It sends exactly this:
@@ -377,7 +379,7 @@ Early: version 0.x, first released in September 2026, with releases several time
 - Antigravity doesn't work on Windows yet.
 - The phone apps are in closed testing (TestFlight, Play's internal test). On the phone, use the web app through a relay or your own network.
 - There is no public relay instance yet: run your own (see above) or use a direct connection.
-- A browser can pair with several computers but talks to one at a time, and only that one sends it notifications.
+- A browser or the desktop app can pair with several computers but talks to one at a time, and only that one sends it notifications.
 
 ## How Savor is maintained
 

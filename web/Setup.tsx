@@ -186,12 +186,12 @@ export function AddProject({ me, setMe, onAdded }: { me: Me; setMe: (m: Me) => v
   const toggleArea = (id: string) => setKontor({ ...kontor, areas: kontor.areas.includes(id) ? kontor.areas.filter((a) => a !== id) : [...kontor.areas, id] })
   // The desktop app has the system's folder dialog; a browser asks for the path.
   const openFolder = async () => {
-    if (!desktop) return setStep('open')
+    if (!desktop?.pickFolder) return setStep('open')
     const picked = await desktop.pickFolder()
     if (picked) add({ path: picked })
   }
   const changeDir = async () => {
-    if (!desktop) return setEditDir(true)
+    if (!desktop?.pickFolder) return setEditDir(true)
     const picked = await desktop.pickFolder()
     if (picked) setDir(picked)
   }

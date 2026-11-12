@@ -34,7 +34,9 @@
     "files": [
       "main.cjs",
       "preload.cjs",
-      "updates.cjs"
+      "updates.cjs",
+      "computers.cjs",
+      "connect.html"
     ],
     "extraResources": [
       {

@@ -1,0 +1,64 @@
+<!doctype html>
+<!-- Shown when the app has no computer to show: it is only a client and paired with none yet, or the one it opened is not reachable. -->
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'" />
+    <title>Savor</title>
+    <style>
+      :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+      body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #121212; color: #eee; }
+      @media (prefers-color-scheme: light) { body { background: #f6f6f4; color: #222; } }
+      main { width: min(440px, 90vw); display: grid; gap: 14px; }
+      h1 { margin: 0; font-size: 26px; }
+      p { margin: 0; line-height: 1.45; }
+      .muted { opacity: 0.65; font-size: 14px; }
+      .error { color: #e5484d; }
+      button, input { font: inherit; border-radius: 8px; padding: 9px 12px; border: 1px solid #8884; background: transparent; color: inherit; }
+      button { cursor: pointer; text-align: left; }
+      button.primary { background: #e8743b; border-color: #e8743b; color: #fff; text-align: center; }
+      #list { display: grid; gap: 6px; }
+      form { display: grid; gap: 8px; }
+      label { display: flex; gap: 8px; align-items: center; font-size: 14px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Savor</h1>
+      <p class="error" id="error" hidden></p>
+      <div id="list"></div>
+      <form id="pair">
+        <p id="intro"></p>
+        <input id="link" placeholder="https://…/#/pair/…" autofocus />
+        <p class="error" id="invalid" hidden></p>
+        <button class="primary" id="go"></button>
+      </form>
+      <label><input type="checkbox" id="server" /> <span id="serverLabel"></span></label>
+    </main>
+    <script>
+      const de = navigator.language.startsWith('de')
+      const tr = (en, deText) => (de ? deText : en)
+      const query = new URLSearchParams(location.search)
+      const $ = (id) => document.getElementById(id)
+      const error = { local: tr('Savor did not start on this computer. Start the app from a terminal to see why.', 'Savor ist auf diesem Computer nicht gestartet. Starte die App im Terminal, um den Grund zu sehen.'), unreachable: tr(`${query.get('name')} is not reachable.`, `${query.get('name')} ist nicht erreichbar.`) }[query.get('error')]
+      if (error) Object.assign($('error'), { hidden: false, textContent: error })
+      $('intro').textContent = tr('Pair with a computer: open Savor on it, go to Devices & remote access → Pair a device, and paste the link here.', 'Mit einem Computer koppeln: Öffne dort Savor, geh zu Geräte & Fernzugriff → Gerät koppeln und füge den Link hier ein.')
+      $('go').textContent = tr('Pair', 'Koppeln')
+      $('serverLabel').textContent = tr('Run Savor on this computer', 'Savor auf diesem Computer ausführen')
+      const bridge = window.savorDesktop
+      bridge.computers().then(({ server, list }) => {
+        $('server').checked = server
+        for (const c of list) {
+          const b = document.createElement('button')
+          b.textContent = `${c.via === 'local' ? tr('This computer', 'Dieser Computer') : c.name}${c.via === 'relay' ? tr(' · via relay', ' · über Relay') : ''}`
+          b.onclick = () => bridge.openComputer(c.id)
+          $('list').append(b)
+        }
+      })
+      $('server').onchange = (e) => bridge.setServer(e.target.checked).then(() => location.replace(location.pathname))
+      $('pair').onsubmit = async (e) => {
+        e.preventDefault()
+        if (!(await bridge.pairComputer($('link').value))) Object.assign($('invalid'), { hidden: false, textContent: tr('That is not a Savor pairing link.', 'Das ist kein Kopplungslink von Savor.') })
+      }
+    </script>
+  </body>

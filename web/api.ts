@@ -306,8 +306,32 @@ export interface Proc { pid: number; name: string; cwd: string; command: string;
 export interface Usage { provider: string; name: string; windows: { label: string; percent: number; resets: string | null }[]; stale: boolean }
 export interface Me { origin: 'local' | 'remote'; device: string | null; awake: boolean; host: string; version: string; system: string; projectsDir: string; cloud?: boolean; setup: boolean }
 
-// The desktop shell's bridge (desktop/preload.cjs). A browser has none.
-export const desktop = (window as { savorDesktop?: { pickFolder(): Promise<string | null>; checkForUpdates(): Promise<string | null>; installUpdate(): Promise<void>; onUpdateReady(cb: (version: string) => void): void; setContextActions?(root: string | null, cb: ((action: string, value: any) => void) | null): void; notify?(options: { title: string; body: string; hash: string; tag: string }): void; onOpen?(cb: (hash: string) => void): void; showPath?(path: string): void } }).savorDesktop
+// The computers of the desktop app: this one (`local`) and the ones paired with it, directly or through a relay.
+export interface DesktopComputerList { server: boolean; current: string | null; list: { id: string; name: string; via: 'local' | 'direct' | 'relay' }[] }
+
+// The desktop shell's bridge (desktop/preload.cjs). A browser has none. The folder dialog, the file manager and the
+// context menu are only there on this computer's own page, not on the page of another computer shown in the app.
+export const desktop = (
+  window as {
+    savorDesktop?: {
+      pickFolder?(): Promise<string | null>
+      checkForUpdates(): Promise<string | null>
+      installUpdate(): Promise<void>
+      onUpdateReady(cb: (version: string) => void): void
+      setContextActions?(root: string | null, cb: ((action: string, value: any) => void) | null): void
+      notify?(options: { title: string; body: string; hash: string; tag: string }): void
+      onOpen?(cb: (hash: string) => void): void
+      showPath?(path: string): void
+      computers?(): Promise<DesktopComputerList>
+      openComputer?(id: string): void
+      pairComputer?(link: string): Promise<boolean>
+      forgetComputer?(id: string): Promise<void>
+      setServer?(on: boolean): Promise<void>
+      connected?(info: { host: string; daemonPk?: string }): void
+      deviceName?(): Promise<string | null>
+    }
+  }
+).savorDesktop
 
 export const PROVIDER_NAMES: Record<string, string> = { claude: 'Claude Code', codex: 'Codex', opencode: 'OpenCode', grok: 'Grok Build', antigravity: 'Antigravity' }
 

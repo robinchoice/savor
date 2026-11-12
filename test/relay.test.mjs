@@ -360,6 +360,19 @@ test('a device pairs with a second computer and switches between both', async ()
   await page.click('text=Projects')
   await page.waitForSelector('text=Your projects')
   assert.deepEqual((await local('GET', '/devices')).map((d) => d.id), [first.id])
+
+  // The desktop app opens either of them by its key, on a page of the relay that is already open or a new one.
+  const active = () => page.evaluate(() => JSON.parse(localStorage.getItem('savor-remote')).daemonPk)
+  const keyOf = (link) => link.split('/#/rpair/')[1].split('/')[0]
+  const [firstPk, secondPk] = [keyOf((await local('POST', '/devices/pairing')).relayUrl), keyOf(relayUrl)]
+  assert.equal(await active(), firstPk)
+  await page.goto(`${relayBase}/#/computer/${secondPk}`)
+  await page.waitForSelector('.account')
+  assert.equal(await active(), secondPk)
+  await page.goto('about:blank')
+  await page.goto(`${relayBase}/#/computer/${firstPk}`)
+  await page.waitForSelector('.account')
+  assert.equal(await active(), firstPk)
 })
 
 test('a demo instance lets every device in with its fixed code, without asking', async () => {
