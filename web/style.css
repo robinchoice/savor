@@ -350,8 +350,8 @@ main { flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
 .md-command pre { align-self: stretch; min-width: 0; margin: 0; }
 .md-command button { white-space: nowrap; }
 .md ul, .md ol { padding-left: 22px; margin: 6px 0 10px; }
-.md table { border-collapse: collapse; margin: 8px 0; }
-.md th, .md td { border: 1px solid var(--line-strong); padding: 5px 9px; }
+.md table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; margin: 8px 0; }
+.md th, .md td { border: 1px solid var(--line-strong); padding: 5px 9px; overflow-wrap: normal; vertical-align: top; }
 .md h1, .md h2, .md h3 { margin: 14px 0 8px; font-family: inherit; font-size: 1.1em; font-weight: 600; line-height: 1.4; font-stretch: normal; letter-spacing: 0; }
 
 .questions { margin-top: 16px; display: flex; flex-direction: column; gap: 20px; }
