@@ -613,6 +613,12 @@ test('a relay that accepts but never answers does not leave the daemon connectin
 })
 
 test('the relay counts installations from their daily ping, and keeps the counts across a restart', async () => {
+  // Earlier tunnel failures can fill this address's connection budget on fast runners.
+  const freshPort = await freePort()
+  await start('dist/relay/server.mjs', { RELAY_PORT: String(freshPort), RELAY_DB: USAGE_DB, RELAY_USAGE_TOKEN: 'usage-token' }, 'Savor relay listening')
+  relayBase = `http://127.0.0.1:${freshPort}`
+  await local('PUT', '/relay', { url: relayBase, enabled: true })
+  await until(async () => (await local('GET', '/relay')).state === 'online')
   const usage = (base, token = 'usage-token') => fetch(base + '/usage', { headers: { authorization: `Bearer ${token}` } })
   const ping = (body) => fetch(relayBase + '/usage', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
   await until(async () => (await (await usage(relayBase)).json()).active7.external === 1)
