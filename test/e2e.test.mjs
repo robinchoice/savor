@@ -4332,6 +4332,11 @@ test('the All tab answers questions in place and starts what waits in the backlo
   const tab = (await api('GET', '/projects')).body.find((p) => p.pinned)
   const [item] = (await api('GET', '/backlog')).body.items
   assert.deepEqual([item.title, item.projectId], ['Write the footer copy', tab.id])
+  // The project menu counts the cards of each project, so nobody has to filter them one by one.
+  await page.click('.board-head .pill')
+  const count = await page.locator(`.menu button:has-text("${tab.name}") .board-menu-count`).textContent()
+  assert.ok(Number(count) >= 1)
+  await page.click('.board-head .pill')
   await page.click('.board-card:has-text("Write the footer copy") >> text=Start')
   await until(async () => (await api('GET', `/projects/${tab.id}/threads`)).body.some((t) => t.title === 'Write the footer copy'))
   await until(async () => !(await api('GET', '/backlog')).body.items.length)

@@ -427,8 +427,14 @@ function AllBoard({ threads, projects, byId, only }: { threads?: Listed[]; proje
     go(pid ? `/all/board/${pid}` : '/all/board')
   }
   const shown = (pid: string) => (only ? pid === only.id : byId.has(pid))
-  const doing = (threads ?? []).filter((t) => shown(t.projectId) && !t.completed && !t.waitsFor && (t.busy || t.waiting))
+  const running = (threads ?? []).filter((t) => !t.completed && !t.waitsFor && (t.busy || t.waiting))
+  const doing = running.filter((t) => shown(t.projectId))
   const items = (backlog?.items ?? []).filter((i) => shown(i.projectId))
+  // Cards per project for the project menu, so it shows where anything is open without filtering each one.
+  const cards = new Map<string, number>()
+  for (const x of [...(backlog?.items ?? []), ...running])
+    cards.set(x.projectId, (cards.get(x.projectId) ?? 0) + 1)
+  const total = projects.reduce((n, p) => n + (cards.get(p.id) ?? 0), 0)
   // One project needs neither groups nor a name on every card.
   const named = !byProject && !only
   const remove = (item: BacklogItem) => api('DELETE', `/projects/${item.projectId}/backlog/${item.id}`)
@@ -497,10 +503,12 @@ function AllBoard({ threads, projects, byId, only }: { threads?: Listed[]; proje
           </button>
           {menu && (
             <div class="menu right">
-              <button onClick={() => choose(null)}>{t('All projects')}</button>
+              <button class={only ? '' : 'selected'} onClick={() => choose(null)}>
+                {t('All projects')} <small class="board-menu-count">{total || ''}</small>
+              </button>
               {projects.map((p) => (
-                <button key={p.id} onClick={() => choose(p.id)}>
-                  <Avatar project={p} /> {p.name}
+                <button key={p.id} class={`${only?.id === p.id ? 'selected' : ''} ${cards.get(p.id) ? '' : 'board-menu-empty'}`} onClick={() => choose(p.id)}>
+                  <Avatar project={p} /> {p.name} <small class="board-menu-count">{cards.get(p.id) || ''}</small>
                 </button>
               ))}
             </div>

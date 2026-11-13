@@ -1315,6 +1315,8 @@ details.box[open] > summary .chev { transform: rotate(180deg); }
 .board-head h1 { font-size: 18px; }
 .board-head .menu-anchor { margin-left: auto; align-self: center; }
 .board-head .filters { padding: 0; }
+.board-menu-count { margin-left: auto; font-variant-numeric: tabular-nums; }
+.board-menu-empty { color: var(--muted); }
 .board-cols { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .board-col { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; display: flex; flex-direction: column; min-height: 0; transition: border-color 0.18s ease, background 0.18s ease; }
 .board-col.over { border-color: var(--line-strong); background: var(--card-hover); }
