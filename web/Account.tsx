@@ -8,7 +8,7 @@ import { GitHubRow, useGitHub } from './SignIn'
 import { useNotificationToggle } from './notify'
 import { PleasanceFooter } from './PleasanceFooter'
 import { setPrefs, usePrefs, type Density, type Prefs, type Theme } from './prefs'
-import { qr, RELAY_LABEL, type DeviceRow, type RelayState } from './Settings'
+import { PairingCode, RELAY_LABEL, type DeviceRow, type Pairing, type RelayState } from './Settings'
 import { forgetProfile, loadProfile, loadProfiles, switchProfile } from './transport'
 import { megabytes, type VoiceModels } from './voice'
 import { resetLayout } from './Layout'
@@ -141,13 +141,10 @@ export function FeedbackDialog({ me, onClose }: { me: Me; onClose: () => void })
   )
 }
 
-interface Pairing { code: string; url: string; relayUrl: string | null; expiresAt: string }
-
 function MyDevices({ me, projects }: { me: Me; projects: number }) {
   const [devices] = useApi<DeviceRow[]>('/devices', (e) => e.type === 'devices')
   const [pairing, setPairing] = useState<Pairing | null>(null)
   const revoke = (d: DeviceRow) => confirm(t('Revoke access for {name}?', { name: d.name })) && api('DELETE', `/devices/${d.id}`)
-  const link = pairing?.relayUrl ?? pairing?.url
   return (
     <section>
       <h2>{t('My devices')}</h2>
@@ -189,20 +186,48 @@ function MyDevices({ me, projects }: { me: Me; projects: number }) {
           </div>
           {pairing ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
         </button>
-        {pairing && link && (
-          <div class="pairing">
-            <div class="qr" dangerouslySetInnerHTML={{ __html: qr(link) }} />
-            <div>
-              <p>{t('Scan the code, or open this link on the device:')}</p>
-              <p class="mono">{link}</p>
-              <p>
-                {t('Code:')} <b class="mono">{pairing.code}</b> · {t('valid until {time}', { time: new Date(pairing.expiresAt).toLocaleTimeString() })}
-              </p>
-            </div>
-          </div>
-        )}
+        {pairing && <PairingCode pairing={pairing} />}
       </div>
     </section>
+  )
+}
+
+// On a device this computer lets let others in: a pairing code for a borrowed laptop or the like, and the
+// devices it let in, each in until its time is up.
+function LetDeviceIn() {
+  const [devices] = useApi<DeviceRow[]>('/devices', (e) => e.type === 'devices')
+  const [pairing, setPairing] = useState<Pairing | null>(null)
+  // Allowing a device voids every open code, so the QR code goes too.
+  useEffect(() => setPairing(null), [devices?.length])
+  const end = (d: DeviceRow) => confirm(t('End access for {name}?', { name: d.name })) && api('DELETE', `/devices/${d.id}`)
+  return (
+    <div class="box">
+      {devices?.map((d) => (
+        <div key={d.id} class="row-item">
+          <span class="tile">
+            <Laptop size={17} />
+          </span>
+          <div>
+            <b>{d.name}</b>
+            <small class="muted">{t('in until {time}', { time: new Date(d.expiresAt!).toLocaleString() })}</small>
+          </div>
+          <button class="ghost small danger" onClick={() => end(d)}>
+            {t('End')}
+          </button>
+        </div>
+      ))}
+      <button class="row-item" onClick={async () => setPairing(pairing ? null : await api('POST', '/devices/pairing'))}>
+        <span class="tile">
+          <Plus size={17} />
+        </span>
+        <div>
+          <b>{t('Let another device in')}</b>
+          <small class="muted">{t('For a while, e.g. a borrowed laptop. It can\'t use the terminal.')}</small>
+        </div>
+        {pairing ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+      </button>
+      {pairing && <PairingCode pairing={pairing} />}
+    </div>
   )
 }
 
@@ -658,12 +683,14 @@ export function AccountDialog({ me, projects, toggleAwake, open, onClose }: { me
                 <small class="muted">
                   {t('Remote device · connected to {host}', { host: me.host })}
                   {loadProfile() ? ` ${t('via relay')}` : ''}
+                  {me.expiresAt && ` · ${t('access until {time}', { time: new Date(me.expiresAt).toLocaleString() })}`}
                 </small>
               </div>
             </div>
           )}
           {desktop?.computers ? <DesktopComputers /> : !local && loadProfile() && <Computers />}
           {local && <MyDevices me={me} projects={projects} />}
+          {me.approver && <LetDeviceIn />}
           {local && <Agents cloud={!!me.cloud} />}
           {local && <VoiceInput />}
           <details class="box">

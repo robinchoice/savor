@@ -320,7 +320,28 @@ function ImportDialog({ project, onClose }: { project: Project; onClose: () => v
   )
 }
 
-export interface DeviceRow { id: string; name: string; via: 'lan' | 'relay'; terminal?: boolean; createdAt: string; lastSeenAt: string | null }
+export interface DeviceRow { id: string; name: string; via: 'lan' | 'relay'; terminal?: boolean; approver?: boolean; expiresAt?: string; addedBy?: string | null; createdAt: string; lastSeenAt: string | null }
+export interface Pairing { code: string; url: string; relayUrl: string | null; expiresAt: string }
+
+export function PairingCode({ pairing }: { pairing: Pairing }) {
+  const link = pairing.relayUrl ?? pairing.url
+  return (
+    <div class="pairing">
+      <div class="qr" dangerouslySetInnerHTML={{ __html: qr(link) }} />
+      <div>
+        <p>{t('Scan the code, or open this link on the device:')}</p>
+        <p class="mono">{link}</p>
+        <p>
+          {t('Code:')} <b class="mono">{pairing.code}</b> · {t('valid until {time}', { time: new Date(pairing.expiresAt).toLocaleTimeString() })}
+        </p>
+      </div>
+    </div>
+  )
+}
+
+// A device let in from afar, with when its time is up and who let it in.
+const temporary = (d: DeviceRow) =>
+  d.addedBy ? t('in until {time}, let in by {name}', { time: new Date(d.expiresAt!).toLocaleString(), name: d.addedBy }) : t('in until {time}', { time: new Date(d.expiresAt!).toLocaleString() })
 export interface RelayState { url: string | null; enabled: boolean; state: 'off' | 'connecting' | 'online' | 'error'; error?: string; id?: string }
 
 export const RELAY_LABEL = { off: t('Off'), connecting: t('Connecting…'), online: t('Connected'), error: t('Not connected') }
@@ -337,7 +358,7 @@ export function Devices() {
   const [relay] = useApi<RelayState>('/relay', (e) => e.type === 'devices')
   const [relayUrl, setRelayUrl] = useState<string | null>(null)
   const [error, setError] = useState('')
-  const [pairing, setPairing] = useState<{ code: string; url: string; relayUrl: string | null; expiresAt: string } | null>(null)
+  const [pairing, setPairing] = useState<Pairing | null>(null)
   const [address, setAddress] = useState<{ url: string | null; fallback: string } | null>(null)
   const [addressDraft, setAddressDraft] = useState<string | null>(null)
   const [shortcutName, setShortcutName] = useState(t('iPhone shortcut'))
@@ -377,8 +398,6 @@ export function Devices() {
       setError((e as Error).message)
     }
   }
-  const link = pairing?.relayUrl ?? pairing?.url
-
   return (
     <div class="page">
       <div class="form">
@@ -443,18 +462,7 @@ export function Devices() {
             <Smartphone size={15} /> {t('Pair a device')}
           </button>
         </div>
-        {pairing && link && (
-          <div class="pairing">
-            <div class="qr" dangerouslySetInnerHTML={{ __html: qr(link) }} />
-            <div>
-              <p>{t('Scan the code, or open this link on the device:')}</p>
-              <p class="mono">{link}</p>
-              <p>
-                {t('Code:')} <b class="mono">{pairing.code}</b> · {t('valid until {time}', { time: new Date(pairing.expiresAt).toLocaleTimeString() })}
-              </p>
-            </div>
-          </div>
-        )}
+        {pairing && <PairingCode pairing={pairing} />}
 
         <h2>{t('Shortcut token')}</h2>
         <p class="muted">{t('For iOS Shortcuts or other HTTP clients that reach this computer directly over your network or VPN. The token has the same access as a paired device. Revoke it in the device list below.')}</p>
@@ -480,6 +488,9 @@ export function Devices() {
         <p class="muted">
           {t('The terminal is a shell on this computer. A device you allow it can open one in every project folder and worktree and run any command as you. Turning it off or revoking the device ends its terminals right away.')}
         </p>
+        <p class="muted">
+          {t('A device that may let others in shows pairing codes itself and allows the devices that use them, for an hour, 12 hours or 7 days. Those get neither the terminal nor this right, and their access ends on its own.')}
+        </p>
         {devices && !devices.length && <p class="muted">{t('None yet.')}</p>}
         {devices?.map((d) => (
           <div key={d.id} class="device">
@@ -488,11 +499,19 @@ export function Devices() {
               <b>{d.name}</b>
               <small class="muted">
                 {d.via === 'relay' ? t('Via relay') : t('Direct')} · {t('paired {when}', { when: new Date(d.createdAt).toLocaleDateString() })} · {t('last seen {when}', { when: d.lastSeenAt ? new Date(d.lastSeenAt).toLocaleString() : t('never') })}
+                {d.expiresAt && ` · ${temporary(d)}`}
               </small>
             </div>
-            <label class="check">
-              <input type="checkbox" checked={!!d.terminal} onChange={(e) => api('PATCH', `/devices/${d.id}`, { terminal: e.currentTarget.checked })} /> {t('Terminal')}
-            </label>
+            {!d.expiresAt && (
+              <>
+                <label class="check">
+                  <input type="checkbox" checked={!!d.terminal} onChange={(e) => api('PATCH', `/devices/${d.id}`, { terminal: e.currentTarget.checked })} /> {t('Terminal')}
+                </label>
+                <label class="check">
+                  <input type="checkbox" checked={!!d.approver} onChange={(e) => api('PATCH', `/devices/${d.id}`, { approver: e.currentTarget.checked })} /> {t('Lets devices in')}
+                </label>
+              </>
+            )}
             <button class="ghost danger" onClick={() => revoke(d)}>
               <Trash2 size={14} /> {t('Revoke')}
             </button>
@@ -506,12 +525,14 @@ export function Devices() {
 const spaced = (check: string) => `${check.slice(0, 3)} ${check.slice(3)}`
 
 // A device with a valid code waits until it is allowed here. Both show the same number, so a request
-// from someone else who got hold of the code stands out.
-export function PairingRequests() {
+// from someone else who got hold of the code stands out. On a device that lets others in (`host` set),
+// the requests are those its own codes brought in, and it picks how long the new device may stay.
+export function PairingRequests({ host }: { host?: string }) {
   const [requests] = useApi<{ id: string; name: string; via: 'relay' | 'lan'; check: string }[]>('/devices/requests', (e) => e.type === 'devices')
+  const [hours, setHours] = useState(12)
   const request = requests?.[0]
   if (!request) return null
-  const decide = (approve: boolean) => api('POST', `/devices/requests/${request.id}`, { approve }).catch(() => {})
+  const decide = (approve: boolean) => api('POST', `/devices/requests/${request.id}`, { approve, ...(host && approve && { hours }) }).catch(() => {})
   return (
     <div class="overlay">
       <div class="dialog pick-dialog pairing-request">
@@ -523,9 +544,23 @@ export function PairingRequests() {
         </header>
         <div class="dialog-body">
           <p>
-            {request.via === 'relay' ? t('A device wants to use Savor on this computer through the relay. Only allow it if it is yours and shows this number:') : t('A device wants to use Savor on this computer directly. Only allow it if it is yours and shows this number:')}
+            {host
+              ? t('A device wants to use Savor on {host}. Only allow it if you just paired it and it shows this number:', { host })
+              : request.via === 'relay'
+                ? t('A device wants to use Savor on this computer through the relay. Only allow it if it is yours and shows this number:')
+                : t('A device wants to use Savor on this computer directly. Only allow it if it is yours and shows this number:')}
           </p>
           <b class="check-number">{spaced(request.check)}</b>
+          {host && (
+            <label>
+              {t('Access for')}
+              <select value={hours} onChange={(e) => setHours(Number(e.currentTarget.value))}>
+                <option value={1}>{t('1 hour')}</option>
+                <option value={12}>{t('12 hours')}</option>
+                <option value={168}>{t('7 days')}</option>
+              </select>
+            </label>
+          )}
           <p class="muted">{t('If you didn\'t just pair a device, decline and don\'t share the pairing code again.')}</p>
         </div>
         <footer class="dialog-foot">
@@ -545,8 +580,8 @@ function Waiting({ check }: { check: string }) {
   return (
     <div class="gate">
       <img src="/icon.svg" alt="" />
-      <h1>{t('Allow this device on your computer')}</h1>
-      <p class="muted">{t('Your computer asks whether to let this device in. Check that it shows the same number:')}</p>
+      <h1>{t('Allow this device in Savor')}</h1>
+      <p class="muted">{t('Savor asks on your computer, or on the phone that showed the code, whether to let this device in. Check that it shows the same number:')}</p>
       <b class="check-number">{spaced(check)}</b>
     </div>
   )

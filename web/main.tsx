@@ -85,6 +85,8 @@ function App() {
       (e) => setMe(e instanceof Unauthorized ? false : null),
     )
   }, [mode, link.connected])
+  // Whether this device may let others in changes at the computer while its page is open.
+  useEvent((e) => e.type === 'devices' && !!me && void api<Me>('GET', '/me').then(setMe, () => {}), [!!me])
   useNotifications(route[2] === 't' ? route[3] : undefined, projects, me)
   useEffect(() => {
     if (projects?.length && !['p', 'all', 'devices', 'pair', 'rpair', 'scan'].includes(route[0])) {
@@ -192,7 +194,7 @@ function App() {
       </main>
       {!hasDock && terminal}
       {!narrow && <StatusBar />}
-      {me.origin === 'local' && <PairingRequests />}
+      {me.origin === 'local' ? <PairingRequests /> : me.approver && <PairingRequests host={me.host} />}
     </div>
   )
 }

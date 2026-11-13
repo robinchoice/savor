@@ -191,13 +191,13 @@ class Conn {
       this.cancelApproval = request.cancel
       clearTimeout(this.handshakeTimer)
       this.send(channel.seal({ waiting: true }))
-      request.approved.then((approved) => {
+      request.approved.then((grant) => {
         if (this.closed) return
-        if (!approved) {
+        if (!grant) {
           this.send(channel.seal({ paired: false }))
           return this.fail('declined')
         }
-        const device = devices.addKeyDevice(name, devicePk, request.owner)
+        const device = devices.addKeyDevice(name, devicePk, request.owner, grant)
         emit({ type: 'devices' })
         this.send(channel.seal({ paired: true, deviceId: device.id }))
         this.fail('paired')

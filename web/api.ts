@@ -304,7 +304,7 @@ export interface Workflow { id: string; name: string; prompt: string; collection
 export interface Run { at: string; trigger: 'scheduled' | 'manual' | 'caught' | 'early' | 'model'; due?: string; model?: string; status: 'working' | 'needs' | 'stopped' | 'budget' | 'failed' | 'finished' | 'skipped'; threadId: string; summary: string; workedMs?: number; usd?: number; tokens?: number; outcome?: 'successful' | 'partial' | 'blocked' | 'skipped' | 'waiting' | 'failed' | 'unknown'; steps?: { id: string; name: string; result?: { status: string; reason: string; evidence: string[]; followUp: string[] } }[]; modelStarted?: boolean; elapsedMs?: number; attempts?: { at: string; kind: string }[] }
 export interface Proc { pid: number; name: string; cwd: string; command: string; url: string | null; log: string | null; threadId: string; startedAt: string }
 export interface Usage { provider: string; name: string; windows: { label: string; percent: number; resets: string | null }[]; stale: boolean }
-export interface Me { origin: 'local' | 'remote'; device: string | null; awake: boolean; host: string; version: string; system: string; projectsDir: string; cloud?: boolean; setup: boolean }
+export interface Me { origin: 'local' | 'remote'; device: string | null; approver?: boolean; expiresAt?: string | null; awake: boolean; host: string; version: string; system: string; projectsDir: string; cloud?: boolean; setup: boolean }
 
 // The computers of the desktop app: this one (`local`) and the ones paired with it, directly or through a relay.
 export interface DesktopComputerList { server: boolean; current: string | null; list: { id: string; name: string; via: 'local' | 'direct' | 'relay' }[] }

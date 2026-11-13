@@ -1628,6 +1628,88 @@ test('auth: tokens, pairing and remote limits', async () => {
   assert.equal((await api('GET', '/me', undefined, device)).status, 401)
 })
 
+test('a device this computer lets let others in allows them for a while, without the terminal', async () => {
+  const pair = (code, name) => fetch(`${base}/api/pair`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code, name, check: '042137' }) })
+  const phone = await pairDevice('CI approver')
+  const row = (await api('GET', '/devices')).body.find((d) => d.name === 'CI approver')
+  assert.equal((await api('PATCH', `/devices/${row.id}`, { approver: true }, phone)).status, 403)
+  await api('PATCH', `/devices/${row.id}`, { terminal: true })
+  await api('PATCH', `/devices/${row.id}`, { approver: true })
+  // Each switch changes only itself.
+  const both = (await api('GET', '/devices')).body.find((d) => d.id === row.id)
+  assert.deepEqual([both.terminal, both.approver], [true, true])
+  assert.equal((await api('GET', '/me', undefined, phone)).body.approver, true)
+  assert.deepEqual((await api('GET', '/devices', undefined, phone)).body, [])
+
+  // A request from this computer's code is not the phone's to see or answer.
+  const waiting = pair((await api('POST', '/devices/pairing')).body.code, 'CI elsewhere')
+  let request
+  await until(async () => (request = (await api('GET', '/devices/requests')).body.find((r) => r.name === 'CI elsewhere')))
+  assert.deepEqual((await api('GET', '/devices/requests', undefined, phone)).body, [])
+  assert.equal((await api('POST', `/devices/requests/${request.id}`, { approve: true, hours: 1 }, phone)).status, 404)
+  await api('POST', `/devices/requests/${request.id}`, { approve: false })
+  assert.equal((await waiting).status, 403)
+
+  const stranger = pair((await api('POST', '/devices/pairing', undefined, phone)).body.code, 'CI stranger laptop')
+  await until(async () => (request = (await api('GET', '/devices/requests', undefined, phone)).body.find((r) => r.name === 'CI stranger laptop')))
+  assert.equal((await api('POST', `/devices/requests/${request.id}`, { approve: false }, phone)).status, 200)
+  assert.equal((await stranger).status, 403)
+
+  const reply = pair((await api('POST', '/devices/pairing', undefined, phone)).body.code, 'CI borrowed laptop')
+  await until(async () => (request = (await api('GET', '/devices/requests', undefined, phone)).body.find((r) => r.name === 'CI borrowed laptop')))
+  assert.equal((await api('POST', `/devices/requests/${request.id}`, { approve: true, hours: 5 }, phone)).status, 400)
+  assert.equal((await api('POST', `/devices/requests/${request.id}`, { approve: true, hours: 12 }, phone)).status, 200)
+  const paired = await reply
+  assert.equal(paired.status, 200)
+  assert.ok(Math.abs(Number(paired.headers.get('set-cookie').match(/Max-Age=(\d+)/)[1]) - 12 * 3600) < 60)
+  const laptop = paired.headers.get('set-cookie').split(';')[0]
+  const me = (await api('GET', '/me', undefined, laptop)).body
+  assert.equal(me.approver, false)
+  assert.ok(Math.abs(Date.parse(me.expiresAt) - Date.now() - 12 * 3_600_000) < 60_000)
+  const [guest] = (await api('GET', '/devices', undefined, phone)).body
+  assert.deepEqual([guest.name, guest.addedBy], ['CI borrowed laptop', 'CI approver'])
+
+  // It gets neither the terminal nor the right to let others in.
+  assert.equal((await api('PATCH', `/devices/${guest.id}`, { terminal: true })).status, 400)
+  assert.equal((await api('PATCH', `/devices/${guest.id}`, { approver: true })).status, 400)
+  assert.equal((await api('POST', '/devices/pairing', undefined, laptop)).status, 403)
+  assert.equal((await api('GET', '/devices', undefined, laptop)).status, 403)
+
+  // The phone ends what it let in, and nothing else.
+  assert.equal((await api('DELETE', `/devices/${row.id}`, undefined, phone)).status, 404)
+  assert.equal((await api('DELETE', `/devices/${guest.id}`, undefined, phone)).status, 200)
+  assert.equal((await api('GET', '/me', undefined, laptop)).status, 401)
+
+  // On the phone: a code from its account dialog, then the request with how long the device may stay.
+  const context = await browser.newContext({ locale: 'en-US', viewport: { width: 390, height: 844 } })
+  try {
+    const [name, value] = phone.split('=')
+    await context.addCookies([{ name, value, url: base }])
+    const tab = await context.newPage()
+    await tab.goto(base)
+    await tab.click('button.account')
+    await tab.click('text=Let another device in')
+    const code = await tab.locator('.pairing b.mono').textContent()
+    const fromUi = pair(code, 'CI hotel PC')
+    await tab.waitForSelector('text=Allow “CI hotel PC”?')
+    await tab.selectOption('.pairing-request select', '1')
+    await tab.click('.pairing-request button.primary')
+    assert.equal((await fromUi).status, 200)
+    await tab.waitForSelector('text=CI hotel PC')
+    const hotel = (await api('GET', '/devices')).body.find((d) => d.name === 'CI hotel PC')
+    assert.ok(Math.abs(Date.parse(hotel.expiresAt) - Date.now() - 3_600_000) < 60_000)
+    tab.once('dialog', (d) => d.accept())
+    await tab.click('.account-dialog button.danger:has-text("End")')
+    await until(async () => !(await api('GET', '/devices')).body.some((d) => d.name === 'CI hotel PC'))
+  } finally {
+    await context.close()
+  }
+  // Without the right, the phone is back to an ordinary device.
+  await api('PATCH', `/devices/${row.id}`, { approver: false })
+  assert.equal((await api('POST', '/devices/pairing', undefined, phone)).status, 403)
+  await api('DELETE', `/devices/${row.id}`)
+})
+
 test('the MCP token stays off agent command lines, which every user on the machine can read', async () => {
   const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
   const thread = (await api('POST', `/projects/${project.id}/threads`, { text: 'hello codex', agent: { provider: 'codex' } })).body

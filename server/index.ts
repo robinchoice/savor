@@ -68,6 +68,16 @@ class BadRequest extends Error {}
 const localOnly = (ctx: Ctx) => {
   if (ctx.auth.origin !== 'local') throw new Forbidden('Only available on this computer.')
 }
+// This computer (null), or a paired device it allowed to let others in from afar. A device that is
+// only in for a while can't.
+const approverOf = (ctx: Ctx) => {
+  if (ctx.auth.origin === 'local') return null
+  const d = ctx.auth.device
+  if (!d?.approver || d.expiresAt) throw new Forbidden('Only available on this computer.')
+  return d
+}
+// How long an approver may let a device in, in hours.
+const GRANT_HOURS = [1, 12, 168]
 // Agent settings must name a known provider and one of its permission modes. Skipping approvals can
 // only be switched on at this computer; devices keep it where it's already on.
 function agentFrom(ctx: Ctx, current: store.AgentConfig, patch: Partial<store.AgentConfig>) {
@@ -101,6 +111,8 @@ const SYSTEM = `${({ linux: 'Linux', darwin: 'macOS', win32: 'Windows' } as Reco
 route('GET', '/me', (_, __, ctx) => ({
   origin: ctx.auth.origin,
   device: ctx.auth.device?.name ?? null,
+  approver: !!(ctx.auth.device?.approver && !ctx.auth.device.expiresAt),
+  expiresAt: ctx.auth.device?.expiresAt ?? null,
   awake: awake.isAwake(),
   host: os.hostname(),
   version: VERSION,
@@ -147,7 +159,7 @@ route('POST', '/feedback', async (_, b) => {
   console.log(`bug report ${id}`)
   return { ok: true, id }
 })
-route('GET', '/devices', (_, __, ctx) => (localOnly(ctx), devices.listDevices()))
+route('GET', '/devices', (_, __, ctx) => devices.listDevices(approverOf(ctx)?.id))
 route('POST', '/devices/token', (_, b, ctx) => {
   localOnly(ctx)
   if (typeof b.name !== 'string' || !b.name.trim()) throw new BadRequest('Give the shortcut a name.')
@@ -157,8 +169,7 @@ route('POST', '/devices/token', (_, b, ctx) => {
   return { token }
 })
 route('POST', '/devices/pairing', (_, __, ctx) => {
-  localOnly(ctx)
-  const pairing = devices.createPairing()
+  const pairing = devices.createPairing(approverOf(ctx)?.id)
   return { ...pairing, url: `${store.state().publicUrl ?? PUBLIC_URL}/#/pair/${pairing.code}`, relayUrl: pairingLink(pairing.code) }
 })
 // The address paired devices use without a relay, e.g. this computer's name in a VPN.
@@ -242,10 +253,13 @@ route('PUT', '/relay', (_, b, ctx) => {
   startRelay()
   return relayStatus()
 })
-route('GET', '/devices/requests', (_, __, ctx) => (localOnly(ctx), devices.pairingRequests()))
+route('GET', '/devices/requests', (_, __, ctx) => devices.pairingRequests(approverOf(ctx)?.id))
 route('POST', '/devices/requests/:id', (params, b, ctx) => {
-  localOnly(ctx)
-  devices.decidePairing(params.id, b.approve === true)
+  const by = approverOf(ctx)
+  const hours = Number(b.hours)
+  if (by && b.approve === true && !GRANT_HOURS.includes(hours)) throw new BadRequest('Choose how long the device may stay: 1, 12 or 168 hours.')
+  const expiresAt = by && b.approve === true ? new Date(Date.now() + hours * 3_600_000).toISOString() : ''
+  devices.decidePairing(params.id, b.approve === true, by ? { id: by.id, expiresAt } : undefined)
   return {}
 })
 route('PATCH', '/devices/:id', (params, b, ctx) => {
@@ -253,7 +267,9 @@ route('PATCH', '/devices/:id', (params, b, ctx) => {
   const s = store.state()
   const device = s.devices.find((d) => d.id === params.id)
   if (!device) throw new store.NotFound('device')
-  device.terminal = b.terminal === true
+  if (device.expiresAt && (b.terminal || b.approver)) throw new BadRequest('A device that is only in for a while gets neither the terminal nor approvals.')
+  if ('terminal' in b) device.terminal = b.terminal === true
+  if ('approver' in b) device.approver = b.approver === true
   store.saveState(s)
   if (!device.terminal) terminal.disconnectDevice(device.id)
   emit({ type: 'devices' })
@@ -261,11 +277,9 @@ route('PATCH', '/devices/:id', (params, b, ctx) => {
   return {}
 })
 route('DELETE', '/devices/:id', (params, _, ctx) => {
-  localOnly(ctx)
-  devices.revokeDevice(params.id)
-  closeDevice(params.id)
-  disconnectDevice(params.id)
-  emit({ type: 'devices' })
+  const by = approverOf(ctx)
+  if (by && devices.deviceById(params.id)?.addedBy !== by.id) throw new store.NotFound('device')
+  removeDevice(params.id)
   return {}
 })
 
@@ -1135,6 +1149,15 @@ function disconnectDevice(deviceId: string) {
   deviceResponses.delete(deviceId)
 }
 
+function removeDevice(id: string) {
+  devices.revokeDevice(id)
+  closeDevice(id)
+  disconnectDevice(id)
+  emit({ type: 'devices' })
+}
+// A device let in for a while can't sign in once its time is up; this also ends its open streams.
+setInterval(() => devices.expiredDevices().forEach(removeDevice), 60_000).unref()
+
 async function handle(req: IncomingMessage, res: ServerResponse) {
   const url = new URL(req.url ?? '/', 'http://x')
   const nonce = newNonce()
@@ -1167,10 +1190,12 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
       return json(res, 400, { error: (e as Error).message })
     }
     res.on('close', request.cancel)
-    if (!(await request.approved)) return json(res, 403, { error: 'Pairing was not allowed on your computer.' })
-    const token = devices.addTokenDevice(name, request.owner)
+    const grant = await request.approved
+    if (!grant) return json(res, 403, { error: 'Pairing was not allowed on your computer.' })
+    const token = devices.addTokenDevice(name, request.owner, grant)
     emit({ type: 'devices' })
-    res.writeHead(200, { 'set-cookie': `savor_device=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=31536000`, 'content-type': 'application/json' })
+    const maxAge = grant.expiresAt ? Math.round((Date.parse(grant.expiresAt) - Date.now()) / 1000) : 31536000
+    res.writeHead(200, { 'set-cookie': `savor_device=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAge}`, 'content-type': 'application/json' })
     return res.end('{}')
   }
 
