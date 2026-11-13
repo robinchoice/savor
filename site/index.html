@@ -32,7 +32,7 @@
       <ul>
         <li><a href="#how">How it works</a></li>
         <li><a href="#who">Who it's for</a></li>
-        <li><a href="https://github.com/robinchoice/savor">GitHub</a></li>
+        <li><a href="https://github.com/robinchoice/savor">★ Star on GitHub</a></li>
       </ul>
       <a class="btn btn-quiet" href="#install">Download</a>
     </header>
@@ -56,17 +56,24 @@
         </div>
         <figure>
           <div class="shot">
-            <img
-              src="img/conversation-800.webp"
-              srcset="img/conversation-800.webp 800w, img/conversation.webp 1600w"
-              sizes="(max-width: 76rem) calc(100vw - 2.5rem), 68rem"
-              width="1600"
-              height="1000"
-              fetchpriority="high"
-              alt="A Savor conversation: the agent's result with three suggested next steps, next to a live preview of the page it built"
-            />
+            <video
+              src="img/demo.mp4"
+              poster="img/conversation-800.webp"
+              width="1280"
+              height="800"
+              muted
+              loop
+              playsinline
+              controls
+              preload="metadata"
+              data-demo
+              aria-label="A task, the agent's question, the answer, and the result in the live preview next to the conversation"
+            ></video>
           </div>
-          <figcaption class="meta">A conversation with Claude Code, next to the live preview of the page it built.</figcaption>
+          <figcaption class="meta">
+            A task, the agent's question and the result in the live preview, in 49 seconds. A scripted demo with made-up
+            projects.
+          </figcaption>
         </figure>
       </section>
 
@@ -110,7 +117,10 @@
 
       <section class="sol wrap" id="how">
         <h2>What Savor does for you</h2>
-        <p class="lede">It sits between you and your agents and turns their output into something you can act on.</p>
+        <p class="lede">
+          Other tools give each agent a worktree. Savor gives each task a conversation that reports back, and turns
+          your agents' output into something you can act on.
+        </p>
 
         <article>
           <div>
@@ -255,10 +265,7 @@
                   <a href="https://github.com/robinchoice/savor/releases/download/v0.6.46/Savor-0.6.46-x64.dmg">Intel Mac instead</a>
                 </span>
               </div>
-              <p class="hint">
-                The builds are not notarized yet. On first launch, open System Settings → Privacy &amp; Security and
-                click <b>Open Anyway</b>.
-              </p>
+              <p class="hint">Signed and notarized by Apple. The app updates itself.</p>
             </div>
             <div role="tabpanel" id="os-win" aria-labelledby="tab-win" data-os="win">
               <h3>Windows</h3>

@@ -3,38 +3,28 @@
 <h1 align="center">Savor</h1>
 
 <p align="center">
-  <b>A local workspace for the coding agents you already use.</b><br>
-  Savor runs Claude Code, Codex, OpenCode, Grok Build or Antigravity on your own computer and turns every task into a conversation that reports back: an acknowledgement, questions you answer in one click, the result and a live preview of what was built. On your desktop, in the browser or on your phone.
+  <b>Hand tasks to Claude Code, Codex and co. and get answers back, not terminal output.</b>
 </p>
 
 <p align="center">
   <a href="https://github.com/robinchoice/savor/releases/latest"><img src="https://img.shields.io/github/v/release/robinchoice/savor" alt="Latest release"></a>
   <a href="https://github.com/robinchoice/savor/actions/workflows/ci.yml"><img src="https://github.com/robinchoice/savor/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/github/license/robinchoice/savor" alt="AGPL-3.0"></a><br>
-  <a href="https://github.com/robinchoice/savor/releases/latest"><b>Download</b></a> · <a href="#install">Install</a> · <a href="#how-it-works">How it works</a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/robinchoice/savor" alt="AGPL-3.0"></a>
 </p>
-
-**Under the hood:** a Node daemon drives each agent CLI over its own protocol (Claude Code's stream-json, Codex's app-server JSON-RPC, the Agent Client Protocol for OpenCode and Grok Build) and gives all of them the same MCP tools to report back, ask, start other agents and run workflows. Input queues per turn; conversations can run in parallel git worktrees, workflows on cron schedules, and both can switch agents at a usage limit. State is plain files, shown by a Preact UI and reachable from your phone through an end-to-end encrypted relay. [Architecture](#how-it-works)
-
-**Who builds it:** Robin ([robinchoice](https://github.com/robinchoice)) designed the architecture, writes the specifications and reviews the results; coding agents working inside Savor write the code ([how](#how-savor-is-maintained)).
-
-**In numbers** (v0.6.37, 26 October 2026): 425 commits and 48 releases since the first commit on 29 September 2026 · 5 agent CLIs through 4 adapters · 43 MCP tools · 191 tests in 20 test files.
 
 [![A task, the agent's question, the answer, and the result in the live preview (49 s)](docs/demo.gif)](docs/demo.mp4)
 
-<sub>A task, the agent's question and the result in the live preview, in 49 seconds. Recorded with a scripted stand-in for Claude Code and made-up projects ([`scripts/demo-video.mjs`](scripts/demo-video.mjs)); [MP4](docs/demo.mp4).</sub>
+<sub>Recorded with a scripted stand-in for Claude Code and made-up projects ([`scripts/demo-video.mjs`](scripts/demo-video.mjs)); [MP4](docs/demo.mp4).</sub>
 
-**What you need:** Savor brings no model and no account of its own. It drives agent CLIs you have installed and signed in to, with their subscriptions or API keys: Claude Code, Codex, OpenCode, Grok Build or Antigravity. At least one of them has to work in your terminal first.
+**[Download for Linux, macOS and Windows](https://savor.pleasance.org/#install)**, start it and add a project folder. Savor brings no model and no account: it drives the agent CLIs you already use and are signed in to (Claude Code, Codex, OpenCode, Grok Build, Antigravity). Details and running from source under [Install](#install).
 
-**Quick start:** download the app for Linux, macOS or Windows from the [latest release](https://github.com/robinchoice/savor/releases/latest), start it, and add a project folder. It finds the agent CLIs on your `PATH`. Details and running from source are under [Install](#install), what doesn't work yet under [Status](#status).
+## Delegate, don't babysit
 
-**Why Savor**
-
-- **Free and open source** (AGPL-3.0). No account and no cloud in between: Savor runs on your machine and uses the agent subscriptions you already have.
-- **Your files stay yours.** Projects are ordinary folders; conversations, documents and workflows are plain files in `.savor/`.
-- **Agents that report back.** Every task gets a short acknowledgement, a clear result, questions you answer in one click and suggestions for what to do next, instead of a wall of terminal output.
-- **See what gets built.** The app your agent builds runs in a live preview beside the chat. You and the agent use the same page.
-- **Take it with you.** Pair your phone with a QR code and keep conversations going from anywhere.
+- **Every task reports back.** The agent confirms in one line what it is doing, asks questions you answer with a click, and ends with a result and suggested next steps. Its raw output stays in an activity log until you want it.
+- **See what got built.** The app your agent builds runs in a live preview next to the chat. You and the agent click on the same page.
+- **Work goes on without you.** Workflows run prompts on a cron schedule. When an agent hits its usage limit, the conversation moves to the next agent with its history.
+- **Answer from your phone.** Pair with a QR code; questions arrive as notifications you can answer right there, through an end-to-end encrypted relay.
+- **Nothing in between.** AGPL-3.0, no account, no Savor cloud. It uses the subscriptions you already pay for, and everything it keeps is plain files in your project.
 
 <table>
   <tr>
@@ -52,6 +42,8 @@
     <td colspan="2" align="center">The same workspace on your phone</td>
   </tr>
 </table>
+
+**Under the hood:** a Node daemon drives each agent CLI over its own protocol (Claude Code's stream-json, Codex's app-server JSON-RPC, the Agent Client Protocol for OpenCode and Grok Build) and gives all of them the same MCP tools to report back, ask, start other agents and run workflows. Input queues per turn; conversations can run in parallel git worktrees, workflows on cron schedules, and both can switch agents at a usage limit. State is plain files, shown by a Preact UI and reachable from your phone through an end-to-end encrypted relay. [Architecture](#how-it-works) · [Who builds it](#how-savor-is-maintained)
 
 ## Features
 
@@ -87,7 +79,7 @@ Everything lives in plain files: `~/.savor/state.json` holds projects, tokens an
 **Desktop app:** download the AppImage (Linux), dmg (macOS) or exe (Windows) from the [Releases page](https://github.com/robinchoice/savor/releases). The app starts its own daemon, finds agent CLIs through your login shell's `PATH`, downloads Chromium for the preview on first use, and updates itself from new releases. You still need at least one logged-in agent CLI (`claude`, `codex`, …).
 
 - Linux: `chmod +x Savor-<version>.AppImage && ./Savor-<version>.AppImage`. No extra flags are needed: where Chromium's sandbox can't use user namespaces, for example on Ubuntu 24.04 and later because of AppArmor, the AppImage starts itself with `--no-sandbox`.
-- macOS: `Savor-<version>-arm64.dmg` is for Apple Silicon, `Savor-<version>-x64.dmg` for Intel. The builds are ad-hoc signed and not notarized, so macOS blocks the first launch: open System Settings → Privacy & Security and click **Open Anyway**. Up to macOS 14, a right-click → Open works too. The app only updates itself once builds are signed with a Developer ID.
+- macOS: `Savor-<version>-arm64.dmg` is for Apple Silicon, `Savor-<version>-x64.dmg` for Intel. The builds are signed with a Developer ID and notarized: macOS opens them after its usual prompt for downloaded apps, and they update themselves.
 - Windows builds are not code-signed yet: SmartScreen asks once.
 
 **From source** (Node ≥ 22.12):
@@ -375,7 +367,7 @@ CI runs typecheck and the end-to-end tests on every push. `secrets.yml` scans ev
 Early: version 0.x, first released in September 2026, with releases several times a week. Savor is used every day for real work, but expect rough edges. Known gaps and limits:
 - One person, one computer: there are no user accounts, teams or shared projects. Other devices are your own, paired with a QR code.
 - Savor is not a sandbox. Agents run as your user with the permissions you give them in the agent picker, and Savor shows their approval prompts.
-- The desktop builds are not notarized (macOS) or code-signed (Windows) yet, and macOS builds don't update themselves until they are.
+- The Windows builds are not code-signed yet, so SmartScreen asks once.
 - Antigravity doesn't work on Windows yet.
 - The phone apps are in closed testing (TestFlight, Play's internal test). On the phone, use the web app through a relay or your own network.
 - There is no public relay instance yet: run your own (see above) or use a direct connection.

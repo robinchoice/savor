@@ -1,8 +1,8 @@
-// Records the demo video for the README and the launch (docs/demo.mp4, docs/demo.gif) and short clips for
-// posts (docs/clips/<scene>.mp4): a real daemon with scripts/demo-claude.mjs as Claude Code, made-up projects,
-// and headless Chromium playing the user. Run by hand, not on release: npm run build && node
-// scripts/demo-video.mjs [scene…], without scenes only the demo. Needs Chromium (npx playwright-core install
-// chromium) and ffmpeg.
+// Records the demo video for the README, the landing page and the launch (docs/demo.mp4, docs/demo.gif,
+// site/img/demo.mp4) and short clips for posts (docs/clips/<scene>.mp4): a real daemon with
+// scripts/demo-claude.mjs as Claude Code, made-up projects, and headless Chromium playing the user. Run by
+// hand, not on release: npm run build && node scripts/demo-video.mjs [scene…], without scenes only the demo.
+// Needs Chromium (npx playwright-core install chromium) and ffmpeg.
 import { execFileSync, spawn } from 'node:child_process'
 import fs from 'node:fs'
 import http from 'node:http'
@@ -172,6 +172,8 @@ try {
     const out = name === 'demo' ? DOCS : path.join(DOCS, 'clips')
     fs.mkdirSync(out, { recursive: true })
     ffmpeg('-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '28', '-preset', 'slow', '-movflags', '+faststart', path.join(out, `${name}.mp4`))
+    // The landing page plays the demo in its hero and only serves site/.
+    if (name === 'demo') fs.copyFileSync(path.join(out, 'demo.mp4'), path.join(ROOT, 'site/img/demo.mp4'))
     if (gif) ffmpeg('-vf', 'fps=8,scale=960:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=96:stats_mode=diff[p];[b][p]paletteuse=dither=none:diff_mode=rectangle', path.join(out, `${name}.gif`))
     console.log(path.relative(ROOT, path.join(out, `${name}.mp4`)))
   }

@@ -30,3 +30,7 @@ function show(key) {
 
 for (const tab of tabs) tab.addEventListener('click', () => show(tab.dataset.os))
 show(os ?? 'linux')
+
+// The hero demo plays by itself, except for visitors who asked their system for less motion
+const demo = document.querySelector('[data-demo]')
+if (demo && !matchMedia('(prefers-reduced-motion: reduce)').matches) demo.play().catch(() => {})
