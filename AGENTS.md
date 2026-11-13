@@ -3,7 +3,8 @@
 ## Purpose & links
 
 - Local workspace for coding agents: Node server, web UI, Electron desktop app (`desktop/`), relay for paired remote devices (`relay/`). Setup, architecture and the development commands are in README.md.
-- Landing page: https://savor.pleasance.org from `site/`, Coolify on VPS 1, project `pleasance-savor`.
+- Landing page: https://savor.pleasance.org from `site/`, Coolify on VPS 1, project `pleasance-savor`. It also serves `site/install.sh`, the Linux one-liner, which puts the latest AppImage in `~/Applications/Savor.AppImage` and adds a menu entry.
+- Homebrew: `brew install --cask robinchoice/tap/savor` from the public repo `robinchoice/homebrew-tap`, which moves its cask to each new release by itself (its `AGENTS.md`).
 - Relay: https://savor.diespaetzles.lol, Coolify on VPS 3, project `privat-savor`, application `savor-relay`.
 - The bug button sends reports through the daemon's `POST /api/feedback` to `POST https://api.pleasance.org/savor/feedback` (repo `pleasance`, `api/`), which files them as issues in the private repo `robinchoice/savor-feedback`. Tests replace it with `SAVOR_FEEDBACK_URL`.
 - Phone apps `org.pleasance.savor`: iOS in TestFlight (groups „Savor Intern“, external „Savor Tester“), Android in Play's internal test (account `play@pleasance.org`). README, "Phone / remote access".
@@ -60,7 +61,7 @@
 - The version lives in `package.json` and `desktop/package.json`, and the server reads it from there. Don't hard-code it anywhere else.
 - Pushed tags are final. If a release fails, delete its draft, fix the cause and release the next patch version. Never delete or move a tag.
 - After each release, `release.yml` pushes fresh screenshots and the landing page's download links to `main`, so fetch before the next push.
-- Release files carry the version in their names. electron-updater overwrites an AppImage without a version in its name in place (like the one Robin's service starts) and renames a versioned one to the new version.
+- Release files carry the version in their names. electron-updater overwrites an AppImage without a version in its name in place (like the one Robin's service starts and the one `site/install.sh` installs) and renames a versioned one to the new version. `site/install.sh` and the Homebrew cask build their download URLs from the names `Savor-<version>.AppImage` and `Savor-<version>-<arm64|x64>.dmg`: if those change, change both.
 
 ## New features
 

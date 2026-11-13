@@ -16,7 +16,12 @@
 
 <sub>Recorded with a scripted stand-in for Claude Code and made-up projects ([`scripts/demo-video.mjs`](scripts/demo-video.mjs)); [MP4](docs/demo.mp4).</sub>
 
-**[Download for Linux, macOS and Windows](https://savor.pleasance.org/#install)**, start it and add a project folder. Savor brings no model and no account: it drives the agent CLIs you already use and are signed in to (Claude Code, Codex, OpenCode, Grok Build, Antigravity). Details and running from source under [Install](#install).
+```sh
+brew install --cask robinchoice/tap/savor               # macOS
+curl -fsSL https://savor.pleasance.org/install.sh | sh  # Linux
+```
+
+Windows: [download the installer](https://savor.pleasance.org/#install). Then add a project folder. Savor brings no model and no account: it drives the agent CLIs you already use and are signed in to (Claude Code, Codex, OpenCode, Grok Build, Antigravity). Details and running from source under [Install](#install).
 
 ## Delegate, don't babysit
 
@@ -78,8 +83,8 @@ Everything lives in plain files: `~/.savor/state.json` holds projects, tokens an
 
 **Desktop app:** download the AppImage (Linux), dmg (macOS) or exe (Windows) from the [Releases page](https://github.com/robinchoice/savor/releases). The app starts its own daemon, finds agent CLIs through your login shell's `PATH`, downloads Chromium for the preview on first use, and updates itself from new releases. You still need at least one logged-in agent CLI (`claude`, `codex`, …).
 
-- Linux: `chmod +x Savor-<version>.AppImage && ./Savor-<version>.AppImage`. No extra flags are needed: where Chromium's sandbox can't use user namespaces, for example on Ubuntu 24.04 and later because of AppArmor, the AppImage starts itself with `--no-sandbox`.
-- macOS: `Savor-<version>-arm64.dmg` is for Apple Silicon, `Savor-<version>-x64.dmg` for Intel. The builds are signed with a Developer ID and notarized: macOS opens them after its usual prompt for downloaded apps, and they update themselves.
+- Linux: `curl -fsSL https://savor.pleasance.org/install.sh | sh` puts the newest AppImage in `~/Applications/Savor.AppImage` and adds it to the app menu ([`site/install.sh`](site/install.sh)); running it again installs the newest release. AppImages need FUSE 2: `sudo apt install libfuse2t64` on Ubuntu 24.04 and later. By hand: `chmod +x Savor-<version>.AppImage && ./Savor-<version>.AppImage`. No extra flags are needed: where Chromium's sandbox can't use user namespaces, for example on Ubuntu 24.04 and later because of AppArmor, the AppImage starts itself with `--no-sandbox`.
+- macOS: `brew install --cask robinchoice/tap/savor` ([tap](https://github.com/robinchoice/homebrew-tap)), or the dmg: `Savor-<version>-arm64.dmg` is for Apple Silicon, `Savor-<version>-x64.dmg` for Intel. The builds are signed with a Developer ID and notarized: macOS opens them after its usual prompt for downloaded apps, and they update themselves.
 - Windows builds are not code-signed yet: SmartScreen asks once.
 
 **From source** (Node ≥ 22.12):
