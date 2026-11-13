@@ -833,6 +833,7 @@ const de: Record<string, string> = {
   'No terminal open.': 'Kein Terminal offen.',
   'Updating, the values shown are from earlier': 'Wird aktualisiert, die angezeigten Werte sind älter',
   'Updating…': 'Wird aktualisiert…',
+  'Limits': 'Limits',
   'Resets {when}': 'Neu ab {when}',
   'What is left of the subscription limits: when they reset': 'Was von den Abo-Limits übrig ist und wann sie zurückgesetzt werden',
   '· Updating…': '· Wird aktualisiert…',

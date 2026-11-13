@@ -465,6 +465,9 @@ main { flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
 .ap-limit { display: block; height: 3px; border-radius: 2px; background: var(--line-strong); margin-top: 6px; overflow: hidden; }
 .ap-limit i { display: block; height: 100%; background: var(--muted); }
 .ap-limit.low i { background: var(--red); }
+.ap-usage { display: none; }
+.ap-usage .usage-bars { padding: 2px 0 4px; }
+.ap-usage .usage-bars small { display: block; margin-top: 3px; }
 .ap-pane { padding: 6px 12px 12px; overflow-y: auto; min-width: 0; }
 .ap-pane .menu-label { display: flex; justify-content: space-between; gap: 12px; padding: 10px 2px 6px; }
 .ap-pane .menu-label span { font-weight: 400; text-align: right; }
@@ -510,6 +513,7 @@ main { flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
   .ap-rail { flex-direction: row; overflow: auto visible; border-right: 0; background: none; padding: 10px 10px 0; flex: none; }
   .ap-agent { flex: none; padding: 6px 10px; }
   .ap-agent small, .ap-limit { display: none; }
+  .ap-usage { display: block; }
   .ap-pane { overflow: visible; }
   .ap-models { grid-template-columns: 1fr; }
 }

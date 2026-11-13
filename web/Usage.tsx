@@ -34,7 +34,7 @@ const UPDATING = t('Updating, the values shown are from earlier')
 // What is left of a limit, in percent.
 const left = (w: Usage['windows'][number]) => Math.max(0, 100 - w.percent)
 
-// What is left of each limit, as segmented bars.
+// What is left of each limit, as segmented bars, and when it resets.
 export function UsageBars({ usage }: { usage: Usage }) {
   return (
     <div class={`usage-bars ${usage.stale ? 'stale' : ''}`} title={usage.stale ? UPDATING : undefined}>
@@ -44,7 +44,7 @@ export function UsageBars({ usage }: { usage: Usage }) {
         </div>
       )}
       {usage.windows.map((w) => (
-        <div key={w.label} title={w.resets ? t('Resets {when}', { when: w.resets }) : undefined}>
+        <div key={w.label}>
           <div class="row">
             <span>{tx(w.label)}</span>
             <span class="spacer" />
@@ -55,6 +55,7 @@ export function UsageBars({ usage }: { usage: Usage }) {
               <i key={i} class={i < Math.round(left(w) / 5) ? 'on' : ''} />
             ))}
           </div>
+          {w.resets && <small class="muted">{t('Resets {when}', { when: w.resets })}</small>}
         </div>
       ))}
     </div>

@@ -4,7 +4,7 @@ import { api, returnSends, agentSummary, attachmentFromFile, describeModel, effo
 import { ProviderIcon } from './Conversations'
 import { useShortcut } from './Shortcuts'
 import { megabytes, ModelMissing, NothingHeard, record, type Recording, type VoiceModels } from './voice'
-import { useUsage } from './Usage'
+import { UsageBars, useUsage } from './Usage'
 import { reviewMessage, type ReviewComment } from './Changes'
 import { fanoutBranches } from '../shared/fanout'
 import { plural, t, tx } from './i18n'
@@ -853,6 +853,8 @@ export function AgentMenu({ agent, agents, setAgent, close }: { agent: AgentConf
     }
   }
   const status = (p: ProviderInfo) => (!p.installed ? t('Not installed') : p.signedIn === false ? `${t('Sign in:')} ${p.signIn}` : p.account ?? p.version ?? '')
+  // Phones have no status bar and no tooltips: the pane lists every limit of the chosen agent there.
+  const selectedUsage = usage.find((u) => u.provider === agent.provider)
   // The weekly limit says the most about what is left, the others show in the tooltip.
   const limit = (id: string) => {
     const u = usage.find((u) => u.provider === id)
@@ -891,6 +893,12 @@ export function AgentMenu({ agent, agents, setAgent, close }: { agent: AgentConf
         </div>
         <div class="ap-pane">
           <AntigravityWarning agent={info} />
+          {selectedUsage && (
+            <div class="ap-usage">
+              <div class="menu-label">{t('Limits')}</div>
+              <UsageBars usage={selectedUsage} />
+            </div>
+          )}
           <div class="menu-label">{t('Model')}</div>
           {models.length ? (
             <div class="ap-models">
