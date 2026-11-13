@@ -46,8 +46,9 @@
       $('go').textContent = tr('Pair', 'Koppeln')
       $('serverLabel').textContent = tr('Run Savor on this computer', 'Savor auf diesem Computer ausführen')
       const bridge = window.savorDesktop
-      bridge.computers().then(({ server, list }) => {
+      const refresh = () => bridge.computers().then(({ server, list }) => {
         $('server').checked = server
+        $('list').replaceChildren()
         for (const c of list) {
           const b = document.createElement('button')
           b.textContent = `${c.via === 'local' ? tr('This computer', 'Dieser Computer') : c.name}${c.via === 'relay' ? tr(' · via relay', ' · über Relay') : ''}`
@@ -55,7 +56,8 @@
           $('list').append(b)
         }
       })
-      $('server').onchange = (e) => bridge.setServer(e.target.checked).then(() => location.replace(location.pathname))
+      refresh()
+      $('server').onchange = (e) => bridge.setServer(e.target.checked).then(refresh)
       $('pair').onsubmit = async (e) => {
         e.preventDefault()
         if (!(await bridge.pairComputer($('link').value))) Object.assign($('invalid'), { hidden: false, textContent: tr('That is not a Savor pairing link.', 'Das ist kein Kopplungslink von Savor.') })

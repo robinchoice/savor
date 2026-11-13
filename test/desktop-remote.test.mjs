@@ -8,11 +8,12 @@ import fs from 'node:fs'
 import net from 'node:net'
 import os from 'node:os'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { chromium } from 'playwright-core'
 import computers from '../desktop/computers.cjs'
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..')
+const CONNECT_URL = pathToFileURL(path.join(ROOT, 'desktop/connect.html')).href
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'savor-desktop-remote-'))
 const children = []
 let browser, page, here, there
@@ -118,7 +119,7 @@ before(async () => {
   await page.exposeBinding('savorShell', ({ frame }, op, arg) => {
     const origin = computers.originOf(frame.url())
     const access = accessOf(origin)
-    if (!access || (CHANGES.includes(op) && access === 'pairing')) return null
+    if ((!access && frame.url().split('?')[0] !== CONNECT_URL) || (CHANGES.includes(op) && access === 'pairing')) return null
     return bridge[op](arg, origin) ?? null
   })
   // What preload.cjs exposes: the folder dialog only on this computer's page.
@@ -241,4 +242,17 @@ test('a client-only app lists only the paired computers, and forgetting the last
   await page.click('.account-dialog .computer button[title="Remove from this app"]')
   await until(() => !shell.state.computers.length)
   assert.equal(computers.startId(shell.state), null, 'the app asks for a pairing link on its next start')
+})
+
+test('the connect page refreshes the computer list when the local server is enabled', async () => {
+  // Forgetting the last computer left the window with nothing to show.
+  await page.waitForURL('about:blank')
+  await page.goto(`${CONNECT_URL}?error=unreachable&name=offline`)
+  await page.waitForFunction(() => document.querySelector('#server').checked === false)
+  // The shell blocks page-initiated file navigation; updating the list must work without a reload.
+  await page.evaluate(() => navigation.addEventListener('navigate', (event) => event.preventDefault()))
+  await page.check('#server')
+  await page.waitForSelector('#list button:has-text("This computer")', { timeout: 5000 })
+  assert.equal(shell.state.server, true)
+  assert.equal(await page.locator('#list button').count(), 1)
 })
