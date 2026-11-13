@@ -185,7 +185,29 @@ test('a project folder moves, archives or follows its symlink, its conversations
       await api('POST', `/projects/${alpha.id}/threads/${main.id}/approvals/${pending.id}`, { choice })
       return pending.approval
     }
-    let call = client.callTool({ name: 'move_project', arguments: { project: taken.id, archive: true, link: false } })
+    // `name` alone only changes the name Savor shows, also of the agent's own project.
+    const alphaNow = await project(alpha.id)
+    for (const name of ['', '   ']) {
+      assert.equal((await client.callTool({ name: 'move_project', arguments: { project: alpha.id, name } })).isError, true)
+    }
+    let call = client.callTool({ name: 'move_project', arguments: { project: alpha.id, name: 'Renamed' } })
+    assert.equal((await answer('deny')).title, 'Rename Alpha?')
+    assert.equal((await call).content[0].text, 'The user cancelled the rename.')
+    assert.equal((await project(alpha.id)).name, 'Alpha')
+    call = client.callTool({ name: 'move_project', arguments: { project: alpha.id, name: ' Renamed ' } })
+    assert.equal((await project(alpha.id)).name, 'Alpha')
+    await answer('allow')
+    assert.deepEqual(JSON.parse((await call).content[0].text), { id: alpha.id, name: 'Renamed', path: alphaNow.path })
+    assert.equal((await project(alpha.id)).name, 'Renamed')
+    assert.equal((await api('GET', `/projects/${alpha.id}/threads/${side.id}`)).body.thread.worktree.path, worktree)
+    await api('POST', `/projects/${alpha.id}/threads/${main.id}/messages`, { text: 'after the rename' })
+    await concluded(alpha.id, main.id, 'Echo: after the rename')
+    const betaMoved = path.join(dev, 'beta-moved')
+    call = client.callTool({ name: 'move_project', arguments: { project: beta.id, path: betaMoved, name: 'Moved Beta', link: false } })
+    assert.match((await answer('allow')).detail, /Shows it as Moved Beta in Savor/)
+    assert.deepEqual(JSON.parse((await call).content[0].text), { id: beta.id, name: 'Moved Beta', path: betaMoved })
+    assert.equal((await project(beta.id)).name, 'Moved Beta')
+    call = client.callTool({ name: 'move_project', arguments: { project: taken.id, archive: true, link: false } })
     const card = await answer('allow')
     assert.equal(card.title, 'Move Taken?')
     const takenArchived = path.join(dev, '_archive', 'taken')

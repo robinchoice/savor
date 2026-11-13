@@ -378,23 +378,32 @@ function buildServer(p: Project, tid: string) {
     'move_project',
     {
       description:
-        'Move or rename a project folder, archive it to `_archive/` next to it, or point the project at the place it already moved to (e.g. the target of a symlink). Conversations, git worktrees and Claude Code sessions follow. Moved out of its parent folder or into a `_` folder there (`_archive`, `_paused`), the project leaves Savor\'s list like with remove_project; a rename in the same folder keeps it. The user approves the move here first. Conversations of that project must not be at work, so it can\'t move the project this conversation runs in.',
+        'Move or rename a project folder, archive it to `_archive/` next to it, or point the project at the place it already moved to (e.g. the target of a symlink). Conversations, git worktrees and Claude Code sessions follow. Moved out of its parent folder or into a `_` folder there (`_archive`, `_paused`), the project leaves Savor\'s list like with remove_project; a rename in the same folder keeps it. `name` changes the name Savor shows, with a move or alone, without `path`; the folder name never changes it. The user approves the move here first. Conversations of that project must not be at work, so it can\'t move the project this conversation runs in; a change of `name` alone can.',
       inputSchema: {
         project: z.string().min(1).describe('Project id or absolute path, see list_projects'),
         path: z.string().min(1).optional().describe('New absolute path or ~/…'),
         archive: z.boolean().optional().describe('Move to `_archive/<folder>` next to the folder instead of `path`'),
         link: z.boolean().optional().describe('Leave a symlink at the old path, or keep the one there (default true)'),
+        name: z.string().trim().min(1).optional().describe('New name in Savor\'s project list'),
       },
     },
-    async ({ project, path: dir, archive, link }) => {
+    async ({ project, path: dir, archive, link, name }) => {
       const target = findProject(project)
+      if (name && !dir && !archive) {
+        if (!(await approved(`Rename ${target.name}?`, `Shows ${target.name} as ${name} in Savor. Its folder ${target.path}, id and conversations stay.`, 'Rename'))) return ok('The user cancelled the rename.')
+        const renamed = store.updateProject(target.id, { name })
+        emit({ type: 'projects' })
+        return ok({ id: renamed.id, name: renamed.name, path: renamed.path })
+      }
       const to = archive ? move.archivePath(target) : dir
-      if (!to || !/^(~\/|\/)/.test(to)) throw new Error('Give `path` as an absolute path or one starting with ~/, or `archive`.')
+      if (!to || !/^(~\/|\/)/.test(to)) throw new Error('Give `path` as an absolute path or one starting with ~/, `archive` or `name`.')
       const plan = move.planMove(target, to)
       if (plan.blockers.length) throw new Error(plan.blockers.join(' '))
+      if (name && plan.leaves) throw new Error('The project leaves Savor\'s list with this move, so it gets no new name. Move it without `name`.')
       const keep = link ?? true
       const detail = [
         `${plan.mode === 'move' ? 'Moves' : 'Points the project from'} ${plan.from} ${plan.mode === 'move' ? 'to' : 'at'} ${plan.to}${plan.mode === 'move' && keep ? ', leaving a symlink at the old path' : ''}.`,
+        name && `Shows it as ${name} in Savor.`,
         plan.symlink && (keep ? `The symlink ${plan.from} stays.` : `Deletes the symlink ${plan.from}.`),
         plan.claudeSessions && `${plan.claudeSessions} Claude Code session${plan.claudeSessions === 1 ? '' : 's'} move along.`,
         plan.worktrees && `${plan.worktrees} worktree${plan.worktrees === 1 ? '' : 's'} get repaired.`,
@@ -405,7 +414,11 @@ function buildServer(p: Project, tid: string) {
       // Moved or removed elsewhere meanwhile, it would be another folder now.
       const now = store.listProjects().find((q) => q.id === target.id)
       if (now?.path !== target.path) throw new Error(`${target.name} changed while waiting for the approval. Look again.`)
-      const moved = move.moveProject(now, to, { link: keep, force: true })
+      let moved = move.moveProject(now, to, { link: keep, force: true })
+      if (name) {
+        moved = store.updateProject(moved.id, { name })
+        emit({ type: 'projects' })
+      }
       return ok({ id: moved.id, name: moved.name, path: moved.path, ...(plan.leaves && { removed: 'Moved out of its folder, so it left Savor\'s project list. Adding the folder again brings it back.' }) })
     },
   )
