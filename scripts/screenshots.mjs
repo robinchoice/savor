@@ -1,6 +1,8 @@
 // Takes the screenshots for the README (docs/screenshots/*.png) and the landing page (site/img/*.webp):
 // a real daemon with scripts/demo-claude.mjs as Claude Code plays the demo conversations, headless
 // Chromium photographs them. Needs a build (npm run build) and Chromium (npx playwright-core install chromium).
+// The demo is Savor at work on its own landing page (site/, served as the preview) and on two more of
+// our projects, all in the dark theme the landing page uses.
 import { spawn } from 'node:child_process'
 import fs from 'node:fs'
 import http from 'node:http'
@@ -16,8 +18,6 @@ const SITE = path.join(ROOT, 'site/img')
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'savor-shots-'))
 const SITE_PORT = 8792
 const TZ = 'Europe/Berlin'
-
-const BAKERY = fs.readFileSync(path.join(ROOT, 'scripts/demo-bakery.html'), 'utf8')
 
 const freePort = () =>
   new Promise((resolve) => {
@@ -37,15 +37,17 @@ async function until(fn, ms = 30_000) {
   throw new Error('timed out')
 }
 
-const brotzeit = path.join(TMP, 'brotzeit')
-const portfolio = path.join(TMP, 'portfolio')
-fs.mkdirSync(brotzeit)
-fs.mkdirSync(portfolio)
-fs.writeFileSync(path.join(brotzeit, 'index.html'), BAKERY)
-// The demo page uses the landing page's font, so it looks the same on every machine.
-const FONT = fs.readFileSync(path.join(ROOT, 'site/fonts/bricolage-grotesque-latin.woff2'))
+const dirs = Object.fromEntries(['savor', 'songgate', 'pleasance'].map((name) => [name, path.join(TMP, name)]))
+for (const dir of Object.values(dirs)) fs.mkdirSync(dir)
+// The preview shows the landing page as it is in this checkout.
+const TYPES = { '.html': 'text/html', '.css': 'text/css', '.js': 'text/javascript', '.svg': 'image/svg+xml', '.webp': 'image/webp', '.png': 'image/png', '.woff2': 'font/woff2' }
 const site = http
-  .createServer((req, res) => (req.url === '/font.woff2' ? res.writeHead(200, { 'content-type': 'font/woff2' }).end(FONT) : res.writeHead(200, { 'content-type': 'text/html' }).end(BAKERY)))
+  .createServer((req, res) => {
+    let file = path.join(ROOT, 'site', path.normalize(decodeURIComponent(req.url.split('?')[0])))
+    if (file.endsWith(path.sep)) file = path.join(file, 'index.html')
+    if (!file.startsWith(path.join(ROOT, 'site')) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) return res.writeHead(404).end()
+    res.writeHead(200, { 'content-type': TYPES[path.extname(file)] ?? 'application/octet-stream' }).end(fs.readFileSync(file))
+  })
   .listen(SITE_PORT, '127.0.0.1')
 
 const port = await freePort()
@@ -78,107 +80,134 @@ const api = async (method, p, body) => {
 
 let browser
 try {
-  // The demo: two projects, a landing page with its preview, a checklist waiting for answers, two workflows.
-  const project = await api('POST', '/projects', { path: brotzeit })
-  await api('POST', '/projects', { path: portfolio })
-  const p = `/projects/${project.id}`
-  const read = (id) => api('GET', `${p}/threads/${id}`)
+  // The demo: three projects, the landing page with its preview, a plan waiting for answers, a finished task, two workflows.
+  const savor = await api('POST', '/projects', { path: dirs.savor })
+  const songgate = await api('POST', '/projects', { path: dirs.songgate })
+  const pleasance = await api('POST', '/projects', { path: dirs.pleasance })
+  const in_ = (project) => `/projects/${project.id}`
+  const read = (project, id) => api('GET', `${in_(project)}/threads/${id}`)
   // Waits until test(thread) holds; a timeout shows what the conversation got instead.
-  const waitFor = (id, test) =>
-    until(async () => test(await read(id))).catch(async () => {
-      throw new Error(`timed out, messages: ${JSON.stringify((await read(id)).messages.map((m) => [m.kind, m.text]))}`)
+  const waitFor = (project, id, test) =>
+    until(async () => test(await read(project, id))).catch(async () => {
+      throw new Error(`timed out, messages: ${JSON.stringify((await read(project, id)).messages.map((m) => [m.kind, m.text]))}`)
     })
   const concluded = (text) => (t) => t.messages.some((m) => m.kind === 'conclusion' && m.text?.includes(text))
   const asking = (t) => t.decisions.find((d) => !d.resolved)
+  const agent = { provider: 'claude', model: 'sonnet', reasoning: 'low' }
 
-  const bakery = await api('POST', `${p}/threads`, {
-    text: 'Build a warm, modern landing page for our bakery "Brotzeit" in index.html: hero with a tagline, three bestsellers and a map.',
-    agent: { provider: 'claude', model: 'sonnet', reasoning: 'low' },
-  })
-  const decision = await waitFor(bakery.id, asking)
-  await api('POST', `${p}/threads/${bakery.id}/decisions`, { answers: [{ id: decision.id, selected: 0 }] })
-  await waitFor(bakery.id, concluded('is live at'))
-  await api('POST', `${p}/threads/${bakery.id}/messages`, {
-    text: 'Looks great. Make the hero headline a bit larger, reload the preview, and conclude with three short suggestions for next steps.',
-  })
-  await waitFor(bakery.id, concluded('headline is larger'))
+  const address = await api('POST', `${in_(pleasance)}/threads`, { text: 'Put our new office address into the imprint and privacy pages.', agent })
+  await waitFor(pleasance, address.id, concluded('new address'))
 
-  const checklist = await api('POST', `${p}/threads`, {
-    text: 'Write a short launch checklist for the new website as a document (domain, SEO basics, Google Business Profile, photos) and ask me what you need to know.',
-    agent: { provider: 'claude', model: 'sonnet', reasoning: 'low' },
+  const landing = await api('POST', `${in_(savor)}/threads`, {
+    text: 'Rework the landing page in site/: dark, one accent, a huge two-line headline, the real app as the stage and numbered steps.',
+    agent,
   })
-  await waitFor(checklist.id, asking)
+  const decision = await waitFor(savor, landing.id, asking)
+  await api('POST', `${in_(savor)}/threads/${landing.id}/decisions`, { answers: [{ id: decision.id, selected: 0 }] })
+  await waitFor(savor, landing.id, concluded('is live at'))
+  await api('POST', `${in_(savor)}/threads/${landing.id}/messages`, {
+    text: 'Looks great. Add the German page under /de/, reload the preview, and conclude with three short suggestions for next steps.',
+  })
+  await waitFor(savor, landing.id, concluded('German page'))
 
-  const workflow = (name, prompt, cron) => api('POST', `${p}/workflows`, { name, prompt, cron, timezone: TZ })
-  await workflow('Weekly specials post', 'Write this week’s specials post for the website and Instagram from specials.md.', '0 9 * * 1')
+  const tips = await api('POST', `${in_(songgate)}/threads`, {
+    text: "Let listeners tip the artist over Lightning on every song page, with the L402 checkout from starter. Ask me what you need to know.",
+    agent,
+  })
+  await waitFor(songgate, tips.id, asking)
+
+  const workflow = (name, prompt, cron) => api('POST', `${in_(savor)}/workflows`, { name, prompt, cron, timezone: TZ })
+  await workflow('Nightly dependency check', 'Run npm outdated and start a conversation for each major update, with what changed and what it breaks.', '0 3 * * *')
   const check = await workflow(
-    'Morning site check',
-    'Open the website in the preview, check opening hours and prices against the Google Business profile and report anything that is out of date.',
-    '0 7 * * *',
+    'Upstream check',
+    'Run node scripts/upstream-check.mjs against the newest Claude Code, Codex and OpenCode and report anything that broke, with the failing step.',
+    '0 5 * * 1',
   )
 
   browser = await chromium.launch({ executablePath: process.env.SAVOR_CHROMIUM })
-  const open = async (theme, options) => {
+  const open = async (options) => {
     const page = await browser.newPage({ locale: 'en-US', timezoneId: TZ, ...options })
-    await page.addInitScript((t) => {
-      localStorage.setItem('savor-theme', t)
+    await page.addInitScript(() => {
+      localStorage.setItem('savor-theme', 'dark')
       localStorage.setItem('savor-prefs', JSON.stringify({ layout: { dir: 'col', sizes: [0, 300], children: [{ dir: 'row', sizes: [330, 560, 0], children: ['list', 'main', 'stage'] }, 'terminal'] } }))
-    }, theme)
+    })
     await page.goto(`${base}/?token=${token}`)
     return page
   }
-  const shoot = async (page, route, ready, file) => {
+  const go = async (page, route, ready) => {
     await page.goto(`${base}/#${route}`)
     await page.waitForSelector(ready)
     await page.evaluate(() => document.fonts.ready)
     await page.waitForTimeout(500)
+  }
+  const shoot = async (page, route, ready, file) => {
+    await go(page, route, ready)
     return page.screenshot({ path: path.join(DOCS, file) })
+  }
+  // A part of the window for the landing page's steps: the element's box.
+  const part = async (page, selector, file) => {
+    const clip = await page.evaluate((s) => {
+      const r = document.querySelector(s).getBoundingClientRect()
+      return { x: r.left, y: r.top, width: r.width, height: r.height }
+    }, selector)
+    return page.screenshot({ clip, path: path.join(DOCS, file) })
   }
 
   const desktop = { viewport: { width: 1600, height: 1000 } }
-  let page = await open('dark', desktop)
-  await shoot(page, `/p/${project.id}/t/${bakery.id}`, '.stage .screen', 'conversation.png')
-  page = await open('light', desktop)
-  await shoot(page, `/p/${project.id}/t/${checklist.id}`, '.option', 'questions.png')
-  await shoot(page, `/p/${project.id}/workflows/${check.id}/edit`, 'textarea', 'workflows.png')
+  let page = await open(desktop)
+  await shoot(page, `/p/${savor.id}/t/${landing.id}`, '.stage .screen', 'conversation.png')
+  await shoot(page, `/p/${songgate.id}/t/${tips.id}`, '.option', 'questions.png')
+  await shoot(page, `/p/${savor.id}/workflows/${check.id}/edit`, 'textarea', 'workflows.png')
 
-  // The phone screenshot shows the conversation list and the conversation with its preview side by side.
-  page = await open('dark', { viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true })
-  const list = await shoot(page, `/p/${project.id}`, 'text=Website launch checklist', 'mobile.png')
-  const chat = await shoot(page, `/p/${project.id}/t/${bakery.id}`, '.stage .screen', 'mobile.png')
-  page = await browser.newPage({ viewport: { width: 1620, height: 1688 }, locale: 'en-US' })
-  const src = (png) => `data:image/png;base64,${png.toString('base64')}`
-  await page.setContent(`<body style="margin:0;display:flex;gap:60px;background:#fff"><img src="${src(list)}" width="780"><img src="${src(chat)}" width="780"></body>`)
-  await page.screenshot({ path: path.join(DOCS, 'mobile.png') })
-
-  // The social preview shows the end of the bakery conversation enlarged next to the headline, so the
-  // UI stays readable at the few hundred pixels a link preview gets.
-  page = await open('dark', { ...desktop, deviceScaleFactor: 2 })
-  await page.goto(`${base}/#/p/${project.id}/t/${bakery.id}`)
-  await page.waitForSelector('.complete-actions')
-  await page.evaluate(() => document.fonts.ready)
-  await page.waitForTimeout(500)
+  // The steps of the landing page show parts of the window, sharp at twice the pixels.
+  page = await open({ ...desktop, deviceScaleFactor: 2 })
+  await go(page, `/p/${savor.id}/t/${landing.id}`, '.complete-actions')
+  await part(page, '.stage', 'step-preview.png')
+  // The end of the landing page conversation: the last request, the result and the next steps. It is also
+  // the social preview's picture, enlarged so the UI stays readable at the few hundred pixels a link gets.
   const clip = await page.evaluate(() => {
     const box = (el) => el.getBoundingClientRect()
     const list = box(document.querySelector('.messages'))
     const top = box([...document.querySelectorAll('.messages .msg')].at(-2)).top
     return { x: list.left, y: top - 8, width: list.width, height: box(document.querySelector('.complete-actions')).bottom - top + 12 }
   })
-  const ending = await page.screenshot({ clip })
+  const ending = await page.screenshot({ clip, path: path.join(DOCS, 'step-task.png') })
+  // Without a preview the conversation takes the whole width, so these come from a narrower window.
+  page = await open({ viewport: { width: 1120, height: 780 }, deviceScaleFactor: 2 })
+  await go(page, `/p/${songgate.id}/t/${tips.id}`, '.option')
+  await part(page, '.messages', 'step-questions.png')
+  await go(page, '/all', '.all-overview')
+  await part(page, '.all-overview', 'step-projects.png')
+
+  // The phone screenshot shows the conversation list and the conversation with its preview side by side.
+  page = await open({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true })
+  const list = await shoot(page, `/p/${songgate.id}`, 'text=Lightning tips for artists', 'mobile.png')
+  const chat = await shoot(page, `/p/${savor.id}/t/${landing.id}`, '.stage .screen', 'mobile.png')
+  fs.writeFileSync(path.join(DOCS, 'step-phone.png'), list)
+  // On phones the landing page's hero shows Savor on a phone instead of the desktop window.
+  fs.writeFileSync(path.join(DOCS, 'hero-phone.png'), chat)
+  page = await browser.newPage({ viewport: { width: 1620, height: 1688 }, locale: 'en-US' })
+  const src = (png) => `data:image/png;base64,${png.toString('base64')}`
+  await page.setContent(`<body style="margin:0;display:flex;gap:60px;background:#0b0a10"><img src="${src(list)}" width="780"><img src="${src(chat)}" width="780"></body>`)
+  await page.screenshot({ path: path.join(DOCS, 'mobile.png') })
+
+  // The social preview: the headline next to the end of the landing page conversation.
+  const FONT = fs.readFileSync(path.join(ROOT, 'site/fonts/bricolage-grotesque-latin.woff2'))
   page = await browser.newPage({ viewport: { width: 1200, height: 630 } })
   await page.setContent(`<style>
-@font-face { font-family: Bricolage; src: url(data:font/woff2;base64,${FONT.toString('base64')}) format('woff2'); font-weight: 200 800; }
-body { margin: 0; width: 1200px; height: 630px; overflow: hidden; display: flex; align-items: center; justify-content: space-between; gap: 44px; padding: 0 56px; box-sizing: border-box; background: #f4f4f1; color: #17171a; font-family: Bricolage, sans-serif; }
+@font-face { font-family: Bricolage; src: url(data:font/woff2;base64,${FONT.toString('base64')}) format('woff2'); font-weight: 200 800; font-stretch: 75% 100%; }
+body { margin: 0; width: 1200px; height: 630px; overflow: hidden; display: flex; align-items: center; justify-content: space-between; gap: 44px; padding: 0 56px; box-sizing: border-box; background: radial-gradient(600px 400px at 85% 50%, rgb(140 147 247 / 0.22), transparent), #0b0a10; color: #f2f0ea; font-family: Bricolage, sans-serif; }
 .brand { display: flex; align-items: center; gap: 14px; font-size: 36px; font-weight: 700; }
-h1 { margin: 40px 0 0; font-size: 64px; line-height: 1.02; font-weight: 700; letter-spacing: -0.02em; }
-p { margin: 24px 0 0; font-size: 22px; white-space: nowrap; color: #5e5e66; }
-img.ui { width: 640px; flex: none; border-radius: 20px; border: 1px solid #2b2a33; box-shadow: 0 24px 60px rgb(23 23 26 / 0.3); }
+h1 { margin: 40px 0 0; font-size: 60px; white-space: nowrap; line-height: 0.9; font-weight: 800; font-stretch: 75%; letter-spacing: -0.03em; }
+h1 span { display: block; color: #5d5b68; }
+p { margin: 24px 0 0; font: 500 17px ui-monospace, monospace; letter-spacing: 0.1em; text-transform: uppercase; white-space: nowrap; color: #8c93f7; }
+img.ui { width: 560px; flex: none; border-radius: 20px; box-shadow: 0 0 0 1px rgb(255 255 255 / 0.12), 0 24px 60px rgb(0 0 0 / 0.5); }
 </style><div><div class="brand">${fs.readFileSync(path.join(SITE, 'savor-tile.svg'), 'utf8').replace('<svg', '<svg width="56" height="56"')}Savor</div>
-<h1>Coding agents that report back.</h1><p>Open source · runs on your machine</p></div><img class="ui" src="${src(ending)}">`)
+<h1>Your coding agents.<span>On your own machine.</span></h1><p>Open source · runs locally</p></div><img class="ui" src="${src(ending)}">`)
   await page.evaluate(() => document.fonts.ready)
   await page.screenshot({ path: path.join(SITE, 'og.png') })
 
-  // The landing page gets WebP in full and half width.
+  // The landing page gets WebP: the big screenshots in full and half width, the steps as taken.
   const webp = (file, width) =>
     page.evaluate(
       async ({ data, width }) => {
@@ -186,17 +215,20 @@ img.ui { width: 640px; flex: none; border-radius: 20px; border: 1px solid #2b2a3
         img.src = data
         await img.decode()
         const canvas = document.createElement('canvas')
-        canvas.width = width
-        canvas.height = Math.round((img.height * width) / img.width)
+        canvas.width = width ?? img.width
+        canvas.height = Math.round((img.height * canvas.width) / img.width)
         canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height)
         return canvas.toDataURL('image/webp', 0.85).split(',')[1]
       },
       { data: src(fs.readFileSync(path.join(DOCS, file))), width },
     )
-  for (const [name, width] of [['conversation', 1600], ['questions', 1600], ['mobile', 1620]]) {
-    fs.writeFileSync(path.join(SITE, `${name}.webp`), Buffer.from(await webp(`${name}.png`, width), 'base64'))
-    fs.writeFileSync(path.join(SITE, `${name}-${width / 2}.webp`), Buffer.from(await webp(`${name}.png`, width / 2), 'base64'))
+  const write = async (name, width, file = name) => fs.writeFileSync(path.join(SITE, `${file}.webp`), Buffer.from(await webp(`${name}.png`, width), 'base64'))
+  for (const [name, width] of [['conversation', 1600], ['mobile', 1620]]) {
+    await write(name, width)
+    await write(name, width / 2, `${name}-${width / 2}`)
   }
+  for (const name of ['step-projects', 'step-task', 'step-questions', 'step-preview', 'step-phone', 'hero-phone']) await write(name)
+  for (const name of ['step-projects', 'step-task', 'step-questions', 'step-preview', 'step-phone', 'hero-phone']) fs.rmSync(path.join(DOCS, `${name}.png`))
 } finally {
   await browser?.close()
   server.kill()

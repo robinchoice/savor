@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Stand-in for Claude Code that plays the scripted demo conversations of scripts/screenshots.mjs. It speaks
 // the same stream-json protocol as test/fake-claude.mjs and answers through Savor's MCP tools.
-// DEMO_SITE_URL is the bakery page the demo opens in the preview. DEMO_PAUSE_MS slows the turns down for
+// DEMO_SITE_URL is the page the demo opens in the preview: Savor's landing page for the screenshots, the
+// bakery page for the video. DEMO_PAUSE_MS slows the turns down for
 // scripts/demo-video.mjs, so the video shows the agent at work.
 import readline from 'node:readline'
 import { execFileSync } from 'node:child_process'
@@ -71,6 +72,17 @@ const CHECKLIST = `# Website Launch Checklist
 - [ ] Update photos and opening hours
 `
 
+const TIPS = `# Lightning tips
+
+## Checkout
+- [ ] Reuse the L402 checkout from starter (PAYMENTS_BACKEND)
+- [ ] One invoice per tip, paid to the artist's Lightning address
+
+## Song page
+- [ ] Tip button with the default amount
+- [ ] Thank-you note after payment
+`
+
 let started = false
 async function turn(text) {
   const input = text.slice(text.indexOf('New input:\n') + 'New input:\n'.length).trim()
@@ -78,7 +90,47 @@ async function turn(text) {
   started = true
   const label = text.includes('"threadLabel":null')
 
-  if (input.includes('launch checklist')) {
+  // The screenshots' scenario: Savor working on Savor's own landing page and on two more of our projects.
+  if (input.includes('Rework the landing page')) {
+    if (label) await call('set_thread_label', { label: 'Landing page rework' })
+    await call('send_acknowledgement_message', { text: 'Reworking site/index.html.', summary: 'Dark landing page with numbered steps.' })
+    say('Drafting the hero and the five steps.')
+    await call('send_conclusion_message', {
+      text: 'The first draft of site/index.html has the new hero, the app as the stage and five numbered steps. One choice before I polish it:',
+      questions: [{ title: 'Which headline?', body: '', options: ['Your coding agents. On your own machine.', 'Agents that report back.', 'Your agents work for hours.'], recommended: 0 }],
+    })
+  } else if (input.includes('Selected: Your coding agents')) {
+    say('Setting the headline.')
+    await call('open_browser', { url: process.env.DEMO_SITE_URL })
+    await call('send_conclusion_message', { text: `The hero reads **Your coding agents. On your own machine.** The page is live at ${process.env.DEMO_SITE_URL}.` })
+  } else if (input.includes('German page')) {
+    say('Adding site/de/index.html.')
+    await call('open_browser', { url: process.env.DEMO_SITE_URL })
+    await call('send_conclusion_message', {
+      text: 'The German page is at /de/, both pages link each other with hreflang, and the preview is reloaded.',
+      suggestions: ['Retake the screenshots in the dark theme', 'Review both pages on a phone', 'Update llms.txt for the new content'],
+    })
+  } else if (input.includes('tip the artist')) {
+    if (label) await call('set_thread_label', { label: 'Lightning tips for artists' })
+    await call('send_acknowledgement_message', { text: 'Planning tips with the L402 checkout.', summary: 'Lightning tips on every song page.' })
+    say('Reading the checkout module from starter.')
+    const doc = await call('create_document', { title: 'Lightning tips', content: TIPS })
+    await call('send_conclusion_message', {
+      text: `Plan written: [Lightning tips](${doc.url}). The checkout from starter fits as it is, and tips go straight to the artist's wallet. Two questions:`,
+      questions: [
+        { title: 'What should the default tip be?', body: 'Free text, in sats.', options: [] },
+        { title: 'Where does the tip button go?', body: '', options: ['Under the player', 'Next to Share', 'Both'], recommended: 0 },
+      ],
+    })
+  } else if (input.includes('imprint')) {
+    if (label) await call('set_thread_label', { label: 'New office address' })
+    await call('send_acknowledgement_message', { text: 'Updating imprint and privacy pages.', summary: 'New address in imprint and privacy.' })
+    say('Replacing the address.')
+    await call('send_conclusion_message', {
+      text: 'The new address is in impressum.html and datenschutz.html, and the old one appears nowhere else on the site.',
+      suggestions: ['Update the address in the email signature', 'Deploy the site'],
+    })
+  } else if (input.includes('launch checklist')) {
     if (label) await call('set_thread_label', { label: 'Website launch checklist' })
     await call('send_acknowledgement_message', { text: 'Writing the checklist as a document.', summary: 'Launch checklist for the new website.' })
     say('Drafting the checklist.')

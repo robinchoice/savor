@@ -1,0 +1,406 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Savor: deine Coding-Agenten, auf deinem Rechner</title>
+    <meta
+      name="description"
+      content="Savor ist ein freier Open-Source-Arbeitsplatz für Claude Code, Codex und OpenCode, der auf deinem Rechner läuft. Jede Aufgabe endet mit einem klaren Ergebnis und den Fragen, die dich brauchen. Ohne Konto, ohne Cloud dazwischen."
+    />
+    <link rel="canonical" href="https://savor.pleasance.org/de/" />
+    <link rel="alternate" hreflang="en" href="https://savor.pleasance.org/" />
+    <link rel="alternate" hreflang="de" href="https://savor.pleasance.org/de/" />
+    <link rel="alternate" hreflang="x-default" href="https://savor.pleasance.org/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://savor.pleasance.org/de/" />
+    <meta property="og:locale" content="de_DE" />
+    <meta property="og:title" content="Savor: deine Coding-Agenten, auf deinem Rechner" />
+    <meta
+      property="og:description"
+      content="Ein freier Open-Source-Arbeitsplatz für Claude Code, Codex und OpenCode. Ein klares Ergebnis pro Aufgabe, Fragen in einer Antwort, keine Cloud dazwischen."
+    />
+    <meta property="og:image" content="https://savor.pleasance.org/img/og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="theme-color" content="#0b0a10" />
+    <link rel="icon" href="../img/savor-tile.svg" type="image/svg+xml" />
+    <link rel="preload" href="../fonts/bricolage-grotesque-latin.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="stylesheet" href="../style.css" />
+    <script src="../main.js" defer></script>
+  </head>
+  <body id="top">
+    <header class="wrap nav">
+      <a class="brand" href="#top"><img src="../img/savor-tile.svg" width="32" height="32" alt="" /><b>Savor</b></a>
+      <ul>
+        <li><a href="#how">So funktioniert's</a></li>
+        <li><a href="#where">Was wo läuft</a></li>
+        <li><a href="https://github.com/robinchoice/savor">★ Auf GitHub</a></li>
+      </ul>
+      <a class="lang" href="../" hreflang="en" lang="en" title="English">EN</a>
+      <a class="btn btn-go" href="#install">Laden</a>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div class="grid-bg"></div>
+        <div class="wrap">
+          <p class="label"><b>Savor</b> / Open Source · läuft lokal</p>
+          <h1>
+            <span>Deine Agenten.</span>
+            <span class="dim">Auf deinem Rechner.</span>
+          </h1>
+          <div class="row">
+            <p class="lede">
+              Savor ist ein Arbeitsplatz für Claude Code, Codex und OpenCode, der dort läuft, wo dein Code liegt.
+              <b>Jede Aufgabe endet mit einem klaren Ergebnis und den Fragen, die dich brauchen.</b> Ohne Konto und ohne
+              eine Cloud von uns dazwischen.
+            </p>
+            <div class="cta">
+              <a class="btn btn-go" href="#install" data-os-cta>Savor laden</a>
+              <p class="meta">Kostenlos · <a href="#install" data-os-others>für Linux, macOS und Windows</a></p>
+            </div>
+          </div>
+          <div class="stage">
+            <div class="glow"></div>
+            <figure class="window desktop">
+              <div class="bar"><i></i><i></i><i></i><span>Savor — savor</span></div>
+              <img
+                src="../img/conversation-800.webp"
+                srcset="../img/conversation-800.webp 800w, ../img/conversation.webp 1600w"
+                sizes="(max-width: 860px) calc(100vw - 2.5rem), 72rem"
+                width="1600"
+                height="1000"
+                alt="Savor bei der Arbeit an dieser Seite: das Gespräch mit dem Ergebnis des Agenten, daneben die Seite in der Live-Vorschau"
+              />
+            </figure>
+            <figure class="window phone">
+              <img src="../img/hero-phone.webp" width="780" height="1120" loading="lazy" alt="Savor auf dem Handy: das Gespräch zur Landingpage mit dieser Seite in der Vorschau" />
+            </figure>
+            <ul class="checks">
+              <li>Kein Konto</li>
+              <li>Klartext-Dateien in <code>.savor/</code></li>
+              <li>Ende-zu-Ende verschlüsselt aufs Handy</li>
+              <li>AGPL-3.0</li>
+              <li>Linux · macOS · Windows</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <div class="band">
+        <div class="wrap">
+          <p>Dein Code braucht keinen weiteren Cloud-Arbeitsplatz.</p>
+          <ul aria-label="Was Savor nicht ist">
+            <li>Agenten in der Cloud</li>
+            <li>Browser-IDEs</li>
+            <li>Preis pro Platz</li>
+            <li>Konto-Pflicht</li>
+          </ul>
+        </div>
+      </div>
+
+      <section class="compare">
+        <div class="wrap">
+          <p class="label">Vorher / nachher</p>
+          <h2>
+            <span>Vier Terminals, eins wartet.</span>
+            <span class="dim">Savor sagt dir, welches.</span>
+          </h2>
+          <div class="cols">
+            <figure>
+              <div class="term" aria-hidden="true">
+                <div class="tabs"><span>~/savor</span><span class="on">~/songgate</span><span>~/pleasance</span><span>~/api</span></div>
+                <div class="out">
+                  <div>● Read(src/routes/song/[id]/+page.svelte)</div>
+                  <div>&nbsp;&nbsp;⎿ Read 188 lines</div>
+                  <div>● Read(packages/payments/l402.ts)</div>
+                  <div>&nbsp;&nbsp;⎿ Read 241 lines</div>
+                  <div>● Bash(bun test payments)</div>
+                  <div>&nbsp;&nbsp;⎿ 14 pass, 0 fail</div>
+                  <div>● Update(src/lib/tips.ts)</div>
+                  <div>&nbsp;&nbsp;⎿ Updated tips.ts with 37 additions</div>
+                  <div class="ask">● Before I continue: what should the default tip be?</div>
+                </div>
+              </div>
+              <figcaption class="cap">Im Terminal: Tab zwei von vier</figcaption>
+            </figure>
+            <figure>
+              <div class="card">
+                <p class="who">songgate · 18:05</p>
+                <p class="title">Lightning-Trinkgeld auf jeder Song-Seite.</p>
+                <div class="q"><b>2 Fragen</b>Wie hoch soll das Standard-Trinkgeld sein?</div>
+                <p class="go">Antworten →</p>
+              </div>
+              <figcaption class="cap">In Savor: wartet auf dich, mit der Frage</figcaption>
+            </figure>
+          </div>
+        </div>
+      </section>
+
+      <nav class="rail" aria-label="Schritte">
+        <a href="#step-1">01</a><a href="#step-2">02</a><a href="#step-3">03</a><a href="#step-4">04</a><a href="#step-5">05</a>
+      </nav>
+
+      <section class="how" id="how">
+        <div class="wrap">
+          <p class="label">So funktioniert's</p>
+          <h2>
+            <span>Ein Gespräch pro Aufgabe.</span>
+            <span class="dim">Es meldet sich, wenn es fertig ist.</span>
+          </h2>
+          <p class="meta shots">Die Bilder zeigen die App auf Englisch. Auf einem deutschen Rechner spricht sie Deutsch.</p>
+          <div class="steps">
+            <article class="step" id="step-1">
+              <div>
+                <div class="num">01</div>
+                <h3>Projektordner öffnen</h3>
+                <p>
+                  Wähl Ordner auf deinem Rechner. Die Sitzungen von Claude Code und Codex, die dort schon liefen,
+                  erscheinen als Gespräche. Eine Übersicht zeigt, was in allen Projekten auf dich wartet.
+                </p>
+                <p class="hint">In der App: <em>Projekte → Beliebigen Ordner öffnen</em></p>
+              </div>
+              <figure class="window">
+                <div class="bar"><i></i><i></i><i></i><span>All projects</span></div>
+                <img src="../img/step-projects.webp" width="1200" height="900" loading="lazy" alt="Die Übersicht über drei Projekte: ein Gespräch wartet mit zwei Fragen, zwei Workflows sind geplant" />
+              </figure>
+            </article>
+
+            <article class="step" id="step-2">
+              <div>
+                <div class="num">02</div>
+                <h3>Aufgabe übergeben</h3>
+                <p>
+                  Beschreib sie in deinen Worten, wähl Agent und Modell. Du bekommst eine Zeile, dass es losgeht, und ein
+                  Ergebnis mit nächsten Schritten, wenn es fertig ist. Den Rohlauf gibt es einen Klick weiter, und ein
+                  Gespräch kann einen eigenen Git-Worktree bekommen.
+                </p>
+                <p class="hint">In der App: <em>+ Neues Gespräch</em></p>
+              </div>
+              <figure class="window">
+                <div class="bar"><i></i><i></i><i></i><span>Dark landing page with numbered steps.</span></div>
+                <img src="../img/step-task.webp" width="1200" height="900" loading="lazy" alt="Das Ergebnis des Agenten: die deutsche Seite ist da, darunter drei Vorschläge für nächste Schritte" />
+              </figure>
+            </article>
+
+            <article class="step" id="step-3">
+              <div>
+                <div class="num">03</div>
+                <h3>Alle Fragen in einer Antwort</h3>
+                <p>
+                  Fragen kommen als Entscheidungen mit Optionen und einer Empfehlung. Auswählen, kurz kommentieren,
+                  abschicken. Der Reiter „Für dich“ zeigt, welches Gespräch wartet.
+                </p>
+                <p class="hint">In der App: <em>Für dich → Antworten</em></p>
+              </div>
+              <figure class="window">
+                <div class="bar"><i></i><i></i><i></i><span>Lightning tips on every song page.</span></div>
+                <img src="../img/step-questions.webp" width="1200" height="900" loading="lazy" alt="Zwei Fragen des Agenten: eine freie Antwort und Optionen mit Empfehlung" />
+              </figure>
+            </article>
+
+            <article class="step" id="step-4">
+              <div>
+                <div class="num">04</div>
+                <h3>Das Ergebnis in der Live-Vorschau</h3>
+                <p>
+                  Was der Agent baut, läuft neben dem Gespräch, und ihr benutzt dieselbe Seite. Zeig auf ein Element, sag,
+                  was sich ändern soll, und sein Selektor reist mit deiner Nachricht.
+                </p>
+                <p class="hint">In der App: <em>Browser → Element auswählen</em></p>
+              </div>
+              <figure class="window">
+                <div class="bar"><i></i><i></i><i></i><span>localhost:8792</span></div>
+                <img src="../img/step-preview.webp" width="1200" height="900" loading="lazy" alt="Diese Seite in der Live-Vorschau von Savor" />
+              </figure>
+            </article>
+
+            <article class="step" id="step-5">
+              <div>
+                <div class="num">05</div>
+                <h3>Weiter, während du weg bist</h3>
+                <p>
+                  Gespeicherte Prompts laufen nach Zeitplan, vom nächtlichen Abhängigkeits-Check bis zur wöchentlichen
+                  Release-Checkliste. Koppel dein Handy per QR-Code und antworte von überall; das Relay dazwischen sieht nur
+                  Chiffretext.
+                </p>
+                <p class="hint">In der App: <em>Workflows</em> · <em>Geräte &amp; Fernzugriff → Gerät koppeln</em></p>
+              </div>
+              <figure class="window phone">
+                <img src="../img/step-phone.webp" width="780" height="760" loading="lazy" alt="Savor auf dem Handy: die Gespräche eines Projekts, eins wartet mit zwei Fragen" />
+              </figure>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="where" id="where">
+        <div class="grid-bg"></div>
+        <div class="wrap">
+          <p class="label">Was wo läuft</p>
+          <h2>
+            <span>Wir sehen deinen Code nicht.</span>
+            <span class="dim">Wir haben keinen Server dafür.</span>
+          </h2>
+          <div class="diagram">
+            <div class="node me">
+              <b>Dein Rechner</b>
+              <p class="hint">Savor · claude · codex · opencode</p>
+              <ul>
+                <li>Gespräche als Dateien in <code>.savor/</code></li>
+                <li>Code bleibt in deinem Git</li>
+              </ul>
+            </div>
+            <div class="link">Ende-zu-Ende verschlüsselt</div>
+            <div class="node">
+              <b>Relay</b>
+              <p class="hint">blind · nur fürs Handy</p>
+              <ul>
+                <li>Leitet Chiffretext weiter</li>
+                <li>Auch selbst betreibbar</li>
+              </ul>
+            </div>
+            <div class="link">gekoppelt per QR-Code</div>
+            <div class="node">
+              <b>Dein Handy</b>
+              <p class="hint">iOS · Android · Browser</p>
+              <ul>
+                <li>Fragen beantworten</li>
+                <li>Vorschau ansehen</li>
+              </ul>
+            </div>
+          </div>
+          <p class="hint provider">
+            Deine Agenten sprechen mit Anthropic, OpenAI und anderen wie im Terminal: mit deinem Abo, nicht über uns.
+          </p>
+
+          <ul class="facts">
+            <li><b>AGPL-3.0</b><span>Der ganze Quelltext liegt auf GitHub.</span></li>
+            <li><b>Kein Konto</b><span>Öffnen, Ordner wählen, loslegen.</span></li>
+            <li><b>Klartext-Dateien</b><span>Hört Savor je auf, verlierst du nichts.</span></li>
+            <li><b>Kostenlos</b><span>Es nutzt das Abo für Claude Code, Codex oder OpenCode, das du schon hast.</span></li>
+          </ul>
+          <p class="status">
+            Robin (<a href="https://github.com/robinchoice">robinchoice</a>) hat die Architektur entworfen, schreibt die
+            Spezifikationen und prüft die Ergebnisse; den Code schreiben Coding-Agenten in Savor, diese Seite eingeschlossen.
+            Ein wöchentlicher Check lässt Savor gegen die neuesten Versionen von Claude Code, Codex, OpenCode, Grok Build und
+            Antigravity laufen, damit Änderungen an ihren Protokollen früh auffallen. Hört Savor je auf, verlierst du nichts:
+            Dein Code liegt in Git, Gespräche sind Klartext-Dateien, und Sitzungen von Claude Code und Codex laufen ohne
+            Savor weiter.
+            <a href="https://github.com/robinchoice/savor#how-savor-is-maintained">Wie Savor gepflegt wird (englisch)</a>
+          </p>
+          <p class="status">
+            Die Desktop-App sendet einen anonymen Ping am Tag, damit wir wissen, wie viele Savor nutzen: eine zufällige ID,
+            die auf deinem Rechner entsteht, die Savor-Version und die Plattform. Nichts über dich, deine Projekte oder deine
+            Gespräche. Das Relay, das sie zählt, speichert keine IP-Adressen und löscht IDs, die es 90 Tage nicht gesehen
+            hat. Abschalten kannst du ihn im Konto-Menü unter App-Einstellungen → Diese Installation mitzählen.
+          </p>
+          <p class="status">
+            Savor ist junge Software. Bekannte Lücken stehen in der
+            <a href="https://github.com/robinchoice/savor#status">README (englisch)</a>.
+          </p>
+        </div>
+      </section>
+
+      <section class="final" id="install">
+        <div class="glow"></div>
+        <div class="wrap">
+          <p class="label">Savor laden</p>
+          <h2>Gib deinen Agenten einen Ort zum Berichten.</h2>
+          <p class="lede">
+            Kein Konto und nichts umzuziehen. Öffne einen Projektordner, und die Sitzungen von Claude Code und Codex, die
+            dort schon liefen, erscheinen als Gespräche.
+          </p>
+
+          <div class="os">
+            <div role="tablist" aria-label="Betriebssystem">
+              <button role="tab" id="tab-linux" aria-controls="os-linux" data-os="linux">Linux</button>
+              <button role="tab" id="tab-mac" aria-controls="os-mac" data-os="mac">macOS</button>
+              <button role="tab" id="tab-win" aria-controls="os-win" data-os="win">Windows</button>
+              <button role="tab" id="tab-src" aria-controls="os-src" data-os="src">Aus dem Quelltext</button>
+            </div>
+            <div role="tabpanel" id="os-linux" aria-labelledby="tab-linux" data-os="linux">
+              <h3>Linux</h3>
+              <div class="get">
+                <a class="btn btn-go" href="https://github.com/robinchoice/savor/releases/download/v0.6.47/Savor-0.6.47.AppImage">Savor für Linux laden</a>
+                <span class="meta">Savor-0.6.47.AppImage · etwa 130 MB</span>
+              </div>
+              <pre>chmod +x Savor-0.6.47.AppImage &amp;&amp; ./Savor-0.6.47.AppImage</pre>
+              <p class="hint">Oder in einer Zeile, die Savor auch ins App-Menü einträgt:</p>
+              <pre>curl -fsSL https://savor.pleasance.org/install.sh | sh</pre>
+            </div>
+            <div role="tabpanel" id="os-mac" aria-labelledby="tab-mac" data-os="mac">
+              <h3>macOS</h3>
+              <div class="get">
+                <a class="btn btn-go" href="https://github.com/robinchoice/savor/releases/download/v0.6.47/Savor-0.6.47-arm64.dmg">Savor für Apple Silicon laden</a>
+                <span class="meta">
+                  .dmg · etwa 130 MB ·
+                  <a href="https://github.com/robinchoice/savor/releases/download/v0.6.47/Savor-0.6.47-x64.dmg">lieber für Intel-Macs</a>
+                </span>
+              </div>
+              <p class="hint">Von Apple signiert und notarisiert. Die App aktualisiert sich selbst. Oder mit Homebrew:</p>
+              <pre>brew install --cask robinchoice/tap/savor</pre>
+            </div>
+            <div role="tabpanel" id="os-win" aria-labelledby="tab-win" data-os="win">
+              <h3>Windows</h3>
+              <div class="get">
+                <a class="btn btn-go" href="https://github.com/robinchoice/savor/releases/download/v0.6.47/Savor-0.6.47-Setup.exe">Savor für Windows laden</a>
+                <span class="meta">Savor-0.6.47-Setup.exe · etwa 115 MB</span>
+              </div>
+              <p class="hint">Das Installationsprogramm ist noch nicht signiert. SmartScreen fragt einmal nach.</p>
+            </div>
+            <div role="tabpanel" id="os-src" aria-labelledby="tab-src" data-os="src">
+              <h3>Aus dem Quelltext</h3>
+              <pre>
+git clone https://github.com/robinchoice/savor.git &amp;&amp; cd savor
+npm install
+npx playwright-core install chromium
+npm start</pre
+              >
+              <p class="hint">Braucht Node 22.12 oder neuer.</p>
+            </div>
+          </div>
+          <p class="needs">
+            Du brauchst eine angemeldete Agent-CLI: <code>claude</code>, <code>codex</code> oder <code>opencode</code>.
+          </p>
+        </div>
+      </section>
+    </main>
+
+    <footer class="wrap foot">
+      <div class="cols">
+        <div class="about">
+          <a class="brand" href="#top"><img src="../img/savor-tile.svg" width="32" height="32" alt="" /><b>Savor</b></a>
+          <p>Deine Coding-Agenten, auf deinem Rechner. Open Source.</p>
+        </div>
+        <nav aria-label="Produkt">
+          <p>Produkt</p>
+          <a href="#install">Laden</a>
+          <a href="#how">So funktioniert's</a>
+          <a href="#where">Was wo läuft</a>
+          <a href="../" hreflang="en" lang="en">English</a>
+        </nav>
+        <nav aria-label="Projekt">
+          <p>Projekt</p>
+          <a href="https://github.com/robinchoice/savor">Quelltext auf GitHub</a>
+          <a href="https://github.com/robinchoice/savor/releases">Releases</a>
+          <a href="https://github.com/robinchoice/savor/issues">Fehler melden</a>
+          <a href="https://github.com/robinchoice/savor/blob/main/LICENSE">Lizenz (AGPL-3.0)</a>
+        </nav>
+        <nav aria-label="Rechtliches">
+          <p>Rechtliches</p>
+          <a href="https://pleasance.org/impressum.html">Impressum</a>
+          <a href="https://pleasance.org/datenschutz.html">Datenschutz</a>
+          <a href="https://pleasance.org/kontakt.html">Kontakt</a>
+        </nav>
+      </div>
+      <div class="absender">
+        <a href="https://pleasance.org">ein Werkzeug von <span class="wordmark" role="img" aria-label="Pleasance"></span></a>
+        <span class="band-mark" aria-hidden="true"><i></i></span>
+      </div>
+      <p class="copy">© 2026 Savor contributors · Diese Seite lädt keine Tracker und nichts von Dritten.</p>
+    </footer>
+  </body>
+</html>
