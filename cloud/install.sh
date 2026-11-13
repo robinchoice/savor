@@ -9,6 +9,8 @@
 # carries Robin's signature, by the savor-update it installs; a timer runs that every night.
 # cloud/new-instance.sh sets SAVOR_IDENTITY (the daemon's relay key), SAVOR_SETUP_CODE and SAVOR_SETUP_EXPIRES in
 # a line of its own after the first, so the setup link it made works once the server is up.
+# On a server of your own (README, "On your own server"), SAVOR_RELAY names your relay; set but empty, Savor
+# connects to none and you reach it through an SSH tunnel. Unset, it is Savor Cloud's relay.
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 # systemd and the firewall are missing in a container, where this script is tested.
@@ -111,9 +113,9 @@ node /home/savor/savor/current/node_modules/playwright-core/cli.js install-deps 
 # Savor connects out to the relay from its first start on and fills in the rest of state.json itself.
 if [ ! -f /home/savor/.savor/state.json ]; then
   install -d -o savor -g savor -m 700 /home/savor/.savor
-  jq -n --arg identity "${SAVOR_IDENTITY:-}" --arg code "${SAVOR_SETUP_CODE:-}" \
-    --argjson expires "${SAVOR_SETUP_EXPIRES:-null}" \
-    '{relay: {url: "https://savor.diespaetzles.lol", enabled: true}}
+  jq -n --arg relay "${SAVOR_RELAY-https://savor.diespaetzles.lol}" --arg identity "${SAVOR_IDENTITY:-}" \
+    --arg code "${SAVOR_SETUP_CODE:-}" --argjson expires "${SAVOR_SETUP_EXPIRES:-null}" \
+    '(if $relay != "" then {relay: {url: $relay, enabled: true}} else {} end)
       + (if $identity != "" then {identity: $identity} else {} end) + (if $code != "" then {setupCode: {code: $code, expires: $expires}} else {} end)' |
     install -o savor -g savor -m 600 /dev/stdin /home/savor/.savor/state.json
 fi
@@ -166,4 +168,8 @@ if booted; then
   systemctl daemon-reload
   systemctl enable --now savor.service savor-update.timer
 fi
-echo "Savor Cloud is set up. The owner's device pairs with the setup link from new-instance.sh."
+if [ -n "${SAVOR_SETUP_CODE:-}" ]; then
+  echo "Savor Cloud is set up. The owner's device pairs with the setup link from new-instance.sh."
+else
+  echo "Savor is set up. From your computer: ssh -L 4317:127.0.0.1:4317 <this server>, then open the link from: journalctl -u savor | grep token="
+fi

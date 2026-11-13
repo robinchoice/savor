@@ -125,6 +125,23 @@ systemctl --user enable --now savor
 journalctl --user -u savor | grep token   # the login link
 ```
 
+**On your own server** (Ubuntu 24.04, 4 GB of memory or more), so your agents keep working with your computer closed. [`cloud/install.sh`](cloud/install.sh) sets up a fresh server: Node, git, gh, Chromium for the preview, Claude Code, Codex and OpenCode, and Savor as a system service on `127.0.0.1` under the user `savor`. It also turns on the firewall with only SSH open and switches off password logins for SSH, so use a server that does nothing else. Run it as root, with or without a relay of your own:
+
+```sh
+curl -fsSLO https://raw.githubusercontent.com/robinchoice/savor/main/cloud/install.sh
+sudo env SAVOR_RELAY= bash install.sh                            # no relay: you reach Savor through SSH
+sudo env SAVOR_RELAY=https://relay.example.com bash install.sh   # or: phones reach it through your relay
+```
+
+Then tunnel to it from your computer and open the login link it printed:
+
+```sh
+ssh -L 4317:127.0.0.1:4317 you@your-server
+sudo journalctl -u savor | grep token=   # on the server; open the link in your computer's browser
+```
+
+The setup signs Claude Code, Codex and gh in with buttons, since the server has no browser of its own, and starts with a new project or a repository cloned from GitHub. Pair your phone under **Devices & remote access** (below). Without a relay, a VPN such as Tailscale works too: set `SAVOR_HOST` and `SAVOR_PUBLIC_URL` with `sudo systemctl edit savor` and open the port for the VPN in `ufw`. Every night `savor-update` builds the newest release tag signed with Robin's key, updates the agents' CLIs, and Savor restarts once working agents are done, after five minutes at most. A tag in `/home/savor/savor/pin` keeps Savor on that release.
+
 ## Phone / remote access
 
 Open **Devices & remote access** from the avatar menu. Your desktop has to stay awake while you're away, which the coffee-cup toggle takes care of. There are two ways in:
