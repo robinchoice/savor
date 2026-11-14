@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks'
 import { ArrowLeft, ArrowRight, Crosshair, ExternalLink, Monitor, PanelLeftClose, PanelLeftOpen, RotateCw, Scan, Smartphone } from 'lucide-preact'
-import { api, useEvent } from './api'
-import { transport } from './transport'
+import { api } from './api'
 import { setPrefs, usePrefs, type Device } from './prefs'
 import type { Picked } from './Composer'
 import { t } from './i18n'
@@ -18,12 +17,12 @@ const DEVICES: [Device, typeof Scan, string, string][] = [
 
 // Shows the same headless page the agent drives, drawn in the size of the space it gets here.
 // Mouse, keys, scrolling and the clipboard are forwarded to it.
-export function Preview({ base, threadId, url, onPick, narrow, chatHidden, onToggleChat }: { base: string; threadId: string; url: string | null; onPick: (p: Picked) => void; narrow: boolean; chatHidden: boolean; onToggleChat: () => void }) {
+export function Preview({ base, url, onPick, narrow, chatHidden, onToggleChat }: { base: string; url: string | null; onPick: (p: Picked) => void; narrow: boolean; chatHidden: boolean; onToggleChat: () => void }) {
   const [frame, setFrame] = useState<string | null>(null)
   const [address, setAddress] = useState(url ?? '')
   const [picking, setPicking] = useState(false)
   const [error, setError] = useState('')
-  const [stream, setStream] = useState(0)
+  const [frameError, setFrameError] = useState('')
   // The cursor the page shows under the mouse, e.g. a hand over links.
   const [cursor, setCursor] = useState('default')
   // The space for the page here, and the size of the frames that arrive.
@@ -42,10 +41,35 @@ export function Preview({ base, threadId, url, onPick, narrow, chatHidden, onTog
   }, [url])
   useEffect(() => {
     if (!url) return
-    return transport.stream(`/api${base}/browser/stream`, setFrame)
-  }, [base, url, stream])
-  // Reconnect when the agent (re)opens the preview, e.g. after a daemon restart.
-  useEvent((e) => e.type === 'browser' && e.threadId === threadId && setStream((n) => n + 1), [threadId])
+    let stopped = false
+    let timer: ReturnType<typeof setTimeout>
+    let revision = ''
+    // Fetch and decode one frame at a time, so a slow connection never queues old frames.
+    const next = async () => {
+      let delay = 100
+      try {
+        if (!document.hidden) {
+          const result = await api<{ frame: string | null; revision: string }>('GET', `${base}/browser/snapshot?after=${revision}`)
+          if (result.frame) {
+            const data = `data:image/jpeg;base64,${result.frame}`
+            const image = new Image()
+            image.src = data
+            await image.decode()
+            if (!stopped) setFrame(data)
+          }
+          revision = result.revision
+          if (!stopped) setFrameError('')
+        }
+      } catch (e) {
+        delay = 5000
+        if (!stopped) setFrameError((e as Error).message)
+      }
+      if (!stopped) timer = setTimeout(next, delay)
+    }
+    setFrame(null)
+    next()
+    return () => { stopped = true; clearTimeout(timer) }
+  }, [base, url])
   useEffect(() => {
     const el = wrap.current!
     // Measured right away too: a window that is not being drawn holds resize notifications back.
@@ -85,10 +109,25 @@ export function Preview({ base, threadId, url, onPick, narrow, chatHidden, onTog
       const { text } = await api<{ text: string }>('POST', `${base}/browser/copy`, { cut })
       if (text) await navigator.clipboard.writeText(text)
     })
-  const point = (e: MouseEvent) => {
+  const point = (e: { clientX: number; clientY: number }) => {
     const el = img.current!
     const r = el.getBoundingClientRect()
     return { x: Math.round(((e.clientX - r.left) / r.width) * el.naturalWidth), y: Math.round(((e.clientY - r.top) / r.height) * el.naturalHeight) }
+  }
+  const touch = useRef<{ x: number; y: number; lastY: number; moved: boolean } | null>(null)
+  const scrolling = useRef(0)
+  const scrollPending = useRef(false)
+  const scroll = (dy: number) => {
+    scrolling.current += dy
+    if (scrollPending.current) return
+    scrollPending.current = true
+    send(async () => {
+      while (scrolling.current) {
+        const dy = scrolling.current
+        scrolling.current = 0
+        await api('POST', `${base}/browser/input`, { type: 'scroll', dy })
+      }
+    }).finally(() => { scrollPending.current = false })
   }
   const hover = async (p: { x: number; y: number }) => {
     if (hovering.current !== false) return void (hovering.current = p)
@@ -107,7 +146,7 @@ export function Preview({ base, threadId, url, onPick, narrow, chatHidden, onTog
     }
     input({ type, ...point(e), clicks: e.detail })
   }
-  const pick = async (e: MouseEvent) => {
+  const pick = async (e: { clientX: number; clientY: number }) => {
     if (!picking) return
     setPicking(false)
     const picked = await api<Picked | null>('POST', `${base}/browser/pick`, point(e))
@@ -162,14 +201,14 @@ export function Preview({ base, threadId, url, onPick, narrow, chatHidden, onTog
           </a>
         )}
       </form>
-      {error && <div class="error-text pad">{error}</div>}
+      {(error || frameError) && <div class="error-text pad">{error || frameError}</div>}
       <div class="screen-wrap" ref={wrap}>
         {url && frame ? (
           <img
             ref={img}
             class={`screen ${picking ? 'picking' : ''} ${device === 'phone' ? 'phone' : ''}`}
             style={{ ...(shown.width && { width: shown.width * scale, height: shown.height * scale }), ...(!picking && { cursor }) }}
-            src={`data:image/jpeg;base64,${frame}`}
+            src={frame}
             alt={t('Preview')}
             tabIndex={0}
             draggable={false}
@@ -183,7 +222,34 @@ export function Preview({ base, threadId, url, onPick, narrow, chatHidden, onTog
             onMouseUp={(e) => mouse(e, 'up')}
             onClick={pick}
             onMouseMove={(e) => hover(point(e))}
-            onWheel={(e) => (e.preventDefault(), input({ type: 'scroll', dy: e.deltaY }))}
+            onWheel={(e) => (e.preventDefault(), scroll(e.deltaY))}
+            onTouchStart={(e) => {
+              e.preventDefault()
+              const p = e.touches[0]
+              touch.current = { x: p.clientX, y: p.clientY, lastY: p.clientY, moved: false }
+            }}
+            onTouchMove={(e) => {
+              e.preventDefault()
+              const start = touch.current
+              if (!start) return
+              const p = e.touches[0]
+              if (Math.hypot(p.clientX - start.x, p.clientY - start.y) > 6) start.moved = true
+              if (start.moved && !picking) scroll((start.lastY - p.clientY) / scale)
+              start.lastY = p.clientY
+            }}
+            onTouchEnd={(e) => {
+              e.preventDefault()
+              const start = touch.current
+              touch.current = null
+              if (!start || start.moved) return
+              const p = e.changedTouches[0]
+              if (picking) pick(p)
+              else {
+                input({ type: 'down', ...point(p) })
+                input({ type: 'up', ...point(p) })
+              }
+            }}
+            onTouchCancel={() => { touch.current = null }}
             onKeyDown={(e) => {
               // AltGr comes as Ctrl+Alt on Windows and types a character.
               const mod = (e.ctrlKey || e.metaKey) && !e.altKey

@@ -3952,6 +3952,59 @@ test('the preview takes the mouse, shortcuts and the clipboard', async (t) => {
   await until(async () => (await clipboard()).startsWith('Brotzeit Wei'))
 })
 
+test('the preview bounds frame requests and forwards touch taps and swipes', async (t) => {
+  let clicked = false, scrolled = 0, active = 0, maximum = 0, frames = 0, fail = false
+  const site = http.createServer((req, res) => {
+    if (req.url === '/clicked') clicked = true
+    if (req.url.startsWith('/scrolled?')) scrolled = Number(req.url.split('?')[1])
+    res.setHeader('content-type', 'text/html').end(`<body style="height:4000px"><button style="position:fixed;left:0;top:0;width:200px;height:100px" onclick="fetch('/clicked')">Tap</button><script>onscroll = () => fetch('/scrolled?' + scrollY)</script>`)
+  }).listen(0)
+  t.after(() => site.close())
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
+  const thread = (await api('POST', `/projects/${project.id}/threads`, { text: 'touch preview' })).body
+  await page.goto(`${base}/#/p/${project.id}/t/${thread.id}`)
+  await page.waitForSelector('text=Echo: touch preview')
+  const pattern = '**/browser/snapshot?*'
+  await page.route(pattern, async (route) => {
+    active++
+    frames++
+    maximum = Math.max(maximum, active)
+    await new Promise((resolve) => setTimeout(resolve, 250))
+    if (fail) await route.fulfill({ status: 503, contentType: 'application/json', body: '{"error":"Preview offline"}' })
+    else await route.continue()
+    active--
+  })
+  t.after(() => page.unrouteAll({ behavior: 'wait' }))
+  await api('POST', `/projects/${project.id}/threads/${thread.id}/browser/open`, { url: `http://127.0.0.1:${site.address().port}/` })
+  await page.waitForSelector('.stage .screen')
+  await page.waitForFunction(() => document.querySelector('.screen')?.naturalWidth > 0)
+  const gesture = (moves) => page.locator('.screen').evaluate((img, moves) => {
+    const r = img.getBoundingClientRect()
+    const touch = (x, y) => new Touch({ identifier: 1, target: img, clientX: r.left + x, clientY: r.top + y })
+    const event = (type, p) => img.dispatchEvent(new TouchEvent(type, { bubbles: true, cancelable: true, touches: type === 'touchend' ? [] : [p], changedTouches: [p] }))
+    event('touchstart', touch(...moves[0]))
+    for (const p of moves.slice(1)) event('touchmove', touch(...p))
+    event('touchend', touch(...moves.at(-1)))
+  }, moves)
+  await gesture([[50, 30]])
+  await until(() => clicked)
+  await gesture([[100, 300], [100, 250], [100, 150]])
+  await until(() => scrolled > 100)
+  await until(() => frames >= 4)
+  assert.equal(maximum, 1, 'a slow connection has at most one frame request in flight')
+  let revision = ''
+  await until(async () => {
+    const shot = (await api('GET', `/projects/${project.id}/threads/${thread.id}/browser/snapshot?after=${revision}`)).body
+    revision = shot.revision
+    return shot.frame === null
+  })
+  fail = true
+  await page.waitForSelector('.preview .error-text:has-text("Preview offline")')
+  const attempts = frames
+  await new Promise((resolve) => setTimeout(resolve, 500))
+  assert.equal(frames, attempts, 'failed requests wait instead of flooding the relay')
+})
+
 test('a turn cut off by a restart continues in the same agent session', async () => {
   const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
   const t = `/projects/${project.id}/threads`

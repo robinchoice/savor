@@ -592,7 +592,7 @@ main { flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
 .devices button:hover { color: var(--text); }
 .devices button.on { background: var(--raised); color: var(--text); }
 .screen-wrap { flex: 1; min-height: 0; overflow: hidden; }
-.screen { display: block; margin: 0 auto; max-width: 100%; cursor: default; outline: none; background: #fff; }
+.screen { display: block; margin: 0 auto; max-width: 100%; cursor: default; outline: none; background: #fff; touch-action: none; }
 .screen:focus { box-shadow: inset 0 0 0 2px var(--accent); }
 .screen.picking { cursor: crosshair; }
 .screen.phone { margin-top: 14px; border-radius: 22px; box-shadow: 0 0 0 6px var(--raised), 0 0 0 7px var(--line-strong); }

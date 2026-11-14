@@ -733,11 +733,11 @@ route('GET', '/projects/:pid/threads/:tid/attachments/:name', (params, _, ctx) =
 
 // ---- preview ----
 
-route('GET', '/projects/:pid/threads/:tid/browser/stream', async (params, _, ctx) => {
+route('GET', '/projects/:pid/threads/:tid/browser/snapshot', async (params, _, ctx) => {
   // After a daemon restart, reopen the thread's last preview on demand.
   const { preview } = store.getThread(project(params), params.tid)
   if (!browser.has(params.tid) && preview) await browser.open(params.pid, params.tid, preview).catch(() => {})
-  return browser.watch(params.tid, ctx.res)
+  return browser.snapshot(params.tid, ctx.query.get('after'))
 })
 // The page as it is now, for a small picture of it.
 route('GET', '/projects/:pid/threads/:tid/browser/frame', async (params, _, ctx) => {

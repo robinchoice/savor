@@ -1,18 +1,18 @@
 import fs from 'node:fs'
+import { createHash } from 'node:crypto'
 import { spawn } from 'node:child_process'
 import { createRequire } from 'node:module'
 import os from 'node:os'
 import path from 'node:path'
-import type { ServerResponse } from 'node:http'
 import { chromium, type BrowserContext, type CDPSession, type Page } from 'playwright-core'
-import { emit, openStream } from './events.js'
+import { emit } from './events.js'
 import { HOME } from './store.js'
 
 // One headless page per thread inside a persistent browser profile per project, so logins in the
 // preview survive restarts. Agent and user share the page: the agent drives it through MCP tools,
 // the UI shows its screencast and forwards the user's clicks and keystrokes.
 
-interface Session { page: Page; cdp: CDPSession; errors: string[]; frame: string | null; viewers: Set<ServerResponse> }
+interface Session { page: Page; cdp: CDPSession; errors: string[]; frame: string | null }
 
 const profiles = new Map<string, Promise<BrowserContext>>()
 const sessions = new Map<string, Session>()
@@ -95,37 +95,23 @@ function session(tid: string) {
   return s
 }
 
-const broadcast = (s: Session, data: string) => s.viewers.forEach((v) => v.write(`data: ${data}\n\n`))
-
 export async function open(projectId: string, tid: string, url: string) {
   let s = sessions.get(tid)
   if (!s) {
     const page = await (await profile(projectId)).newPage()
     const cdp = await page.context().newCDPSession(page)
-    const created: Session = { page, cdp, errors: [], frame: null, viewers: new Set() }
+    const created: Session = { page, cdp, errors: [], frame: null }
     page.on('console', (m) => m.type() === 'error' && created.errors.push(m.text()))
     page.on('pageerror', (e) => created.errors.push(e.message))
     page.on('close', () => sessions.get(tid) === created && sessions.delete(tid))
     cdp.on('Page.screencastFrame', ({ data, sessionId }) => {
       created.frame = data
-      broadcast(created, data)
       cdp.send('Page.screencastFrameAck', { sessionId }).catch(() => {})
     })
     await cdp.send('Page.startScreencast', { format: 'jpeg', quality: 70, maxWidth: LARGEST.width, maxHeight: LARGEST.height })
     sessions.set(tid, (s = created))
   }
   await s.page.goto(url, { waitUntil: 'domcontentloaded' })
-}
-
-// Server-sent stream of base64 JPEG frames for the UI.
-export async function watch(tid: string, res: ServerResponse) {
-  openStream(res)
-  const s = sessions.get(tid)
-  if (!s) return
-  s.viewers.add(res)
-  res.on('close', () => s.viewers.delete(res))
-  const first = s.frame ?? (await s.page.screenshot({ type: 'jpeg', quality: 70 })).toString('base64')
-  res.write(`data: ${first}\n\n`)
 }
 
 export const has = (tid: string) => sessions.has(tid)
@@ -136,13 +122,19 @@ export async function frame(tid: string) {
   return s.frame ?? (s.frame = (await s.page.screenshot({ type: 'jpeg', quality: 70 })).toString('base64'))
 }
 
+// Only the latest frame, and no image payload when the viewer already has it.
+export async function snapshot(tid: string, after: string | null) {
+  const data = await frame(tid)
+  const revision = createHash('sha256').update(data).digest('hex')
+  return { revision, frame: revision === after ? null : data }
+}
+
 // Agent and user share the page, so the size the user's space gives it is the size the agent sees too.
 export async function resize(tid: string, width: number, height: number) {
   const within = (n: number, min: number, max: number) => Math.round(Math.min(max, Math.max(min, Number(n) || min)))
   const s = session(tid)
   await s.page.setViewportSize({ width: within(width, SMALLEST.width, LARGEST.width), height: within(height, SMALLEST.height, LARGEST.height) })
   s.frame = (await s.page.screenshot({ type: 'jpeg', quality: 70 })).toString('base64')
-  broadcast(s, s.frame)
 }
 export const screenshot = (tid: string) => session(tid).page.screenshot({ type: 'png' })
 

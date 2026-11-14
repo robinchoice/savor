@@ -1416,7 +1416,7 @@ export function ThreadView({ project, threadId, back, next, siblings, plain }: {
                 onToggleChat={toggleChat}
               />
             ) : (
-              <Preview base={base} threadId={threadId} url={thread.preview} onPick={(p) => setPicked([...picked, p])} narrow={narrow} chatHidden={chatHidden} onToggleChat={toggleChat} />
+              <Preview base={base} url={thread.preview} onPick={(p) => setPicked([...picked, p])} narrow={narrow} chatHidden={chatHidden} onToggleChat={toggleChat} />
             )}
             {floating && (
               <div class="float">
