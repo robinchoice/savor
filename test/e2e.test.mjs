@@ -128,10 +128,7 @@ async function startDaemon() {
       SAVOR_PORT: String(port),
       SAVOR_CLAUDE_BIN: path.join(ROOT, 'test/fake-claude.mjs'),
       SAVOR_CODEX_BIN: path.join(ROOT, 'test/fake-codex.mjs'),
-      SAVOR_OPENCODE_BIN: path.join(ROOT, 'test/fake-acp.mjs'),
-      SAVOR_GROK_BIN: path.join(TMP, 'no-such-grok'),
-      SAVOR_ANTIGRAVITY_BIN: path.join(ROOT, 'test/fake-agy.mjs'),
-      SAVOR_ANTIGRAVITY_HOME: path.join(TMP, 'agy'),
+      SAVOR_OPENCODE_BIN: path.join(TMP, 'opencode'),
       SAVOR_TRANSCRIBE_MODULE: path.join(ROOT, 'test/fake-transcribe.mjs'),
       SAVOR_GH_BIN: path.join(ROOT, 'test/fake-gh.mjs'),
       SAVOR_HEALTH_RELAY_MS: '1500',
@@ -154,6 +151,7 @@ before(async () => {
   port = await freePort()
   base = `http://127.0.0.1:${port}`
   fs.mkdirSync(PROJECT)
+  fs.symlinkSync(path.join(ROOT, 'test/fake-acp.mjs'), path.join(TMP, 'opencode'))
   // The default speech model counts as downloaded.
   fs.mkdirSync(path.join(HOME, 'models'), { recursive: true })
   fs.writeFileSync(path.join(HOME, 'models', 'parakeet-tdt-0.6b-v3-Q8_0.gguf'), '')
@@ -396,25 +394,21 @@ test('changing provider or model selects automatic permissions on desktop and ph
       await page.locator('.ap-model').last().click()
       await until(async () => await automatic.getAttribute('aria-checked') === 'true')
     }
-    for (const provider of ['Grok Build', 'Antigravity']) {
-      await page.locator('.ap-agent', { hasText: provider }).click()
-      const plan = page.getByRole('radio', { name: /^Plan/ })
-      await plan.click()
-      if (await page.locator('.ap-model').count()) await page.locator('.ap-model').last().click()
-      else await page.locator('.ap-pane input').fill('custom-model')
-      assert.equal(await plan.getAttribute('aria-checked'), 'true')
-    }
     await page.keyboard.press('Escape')
     await page.waitForSelector('.agent-menu', { state: 'detached' })
   }
   await page.setViewportSize({ width: 1400, height: 900 })
 })
 
-test('the status bar warns about what keeps Savor from working, after a delay for the relay', async () => {
+test('the status bar warns about what keeps Savor from working, after a delay for the relay', async (t) => {
+  const bin = path.join(TMP, 'opencode'), off = bin + '.off'
+  fs.renameSync(bin, off)
+  t.after(async () => { if (fs.existsSync(off)) fs.renameSync(off, bin); await api('GET', '/agents?refresh=1') })
+  await api('GET', '/agents?refresh=1')
   assert.equal(await page.locator('.status-health').count(), 0)
-  await api('PUT', '/agent', { provider: 'grok' })
+  await api('PUT', '/agent', { provider: 'opencode' })
   await page.click('.status-health.high')
-  await page.waitForSelector('.health-row >> text=Grok Build is not installed')
+  await page.waitForSelector('.health-row >> text=OpenCode is not installed')
   await page.click('.health-row button:has-text("Choose agent")')
   await page.waitForSelector('.account-dialog')
   await page.click('.account-dialog .dialog-head .icon-btn')
@@ -911,13 +905,9 @@ test('OpenCode runs through the Agent Client Protocol', async () => {
   const thread = (await api('POST', `/projects/${project.id}/threads`, { text: 'hello acp', agent: { provider: 'opencode', model: 'fake/model', reasoning: 'high', permissionMode: 'plan' } })).body
   const t = `/projects/${project.id}/threads/${thread.id}`
   await until(async () => (await api('GET', t)).body.messages.some((m) => m.text === 'ACP echo: hello acp'))
-  // Savor allows its own MCP tools without asking the user.
-  assert.ok(agentRuns().some((r) => r.agent === 'opencode' && r.mcpPermission === 'allow-once'))
   assert.ok((await api('GET', `${t}/activity`)).body.some((a) => a.type === 'command' && a.label === 'ls -la'))
-  // The effort is a variant of the model or a config option of the session, and the context the agent reports is shown.
+  // OpenCode takes the effort as a model variant and reports the context.
   assert.ok(agentRuns().some((r) => r.agent === 'opencode' && r['session/set_model'] === 'fake/model/high'))
-  assert.ok(agentRuns().some((r) => r.agent === 'opencode' && r['session/set_config_option'] === 'reasoning_effort=high'))
-  // The mode is set also when the agent does not announce its modes, as Grok Build does.
   assert.ok(agentRuns().some((r) => r.agent === 'opencode' && r['session/set_mode'] === 'plan'))
   await until(async () => (await api('GET', t)).body.thread.context?.tokens === 4200)
   assert.equal((await api('GET', t)).body.thread.context.window, 100000)
@@ -930,13 +920,6 @@ test('OpenCode runs through the Agent Client Protocol', async () => {
   assert.deepEqual(approval.approval.options.map((o) => [o.id, o.kind]), [['allow_once', 'allow'], ['reject_once', 'deny']])
   await api('POST', `${t}/approvals/${approval.id}`, { choice: 'allow_once' })
   await until(async () => (await api('GET', t)).body.messages.some((m) => m.text === 'ACP permission: allow_once'))
-  // Grok Build's plan comes for approval.
-  await until(async () => !(await api('GET', t)).body.busy)
-  await api('POST', `${t}/messages`, { text: 'plan: hello' })
-  await until(async () => (approval = (await api('GET', t)).body.messages.find((m) => m.approval?.status === 'pending')))
-  assert.equal(approval.approval.detail, '# Plan\n\nCreate hello.txt.')
-  await api('POST', `${t}/approvals/${approval.id}`, { choice: 'approved' })
-  await until(async () => (await api('GET', t)).body.messages.some((m) => m.text === 'ACP plan: approved'))
   // A slash command goes alone, so the agent runs it.
   await until(async () => !(await api('GET', t)).body.busy)
   await api('POST', `${t}/messages`, { text: '/review now' })
@@ -972,14 +955,7 @@ test('OpenCode runs through the Agent Client Protocol', async () => {
   await until(async () => (await api('GET', t)).body.messages.some((m) => m.kind === 'conclusion' && m.text === 'ACP remembered: forget: the result'))
   const forgot = (await api('GET', t)).body.messages
   assert.equal(forgot.filter((m) => m.kind === 'ack' && m.text === 'Working on forget: the result').length, 1)
-  // At Grok Build's usage limit the conversation waits for the end of the usage period.
-  await until(async () => !(await api('GET', t)).body.busy)
-  await api('POST', `${t}/messages`, { text: 'limit: weekly' })
   let r
-  await until(async () => (r = (await api('GET', t)).body).thread.resumeAt)
-  assert.ok(r.messages.some((m) => m.kind === 'error' && m.text === 'Internal error: status 402: You hit your weekly limit.'))
-  assert.ok(Math.abs(Date.parse(r.thread.resumeAt) - (Date.now() + 2 * 3600_000 + 60_000)) < 30_000)
-  await api('POST', `${t}/stop`)
   // OpenCode 1.x only logs its free usage limit and never answers the prompt: the turn ends with that error and
   // tries again in an hour, since OpenCode doesn't tell when the limit resets.
   await until(async () => !(await api('GET', t)).body.busy)
@@ -1018,59 +994,6 @@ test("in OpenCode's Auto mode its review plugin answers permission asks, not the
   await api('PATCH', `/projects/${project.id}`, { agent: project.agent })
 })
 
-test('Antigravity continues its conversation with the chosen model, effort and mode, and reaches Savor through MCP', async () => {
-  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
-  const thread = (await api('POST', `/projects/${project.id}/threads`, { text: 'hello agy', agent: { provider: 'antigravity', model: 'fake-claude', reasoning: 'high', permissionMode: 'plan' } })).body
-  const t = `/projects/${project.id}/threads/${thread.id}`
-  await until(async () => (await api('GET', t)).body.messages.some((m) => m.text === 'Antigravity echo: hello agy'))
-  await until(async () => !(await api('GET', t)).body.busy)
-  await api('POST', `${t}/messages`, { text: 'again' })
-  await until(async () => (await api('GET', t)).body.messages.some((m) => m.text === 'Antigravity echo: again'))
-  // In a running conversation a slash command goes alone, so agy runs it.
-  await until(async () => !(await api('GET', t)).body.busy)
-  await api('POST', `${t}/messages`, { text: '/compact' })
-  await until(async () => (await api('GET', t)).body.messages.some((m) => m.text === 'Antigravity ran /compact'))
-  // A turn that stops at an action agy cannot ask for says so, instead of ending without a word.
-  await until(async () => !(await api('GET', t)).body.busy)
-  await api('POST', `${t}/messages`, { text: 'run a command' })
-  await until(async () => (await api('GET', t)).body.messages.some((m) => m.kind === 'error' && /RunCommand/.test(m.text)))
-  // A stopped turn reads as stopped, although agy reports it as an "interrupted" error.
-  await until(async () => !(await api('GET', t)).body.busy)
-  await api('POST', `${t}/messages`, { text: 'slow: stop me' })
-  await until(async () => (await api('GET', t)).body.busy)
-  await api('POST', `${t}/stop`)
-  await until(async () => (await api('GET', t)).body.messages.at(-1).text === 'Turn stopped.')
-  const runs = agentRuns().filter((r) => r.agent === 'antigravity')
-  const flag = (r, name) => r.argv[r.argv.indexOf(name) + 1]
-  assert.deepEqual([flag(runs[0], '--model'), flag(runs[0], '--effort'), flag(runs[0], '--mode')], ['fake-claude', 'high', 'plan'])
-  assert.ok(!runs[0].argv.includes('--conversation'))
-  assert.equal(flag(runs[1], '--conversation'), 'fake-agy-conversation')
-  // Savor's MCP server is a stdio bridge in agy's config, and the token stays off every command line.
-  const config = JSON.parse(fs.readFileSync(path.join(TMP, 'agy', 'config', 'mcp_config.json'), 'utf8'))
-  assert.equal(config.mcpServers.savor.command, 'sh')
-  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(TMP, 'agy', 'antigravity-cli', 'settings.json'), 'utf8')).permissions.allow, ['mcp(savor/*)'])
-  const { mcpToken } = JSON.parse(fs.readFileSync(path.join(HOME, 'state.json'), 'utf8'))
-  assert.ok(!JSON.stringify([runs, config]).includes(mcpToken))
-  const { body } = await api('GET', t)
-  assert.equal(body.thread.context.tokens, 12000)
-  assert.ok((await api('GET', `${t}/activity`)).body.some((a) => a.type === 'command' && a.label === 'ls'))
-  assert.equal((await api('POST', `${t}/btw`, { text: 'which file?' })).body.text, 'Antigravity aside: which file?')
-  await until(async () => (await api('GET', '/usage')).body.some((u) => u.provider === 'antigravity'))
-  assert.deepEqual((await api('GET', '/usage')).body.find((u) => u.provider === 'antigravity').windows.map((w) => [w.label, w.percent]), [['Weekly · Gemini Models', 25]])
-  // An academic project lets agy run the few commands its setup and export need.
-  const dir = path.join(TMP, 'agy-thesis')
-  fs.mkdirSync(dir, { recursive: true })
-  const thesis = (await api('POST', '/projects', { path: dir })).body
-  await api('PATCH', `/projects/${thesis.id}`, { type: 'academic-writing' })
-  const run = (await api('POST', `/projects/${thesis.id}/threads`, { text: 'set up', agent: { provider: 'antigravity' } })).body
-  await until(async () => (await api('GET', `/projects/${thesis.id}/threads/${run.id}`)).body.messages.some((m) => m.text === 'Antigravity echo: set up'))
-  const { allow, deny } = JSON.parse(fs.readFileSync(path.join(TMP, 'agy', 'antigravity-cli', 'settings.json'), 'utf8')).permissions
-  assert.ok(allow.includes('command(pandoc)') && allow.includes('command(git)') && !allow.some((r) => /\brm\b/.test(r)))
-  assert.ok(deny.includes('command(git reset)') && deny.includes('command(git clean)'))
-  await api('DELETE', `/projects/${thesis.id}`)
-  await api('PATCH', `/projects/${project.id}`, { agent: project.agent })
-})
-
 test('a project learns the model its agent answers on, also when only the model changed', async () => {
   const project = (await api('POST', '/projects', { path: path.join(TMP, 'model-seen'), create: true })).body
   const pp = `/projects/${project.id}`
@@ -1085,10 +1008,6 @@ test('a project learns the model its agent answers on, also when only the model 
   // Claude Code switched models without the context growing.
   await turn('model: fake-opus')
   assert.equal(await model(), 'fake-opus')
-  // agy names its model when it starts.
-  await api('PATCH', pp, { agent: { provider: 'antigravity' } })
-  await turn('hello agy')
-  assert.equal(await model(), 'fake-gemini-high')
   await api('DELETE', pp)
 })
 
@@ -1103,12 +1022,42 @@ test('the agent list reports what is installed, signed in and offered', async ()
   assert.ok(by.codex.models.some((m) => m.id === 'fake-model' && m.efforts.includes('high')))
   assert.equal(by.codex.account, 'fake@codex.test')
   assert.deepEqual(by.opencode.models.map((m) => [m.id, m.efforts]), [['fake/model', ['low', 'high']], ['fake/other', []]])
-  assert.equal(by.antigravity.signedIn, true)
-  assert.deepEqual(by.antigravity.models.map((m) => m.id), ['', 'fake-gemini-high', 'fake-claude'])
-  // Without "modelProvider": "gemini" and GEMINI_API_KEY, agy runs on the Google account, which Savor warns about.
-  assert.equal(by.antigravity.auth, 'google')
-  assert.equal(by.grok.installed, false)
+  assert.deepEqual(Object.keys(by), ['claude', 'codex', 'opencode'])
   assert.ok(by.claude.modes.find((m) => m.id === 'bypassPermissions').unsafe)
+})
+
+test('conversations from retired providers continue with their visible history intact', async () => {
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
+  for (const provider of ['grok', 'antigravity']) {
+    const thread = (await api('POST', `/projects/${project.id}/threads`, { text: 'earlier work' })).body
+    const t = `/projects/${project.id}/threads/${thread.id}`
+    await until(async () => {
+      const r = (await api('GET', t)).body
+      return !r.busy && r.messages.some((m) => m.kind === 'conclusion')
+    })
+    const before = (await api('GET', t)).body.messages.map(({ id, text }) => ({ id, text }))
+    const file = path.join(project.path, '.savor', 'threads', thread.id, 'thread.json')
+    const saved = JSON.parse(fs.readFileSync(file, 'utf8'))
+    saved.agent = { ...saved.agent, provider, model: 'old-model', permissionMode: 'bypass' }
+    const messagesFile = path.join(path.dirname(file), 'messages.jsonl')
+    const history = fs.readFileSync(messagesFile, 'utf8').trim().split('\n').map((line) => JSON.parse(line))
+    const previous = history.find((m) => m.kind === 'conclusion')
+    previous.modelInfo = saved.agent
+    fs.writeFileSync(messagesFile, history.map((m) => JSON.stringify(m)).join('\n') + '\n')
+    saved.preferred = saved.agent
+    saved.agentSessions = [{ provider, sessionId: 'old-session' }]
+    fs.writeFileSync(file, JSON.stringify(saved))
+    assert.equal((await api('GET', t)).body.thread.agent.permissionMode, 'manual')
+    await page.goto(`${base}/#/p/${project.id}/t/${thread.id}`)
+    await page.waitForSelector(`#msg-${previous.id} .msg-head b:text-is("${provider}")`)
+    await api('POST', `${t}/messages`, { text: 'continue here' })
+    await until(async () => (await api('GET', t)).body.messages.some((m) => m.text === 'Echo: continue here'))
+    const result = (await api('GET', t)).body
+    assert.deepEqual(result.messages.slice(0, before.length).map(({ id, text }) => ({ id, text })), before)
+    assert.equal(result.thread.agent.provider, 'claude')
+    assert.ok(result.thread.agentSessions.some((s) => s.provider === provider && s.sessionId === 'old-session'))
+    assert.ok(result.thread.agentSessions.some((s) => s.provider === 'claude' && s.sessionId !== 'old-session'))
+  }
 })
 
 test('OpenCode is probed again only when its binary changes', async () => {
@@ -1129,17 +1078,14 @@ test('OpenCode is probed again only when its binary changes', async () => {
   assert.equal(probes(), before + 1)
 })
 
-test('a missing agent is found again once its binary turns up', async () => {
-  const bin = path.join(TMP, 'no-such-grok')
-  const installed = async () => (await api('GET', '/agents?refresh=1')).body.find((a) => a.id === 'grok').installed
+test('a missing agent is found again once its binary turns up', async (t) => {
+  const bin = path.join(TMP, 'opencode'), off = bin + '.off'
+  const installed = async () => (await api('GET', '/agents?refresh=1')).body.find((a) => a.id === 'opencode').installed
+  fs.renameSync(bin, off)
+  t.after(async () => { if (fs.existsSync(off)) fs.renameSync(off, bin); await installed() })
   assert.equal(await installed(), false)
-  fs.writeFileSync(bin, '#!/bin/sh\necho 1.0.0\n', { mode: 0o755 })
-  try {
-    assert.equal(await installed(), true)
-  } finally {
-    fs.rmSync(bin)
-  }
-  assert.equal(await installed(), false)
+  fs.renameSync(off, bin)
+  assert.equal(await installed(), true)
 })
 
 test('Ultracode is a switch next to the effort, and the old Ultracode effort becomes X-High with it', async () => {
@@ -1165,6 +1111,7 @@ test('new projects start with the default agent set on this computer', async () 
 })
 
 test('presets are saved globally and only from this computer', async () => {
+  for (const provider of ['grok', 'antigravity']) assert.equal((await api('POST', '/presets', { name: 'Retired', agent: { provider } })).status, 400)
   const agent = { provider: 'codex', model: 'fake-model', reasoning: 'high', fast: false, permissionMode: 'read-only' }
   const preset = (await api('POST', '/presets', { name: 'Careful Codex', agent })).body
   assert.deepEqual((await api('GET', '/presets')).body.map((p) => p.name), ['Careful Codex'])
@@ -3012,9 +2959,7 @@ test('typing / lists the skills of the agent and runs the one picked', async () 
   // as do the skills Codex has switched off; Codex's own commands come last.
   assert.deepEqual(await skills('claude'), ['greet', 'tools:lint', 'code-review', 'compact', 'btw'])
   assert.deepEqual(await skills('codex'), ['greet', 'review', 'compact', 'goal', 'mcp', 'btw'])
-  assert.deepEqual(await skills('grok'), [])
   assert.deepEqual(await skills('opencode'), ['review', 'btw'])
-  assert.deepEqual(await skills('antigravity'), ['fake-skill', 'compact', 'btw'])
 
   await page.goto(`${base}/#/p/${project.id}/new`)
   await page.waitForSelector('text=What do you want to build?')
@@ -3778,8 +3723,6 @@ test('the account dialog shows this computer, its devices and agents', async () 
   await page.waitForSelector('.account-dialog .qr svg')
   await page.click('.account-dialog summary:has-text("Agents")')
   await page.waitForSelector('.account-dialog .setting:has-text("Claude Code") >> text=Signed in')
-  // Antigravity on a Google account gets a warning that points to an API key.
-  await page.waitForSelector('.account-dialog .banner:has-text("signed in with a Google account") >> text=GEMINI_API_KEY')
   // The feedback button can leave the toolbar.
   await page.uncheck('.account-dialog label:has-text("Show feedback in toolbar") input')
   await page.waitForSelector('button[title="Send feedback"]', { state: 'detached' })

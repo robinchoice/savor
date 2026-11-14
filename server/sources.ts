@@ -78,7 +78,7 @@ const stem = (file: string) => path.basename(file, path.extname(file)).toLowerCa
 const textOf = (pdf: string) => `sources/text/${path.basename(pdf, path.extname(pdf))}.txt`
 
 // A text copy of every PDF, page by page, so each agent can search the sources and check a cited page
-// without reading the PDF (Codex and Antigravity can't). The PDF names a page's printed number when
+// without reading the PDF (Codex can't). The PDF names a page's printed number when
 // it has page labels. One PDF at a time, in the daemon, so a huge one is left out and a stuck one
 // given up; one that can't be read is tried again only once it changes.
 const MAX_TEXT_PDF = 100 * 1024 * 1024

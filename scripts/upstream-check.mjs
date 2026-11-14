@@ -1,5 +1,5 @@
-// Checks this checkout against the newest agent CLIs: installs the latest Claude Code, Codex, OpenCode
-// and Grok Build into ~/.cache/savor-upstream-check and updates agy (it only installs itself), starts a
+// Checks this checkout against the newest agent CLIs: installs the latest Claude Code, Codex and OpenCode
+// into ~/.cache/savor-upstream-check, starts a
 // daemon with them and runs one real conversation per agent: a prompt, a permission request, an
 // interrupt. It uses the agents' logins on this computer, so it runs as a weekly Savor workflow on the
 // maintainer's computer, not in CI. An agent whose CLI is not on this computer or that is not signed in
@@ -24,12 +24,8 @@ const AGENTS = [
   { provider: 'claude', pkg: '@anthropic-ai/claude-code', bin: 'claude', env: 'SAVOR_CLAUDE_BIN', agent: { model: 'haiku', reasoning: '', permissionMode: 'manual' } },
   { provider: 'codex', pkg: '@openai/codex', bin: 'codex', env: 'SAVOR_CODEX_BIN', agent: { model: '', reasoning: 'low', permissionMode: 'read-only' } },
   { provider: 'opencode', pkg: 'opencode-ai', bin: 'opencode', env: 'SAVOR_OPENCODE_BIN', agent: { model: '', reasoning: '', permissionMode: 'build' } },
-  // Grok creates files in the project without asking; rm is one of the commands it always asks about.
-  { provider: 'grok', pkg: '@xai-official/grok', bin: 'grok', env: 'SAVOR_GROK_BIN', agent: { model: '', reasoning: 'low', permissionMode: 'default' }, removes: true },
-  // Headless agy cannot ask: its default mode denies the command, and the rest runs with permissions bypassed.
-  { provider: 'antigravity', bin: process.env.SAVOR_ANTIGRAVITY_BIN || 'agy', env: 'SAVOR_ANTIGRAVITY_BIN', agent: { model: '', reasoning: 'low', permissionMode: 'bypass' }, denies: { permissionMode: 'default' } },
 ]
-// Agents named on the command line, e.g. `node scripts/upstream-check.mjs grok`, are the only ones checked.
+// Agents named on the command line, e.g. `node scripts/upstream-check.mjs opencode`, are the only ones checked.
 // Without names, an agent whose CLI is not on this computer is skipped and keeps its last result.
 const only = process.argv.slice(2)
 const onComputer = (bin) => (path.isAbsolute(bin) ? [''] : [...(process.env.PATH ?? '').split(path.delimiter), path.join(os.homedir(), '.local', 'bin')]).some((dir) => fs.existsSync(path.join(dir, bin)))
@@ -57,14 +53,8 @@ async function until(what, fn, ms) {
 
 console.log(`Installing the latest CLIs into ${CACHE}`)
 fs.mkdirSync(CACHE, { recursive: true })
-if (AGENTS.some((a) => a.pkg)) execFileSync('npm', ['install', '--prefix', CACHE, '--no-audit', '--no-fund', '--loglevel=error', ...AGENTS.filter((a) => a.pkg).map((a) => `${a.pkg}@latest`)], { stdio: 'inherit' })
-const bin = (a) => (a.pkg ? path.join(CACHE, 'node_modules', '.bin', a.bin) : a.bin)
-const agy = AGENTS.find((a) => a.provider === 'antigravity')
-if (agy) {
-  try {
-    execFileSync(agy.bin, ['update'], { stdio: ['ignore', 'inherit', 'inherit'] })
-  } catch {}
-}
+if (AGENTS.length) execFileSync('npm', ['install', '--prefix', CACHE, '--no-audit', '--no-fund', '--loglevel=error', ...AGENTS.map((a) => `${a.pkg}@latest`)], { stdio: 'inherit' })
+const bin = (a) => path.join(CACHE, 'node_modules', '.bin', a.bin)
 for (const a of AGENTS) {
   try {
     a.version = execFileSync(bin(a), ['--version']).toString().trim()
@@ -103,22 +93,9 @@ async function answered(pid, tid, mid, ms) {
     async () => {
       const t = await api('GET', `/projects/${pid}/threads/${tid}`)
       const after = t.messages.slice(t.messages.findIndex((m) => m.id === mid) + 1)
-      // Antigravity reports the turn "Send now" stopped as an error.
       const error = after.find((m) => m.kind === 'error' && m.text !== 'Turn stopped.')
       if (error) throw new Error(`error: ${error.text}`)
       return !t.busy && after.some((m) => m.kind === 'conclusion') && after
-    },
-    ms,
-  )
-}
-
-// The first message of a new thread, once its request has ended, whether with an answer or an error.
-async function settled(pid, tid, ms) {
-  return until(
-    'the end of the turn',
-    async () => {
-      const t = await api('GET', `/projects/${pid}/threads/${tid}`)
-      return !t.busy && t.messages.some((m) => m.kind === 'conclusion' || m.kind === 'error') && t.messages
     },
     ms,
   )
@@ -146,28 +123,15 @@ async function check(a) {
   // OpenCode runs commands without asking unless its config says otherwise.
   if (a.provider === 'opencode') fs.writeFileSync(path.join(dir, 'opencode.json'), JSON.stringify({ permission: { bash: 'ask' } }))
   const marker = path.join(dir, 'savor-check.txt')
-  if (a.removes) fs.writeFileSync(marker, '')
-  const text = `This is an automated compatibility check. Run exactly this shell command and nothing else: ${a.removes ? 'rm' : 'touch'} savor-check.txt. Then reply with "check ok".`
+  const text = `This is an automated compatibility check. Run exactly this shell command and nothing else: touch savor-check.txt. Then reply with "check ok".`
 
-  // An agent that cannot ask: the command is denied, and Savor says so instead of ending silently.
-  if (a.denies) {
-    const d = await api('POST', `/projects/${p.id}/threads`, { text, agent: { provider: a.provider, ...a.agent, ...a.denies } })
-    const messages = await settled(p.id, d.id, 180_000)
-    const activity = await api('GET', `/projects/${p.id}/threads/${d.id}/activity`)
-    if (fs.existsSync(marker)) throw new Error('the command ran although the mode does not allow it')
-    if (!activity.some((e) => /Denied:/.test(JSON.stringify(e))) && !messages.some((m) => m.kind === 'error' && /permission/.test(m.text))) throw new Error('the denied command left no trace in the conversation')
-  }
-
-  // A prompt that needs a permission: the approval reaches Savor, and the command runs once allowed.
   const t = await api('POST', `/projects/${p.id}/threads`, { text, agent: { provider: a.provider, ...a.agent } })
   const first = (await api('GET', `/projects/${p.id}/threads/${t.id}`)).messages.find((m) => m.kind === 'user')
-  if (!a.denies) {
-    const approval = await until('a permission request', () => pendingApproval(p.id, t.id), 180_000)
-    if (fs.existsSync(marker) !== !!a.removes) throw new Error('the command ran before permission was granted')
-    await approve(p.id, t.id, approval)
-  }
+  const approval = await until('a permission request', () => pendingApproval(p.id, t.id), 180_000)
+  if (fs.existsSync(marker)) throw new Error('the command ran before permission was granted')
+  await approve(p.id, t.id, approval)
   await answered(p.id, t.id, first.id, 180_000)
-  if (fs.existsSync(marker) === !!a.removes) throw new Error('the allowed command did not run')
+  if (!fs.existsSync(marker)) throw new Error('the allowed command did not run')
 
   // An interrupt: "Send now" stops a long command, and the queued message gets its answer.
   // Not `sleep`: Claude Code 2.1.319 blocks a foreground `sleep N` before it runs.

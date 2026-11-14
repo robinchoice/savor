@@ -7,55 +7,58 @@ import path from 'node:path'
 
 const HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'savor-acp-'))
 process.env.SAVOR_HOME = HOME
-process.env.SAVOR_GROK_BIN = path.resolve('test/fake-acp.mjs')
-const { acpCommand, acpResets, grokModels, stuckOn, todoSteps } = await import('../server/acp.ts')
+const { acpCommand, stuckOn, todoSteps } = await import('../server/acp.ts')
 after(() => fs.rmSync(HOME, { recursive: true, force: true }))
 
-test('Grok models and their effort levels come from ACP initialize without a prompt', async () => {
-  assert.deepEqual(await grokModels(), [
-    { id: 'fake-grok', label: 'Fake Grok', detail: 'A reasoning model', efforts: ['low', 'xhigh'] },
-    { id: 'fake-grok-fast', label: 'fake-grok-fast', detail: undefined, efforts: [] },
-  ])
-})
-
-test("Grok Build's Always approve mode is a flag of its agent process", () => {
-  assert.deepEqual(acpCommand('grok', 'p', 't', 'default').args, ['--no-auto-update', 'agent', '--no-leader', 'stdio'])
-  assert.deepEqual(acpCommand('grok', 'p', 't', 'always-approve').args, ['--no-auto-update', 'agent', '--always-approve', '--no-leader', 'stdio'])
-  assert.deepEqual(acpCommand('opencode', 'p', 't', 'always-approve').args, ['acp', '--print-logs', '--log-level', 'ERROR'])
+test('retired provider settings migrate without losing conversations or widening permissions', async () => {
+  const store = await import('../server/store.ts')
+  for (const provider of ['grok', 'antigravity', 'gemini']) {
+    const legacy = { ...store.defaultAgent(), provider, model: 'retired-model', reasoning: 'max', permissionMode: 'bypass', fast: true, ultracode: true }
+    const expected = { ...store.defaultAgent(), permissionMode: 'manual' }
+    const fallback = { ...store.defaultAgent(), permissionMode: 'auto' }
+    const project = store.addProject(path.join(HOME, provider))
+    fs.writeFileSync(path.join(project.path, '.savor/project.json'), JSON.stringify({ ...project, agent: legacy }))
+    const thread = store.createThread(project, { title: 'Earlier work', agent: legacy })
+    store.updateThread(project, thread.id, { preferred: legacy, agentSessions: [{ provider, sessionId: 'old-session' }] })
+    const message = store.appendMessage(project, thread.id, { kind: 'conclusion', text: 'Earlier work stays here.' })
+    const workflow = store.saveWorkflow(project, { name: 'Legacy', prompt: 'Continue the work', agent: legacy })
+    store.saveState({ ...store.state(), agent: legacy, presets: [{ id: 'old', name: 'Old', agent: legacy }], fallback: { on: true, agents: [fallback, legacy] } })
+    assert.deepEqual(store.state().agent, expected)
+    assert.deepEqual(store.listPresets()[0].agent, expected)
+    assert.deepEqual(store.state().fallback.agents, [fallback])
+    assert.deepEqual(store.getProject(project.id).agent, expected)
+    for (const loaded of [store.getThread(project, thread.id), store.listThreads(project)[0]]) {
+      assert.deepEqual(loaded.agent, expected)
+      assert.equal(loaded.preferred, null)
+      assert.deepEqual(loaded.agentSessions, [{ provider, sessionId: 'old-session' }])
+    }
+    assert.deepEqual(store.readMessages(project, thread.id), [message])
+    assert.deepEqual(store.getWorkflow(project, workflow.id).agent, expected)
+    assert.deepEqual(store.listWorkflows(project)[0].agent, expected)
+    assert.equal(store.upgradeAgent({ ...legacy, permissionMode: 'plan' }).permissionMode, 'plan')
+  }
 })
 
 test("OpenCode's Full access mode allows every permission in its config", () => {
-  const config = (mode) => JSON.parse(acpCommand('opencode', 'p', 't', mode).env.OPENCODE_CONFIG_CONTENT)
+  const config = (mode) => JSON.parse(acpCommand('p', 't', mode).env.OPENCODE_CONFIG_CONTENT)
   assert.equal(config('full-access').permission, 'allow')
   assert.equal(config('build').permission, undefined)
 })
 
 test("OpenCode takes Savor's protocol as an instructions file for its system prompt", () => {
-  const config = (file) => JSON.parse(acpCommand('opencode', 'p', 't', 'build', file).env.OPENCODE_CONFIG_CONTENT)
+  const config = (file) => JSON.parse(acpCommand('p', 't', 'build', file).env.OPENCODE_CONFIG_CONTENT)
   assert.deepEqual(config('/tmp/protocol.md').instructions, ['/tmp/protocol.md'])
   assert.equal(config(undefined).instructions, undefined)
 })
 
 test("OpenCode's Auto mode lets the pinned review plugin answer what is set to ask", () => {
-  const config = (mode) => JSON.parse(acpCommand('opencode', 'p', 't', mode).env.OPENCODE_CONFIG_CONTENT)
+  const config = (mode) => JSON.parse(acpCommand('p', 't', mode).env.OPENCODE_CONFIG_CONTENT)
   const auto = config('auto')
   assert.match(auto.plugin[0], /^opencode-auto-permissions@\d+\.\d+\.\d+$/)
   assert.equal(Object.keys(auto.permission.bash)[0], '*')
   assert.equal(auto.permission.bash['rm *'], 'ask')
   assert.equal(auto.permission.external_directory, 'ask')
   assert.equal(config('build').plugin, undefined)
-})
-
-test("a usage limit resets at the end of the usage period Grok Build's _x.ai/billing reports", () => {
-  const now = Date.parse('2026-10-21T12:00:00Z')
-  // As Grok Build 1.0.62 answers on the free tier.
-  const billing = { config: { currentPeriod: { type: 'USAGE_PERIOD_TYPE_WEEKLY', start: '2026-10-15T00:00:00+00:00', end: '2026-10-22T00:00:00+00:00' }, billingPeriodEnd: '2026-10-22T00:00:00+00:00' }, subscription_tier: 'Free' }
-  assert.equal(acpResets(billing, now), Date.parse('2026-10-22T00:00:00Z'))
-  assert.equal(acpResets({ config: { ...billing.config, creditUsagePercent: 100 } }, now), Date.parse('2026-10-22T00:00:00Z'))
-  // Credit left, a period that is over, or no billing at all: no time to wait for.
-  assert.equal(acpResets({ config: { ...billing.config, creditUsagePercent: 40 } }, now), null)
-  assert.equal(acpResets(billing, Date.parse('2026-10-23T00:00:00Z')), null)
-  assert.equal(acpResets(null, now), null)
 })
 
 test('OpenCode 1.x reports a usage limit only in its log, which Savor reads for its own session', () => {

@@ -53,8 +53,6 @@ async function startDaemon() {
       SAVOR_CLAUDE_BIN: path.join(ROOT, 'test/fake-claude.mjs'),
       SAVOR_CODEX_BIN: path.join(TMP, 'no-such-codex'),
       SAVOR_OPENCODE_BIN: path.join(TMP, 'no-such-opencode'),
-      SAVOR_GROK_BIN: path.join(TMP, 'no-such-grok'),
-      SAVOR_ANTIGRAVITY_BIN: path.join(TMP, 'no-such-agy'),
       SAVOR_GH_BIN: path.join(ROOT, 'test/fake-gh.mjs'),
       SAVOR_IDLE_CLOSE_MS: '100',
       SAVOR_IDLE_COMPACT_MS: '4000',

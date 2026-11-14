@@ -245,10 +245,6 @@ const de: Record<string, string> = {
   'Signed out': 'Abgemeldet',
   'Installed': 'Installiert',
   'Sign in:': 'Anmelden:',
-  'Antigravity is signed in with a Google account. Google does not allow agy inside other apps on consumer plans and may suspend the account.': 'Antigravity ist mit einem Google-Konto angemeldet. In Privatkunden-Abos erlaubt Google agy nicht in anderen Apps und kann das Konto sperren.',
-  'Antigravity FAQ': 'Antigravity-FAQ',
-  'Use a Gemini API key instead:': 'Nimm stattdessen einen Gemini-API-Key:',
-  'set it in the environment Savor starts in, then restart Savor. agy does not read .env files.': 'in der Umgebung setzen, in der Savor startet, dann Savor neu starten. agy liest keine .env-Dateien.',
   '{n}% left': '{n} % übrig',
   'resets {when}': 'neu ab {when}',
   'Model': 'Modell',
@@ -1132,11 +1128,6 @@ const de: Record<string, string> = {
   'Make changes in the project. Ask before files outside it.': 'Ändert im Projekt. Fragt vor Dateien außerhalb davon.',
   'Make changes in the project. A model reviews risky commands and files outside the project instead of you.': 'Ändert im Projekt. Riskante Befehle und Dateien außerhalb davon prüft ein Modell statt dir.',
   'Explore and plan using OpenCode’s plan mode.': 'Erkundet und plant im Planmodus von OpenCode.',
-  'Grok asks when an action needs approval.': 'Grok fragt, wenn eine Aktion eine Freigabe braucht.',
-  'Explore and plan without changing files.': 'Erkundet und plant, ohne Dateien zu ändern.',
-  'Always approve': 'Immer freigeben',
-  'Commands and edits run as agy\'s settings allow; Antigravity cannot ask here, so the rest is denied.': 'Befehle und Änderungen laufen, soweit es die Einstellungen von agy erlauben; Antigravity kann hier nicht fragen, der Rest wird abgelehnt.',
-  'File edits run without asking. Commands run only with an allow rule in agy\'s settings.': 'Dateiänderungen laufen ohne Rückfrage. Befehle nur mit einer Erlaubnisregel in den Einstellungen von agy.',
   'Run every action without asking, commands included. Use only in an isolated environment you trust.': 'Führt jede Aktion ohne Rückfrage aus, auch Befehle. Nur in einer isolierten Umgebung nutzen, der du vertraust.',
   'Low': 'Niedrig',
   'High': 'Hoch',
@@ -1257,7 +1248,6 @@ export const patterns: [RegExp, string][] = [
   [/^(\d+) hours$/, '$1 Stunden'],
   [/^(\d+) days$/, '$1 Tage'],
   [/^(\d+) minutes$/, '$1 Minuten'],
-  [/^Antigravity stopped: it needed permission for (.+) and cannot ask for it in Savor\. Allow it in agy's settings \(permissions\.allow in (.+)\) or choose another mode or agent\.$/, 'Antigravity hat aufgehört: Es brauchte eine Erlaubnis für $1 und kann in Savor nicht danach fragen. Erlaube es in den Einstellungen von agy (permissions.allow in $2) oder wähle einen anderen Modus oder Agenten.'],
 ]
 
 export default de

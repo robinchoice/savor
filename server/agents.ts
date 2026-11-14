@@ -10,7 +10,6 @@ import { Activity, PlanTracker, configKey, forkOf, sessionIdOf, STOPPED, type An
 import { ClaudeSession, claudeAside, creditEnv, idleCompaction } from './claude.js'
 import { CodexSession, codexAside } from './codex.js'
 import { AcpSession, acpAside } from './acp.js'
-import { AntigravitySession, antigravityAside } from './antigravity.js'
 import * as push from './push.js'
 import * as git from './git.js'
 import * as terminal from './terminal.js'
@@ -459,7 +458,7 @@ function endTurn(p: Project, tid: string, result: { text?: string; error?: strin
       notify(p, tid, 'result', result.text!, 'Finished')
     }
     if (!r.ack && !r.conclusion && !r.updates.size && result.text?.trim() && !runsBackground(tid)) surface()
-    // Agents without background work of their own (ACP, Antigravity) that acknowledged and stopped without a
+    // Agents without background work of their own (OpenCode) that acknowledged and stopped without a
     // conclusion, a process or CI to wait for forgot it: Savor asks once, and after that shows their text.
     else if (
       NUDGED.includes(agent.provider) &&
@@ -490,7 +489,7 @@ function endTurn(p: Project, tid: string, result: { text?: string; error?: strin
 }
 
 // The agents whose forgotten conclusion Savor asks for: none of them keeps working in the background after its turn.
-const NUDGED: Provider[] = ['opencode', 'grok', 'antigravity']
+const NUDGED: Provider[] = ['opencode']
 const NUDGE = `You acknowledged the input below and ended your turn without send_conclusion_message, so the user has not seen a result yet. If the work is done, send the conclusion now with what you did, and any questions. If it is not done, finish it first. This is still the same request: do not acknowledge it again.\n\n`
 
 // ---- prompts ----
@@ -554,8 +553,7 @@ function sessionFor(p: Project, thread: Thread): Session {
   const session =
     provider === 'claude' ? new ClaudeSession(host, thread)
     : provider === 'codex' ? new CodexSession(host, thread)
-    : provider === 'opencode' || provider === 'grok' ? new AcpSession(host, thread)
-    : new AntigravitySession(host, thread)
+    : new AcpSession(host, thread)
   holder.session = session
   sessions.set(tid, { session })
   return session
@@ -570,16 +568,7 @@ export function aside(p: Project, thread: Thread, question: string) {
   const prompt = `The user asks a quick side question while you work on this conversation. Answer it briefly from what you already know. Don't use tools; this answer does not become part of the conversation.\n\nQuestion: ${question}`
   if (provider === 'claude') return claudeAside(cwd, sid, model, prompt)
   if (provider === 'codex') return codexAside(cwd, sid, model, prompt)
-  if (provider === 'antigravity') {
-    // agy cannot fork a conversation: a fresh run gets the visible history instead.
-    const history = store
-      .readMessages(p, thread.id)
-      .filter((m) => m.text && m.kind !== 'error')
-      .slice(-30)
-      .map((m) => `[${m.kind === 'user' ? 'user' : 'agent'}] ${m.text!.slice(0, 2000)}`)
-    return antigravityAside(cwd, model, history.length ? `The conversation so far:\n${history.join('\n\n')}\n\n` : '', prompt)
-  }
-  return acpAside(provider, cwd, sid, model, prompt)
+  return acpAside(cwd, sid, model, prompt)
 }
 
 // Events from a session that was already replaced (new settings) or closed are ignored.
@@ -765,7 +754,7 @@ function resumeAfterLimit(p: Project, tid: string) {
 // Workflow runs and the conversations they start have no one who waits for a usage limit: they go on with
 // the next of these agents. Each runs in a mode that doesn't stop for approvals, or as the project sets it up.
 // With the fallback on this computer (state.json `fallback`), every conversation goes on with the agents set there instead.
-const FALLBACK: [Provider, string][] = [['claude', 'auto'], ['codex', 'auto-review'], ['antigravity', 'default'], ['opencode', 'auto']]
+const FALLBACK: [Provider, string][] = [['claude', 'auto'], ['codex', 'auto-review'], ['opencode', 'auto']]
 
 export const unattended = (t: Thread) => !!t.workflow || !!t.unattended
 

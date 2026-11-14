@@ -75,7 +75,7 @@ export function ActivityLog({ events, messages }: { events: ActivityEvent[]; mes
               <>
                 <div class="activity-turn-meta muted small">
                   {[
-                    agent && [PROVIDER_NAMES[agent.provider], agent.model].filter(Boolean).join(' · '),
+                    agent && [PROVIDER_NAMES[agent.provider] ?? agent.provider, agent.model].filter(Boolean).join(' · '),
                     formatTime(new Date(turn.start).toISOString()),
                     count('command') && plural(count('command'), '{n} command', '{n} commands'),
                     count('edit') && plural(count('edit'), '{n} edit', '{n} edits'),

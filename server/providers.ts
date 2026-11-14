@@ -7,8 +7,7 @@ import { upgradeAgent, type AgentConfig, type Provider } from './store.js'
 import { BIN, command } from './config.js'
 import { codexSkills, codexUsage, probeCodex } from './codex.js'
 import { claudeUsage, probeClaude } from './claude.js'
-import { antigravitySkills, antigravityUsage, probeAntigravity } from './antigravity.js'
-import { acpSkills, grokModels } from './acp.js'
+import { acpSkills } from './acp.js'
 
 export interface ModeInfo { id: string; label: string; detail: string; unsafe?: boolean }
 export interface ModelInfo { id: string; label: string; detail?: string; efforts?: string[]; ultracode?: boolean }
@@ -20,8 +19,6 @@ export interface ProviderInfo {
   version: string | null
   signedIn: boolean | null
   account: string | null
-  // How agy is signed in: with a Google account, which its terms don't allow inside Savor, or an API key.
-  auth?: 'google' | 'api-key' | null
   models: ModelInfo[]
   efforts: string[]
   defaultEffort: string
@@ -32,7 +29,7 @@ export interface ProviderInfo {
   signIn: string
 }
 
-type Static = Omit<ProviderInfo, 'installed' | 'version' | 'signedIn' | 'account' | 'auth'>
+type Static = Omit<ProviderInfo, 'installed' | 'version' | 'signedIn' | 'account'>
 
 export const STATIC: Record<Provider, Static> = {
   claude: {
@@ -93,40 +90,6 @@ export const STATIC: Record<Provider, Static> = {
     ultracode: false,
     signIn: 'opencode auth login',
   },
-  grok: {
-    id: 'grok',
-    name: 'Grok Build',
-    models: [],
-    efforts: ['low', 'medium', 'high', 'xhigh'],
-    defaultEffort: 'medium',
-    modes: [
-      { id: 'default', label: 'Default', detail: 'Grok asks when an action needs approval.' },
-      { id: 'plan', label: 'Plan', detail: 'Explore and plan without changing files.' },
-      { id: 'always-approve', label: 'Always approve', detail: 'Run every action without asking, commands included. Use only in an isolated environment you trust.', unsafe: true },
-    ],
-    defaultMode: 'default',
-    fast: false,
-    ultracode: false,
-    signIn: 'grok login',
-  },
-  antigravity: {
-    id: 'antigravity',
-    name: 'Antigravity',
-    models: [],
-    efforts: ['low', 'medium', 'high', 'xhigh', 'max'],
-    defaultEffort: '',
-    // Headless agy cannot ask for approval: what a mode does not allow is denied.
-    modes: [
-      { id: 'default', label: 'Default', detail: "Commands and edits run as agy's settings allow; Antigravity cannot ask here, so the rest is denied." },
-      { id: 'accept-edits', label: 'Accept edits', detail: "File edits run without asking. Commands run only with an allow rule in agy's settings." },
-      { id: 'plan', label: 'Plan', detail: 'Explore and plan without changing files.' },
-      { id: 'bypass', label: 'Bypass permissions', detail: 'Run every action without asking, commands included. Use only in an isolated environment you trust.', unsafe: true },
-    ],
-    defaultMode: 'default',
-    fast: false,
-    ultracode: false,
-    signIn: 'agy',
-  },
 }
 
 export const isUnsafe = (provider: string, mode: string) => !!STATIC[provider as Provider]?.modes.find((m) => m.id === mode)?.unsafe
@@ -166,7 +129,7 @@ function run(bin: string, args: string[], timeout = 10_000) {
 
 const version = (out: string) => out.match(/\d+\.\d+\.\d+[\w.-]*/)?.[0] ?? null
 
-type Probe = Pick<ProviderInfo, 'installed' | 'version' | 'signedIn' | 'account' | 'auth'> & { models?: ModelInfo[] }
+type Probe = Pick<ProviderInfo, 'installed' | 'version' | 'signedIn' | 'account'> & { models?: ModelInfo[] }
 
 const probes: Record<Provider, () => Promise<Probe>> = {
   async claude() {
@@ -200,18 +163,6 @@ const probes: Record<Provider, () => Promise<Probe>> = {
       models.push({ id: parts[i], label: info.name ? `${info.name} · ${parts[i].split('/')[0]}` : parts[i], efforts: Object.keys(info.variants ?? {}) })
     }
     return { installed: true, version: version(v.out), signedIn: models.length > 0, account: null, models }
-  },
-  async grok() {
-    const v = await run(BIN.grok, ['--version'])
-    if (v.missing) return { installed: false, version: null, signedIn: null, account: null }
-    const [status, models] = await Promise.all([run(BIN.grok, ['--no-auto-update', 'models']), grokModels().catch(() => [])])
-    const signedIn = status.ok && /You are (using|logged in|authenticated)|^Model '/m.test(status.out)
-    return { installed: true, version: version(v.out), signedIn, account: status.out.match(/logged in with (\S+)/)?.[1] ?? null, models }
-  },
-  async antigravity() {
-    const v = await run(BIN.antigravity, ['--version'])
-    if (v.missing) return { installed: false, version: null, signedIn: null, account: null }
-    return { installed: true, version: version(v.out), ...(await probeAntigravity()) }
   },
 }
 
@@ -279,10 +230,7 @@ export const knownAgents = () => known
 const skillProbes: Record<string, (cwd: string) => Promise<SkillInfo[]>> = {
   claude: (cwd) => probeClaude(cwd).then((r) => r.skills),
   codex: (cwd) => codexSkills(cwd).catch(() => []),
-  opencode: (cwd) => acpSkills('opencode', cwd).catch(() => []),
-  // Savor sets Grok Build's permission mode itself.
-  grok: (cwd) => acpSkills('grok', cwd).then((l) => l.filter((s) => s.name !== 'always-approve')).catch(() => []),
-  antigravity: (cwd) => antigravitySkills(cwd).catch(() => []),
+  opencode: (cwd) => acpSkills(cwd).catch(() => []),
 }
 const skillCache = new Map<string, { at: number; list: Promise<SkillInfo[]> }>()
 
@@ -301,7 +249,7 @@ export async function listSkills(provider: string, cwd: string): Promise<SkillIn
 }
 
 // How much of each subscription limit is used, as the agents report it: Claude Code's /usage, Codex's
-// rate limits and Antigravity's /usage. OpenCode has no subscription of its own. An agent without a
+// rate limits. OpenCode has no subscription of its own. An agent without a
 // subscription, or one that does not answer, is left out.
 export interface UsageWindow { label: string; percent: number; resets: string | null; resetsAt?: number | null; limitId?: string | null }
 export interface Usage { provider: Provider; name: string; windows: UsageWindow[] }
@@ -360,9 +308,6 @@ const usageProbes: Partial<Record<Provider, () => Promise<UsageWindow[]>>> = {
         resetsAt: w.resetsAt ? w.resetsAt * 1000 : null,
         limitId: l.limitId,
       })))
-  },
-  async antigravity() {
-    return (await antigravityUsage()).map((w) => ({ label: w.label, percent: w.percent, resets: w.resetsAt ? resetTime(w.resetsAt / 1000) : null }))
   },
 }
 

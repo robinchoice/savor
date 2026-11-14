@@ -787,29 +787,6 @@ export function AgentButton({ agent, info, open, toggle }: { agent: AgentConfig;
   )
 }
 
-// Google's consumer plans don't allow agy inside other apps and suspend accounts that do it; an API key is allowed.
-export function AntigravityWarning({ agent: a }: { agent?: ProviderInfo }) {
-  if (a?.auth !== 'google') return null
-  return (
-    <div class="banner">
-      {t('Antigravity is signed in with a Google account. Google does not allow agy inside other apps on consumer plans and may suspend the account.')}{' '}
-      <a href="https://antigravity.google/docs/faq/" target="_blank" rel="noreferrer">
-        {t('Antigravity FAQ')}
-      </a>
-      <br />
-      {t('Use a Gemini API key instead:')}
-      <ol>
-        <li>
-          <code>~/.gemini/antigravity-cli/settings.json</code>: <code>"modelProvider": "gemini"</code>
-        </li>
-        <li>
-          <code>GEMINI_API_KEY</code>: {t('set it in the environment Savor starts in, then restart Savor. agy does not read .env files.')}
-        </li>
-      </ol>
-    </div>
-  )
-}
-
 // Agents on the left, the chosen agent's model, effort and permissions on the right. Changes apply right away.
 export function AgentMenu({ agent, agents, setAgent, close }: { agent: AgentConfig; agents: ProviderInfo[]; setAgent: (a: AgentConfig) => void; close: () => void }) {
   const ref = useRef<HTMLDivElement>(null)
@@ -892,7 +869,6 @@ export function AgentMenu({ agent, agents, setAgent, close }: { agent: AgentConf
           })}
         </div>
         <div class="ap-pane">
-          <AntigravityWarning agent={info} />
           {selectedUsage && (
             <div class="ap-usage">
               <div class="menu-label">{t('Limits')}</div>

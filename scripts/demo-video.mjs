@@ -71,8 +71,6 @@ const server = spawn(process.execPath, [path.join(ROOT, 'dist/server/index.mjs')
     SAVOR_CLAUDE_BIN: path.join(ROOT, 'scripts/demo-claude.mjs'),
     SAVOR_CODEX_BIN: missing,
     SAVOR_OPENCODE_BIN: missing,
-    SAVOR_GROK_BIN: missing,
-    SAVOR_ANTIGRAVITY_BIN: missing,
     CLAUDE_CONFIG_DIR: path.join(TMP, 'claude'),
     CODEX_HOME: path.join(TMP, 'codex'),
     GIT_CONFIG_GLOBAL: path.join(TMP, 'gitconfig'),

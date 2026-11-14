@@ -7,7 +7,7 @@ import path from 'node:path'
 const home = fs.mkdtempSync(path.join(os.tmpdir(), 'savor-codex-usage-'))
 process.env.SAVOR_HOME = home
 process.env.SAVOR_CODEX_BIN = path.resolve('test/fake-codex.mjs')
-for (const provider of ['CLAUDE', 'OPENCODE', 'GROK', 'ANTIGRAVITY']) process.env[`SAVOR_${provider}_BIN`] = path.join(home, 'missing')
+for (const provider of ['CLAUDE', 'OPENCODE']) process.env[`SAVOR_${provider}_BIN`] = path.join(home, 'missing')
 process.env.FAKE_AGENT_LOG = path.join(home, 'agents.jsonl')
 const limitsFile = process.env.FAKE_AGENT_LOG + '.codex-limits'
 const { listUsage } = await import('../server/providers.ts')

@@ -3,10 +3,9 @@
 // it is still open. Writes .workflow-checks/upstream.json and features.json in this project in
 // Savor's format (README, "Workflow preflights and outcomes"). savor-upstream-preflight.timer runs it on
 // Mondays at 04:50 before "Upstream check"; whoever starts a workflow by hand runs it first. Reads the
-// newest versions from the npm registry and agy (which updates itself whenever it runs), the last
+// newest versions from the npm registry, the last
 // results of scripts/upstream-check.mjs and the document "Claude/Codex-Abgleich". Only agents whose CLI
 // is on this computer count, as in upstream-check.mjs. Changes nothing else.
-import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -15,7 +14,6 @@ import { fileURLToPath } from 'node:url'
 const PROJECT = process.env.SAVOR_PROJECT || path.join(path.dirname(fileURLToPath(import.meta.url)), '..')
 const STATE = process.env.SAVOR_UPSTREAM_STATE || path.join(os.homedir(), '.local', 'state', 'savor-upstream-check', 'last-run.json')
 const REGISTRY = process.env.SAVOR_NPM_REGISTRY || 'https://registry.npmjs.org'
-const AGY = process.env.SAVOR_ANTIGRAVITY_BIN || 'agy'
 // The document "Claude/Codex-Abgleich" that "Agent-Features übernehmen" reads and updates.
 const DOC = path.join(PROJECT, '.savor', 'documents', '0a00a262a7be4479.md')
 
@@ -23,8 +21,6 @@ const ALL = [
   { provider: 'claude', name: 'Claude Code', bin: 'claude', pkg: '@anthropic-ai/claude-code', features: true },
   { provider: 'codex', name: 'Codex', bin: 'codex', pkg: '@openai/codex', features: true },
   { provider: 'opencode', name: 'OpenCode', bin: 'opencode', pkg: 'opencode-ai' },
-  { provider: 'grok', name: 'Grok Build', bin: 'grok', pkg: '@xai-official/grok', features: true },
-  { provider: 'antigravity', name: 'Antigravity', bin: AGY, features: true },
 ]
 const onComputer = (bin) => (path.isAbsolute(bin) ? [''] : [...(process.env.PATH ?? '').split(path.delimiter), path.join(os.homedir(), '.local', 'bin')]).some((dir) => fs.existsSync(path.join(dir, bin)))
 const MISSING = ALL.filter((a) => !onComputer(a.bin))
@@ -44,23 +40,15 @@ function newer(latest, checked) {
 async function latestVersions() {
   const latest = {}
   for (const a of AGENTS) {
-    if (a.pkg) {
-      const r = await fetch(`${REGISTRY}/${a.pkg.replace('/', '%2f')}/latest`, { signal: AbortSignal.timeout(20_000) })
-      if (!r.ok) throw new Error(`${a.pkg}: npm registry answered ${r.status}`)
-      latest[a.provider] = (await r.json()).version
-    } else {
-      try {
-        latest[a.provider] = semver(execFileSync(AGY, ['--version'], { timeout: 30_000 }).toString()) ?? 'not installed'
-      } catch {
-        latest[a.provider] = 'not installed'
-      }
-    }
+    const r = await fetch(`${REGISTRY}/${a.pkg.replace('/', '%2f')}/latest`, { signal: AbortSignal.timeout(20_000) })
+    if (!r.ok) throw new Error(`${a.pkg}: npm registry answered ${r.status}`)
+    latest[a.provider] = (await r.json()).version
   }
   return latest
 }
 
 const signal = (s) => ({ checkedAt: new Date().toISOString(), work: false, pending: false, followUp: [], ...s })
-const failed = (e) => signal({ status: 'failed', reason: `Prüfung fehlgeschlagen: ${e.message}`.slice(0, 2000), evidence: [String(e.stack ?? e).slice(0, 2000)], followUp: ['Ursache beheben (Netz, npm-Registry, agy), dann `node scripts/upstream-preflight.mjs` erneut ausführen'] })
+const failed = (e) => signal({ status: 'failed', reason: `Prüfung fehlgeschlagen: ${e.message}`.slice(0, 2000), evidence: [String(e.stack ?? e).slice(0, 2000)], followUp: ['Ursache beheben (Netz, npm-Registry), dann `node scripts/upstream-preflight.mjs` erneut ausführen'] })
 
 function upstream(latest) {
   let state
@@ -115,7 +103,7 @@ function features(latest) {
   if (missing.length) return blocked(`Keine geprüfte Version für ${missing.map((a) => a.name).join(', ')} unter „Zuletzt geprüft“`)
   const updated = agents.filter((a) => newer(latest[a.provider], a.checked))
   // Open items of an agent that is not on this computer wait until it is back.
-  const here = (l) => !MISSING.some((a) => l.startsWith(`${a.name}:`))
+  const here = (l) => !/^(Antigravity|Grok Build):/.test(l) && !MISSING.some((a) => l.startsWith(`${a.name}:`))
   const open = [...recheck.filter(here).map((l) => `Neu prüfen: ${l}`), ...delegated.filter(here).map((l) => `Auftrag: ${l}`)]
   return signal({
     status: 'ok',

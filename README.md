@@ -21,7 +21,7 @@ brew install --cask robinchoice/tap/savor               # macOS
 curl -fsSL https://savor.pleasance.org/install.sh | sh  # Linux
 ```
 
-Windows: [download the installer](https://savor.pleasance.org/#install). Then add a project folder. Savor brings no model and no account: it drives the agent CLIs you already use and are signed in to (Claude Code, Codex, OpenCode, Grok Build, Antigravity). Details and running from source under [Install](#install).
+Windows: [download the installer](https://savor.pleasance.org/#install). Then add a project folder. Savor brings no model and no account: it drives the agent CLIs you already use and are signed in to (Claude Code, Codex, OpenCode). Details and running from source under [Install](#install).
 
 ## Delegate, don't babysit
 
@@ -48,7 +48,7 @@ Windows: [download the installer](https://savor.pleasance.org/#install). Then ad
   </tr>
 </table>
 
-**Under the hood:** a Node daemon drives each agent CLI over its own protocol (Claude Code's stream-json, Codex's app-server JSON-RPC, the Agent Client Protocol for OpenCode and Grok Build) and gives all of them the same MCP tools to report back, ask, start other agents and run workflows. Input queues per turn; conversations can run in parallel git worktrees, workflows on cron schedules, and both can switch agents at a usage limit. State is plain files, shown by a Preact UI and reachable from your phone through an end-to-end encrypted relay. [Architecture](#how-it-works) · [Who builds it](#how-savor-is-maintained)
+**Under the hood:** a Node daemon drives each agent CLI over its own protocol (Claude Code's stream-json, Codex's app-server JSON-RPC, the Agent Client Protocol for OpenCode) and gives all of them the same MCP tools to report back, ask, start other agents and run workflows. Input queues per turn; conversations can run in parallel git worktrees, workflows on cron schedules, and both can switch agents at a usage limit. State is plain files, shown by a Preact UI and reachable from your phone through an end-to-end encrypted relay. [Architecture](#how-it-works) · [Who builds it](#how-savor-is-maintained)
 
 ## Features
 
@@ -213,20 +213,17 @@ To mark an installation as internal, set `"internal": true` in `~/.savor/state.j
 | `RELAY_USAGE_TOKEN` | – | Relay only: bearer token for `GET /usage`, the weekly installation counts, and `GET /instances`, the computers online now or in the last week with their relay address and Savor version (kept in memory only) |
 | `SAVOR_USAGE_URL` | set by the desktop app | Where the daily usage ping goes; unset, nothing is sent |
 | `SAVOR_CHROMIUM` | Playwright Chromium, then system Chrome/Chromium | Browser for the preview |
-| `SAVOR_CLAUDE_BIN`, `SAVOR_CODEX_BIN`, `SAVOR_OPENCODE_BIN`, `SAVOR_GROK_BIN`, `SAVOR_ANTIGRAVITY_BIN` | `claude`, `codex`, `opencode`, `grok`, `agy` | Agent binaries |
-| `SAVOR_ANTIGRAVITY_HOME` | `~/.gemini` | Where agy keeps its settings |
+| `SAVOR_CLAUDE_BIN`, `SAVOR_CODEX_BIN`, `SAVOR_OPENCODE_BIN` | `claude`, `codex`, `opencode` | Agent binaries |
 
 ### API credit for unattended runs
 
-Workflow runs and the conversations they start don't wait at a usage limit: they go on with the next agent (Codex, Antigravity, OpenCode). With "Switch agents at usage limits" on (This computer → Agents), every conversation goes on with the agents listed there instead, each with its own model, effort and permissions: agents at a known limit are skipped before a request starts, and once the limit of the agent a conversation had resets, its next request goes back to it. With API credit, Claude Code can go on with that first. Name an env file and the variable in it that holds the key in `~/.savor/state.json`, never the key itself:
+Workflow runs and the conversations they start don't wait at a usage limit: they go on with the next agent (Codex, OpenCode). With "Switch agents at usage limits" on (This computer → Agents), every conversation goes on with the agents listed there instead, each with its own model, effort and permissions: agents at a known limit are skipped before a request starts, and once the limit of the agent a conversation had resets, its next request goes back to it. With API credit, Claude Code can go on with that first. Name an env file and the variable in it that holds the key in `~/.savor/state.json`, never the key itself:
 
 ```json
 "apiCredit": { "envFile": "~/.secrets", "variable": "ANTHROPIC_API_KEY", "headers": "anthropic-workspace-id: wrkspc_…", "budgetUsd": 15 }
 ```
 
 Savor reads the key from the file (`NAME=value` or `export NAME=value` lines) each time it starts Claude Code on API credit and puts it only into that process's environment, with `headers` as `ANTHROPIC_CUSTOM_HEADERS` when set. Each takeover may spend `budgetUsd` (default 15); when the credit is used up, the budget reached or the key refused, the next agent takes over. Without that setting, the user's own conversations wait for the reset.
-
-Antigravity runs `agy --print` once per turn and continues the conversation with `--conversation`. agy reads MCP servers only from its own settings, so Savor adds a `savor` stdio server to `~/.gemini/config/mcp_config.json` that forwards to the conversation it runs for, and allows its tools with `mcp(savor/*)` in `~/.gemini/antigravity-cli/settings.json`. Headless agy cannot ask for approval: whatever the chosen mode doesn't allow is denied, and the activity log names it.
 
 ### Open and self-hosted models
 
@@ -252,13 +249,13 @@ Savor doesn't need a model from a big provider. OpenCode, which Savor drives ove
 }
 ```
 
-`opencode models` then lists them, and Savor's agent picker offers them under OpenCode, for conversations, workflows and presets. Savor's message protocol is plain MCP tool calls, so a model has to call tools reliably; small models forget the acknowledgement or the conclusion more often. OpenCode gets Savor's protocol in its system prompt, as an instructions file, so it holds in every request. An OpenCode, Grok Build or Antigravity turn that acknowledged and stopped without a conclusion, with no process or CI to wait for, gets asked for it once; when a model sends no message at all, or still none after that question, Savor shows its final text as the result.
+`opencode models` then lists them, and Savor's agent picker offers them under OpenCode, for conversations, workflows and presets. Savor's message protocol is plain MCP tool calls, so a model has to call tools reliably; small models forget the acknowledgement or the conclusion more often. OpenCode gets Savor's protocol in its system prompt, as an instructions file, so it holds in every request. An OpenCode turn that acknowledged and stopped without a conclusion, with no process or CI to wait for, gets asked for it once; when a model sends no message at all, or still none after that question, Savor shows its final text as the result.
 
 The first prompt of a conversation (OpenCode's instructions, the tool definitions and Savor's protocol) is about 18,000 tokens, so the model needs a context of at least 24k (Ollama: `PARAMETER num_ctx 24576` in a Modelfile). On a CPU without a GPU that first prompt takes longer than OpenCode waits by default (5 minutes): add `"headerTimeout": false, "chunkTimeout": false` to the provider's `options`, and set `"small_model"` to the local model, or OpenCode names conversations with its default provider. A 4B model on an 8-core laptop CPU gave no first answer within 40 minutes; local models need a GPU for now.
 
 ### Open standards
 
-Savor builds on open protocols and formats instead of its own where one exists: the [Model Context Protocol](https://modelcontextprotocol.io) for the tools every agent reports back with, the [Agent Client Protocol](https://agentclientprotocol.com) for OpenCode and Grok Build, `AGENTS.md` for project instructions (the uplift check maintains it), git for code and worktrees, Markdown, JSON and JSONL in plain files for all state, Web Push (RFC 8030, 8291, 8292) sent straight from your computer to the browser's push service, and for academic writing OpenAlex, the Crossref REST API, the public ORCID API, DOI content negotiation (BibTeX from Crossref and DataCite), CSL styles, BibTeX and pandoc.
+Savor builds on open protocols and formats instead of its own where one exists: the [Model Context Protocol](https://modelcontextprotocol.io) for the tools every agent reports back with, the [Agent Client Protocol](https://agentclientprotocol.com) for OpenCode, `AGENTS.md` for project instructions (the uplift check maintains it), git for code and worktrees, Markdown, JSON and JSONL in plain files for all state, Web Push (RFC 8030, 8291, 8292) sent straight from your computer to the browser's push service, and for academic writing OpenAlex, the Crossref REST API, the public ORCID API, DOI content negotiation (BibTeX from Crossref and DataCite), CSL styles, BibTeX and pandoc.
 
 The message protocol itself (acknowledgement, conclusion, blocking questions, origin of an input) is written down as an open specification other workspaces and agents can implement: [Agent Feedback Protocol, draft v0.1](docs/protocol.md), CC BY 4.0.
 
@@ -270,9 +267,8 @@ flowchart TD
   Q --> H["Session host<br/>session.ts"]
   H --> C["Claude Code<br/>stream-json<br/>claude.ts"]
   H --> X["Codex<br/>app-server JSON-RPC<br/>codex.ts"]
-  H --> A["OpenCode, Grok Build<br/>Agent Client Protocol<br/>acp.ts"]
-  H --> G["Antigravity<br/>agy --print<br/>antigravity.ts"]
-  C & X & A & G --> M["MCP tools: acknowledge, ask, conclude,<br/>start agents, run workflows<br/>mcp.ts"]
+  H --> A["OpenCode<br/>Agent Client Protocol<br/>acp.ts"]
+  C & X & A --> M["MCP tools: acknowledge, ask, conclude,<br/>start agents, run workflows<br/>mcp.ts"]
   H -->|approvals, activity log| S
   M --> S[("Messages, decisions, documents<br/>plain files in .savor/<br/>store.ts")]
   S -->|SSE events| UI["Web UI and desktop app"]
@@ -286,8 +282,7 @@ server/
   session.ts    what every agent adapter gets (Host) and provides (Session), protocol prompt, activity log
   claude.ts     Claude Code over stream-json with stdio permission prompts
   codex.ts      Codex over the app-server protocol (JSON-RPC)
-  acp.ts        OpenCode and Grok Build over the Agent Client Protocol
-  antigravity.ts  Antigravity: one `agy --print` run per turn, stream-json, MCP through a stdio bridge
+  acp.ts        OpenCode over the Agent Client Protocol
   jsonrpc.ts    newline-delimited JSON-RPC over stdio
   providers.ts  what each agent offers, and whether it is installed and signed in
   mcp.ts        MCP tools the agents call
@@ -317,7 +312,7 @@ test/           end-to-end tests with a fake agent
 - Every conversation gets one long-lived agent process. It stays alive while the conversation owns background processes and closes 5 minutes after the last activity. A change of agent, model, effort, fast mode or permissions restarts it and resumes the agent's own session.
 - **Claude Code** runs as `claude -p --input-format stream-json` with `--permission-prompts host --permission-prompt-tool stdio`: permission prompts and `AskUserQuestion` arrive as control requests on stdout and are answered on stdin. "Always allow" writes the rule Claude suggests to `.claude/settings.local.json`.
 - **Codex** runs as `codex app-server` (JSON-RPC over stdio): `thread/start`, `turn/start`, `turn/interrupt`, approvals through `item/commandExecution/requestApproval` and `item/fileChange/requestApproval`, questions through `item/tool/requestUserInput`. The permission modes map to Codex's sandbox and approval policy; models and effort levels come from `model/list`.
-- **OpenCode** (`opencode acp`) and **Grok Build** (`grok agent stdio`) speak the [Agent Client Protocol](https://agentclientprotocol.com): `session/new`, `session/prompt`, progress through `session/update`, approvals through `session/request_permission`, interrupts through `session/cancel`. Grok Build ends a plan with an `_x.ai/exit_plan_mode` request, answered with `{ outcome: "approved" }` or, to keep planning, any other outcome. OpenCode has no auto mode of its own: Savor's Auto mode loads the pinned plugin [opencode-auto-permissions](https://github.com/hueyexe/opencode-auto-permissions), which lets the session's model answer what is set to ask (risky commands, files outside the project), and shows its own approval only when no answer comes within two minutes.
+- **OpenCode** (`opencode acp`) speaks the [Agent Client Protocol](https://agentclientprotocol.com): `session/new`, `session/prompt`, progress through `session/update`, approvals through `session/request_permission`, interrupts through `session/cancel`. OpenCode has no auto mode of its own: Savor's Auto mode loads the pinned plugin [opencode-auto-permissions](https://github.com/hueyexe/opencode-auto-permissions), which lets the session's model answer what is set to ask (risky commands, files outside the project), and shows its own approval only when no answer comes within two minutes.
 
 Project layout:
 
@@ -391,7 +386,6 @@ Early: version 0.x, first released in September 2026, with releases several time
 - One person, one computer: there are no user accounts, teams or shared projects. Other devices are your own, paired with a QR code.
 - Savor is not a sandbox. Agents run as your user with the permissions you give them in the agent picker, and Savor shows their approval prompts.
 - The Windows builds are not code-signed yet, so SmartScreen asks once.
-- Antigravity doesn't work on Windows yet.
 - The phone apps are in closed testing (TestFlight, Play's internal test). On the phone, use the web app through a relay or your own network.
 - There is no public relay instance yet: run your own (see above) or use a direct connection.
 - A browser or the desktop app can pair with several computers but talks to one at a time, and only that one sends it notifications.
@@ -400,7 +394,7 @@ Early: version 0.x, first released in September 2026, with releases several time
 
 Robin at [Pleasance](https://pleasance.org) sets the direction: architecture, specifications and review. Coding agents working inside Savor write the code. Every change goes through CI, which runs the end-to-end tests against a real daemon and UI. Releases ship several times a week, and installed apps update themselves.
 
-Every Monday, when Claude Code, Codex, OpenCode, Grok Build or Antigravity has a new version, a check installs the newest ones and runs a real conversation with each through Savor (a prompt, a permission request, an interrupt). A change in their protocols that breaks Savor is diagnosed and handed to an agent as a fix conversation. When the agents move to a new model, an uplift check goes through Savor's own instructions to agents, project types and workflow gallery and proposes what the new model no longer needs.
+Every Monday, when Claude Code, Codex or OpenCode has a new version, a check installs the newest ones and runs a real conversation with each through Savor (a prompt, a permission request, an interrupt). A change in their protocols that breaks Savor is diagnosed and handed to an agent as a fix conversation. When the agents move to a new model, an uplift check goes through Savor's own instructions to agents, project types and workflow gallery and proposes what the new model no longer needs.
 
 If Savor ever stops, you lose nothing:
 - Your code is in your own git repository.

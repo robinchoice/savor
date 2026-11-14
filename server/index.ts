@@ -232,7 +232,7 @@ route('GET', '/presets', () => store.listPresets())
 route('POST', '/presets', (_, b, ctx) => {
   localOnly(ctx)
   if (typeof b.name !== 'string' || !b.name.trim()) throw new BadRequest('Give the preset a name.')
-  const preset = store.savePreset(b.name, { ...store.defaultAgent(), ...b.agent })
+  const preset = store.savePreset(b.name, agentFrom(ctx, store.defaultAgent(), b.agent))
   emit({ type: 'presets' })
   return preset
 })
@@ -854,8 +854,8 @@ route('POST', '/projects/:pid/threads/:tid/terminal', (params, _, ctx) => {
   const t = store.getThread(p, params.tid)
   const provider = t.agent.provider
   const sid = t.agentSessions.find((s) => s.provider === provider)?.sessionId
-  const resume = { claude: `${BIN.claude} --resume`, codex: `${BIN.codex} resume`, opencode: `${BIN.opencode} --session`, grok: `${BIN.grok} --resume`, antigravity: `${BIN.antigravity} --conversation` }[provider as string]
-  if (!sid || !resume) throw new BadRequest('Only a Claude Code, Codex, OpenCode, Grok Build or Antigravity conversation that has started can continue in the terminal.')
+  const resume = { claude: `${BIN.claude} --resume`, codex: `${BIN.codex} resume`, opencode: `${BIN.opencode} --session` }[provider as string]
+  if (!sid || !resume) throw new BadRequest('Only a Claude Code, Codex or OpenCode conversation that has started can continue in the terminal.')
   if (agents.isBusy(t.id)) throw new BadRequest('The agent is still working. Open it in the terminal when it has finished.')
   agents.stopAgent(p, t.id)
   return terminal.add(p.id, store.cwdOf(p, t), `${resume} ${sid}`)

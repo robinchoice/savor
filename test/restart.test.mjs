@@ -79,7 +79,7 @@ test('background work starts immediately and retired budget waits resume without
   const port = await freePort()
   const start = async () => {
     server = spawn(process.execPath, [path.join(ROOT, 'dist/server/index.mjs')], {
-      env: { ...process.env, SAVOR_HOME: HOME, SAVOR_PORT: String(port), SAVOR_CLAUDE_BIN: path.join(ROOT, 'test/fake-claude.mjs'), SAVOR_CODEX_BIN: path.join(TMP, 'no-codex'), SAVOR_ANTIGRAVITY_BIN: path.join(TMP, 'no-agy'), SAVOR_GROK_BIN: path.join(TMP, 'no-grok'), SAVOR_OPENCODE_BIN: path.join(TMP, 'no-opencode'), CLAUDE_CONFIG_DIR: path.join(TMP, 'claude'), FAKE_AGENT_LOG: AGENT_LOG },
+      env: { ...process.env, SAVOR_HOME: HOME, SAVOR_PORT: String(port), SAVOR_CLAUDE_BIN: path.join(ROOT, 'test/fake-claude.mjs'), SAVOR_CODEX_BIN: path.join(TMP, 'no-codex'), SAVOR_OPENCODE_BIN: path.join(TMP, 'no-opencode'), CLAUDE_CONFIG_DIR: path.join(TMP, 'claude'), FAKE_AGENT_LOG: AGENT_LOG },
       stdio: ['ignore', 'pipe', 'inherit'],
     })
     await new Promise((resolve, reject) => {

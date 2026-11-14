@@ -2,7 +2,7 @@ import { useState } from 'preact/hooks'
 import { Archive, Check, Code, Copy, Folder, FolderGit2, GraduationCap, Plus, RefreshCw } from 'lucide-preact'
 import { api, describeModel, desktop, effortLabel, fetchAgents, go, modelName, useAgents, type AgentConfig, type Me, type Project, type ProviderInfo } from './api'
 import { ProviderIcon } from './Conversations'
-import { AntigravityWarning, effortsOf } from './Composer'
+import { effortsOf } from './Composer'
 import { recipe } from './recipes'
 import { setPrefs, usePrefs } from './prefs'
 import { STANDARD } from './Shortcuts'
@@ -12,7 +12,7 @@ import { canSignIn, CloneRepo, GitHubRow, SignInFlow, useGitHub } from './SignIn
 import { FORMATS, STYLES } from './Workspace'
 
 // The mode a provider works best in for most people; the others still show.
-const RECOMMENDED: Record<string, string> = { claude: 'auto', codex: 'auto-review', antigravity: 'accept-edits' }
+const RECOMMENDED: Record<string, string> = { claude: 'auto', codex: 'auto-review' }
 // Plan modes are chosen per conversation, not as a default.
 const HIDDEN_MODES = ['plan', 'dontAsk']
 
@@ -40,7 +40,6 @@ export function AgentStatusRow({ agent: a, onSignedIn }: { agent: ProviderInfo; 
         <span class={a.signedIn ? 'ok' : a.signedIn === false ? 'warn' : 'muted'}>{agentStatus(a)}</span>
       </div>
       {onSignedIn && a.installed && a.signedIn === false && canSignIn(a.id) && <SignInFlow tool={a.id} onDone={onSignedIn} />}
-      <AntigravityWarning agent={a} />
     </>
   )
 }
@@ -474,7 +473,6 @@ export function SetupWizard({ me, setMe }: { me: Me; setMe: (m: Me) => void }) {
                   </button>
                 ))}
               </div>
-              <AntigravityWarning agent={info} />
               {me.cloud && (
                 <>
                   <h3>{t('How much may the agent do on its own?')}</h3>

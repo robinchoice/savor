@@ -488,7 +488,7 @@ test('the owner of a cloud instance signs Claude Code and GitHub in from the set
     FAKE_CLAUDE_LOGIN: path.join(home, 'claude-login'),
     SAVOR_GH_BIN: path.join(ROOT, 'test/fake-gh.mjs'),
     FAKE_GH_LOGIN: path.join(home, 'gh-login'),
-    ...Object.fromEntries(['CODEX', 'OPENCODE', 'GROK', 'ANTIGRAVITY'].map((a) => [`SAVOR_${a}_BIN`, missing])),
+    ...Object.fromEntries(['CODEX', 'OPENCODE'].map((a) => [`SAVOR_${a}_BIN`, missing])),
   })
   const [name, value] = (await pairLan(cloud.base, code)).headers.get('set-cookie').split(';')[0].split('=')
   const context = await browser.newContext({ locale: 'en-US', viewport: { width: 390, height: 844 } })

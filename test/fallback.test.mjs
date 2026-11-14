@@ -46,7 +46,7 @@ async function until(fn, ms = 30_000) {
   }
 }
 
-// OpenCode is not installed, so Codex and Antigravity are the agents to go on with.
+// OpenCode is not installed, so Codex is the agent to go on with.
 async function startDaemon() {
   const entry = fs.existsSync(path.join(ROOT, 'dist/server/index.mjs')) ? 'dist/server/index.mjs' : 'bin/savor.js'
   server = spawn(process.execPath, [path.join(ROOT, entry)], {
@@ -57,9 +57,6 @@ async function startDaemon() {
       SAVOR_CLAUDE_BIN: path.join(ROOT, 'test/fake-claude.mjs'),
       SAVOR_CODEX_BIN: path.join(ROOT, 'test/fake-codex.mjs'),
       SAVOR_OPENCODE_BIN: path.join(TMP, 'no-such-opencode'),
-      SAVOR_GROK_BIN: path.join(TMP, 'no-such-grok'),
-      SAVOR_ANTIGRAVITY_BIN: path.join(ROOT, 'test/fake-agy.mjs'),
-      SAVOR_ANTIGRAVITY_HOME: path.join(TMP, 'agy'),
       SAVOR_GH_BIN: path.join(ROOT, 'test/fake-gh.mjs'),
       FAKE_AGENT_LOG: AGENT_LOG,
       CLAUDE_CONFIG_DIR: path.join(TMP, 'claude'),
@@ -105,7 +102,7 @@ test('unattended conversations switch agents at a usage limit, and wait when all
     return id
   }
 
-  // Codex and Antigravity are at 100 %: the conversation waits for Claude's reset, on Claude.
+  // Codex is at 100 %: the conversation waits for Claude's reset, on Claude.
   const full = await start('limit-later: all full')
   assert.equal((await read(full)).thread.unattended, true)
   await until(async () => (await read(full)).thread.resumeAt)
@@ -205,7 +202,7 @@ test('with the fallback on, every conversation switches at a usage limit, skips 
 
   // Off by default, with the agents workflow runs go on with.
   let f = await api('GET', '/fallback')
-  assert.deepEqual([f.on, f.agents.map((a) => a.provider)], [false, ['claude', 'codex', 'antigravity', 'opencode']])
+  assert.deepEqual([f.on, f.agents.map((a) => a.provider)], [false, ['claude', 'codex', 'opencode']])
   const codex = { provider: 'codex', model: 'gpt-6.1', reasoning: 'high', fast: false, ultracode: false, permissionMode: 'auto-review' }
   f = await api('PUT', '/fallback', { on: true, agents: [f.agents[0], codex, f.agents[2]] })
   assert.deepEqual([f.on, f.agents[1]], [true, codex])
@@ -282,13 +279,12 @@ test('unattended conversations hand over when an agent fails before it worked, n
 
   // Each agent that fails is used up for the request: with none left, it ends with the last error instead of starting over.
   const everywhere = await start('fail: Invalid credential everywhere')
-  await until(async () => updates(await read(everywhere)).length === 2)
+  await until(async () => updates(await read(everywhere)).length === 1)
   r = await failed(everywhere)
   assert.deepEqual(updates(r), [
     'Claude Code stopped with an error: Invalid credential everywhere. Codex takes over.',
-    'Codex stopped with an error: codex exited with 1: Invalid credential. Antigravity takes over.',
   ])
-  assert.deepEqual([r.thread.agent.provider, r.thread.error], ['antigravity', 'Invalid credential'])
+  assert.deepEqual([r.thread.agent.provider, r.thread.error], ['codex', 'codex exited with 1: Invalid credential'])
   assert.ok(!r.messages.some((m) => m.kind === 'conclusion'))
 
   // An agent that already ran a command keeps its error: another one could do that work twice.

@@ -5,7 +5,8 @@ import crypto from 'node:crypto'
 
 export const HOME = process.env.SAVOR_HOME ?? path.join(os.homedir(), '.savor')
 
-export type Provider = 'claude' | 'codex' | 'opencode' | 'grok' | 'antigravity'
+export type Provider = 'claude' | 'codex' | 'opencode'
+const RETIRED_PROVIDERS = ['gemini', 'grok', 'antigravity']
 export interface AgentConfig { provider: Provider; model: string; reasoning: string; fast: boolean; ultracode: boolean; permissionMode: string }
 export interface Project {
   id: string
@@ -361,7 +362,7 @@ export function state(): State {
   }
   if (full.agent) full.agent = upgradeAgent(full.agent)
   full.presets = full.presets.map((x) => ({ ...x, agent: upgradeAgent(x.agent) }))
-  if (full.fallback) full.fallback.agents = full.fallback.agents.map(upgradeAgent)
+  if (full.fallback) full.fallback.agents = full.fallback.agents.filter((a) => !RETIRED_PROVIDERS.includes(a.provider)).map(upgradeAgent)
   if (full.terminalRemote) for (const d of full.devices) d.terminal = true
   if ('terminalRemote' in full) {
     delete full.terminalRemote
@@ -398,9 +399,9 @@ const TINTS = ['#b5654a', '#8b6bc7', '#3f9a78', '#c59a3d', '#c8577a', '#4a9bb8',
 export const dataDir = (p: { path: string }) => path.join(p.path, '.savor')
 export const defaultAgent = (): AgentConfig => ({ provider: 'claude', model: '', reasoning: 'high', fast: false, ultracode: false, permissionMode: 'acceptEdits' })
 // Until Claude Code 2.1.284 Ultracode was an effort level on top of X-High, now it is a switch at any effort.
-// Gemini CLI is no longer offered; Antigravity takes over its conversations.
+// Retired providers start with Claude's approval prompts; their conversation data stays intact.
 export const upgradeAgent = (a: AgentConfig): AgentConfig =>
-  (a.provider as string) === 'gemini' ? { ...a, provider: 'antigravity', model: '', reasoning: '', permissionMode: 'default', ultracode: false }
+  RETIRED_PROVIDERS.includes(a.provider) ? { ...defaultAgent(), permissionMode: a.permissionMode === 'plan' ? 'plan' : 'manual' }
   : a.reasoning === 'ultracode' ? { ...a, reasoning: 'xhigh', ultracode: true }
   : { ...a, ultracode: !!a.ultracode }
 
@@ -507,14 +508,14 @@ export function listThreads(p: Project): Thread[] {
     .readdirSync(dir)
     .map((tid) => readJson<Thread | null>(path.join(dir, tid, 'thread.json'), null))
     .filter((t): t is Thread => !!t)
-    .map((t) => ({ ...t, agent: upgradeAgent(t.agent) }))
+    .map((t) => ({ ...t, agent: upgradeAgent(t.agent), preferred: t.preferred && RETIRED_PROVIDERS.includes(t.preferred.provider) ? null : t.preferred }))
     .sort((a, b) => (b.inputAt ?? b.createdAt).localeCompare(a.inputAt ?? a.createdAt))
 }
 
 export function getThread(p: Project, tid: string): Thread {
   const t = readJson<Thread | null>(path.join(threadDir(p, tid), 'thread.json'), null)
   if (!t) throw new NotFound(`thread ${tid}`)
-  return { ...t, agent: upgradeAgent(t.agent) }
+  return { ...t, agent: upgradeAgent(t.agent), preferred: t.preferred && RETIRED_PROVIDERS.includes(t.preferred.provider) ? null : t.preferred }
 }
 
 // A worktree removed outside Savor falls back to the project folder.
@@ -747,14 +748,14 @@ export function listWorkflows(p: Project): Workflow[] {
     .readdirSync(wfDir(p))
     .filter((f) => f.endsWith('.json'))
     .map((f) => readJson<Partial<Workflow> | null>(path.join(wfDir(p), f), null))
-    .filter((wf) => wf?.id)
-    .map((wf) => ({ ...wfDefaults, ...wf }) as Workflow)
+    .filter((wf): wf is Partial<Workflow> => !!wf?.id)
+    .map((wf) => ({ ...wfDefaults, ...wf, agent: wf.agent ? upgradeAgent(wf.agent) : null }) as Workflow)
 }
 
 export function getWorkflow(p: Project, id: string): Workflow {
   const wf = readJson<Partial<Workflow> | null>(path.join(wfDir(p), `${path.basename(id)}.json`), null)
   if (!wf) throw new NotFound(`workflow ${id}`)
-  return { ...wfDefaults, ...wf } as Workflow
+  return { ...wfDefaults, ...wf, agent: wf.agent ? upgradeAgent(wf.agent) : null } as Workflow
 }
 
 // `by` is where the request came from. Whoever writes the instructions (prompt or chain) decides

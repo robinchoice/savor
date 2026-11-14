@@ -195,7 +195,6 @@ export interface ProviderInfo {
   version: string | null
   signedIn: boolean | null
   account: string | null
-  auth?: 'google' | 'api-key' | null
   models: ModelInfo[]
   efforts: string[]
   defaultEffort: string
@@ -333,7 +332,7 @@ export const desktop = (
   }
 ).savorDesktop
 
-export const PROVIDER_NAMES: Record<string, string> = { claude: 'Claude Code', codex: 'Codex', opencode: 'OpenCode', grok: 'Grok Build', antigravity: 'Antigravity' }
+export const PROVIDER_NAMES: Record<string, string> = { claude: 'Claude Code', codex: 'Codex', opencode: 'OpenCode' }
 
 // Installed agents, their models and modes: shared by every picker and fetched again after a minute, so
 // an agent installed or signed in since shows up with its models the next time a picker opens.

@@ -5,7 +5,6 @@ import { api, desktop, formatDay, go, PROVIDER_NAMES, useApi, useAgents, type Im
 import { loadProfiles, pairThroughRelay, probePairing, switchProfile } from './transport'
 import { parsePairingLink, scanQrCode } from './native'
 import { TEMPLATES } from './templates'
-import { AntigravityWarning } from './Composer'
 import { DesktopSwitch } from './Account'
 import { lang, plural, t } from './i18n'
 
@@ -105,7 +104,6 @@ export function Settings({ project }: { project: Project }) {
             </select>
           </label>
         </div>
-        <AntigravityWarning agent={agents?.find((a) => a.id === draft.agent.provider)} />
         <label class="check">
           <input type="checkbox" checked={draft.paused} onChange={(e) => set({ paused: e.currentTarget.checked })} /> {t('Pause project — scheduled workflows don\'t run')}
         </label>

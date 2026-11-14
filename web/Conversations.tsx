@@ -4,7 +4,7 @@ import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } fro
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import {
-  Asterisk, Hexagon, Code2, Sparkles, Orbit, Plus, Search, MessageSquare, Check, MoreHorizontal, PanelLeft, PanelRight, FileText, Globe,
+  Asterisk, Hexagon, Code2, Sparkles, Plus, Search, MessageSquare, Check, MoreHorizontal, PanelLeft, PanelRight, FileText, Globe,
   BookOpen, CircleAlert, ArrowUp, ArrowLeft, Pencil, MessageSquarePlus, ArrowRight, Smartphone, Monitor, Bot, ShieldQuestion, X, ChevronUp, ChevronDown, ChevronRight, Paperclip, GitBranch, GitFork, GitMerge, Trash2, Copy, FileDiff, Split, SquareArrowOutUpRight, Workflow as WorkflowIcon, Mail, MailOpen, SquareTerminal, RotateCcw, Rabbit,
 } from 'lucide-preact'
 import {
@@ -169,8 +169,6 @@ const PROVIDER_ICONS: Record<string, [any, string]> = {
   claude: [Asterisk, '#d97757'],
   codex: [Hexagon, '#9aa4b2'],
   opencode: [Code2, '#7fb069'],
-  grok: [Sparkles, '#c9c9c9'],
-  antigravity: [Orbit, '#5b8def'],
 }
 
 export function ProviderIcon({ provider, size = 18 }: { provider: string; size?: number }) {
@@ -1089,7 +1087,7 @@ export function ThreadView({ project, threadId, back, next, siblings, plain }: {
     go(`/p/${project.id}/t/${t.id}`)
   }
   // Claude Code's and Codex's own terminal UI resume the conversation's session.
-  const inTerminal = ['claude', 'codex', 'opencode', 'grok', 'antigravity'].includes(thread.agent.provider) && thread.agentSessions.some((s) => s.provider === thread.agent.provider)
+  const inTerminal = ['claude', 'codex', 'opencode'].includes(thread.agent.provider) && thread.agentSessions.some((s) => s.provider === thread.agent.provider)
   const openInTerminal = async () => showTerminal((await api<{ id: string }>('POST', `${base}/terminal`)).id)
   const remove = async () => {
     if (!confirm(t('Delete this conversation and its history?'))) return
@@ -1575,7 +1573,7 @@ function MessageItem({ m, thread, workflow, decisions, active, answers, setAnswe
       setCopyState(t('Could not copy'))
     }
   }
-  const who = m.kind === 'user' ? (m.origin === 'remote' ? `${t('You')} · ${m.device ?? t('remote device')}` : t('You')) : m.lane ? t('Fast lane') : PROVIDER_NAMES[m.modelInfo?.provider ?? thread.agent.provider]
+  const who = m.kind === 'user' ? (m.origin === 'remote' ? `${t('You')} · ${m.device ?? t('remote device')}` : t('You')) : m.lane ? t('Fast lane') : (PROVIDER_NAMES[m.modelInfo?.provider ?? thread.agent.provider] ?? m.modelInfo?.provider ?? thread.agent.provider)
   const worked = m.workTiming && Date.parse(m.workTiming.finishedAt) - Date.parse(m.workTiming.startedAt)
   const queued = m.kind === 'user' && m.delivered === false
   const [open, setOpen] = useState(false)

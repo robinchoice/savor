@@ -59,4 +59,4 @@ echo "Savor $version is in $apps/Savor.AppImage and in your app menu."
 if ! { /sbin/ldconfig -p 2>/dev/null || ldconfig -p 2>/dev/null; } | grep -q 'libfuse\.so\.2'; then
   echo "It needs FUSE 2 to start. On Ubuntu 24.04 and later: sudo apt install libfuse2t64, on older Ubuntu and Debian: sudo apt install libfuse2."
 fi
-echo "Savor drives the agent CLIs you are signed in to: Claude Code, Codex, OpenCode, Grok Build or Antigravity."
+echo "Savor drives the agent CLIs you are signed in to: Claude Code, Codex or OpenCode."
