@@ -27,7 +27,7 @@ const CI_APPEAR_MS = 3 * 60_000
 
 // The current request of a thread is its latest user input plus what the agent already sent for it.
 // MCP tools use it to allow one acknowledgement and one conclusion per input and idempotent updates.
-export interface RequestState {
+interface RequestState {
   inputId: string
   startedAt?: string
   ack?: { text: string; id: string }
@@ -56,7 +56,7 @@ export const isBusy = (tid: string) => busy.has(tid)
 export const anyBusy = () => busy.size > 0
 export const startedAt = (tid: string) => busy.get(tid)
 // An agent that acknowledged and ended its turn without a conclusion waits for the background processes its conversation owns.
-export function awaitsBackground(p: Project, tid: string) {
+function awaitsBackground(p: Project, tid: string) {
   if (busy.has(tid) || !store.listProcs(p).some((pr) => pr.threadId === tid)) return false
   const r = request(p, tid)
   return !!r.ack && !r.conclusion
@@ -321,7 +321,7 @@ function pump(p: Project, tid: string) {
   if (next) deliver(p, tid, next)
 }
 
-export function stop(tid: string) {
+function stop(tid: string) {
   stopped.add(tid)
   const setup = preparing.get(tid)
   if (!setup) return current(tid)?.kill()
@@ -696,7 +696,7 @@ export function answerDecisions(p: Project, tid: string, answers: { id: string; 
 // of the user passes over the questions of earlier conclusions (skipAsked), another agent's input leaves them open.
 export const needsYouOf = (p: Project, tid: string) => store.listDecisions(p, tid).some((d) => !d.resolved) || store.readMessages(p, tid).some((m) => m.approval?.status === 'pending')
 
-export function refreshNeedsYou(p: Project, tid: string) {
+function refreshNeedsYou(p: Project, tid: string) {
   store.updateThread(p, tid, { needsYou: needsYouOf(p, tid) })
   emit({ type: 'thread', projectId: p.id, threadId: tid })
 }
@@ -765,7 +765,7 @@ const chain = () => {
 
 // What a usage limit belongs to: the agent's subscription, or with OpenCode its model's provider (its free models,
 // Go, an API key), so a conversation can go on with an OpenCode model of another provider. Also in web/api.ts.
-export const poolOf = (a: Pick<AgentConfig, 'provider' | 'model'>) => (a.provider === 'opencode' && a.model.includes('/') ? `opencode ${a.model.split('/')[0]}` : a.provider)
+const poolOf = (a: Pick<AgentConfig, 'provider' | 'model'>) => (a.provider === 'opencode' && a.model.includes('/') ? `opencode ${a.model.split('/')[0]}` : a.provider)
 // The agent and, with OpenCode, its model, for the messages about a switch.
 const named = (a: AgentConfig) => (a.provider === 'opencode' && a.model ? `${STATIC.opencode.name} (${a.model})` : STATIC[a.provider].name)
 

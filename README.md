@@ -373,12 +373,13 @@ Evidence is required for reported results; unresolved statuses also require foll
 
 ```sh
 npm run typecheck
+npm run lint        # comment check, then knip: unused files, dependencies and exports
 npm test            # end-to-end: real daemon + UI in headless Chromium, test/fake-claude.mjs as the agent
 npm run dev:web     # Vite dev server for the UI, proxies /api to a daemon on :4317
 cd desktop && npm run dist   # local installer build (AppImage on Linux)
 ```
 
-CI runs typecheck and the end-to-end tests on every push. `secrets.yml` scans every push on every branch and pull requests from forks for secrets with gitleaks (default rules, `--redact` keeps found values out of the public log); single false positives go into `.gitleaksignore` by fingerprint. Pushing a tag like `v0.2.0` builds the desktop app for Linux, macOS and Windows and publishes it as a GitHub release, which installed apps pick up as an update. The same tag builds the phone apps (`mobile.yml`) and hands them to the testers in TestFlight and Play.
+CI runs typecheck, lint and the end-to-end tests on every push. `secrets.yml` scans every push on every branch and pull requests from forks for secrets with gitleaks (default rules, `--redact` keeps found values out of the public log); single false positives go into `.gitleaksignore` by fingerprint. Pushing a tag like `v0.2.0` builds the desktop app for Linux, macOS and Windows and publishes it as a GitHub release, which installed apps pick up as an update. The same tag builds the phone apps (`mobile.yml`) and hands them to the testers in TestFlight and Play.
 
 ## Status
 

@@ -65,7 +65,7 @@ export interface Worktree { branch: string; path: string; ahead: number; dirty: 
 
 // Savor keeps a project's worktrees outside the project folder, so the main checkout, its git
 // status and its build tools never see them.
-export const worktreesDir = (p: Project) => path.join(store.HOME, 'worktrees', p.id)
+const worktreesDir = (p: Project) => path.join(store.HOME, 'worktrees', p.id)
 
 export function listWorktrees(p: Project): Worktree[] {
   let out: string
@@ -131,7 +131,7 @@ function copyIncluded(p: Project, dir: string) {
 const SETUP_TIMEOUT_MS = 20 * 60_000
 const setups = new Map<string, Promise<string>>() // worktree path → note for the agent
 export const setupOf = (dir: string | undefined) => (dir ? setups.get(dir) : undefined)
-export const setupLog = (dir: string) => `${dir}.setup.log`
+const setupLog = (dir: string) => `${dir}.setup.log`
 
 function runSetup(p: Project, dir: string, command: string) {
   return new Promise<string>((resolve) => {

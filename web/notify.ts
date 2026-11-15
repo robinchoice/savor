@@ -30,7 +30,7 @@ async function syncPush(on: boolean) {
 const page = Math.random().toString(36).slice(2, 12)
 const reportVisible = () => api('POST', '/push/visible', { visible: !document.hidden, page }).catch(() => {})
 
-export const notificationsOn = () => 'Notification' in window && Notification.permission === 'granted' && localStorage.getItem(KEY) !== 'off'
+const notificationsOn = () => 'Notification' in window && Notification.permission === 'granted' && localStorage.getItem(KEY) !== 'off'
 
 export function useNotificationToggle(remote: boolean) {
   const [on, setOn] = useState(notificationsOn())

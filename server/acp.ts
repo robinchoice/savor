@@ -14,9 +14,10 @@ import type { SkillInfo } from './providers.js'
 
 const MIME: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp' }
 
-// OpenCode's ACP adapter drops its session todo list: it never emits the plan sessionUpdate (anomalyco/opencode
-// #40745), and a todowrite call arrives only as a raw tool call. The call's input is the whole list, so Savor
-// reads it from there. Once OpenCode emits plan updates, the plan case in onNotification takes over.
+// OpenCode's ACP adapter drops its session todo list: it never emits the plan sessionUpdate
+// (https://github.com/anomalyco/opencode/issues/40745), and a todowrite call arrives only as a raw tool call.
+// The call's input is the whole list, so Savor reads it from there. Once OpenCode emits plan updates, the plan
+// case in onNotification takes over.
 export function todoSteps(rawInput: unknown): PlanStep[] | null {
   let input = rawInput
   if (typeof input === 'string') {

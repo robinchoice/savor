@@ -40,7 +40,7 @@ function savorRoute(href: string) {
   }
 }
 
-// An absolute path on the computer, like /home/me/app/src/main.ts:42 or file:///home/me/app.
+// An absolute path on the computer, like /srv/app/src/main.ts:42 or file:///srv/app.
 function localPath(href: string) {
   const raw = href.startsWith('file://') ? href.slice(7) : href.startsWith('/') && !href.startsWith('//') ? href : null
   const m = raw && decodeURIComponent(raw).match(/^(.+?)(?::(\d+)(?::\d+)?|#L(\d+))?$/)
@@ -176,7 +176,7 @@ export function ProviderIcon({ provider, size = 18 }: { provider: string; size?:
   return <Icon size={size} color={color} strokeWidth={2.4} class="provider-icon" />
 }
 
-export const Label = ({ label }: { label: Thread['label'] }) =>
+const Label = ({ label }: { label: Thread['label'] }) =>
   label && (
     <span class="label-pill" style={{ '--hue': label.hue }}>
       {label.name}
@@ -651,7 +651,7 @@ export function ContextActions({ project, projects, threadId, inbox }: { project
 
 // Text sent from the context menu to another project: to a new conversation there, or to one of its open ones.
 // A line naming the conversation it comes from lets that agent read up on it with read_conversation.
-export function RunElsewhereDialog({ projects, from, threadId, text: selected, onClose }: { projects: Project[]; from: Project; threadId?: string; text: string; onClose: () => void }) {
+function RunElsewhereDialog({ projects, from, threadId, text: selected, onClose }: { projects: Project[]; from: Project; threadId?: string; text: string; onClose: () => void }) {
   const others = projects.filter((p) => p.id !== from.id)
   const [pid, setPid] = useState(others[0]?.id ?? '')
   const [tid, setTid] = useState('')

@@ -25,6 +25,7 @@
     "relay": "node dist/relay/server.mjs",
     "dev:web": "vite",
     "typecheck": "tsc --noEmit",
+    "lint": "scripts/check-comments.sh && knip",
     "test": "flock /tmp/savor-test.lock node --import tsx --import ./test/git-env.mjs --test --test-concurrency=2 \"test/*.test.mjs\"",
     "screenshots": "node scripts/screenshots.mjs",
     "release": "bash scripts/release.sh"
@@ -54,7 +55,6 @@
     "@capacitor/core": "^8.5.3",
     "@capacitor/ios": "^8.5.3",
     "@codemirror/commands": "^6.11.1",
-    "@codemirror/lang-markdown": "^6.5.2",
     "@codemirror/language": "^6.12.4",
     "@codemirror/language-data": "^6.5.2",
     "@codemirror/state": "^6.7.6",
@@ -79,6 +79,7 @@
     "codemirror": "^6.0.2",
     "dompurify": "^3.4.17",
     "esbuild": "^0.28.2",
+    "knip": "^6.45.1",
     "lucide-preact": "^1.48.0",
     "mammoth": "^1.13.0",
     "marked": "^18.0.14",

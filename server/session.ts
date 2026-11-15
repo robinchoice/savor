@@ -3,7 +3,7 @@ import * as store from './store.js'
 import type { AgentConfig, ApprovalOption, FormField, Project, Provider, Question, Thread } from './store.js'
 import { emit } from './events.js'
 
-export const PROTOCOL = `You are running inside Savor, a local workspace for coding agents. The user only sees messages sent through the savor MCP tools. Your plain assistant text is hidden and only shows up in the activity log.
+const PROTOCOL = `You are running inside Savor, a local workspace for coding agents. The user only sees messages sent through the savor MCP tools. Your plain assistant text is hidden and only shows up in the activity log.
 
 - If you can answer right away, call send_conclusion_message directly. Otherwise call send_acknowledgement_message before starting work and send_conclusion_message with the final result.
 - Give the first of those two calls for an input a summary: one short sentence on what the input asks for, so the conversation list shows where you are. When threadLabel in the Savor context is null, also give it a label: a short 3–6 word label for the conversation.

@@ -1,0 +1,15 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "workspaces": {
+    ".": {
+      "entry": ["demo/start.mjs", "scripts/*.mjs", "mobile/*.mjs", "site/{main,dock}.js", "test/*.mjs"],
+      "project": ["**/*.{ts,tsx,js,mjs,cjs}", "!mobile/{ios,android}/**"]
+    },
+    "desktop": {
+      "entry": ["{main,preload}.cjs"]
+    }
+  },
+  "mcp": false,
+  "ignoreBinaries": ["flock", "ffmpeg", "busctl"],
+  "ignoreDependencies": ["@capacitor/ios"]
+}

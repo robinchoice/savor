@@ -4,7 +4,7 @@ import { currentPrefs, setPrefs, usePrefs } from './prefs'
 import { t } from './i18n'
 
 // What a key can do. Each device starts without any keys; the setup and the dialog offer STANDARD.
-export const ACTIONS = {
+const ACTIONS = {
   new: t('New conversation'),
   next: t('Next conversation that needs you'),
   previous: t('Back to where Next came from'),

@@ -20,7 +20,7 @@ let retryTimer: NodeJS.Timeout | undefined
 let retryDelay = 2000
 const conns = new Map<string, Conn>()
 
-export const identity = () => t.keypairFrom(t.b64.dec(store.state().identity))
+const identity = () => t.keypairFrom(t.b64.dec(store.state().identity))
 
 export function relayStatus() {
   const { relay } = store.state()

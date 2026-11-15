@@ -30,7 +30,7 @@ const DEMO_CODE = process.env.SAVOR_DEMO_PAIRING?.toUpperCase()
 // guess, so failed pairings don't void it.
 const ownerPaired = (s: ReturnType<typeof store.state>) => s.devices.some((d) => d.owner)
 
-export function openSetupCode() {
+function openSetupCode() {
   const s = store.state()
   if (!process.env.SAVOR_SETUP || ownerPaired(s) || !s.setupCode || s.setupCode.expires <= Date.now()) return null
   return s.setupCode.code

@@ -23,7 +23,7 @@ document.createElement = function (this: Document, tag: string, options?: Elemen
   return el
 } as typeof document.createElement
 
-export interface TerminalPlace { path: string; branch: string | null; threads: string[] }
+interface TerminalPlace { path: string; branch: string | null; threads: string[] }
 export interface TerminalTab { id: string; path: string; running: boolean }
 interface Terminals { places: TerminalPlace[]; terminals: TerminalTab[] }
 

@@ -9,7 +9,7 @@ import { codexSkills, codexUsage, probeCodex } from './codex.js'
 import { claudeUsage, probeClaude } from './claude.js'
 import { acpSkills } from './acp.js'
 
-export interface ModeInfo { id: string; label: string; detail: string; unsafe?: boolean }
+interface ModeInfo { id: string; label: string; detail: string; unsafe?: boolean }
 export interface ModelInfo { id: string; label: string; detail?: string; efforts?: string[]; ultracode?: boolean }
 export interface SkillInfo { name: string; description: string }
 export interface ProviderInfo {
@@ -251,7 +251,7 @@ export async function listSkills(provider: string, cwd: string): Promise<SkillIn
 // How much of each subscription limit is used, as the agents report it: Claude Code's /usage, Codex's
 // rate limits. OpenCode has no subscription of its own. An agent without a
 // subscription, or one that does not answer, is left out.
-export interface UsageWindow { label: string; percent: number; resets: string | null; resetsAt?: number | null; limitId?: string | null }
+interface UsageWindow { label: string; percent: number; resets: string | null; resetsAt?: number | null; limitId?: string | null }
 export interface Usage { provider: Provider; name: string; windows: UsageWindow[] }
 
 const USAGE_MS = 60_000

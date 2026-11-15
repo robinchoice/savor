@@ -16,7 +16,7 @@ interface Session { page: Page; cdp: CDPSession; errors: string[]; frame: string
 
 const profiles = new Map<string, Promise<BrowserContext>>()
 const sessions = new Map<string, Session>()
-export const VIEWPORT = { width: 1280, height: 800 }
+const VIEWPORT = { width: 1280, height: 800 }
 // The UI asks for the size of the space it has for the page, within these bounds.
 const SMALLEST = { width: 320, height: 240 }
 const LARGEST = { width: 3840, height: 2160 }

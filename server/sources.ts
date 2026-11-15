@@ -19,7 +19,7 @@ const MAX_PDF = 50 * 1024 * 1024
 interface Entry { key: string; fields: Record<string, string> }
 
 // Enough BibTeX for a list: entries with braced, quoted or bare values, braces inside values removed.
-export function parseBib(text: string) {
+function parseBib(text: string) {
   const entries: Entry[] = []
   const head = /@(\w+)\s*\{\s*([^,\s]+)\s*,/g
   let m: RegExpExecArray | null

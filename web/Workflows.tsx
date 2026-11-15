@@ -14,7 +14,7 @@ const SCHEDULES: [string, string][] = [
 
 ]
 
-export const STATUS: Record<Run['status'], [ring: string, label: string]> = { working: ['busy', t('Working')], needs: ['needs', t('Your turn')], stopped: ['', t('Stopped')], budget: ['error', t('Budget reached')], failed: ['error', t('Failed')], finished: ['done', t('Finished')], skipped: ['skipped', t('Skipped')] }
+const STATUS: Record<Run['status'], [ring: string, label: string]> = { working: ['busy', t('Working')], needs: ['needs', t('Your turn')], stopped: ['', t('Stopped')], budget: ['error', t('Budget reached')], failed: ['error', t('Failed')], finished: ['done', t('Finished')], skipped: ['skipped', t('Skipped')] }
 const OUTCOME = { successful: t('Successful'), partial: t('Partial'), blocked: t('Blocked'), skipped: t('Skipped'), waiting: t('Waiting for you'), failed: t('Failed'), unknown: t('Outcome unknown') }
 export const resultLabel = (r: Run) => [r.modelStarted === false ? t('No agent started') : STATUS[r.status][1], r.outcome && OUTCOME[r.outcome]].filter(Boolean).join(' · ')
 const resultRing = (r: Run) => r.status !== 'finished' || !r.outcome ? STATUS[r.status][0] : r.outcome === 'successful' ? 'done' : r.outcome === 'blocked' || r.outcome === 'failed' ? 'error' : r.outcome === 'waiting' ? 'needs' : r.outcome === 'skipped' ? 'skipped' : ''

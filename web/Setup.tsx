@@ -16,7 +16,7 @@ const RECOMMENDED: Record<string, string> = { claude: 'auto', codex: 'auto-revie
 // Plan modes are chosen per conversation, not as a default.
 const HIDDEN_MODES = ['plan', 'dontAsk']
 
-export const agentStatus = (a: ProviderInfo) => (!a.installed ? t('Not installed') : a.signedIn ? t('Signed in') : a.signedIn === false ? t('Signed out') : t('Installed'))
+const agentStatus = (a: ProviderInfo) => (!a.installed ? t('Not installed') : a.signedIn ? t('Signed in') : a.signedIn === false ? t('Signed out') : t('Installed'))
 
 // One agent CLI on this computer, with what to run when it is not signed in. With onSignedIn, Savor
 // can sign Claude Code and Codex in itself.

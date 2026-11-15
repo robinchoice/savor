@@ -344,7 +344,7 @@ export interface RelayState { url: string | null; enabled: boolean; state: 'off'
 
 export const RELAY_LABEL = { off: t('Off'), connecting: t('Connecting…'), online: t('Connected'), error: t('Not connected') }
 
-export function qr(text: string) {
+function qr(text: string) {
   const q = qrcode(0, 'M')
   q.addData(text)
   q.make()

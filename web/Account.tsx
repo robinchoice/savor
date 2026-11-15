@@ -529,7 +529,7 @@ function useDesktopComputers() {
 
 const VIA: Record<string, string> = { direct: t('Direct'), relay: t('Via relay') }
 
-export function DesktopComputers() {
+function DesktopComputers() {
   const [computers, load] = useDesktopComputers()
   if (!computers) return null
   const forget = (c: DesktopComputerList['list'][number]) =>
@@ -579,7 +579,7 @@ export function DesktopComputers() {
 }
 
 // Pairing the desktop app with another computer: its pairing link opens in the window, and its page pairs.
-export function PairComputer() {
+function PairComputer() {
   const [open, setOpen] = useState(false)
   const [link, setLink] = useState('')
   const [error, setError] = useState('')

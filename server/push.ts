@@ -14,7 +14,7 @@ const SUBJECT = 'https://github.com/robinchoice/savor'
 // While a page shows Savor it notifies from the event stream, and its device's push would be a double.
 const PRESENCE_MS = 70_000
 const ASK_DELAY_MS = 60_000
-export const DEFAULT_DELAY = 5
+const DEFAULT_DELAY = 5
 const visible = new Map<string, { device: string | null; until: number }>() // page id → its device, visible until
 const pending = new Map<string, NodeJS.Timeout>() // thread id → its push waiting to go out
 const sent = new Map<string, Set<string>>() // thread id → the devices that got its push

@@ -30,7 +30,7 @@ export function report(sha: string, runs: Run[]) {
 // GitHub is asked only while a project has runs going or was pushed a moment ago. A push shows locally:
 // git renames the new remote-tracking ref into .git/refs/remotes/origin, which changes the folder's mtime.
 // A run that fails stays until it is dismissed; the others leave when they are done.
-export interface LiveRun {
+interface LiveRun {
   id: number
   projectId: string
   project: string

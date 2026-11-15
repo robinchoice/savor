@@ -3,7 +3,7 @@
 import * as t from '../shared/tunnel'
 import { t as tr } from './i18n'
 
-export interface Response { status: number; type: string; body: string; binary?: boolean }
+interface Response { status: number; type: string; body: string; binary?: boolean }
 
 export interface Transport {
   request(method: string, path: string, body?: string): Promise<Response>
@@ -36,8 +36,9 @@ export const direct: Transport = {
   },
 }
 
-export let transport: Transport = direct
+export let transport: Transport
 export const setTransport = (next: Transport) => (transport = next)
+setTransport(direct)
 
 // ---- device key ----
 // The device's private key is a non-extractable WebCrypto key kept in IndexedDB, so script running

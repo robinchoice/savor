@@ -21,7 +21,7 @@ const NAMES: Record<PanelId, string> = { list: t('Conversations'), main: t('Chat
 // In each split one panel takes the room that is left, the first of these it contains; the others keep their size.
 const GROWS: PanelId[] = ['stage', 'main', 'list', 'terminal']
 // The layout as it was before panels could move: list, chat and stage side by side, the terminal below all of them.
-export const DEFAULT_LAYOUT: Split = { dir: 'col', sizes: [0, 300], children: [{ dir: 'row', sizes: [330, 420, 0], children: ['list', 'main', 'stage'] }, 'terminal'] }
+const DEFAULT_LAYOUT: Split = { dir: 'col', sizes: [0, 300], children: [{ dir: 'row', sizes: [330, 420, 0], children: ['list', 'main', 'stage'] }, 'terminal'] }
 const GAP = 1
 const MIN = 160
 const HEAD = 28
@@ -57,7 +57,7 @@ function useStore() {
     return () => void listeners.delete(l)
   }, [])
 }
-export const setArranging = (on: boolean) => {
+const setArranging = (on: boolean) => {
   arranging = on
   notify()
 }

@@ -36,7 +36,7 @@ export interface ApprovalOption { id: string; label: string; kind: 'allow' | 'de
 // A field of a form an MCP server asks the user to fill in. `min` and `max` bound a number, or the length of a string.
 export interface FormField { name: string; label: string; description?: string; type: 'string' | 'number' | 'integer' | 'boolean' | 'enum'; required: boolean; format?: string; options?: { value: string; label: string }[]; default?: string | number | boolean; min?: number; max?: number }
 // `url` is a page an MCP server asks the user to open, e.g. to sign in; `fields` a form it asks them to fill in.
-export interface Approval { title: string; detail: string; url?: string; fields?: FormField[]; options: ApprovalOption[]; status: 'pending' | 'resolved'; choice?: string; expired?: boolean }
+interface Approval { title: string; detail: string; url?: string; fields?: FormField[]; options: ApprovalOption[]; status: 'pending' | 'resolved'; choice?: string; expired?: boolean }
 export interface Message {
   background?: boolean
   id: string
@@ -135,7 +135,7 @@ export interface Thread {
   // OpenCode the cost in USD, Codex the tokens.
   spent?: Spent[]
 }
-export interface Spent { provider: Provider; usd?: number; tokens?: number }
+interface Spent { provider: Provider; usd?: number; tokens?: number }
 // The agent's own todo list for a request, and the subagents and background commands it runs there, as the agent reports them.
 export interface PlanStep { text: string; status: 'pending' | 'active' | 'done'; active?: string }
 export interface PlanAgent { id: string; name: string; kind: 'agent' | 'command'; type?: string; doing?: string; status: 'running' | 'done' | 'failed' | 'stopped'; startedAt: string; finishedAt?: string; stoppable?: boolean }
@@ -609,7 +609,7 @@ export const appendActivity = (p: Project, tid: string, e: Partial<ActivityEvent
 
 export const attachmentDir = (p: Project, tid: string) => path.join(threadDir(p, tid), 'attachments')
 
-export const IMAGE_TYPES: Record<string, string> = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp' }
+const IMAGE_TYPES: Record<string, string> = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp' }
 export const isImage = (name: string) => /\.(png|jpe?g|gif|webp)$/i.test(name)
 
 // Stores an attachment as <id>-<original name> and says whether it is an image the agent can look at.
@@ -694,7 +694,7 @@ export interface BacklogItem extends Partial<Provenance> { id: string; title: st
 export interface Backlog { items: BacklogItem[] }
 const backlogFile = (p: Project) => path.join(dataDir(p), 'backlog.json')
 export const readBacklog = (p: Project): Backlog => ({ items: readJson<Partial<Backlog>>(backlogFile(p), {}).items ?? [] })
-export const saveBacklog = (p: Project, b: Backlog) => writeJson(backlogFile(p), b)
+const saveBacklog = (p: Project, b: Backlog) => writeJson(backlogFile(p), b)
 // A backlog item is a prompt an agent starts from, not a document.
 export const BACKLOG_TITLE_MAX = 300
 

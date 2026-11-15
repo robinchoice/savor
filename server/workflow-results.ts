@@ -31,7 +31,7 @@ export const signalSchema = z.object({
   followUp: z.array(z.string().trim().min(1).max(2000)).max(20),
 }).strict()
 
-export function preflight(p: Project, wf: Workflow): WorkflowStep['preflight'] {
+function preflight(p: Project, wf: Workflow): WorkflowStep['preflight'] {
   if (!wf.preflight) return undefined
   const blocked = (reason: string, status: 'blocked' | 'failed' = 'blocked'): NonNullable<WorkflowStep['preflight']> => ({
     status, reason, evidence: ['Workflow preflight could not establish that work is ready.'], followUp: ['Refresh the preflight with the existing authorized producer, then retry the workflow.'],

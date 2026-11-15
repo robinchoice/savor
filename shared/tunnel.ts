@@ -93,7 +93,7 @@ function derive(ikm: Uint8Array[], transcript: Uint8Array[], salt?: Uint8Array) 
 const helloCipher = (shared: Uint8Array, daemonPk: Uint8Array, ephemeralPk: Uint8Array) =>
   chacha20poly1305(hkdf(sha256, shared, undefined, concat(PROTOCOL, utf8ToBytes('hello'), daemonPk, ephemeralPk), 32), new Uint8Array(12))
 
-export const pairingSalt = (code: string) => sha256(utf8ToBytes(code.trim().toUpperCase()))
+const pairingSalt = (code: string) => sha256(utf8ToBytes(code.trim().toUpperCase()))
 
 // Encrypted, ordered message stream. A tampered, replayed or reordered message fails to open.
 export class Channel {

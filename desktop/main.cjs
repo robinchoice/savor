@@ -8,7 +8,7 @@ const os = require('node:os')
 const path = require('node:path')
 const { pathToFileURL } = require('node:url')
 const { checkForUpdate } = require('./updates.cjs')
-const computers = require('./computers.cjs')
+const { LOCAL, load, save, pairingUrl, computerAt, remember, forget, startId, originOf, access } = require('./computers.cjs')
 
 const PORT = Number(process.env.SAVOR_PORT ?? 4317)
 const HOME = process.env.SAVOR_HOME ?? path.join(os.homedir(), '.savor')
@@ -25,7 +25,7 @@ let pending = null
 const computersFile = () => path.join(app.getPath('userData'), 'computers.json')
 const setState = (next) => {
   state = next
-  computers.save(computersFile(), state)
+  save(computersFile(), state)
 }
 
 const portOpen = () =>
@@ -102,7 +102,7 @@ async function contextMenu(contents, params) {
   // The selection, or else the clipboard, goes to the open project: run in its terminal (several lines
   // are only pasted), quoted in its conversation, or opened in Files when it names one of its files.
   // Or it goes to a conversation in another project, picked in a dialog of the UI.
-  const text = projectRoot && accessOf(computers.originOf(contents.getURL())) === 'local' && (params.selectionText.trim() || (await clipboard.readText()).trim())
+  const text = projectRoot && accessOf(originOf(contents.getURL())) === 'local' && (params.selectionText.trim() || (await clipboard.readText()).trim())
   if (text) {
     const first = text.split('\n')[0]
     const shown = first.length > 40 || text.includes('\n') ? `${first.slice(0, 40)}…` : first
@@ -142,19 +142,19 @@ function createWindow() {
   })
   // A link to another site opens in the browser; the window itself never leaves Savor, it has no way back.
   const stayInSavor = (e) => {
-    if (accessOf(computers.originOf(e.url))) return
+    if (accessOf(originOf(e.url))) return
     e.preventDefault()
     openOutside(e.url)
   }
   win.webContents.on('will-navigate', stayInSavor)
   win.webContents.on('will-redirect', stayInSavor)
   // Leaving the page of a pairing link ends its trust, whether its computer came in or not.
-  win.webContents.on('did-navigate', (_e, url) => computers.originOf(url) !== pending && (pending = null))
+  win.webContents.on('did-navigate', (_e, url) => originOf(url) !== pending && (pending = null))
   // A computer that can't be reached leads to the connect page, with the others to choose from.
   win.webContents.on('did-fail-load', (_e, code, _description, url, mainFrame) => {
     if (!mainFrame || code === -3 || url.startsWith('file:')) return
-    const origin = computers.originOf(url)
-    openConnect({ error: 'unreachable', name: state.computers.find((c) => computers.originOf(c.url) === origin)?.name ?? new URL(url).host })
+    const origin = originOf(url)
+    openConnect({ error: 'unreachable', name: state.computers.find((c) => originOf(c.url) === origin)?.name ?? new URL(url).host })
   })
   win.webContents.on('context-menu', async (_e, params) => {
     const menu = await contextMenu(win.webContents, params)
@@ -165,7 +165,7 @@ function createWindow() {
 const openOutside = (url) => /^(https?|mailto):/.test(url) && shell.openExternal(url)
 
 async function openLocal() {
-  showing = computers.LOCAL
+  showing = LOCAL
   const stateFile = path.join(HOME, 'state.json')
   if (!(await ensureDaemon()) || !fs.existsSync(stateFile)) return openConnect({ error: 'local' })
   const { token } = JSON.parse(fs.readFileSync(stateFile, 'utf8'))
@@ -173,7 +173,7 @@ async function openLocal() {
 }
 
 function openComputer(id) {
-  if (id === computers.LOCAL && state.server) return openLocal()
+  if (id === LOCAL && state.server) return openLocal()
   const computer = state.computers.find((c) => c.id === id)
   if (!computer) return openConnect()
   showing = computer.id
@@ -191,8 +191,8 @@ const updater = () => (app.isPackaged && fs.existsSync(path.join(process.resourc
 // What preload.cjs offers the UI (computers.access). This computer's page may ask for everything. Paired computers
 // and the connect page only for what doesn't touch this computer's files and programs: notifications, updates and
 // the computers. The page of a pairing link only learns and switches between the computers, it changes none.
-const senderOrigin = (e) => computers.originOf(e.senderFrame.url)
-const accessOf = (origin) => computers.access(state, origin, { local: LOCAL_ORIGIN, pending })
+const senderOrigin = (e) => originOf(e.senderFrame.url)
+const accessOf = (origin) => access(state, origin, { local: LOCAL_ORIGIN, pending })
 const fromConnect = (e) => e.senderFrame.url.split('?')[0] === CONNECT_URL
 const fromUi = (e) => accessOf(senderOrigin(e)) === 'local'
 const fromComputer = (e) => fromConnect(e) || ['local', 'computer'].includes(accessOf(senderOrigin(e)))
@@ -214,7 +214,7 @@ ipcMain.on('notify', (e, { title, body, hash, tag }) => {
     if (win.isMinimized()) win.restore()
     win.show()
     win.focus()
-    if (computers.originOf(win.webContents.getURL()) === from) win.webContents.send('open', hash)
+    if (originOf(win.webContents.getURL()) === from) win.webContents.send('open', hash)
   })
   n.on('close', () => notifications.get(tag) === n && notifications.delete(tag))
   notifications.set(tag, n)
@@ -251,29 +251,29 @@ ipcMain.handle('install-update', async (e) => {
 // The page of a computer reports it once it is in; a paired computer is added to the list then.
 ipcMain.on('connected', (e, info) => {
   const origin = senderOrigin(e)
-  const access = accessOf(origin)
-  if (access === 'local') {
-    showing = computers.LOCAL
-    if (state.last !== computers.LOCAL) setState({ ...state, last: computers.LOCAL })
+  const trust = accessOf(origin)
+  if (trust === 'local') {
+    showing = LOCAL
+    if (state.last !== LOCAL) setState({ ...state, last: LOCAL })
     return
   }
-  if (!access || typeof info !== 'object' || !info) return
-  const computer = computers.computerAt(origin, info)
+  if (!trust || typeof info !== 'object' || !info) return
+  const computer = computerAt(origin, info)
   showing = computer.id
   pending = null
-  setState(computers.remember(state, computer))
+  setState(remember(state, computer))
 })
 ipcMain.handle('computers', (e) => {
   if (!fromSavor(e)) return null
-  const local = state.server ? [{ id: computers.LOCAL, name: os.hostname(), via: 'local' }] : []
+  const local = state.server ? [{ id: LOCAL, name: os.hostname(), via: 'local' }] : []
   return { server: state.server, current: showing, list: [...local, ...state.computers.map(({ id, name, via }) => ({ id, name, via }))] }
 })
 ipcMain.on('open-computer', (e, id) => fromSavor(e) && openComputer(id))
 // Opens a pairing link in the window; the computer's own page pairs. Resolves to false for anything else.
 ipcMain.handle('pair-computer', (e, link) => {
-  const url = fromComputer(e) && computers.pairingUrl(link)
+  const url = fromComputer(e) && pairingUrl(link)
   if (!url) return false
-  pending = computers.originOf(url)
+  pending = originOf(url)
   showing = null
   win.loadURL(url)
   return true
@@ -283,8 +283,8 @@ ipcMain.handle('pair-computer', (e, link) => {
 ipcMain.handle('forget-computer', async (e, id) => {
   const computer = fromComputer(e) && state.computers.find((c) => c.id === id)
   if (!computer) return
-  setState(computers.forget(state, id))
-  if (computer.via === 'direct') await win.webContents.session.clearStorageData({ origin: computers.originOf(computer.url) })
+  setState(forget(state, id))
+  if (computer.via === 'direct') await win.webContents.session.clearStorageData({ origin: originOf(computer.url) })
   if (showing === id) openStart()
 })
 // Off, the app starts no Savor of its own and is only a client of the paired computers.
@@ -292,12 +292,12 @@ ipcMain.handle('set-server', (e, on) => {
   if (!fromComputer(e)) return
   setState({ ...state, server: on === true })
   if (state.server) ensureDaemon()
-  else if (showing === computers.LOCAL) openStart()
+  else if (showing === LOCAL) openStart()
 })
 ipcMain.handle('device-name', (e) => (fromSavor(e) ? os.hostname() : null))
 
 function openStart() {
-  const id = computers.startId(state)
+  const id = startId(state)
   if (id === null) openConnect()
   else openComputer(id)
 }
@@ -346,7 +346,7 @@ else {
     win?.focus()
   })
   app.whenReady().then(() => {
-    state = computers.load(computersFile())
+    state = load(computersFile())
     createWindow()
     // This computer's Savor runs while the app is open, whichever computer it shows: its workflows keep their schedule.
     if (state.server) ensureDaemon()

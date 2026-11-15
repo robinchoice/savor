@@ -31,13 +31,13 @@ function yamlSet(text: string, key: string, value: string | null) {
   return `${text}${text && !text.endsWith('\n') ? '\n' : ''}${key}: ${value}\n`
 }
 
-export const FORMATS: Record<string, { to: string; engine: string | null }> = {
+const FORMATS: Record<string, { to: string; engine: string | null }> = {
   docx: { to: 'docx', engine: null },
   latex: { to: 'latex', engine: 'xelatex' },
   typst: { to: 'typst', engine: 'typst' },
 }
 // Styles from the official CSL repository (github.com/citation-style-language/styles).
-export const STYLES: Record<string, string> = {
+const STYLES: Record<string, string> = {
   apa: 'APA 7',
   'iso690-author-date-de': 'DIN ISO 690',
   'harvard-cite-them-right': 'Harvard',
@@ -92,9 +92,9 @@ const prose = (text: string) =>
     .replace(/^---\n[\s\S]*?\n---\n/, '')
     .replace(/\[[^\]]*@[^\]]*\]/g, '')
     .replace(/^#+ .*$/gm, '')
-export const words = (text: string) => prose(text).match(/\p{L}[\p{L}\p{N}'’-]*/gu)?.length ?? 0
+const words = (text: string) => prose(text).match(/\p{L}[\p{L}\p{N}'’-]*/gu)?.length ?? 0
 
-export interface Check { level: 'ok' | 'error' | 'warn' | 'info'; text: string; file?: string; line?: number }
+interface Check { level: 'ok' | 'error' | 'warn' | 'info'; text: string; file?: string; line?: number }
 
 export function exportState(p: Project) {
   const yaml = read(p, 'pandoc.yaml')
@@ -319,13 +319,13 @@ export async function setUpAcademic(p: Project, a: AcademicAnswers) {
 
 export interface KontorAnswers { covers: string; areas: string[]; language: string }
 
-export const COVERS: Record<string, [string, string]> = {
+const COVERS: Record<string, [string, string]> = {
   household: ['a private household', 'einen privaten Haushalt'],
   business: ['a business', 'ein Unternehmen'],
   club: ['a club or association', 'einen Verein'],
   other: ['notes and administration', 'Notizen und Verwaltung'],
 }
-export const AREAS: Record<string, [string, string]> = {
+const AREAS: Record<string, [string, string]> = {
   contacts: ['contacts', 'kontakte'],
   finance: ['finance', 'finanzen'],
   contracts: ['contracts', 'vertraege'],

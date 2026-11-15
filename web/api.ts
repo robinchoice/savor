@@ -156,9 +156,9 @@ export async function attachmentFromFile(f: File): Promise<{ name: string; dataU
 }
 
 export interface AgentConfig { provider: string; model: string; reasoning: string; fast: boolean; ultracode: boolean; permissionMode: string }
-export interface Question { title: string; body: string; options: string[]; recommended?: number }
+interface Question { title: string; body: string; options: string[]; recommended?: number }
 export interface ApprovalOption { id: string; label: string; kind: 'allow' | 'deny' }
-export interface FormField { name: string; label: string; description?: string; type: 'string' | 'number' | 'integer' | 'boolean' | 'enum'; required: boolean; format?: string; options?: { value: string; label: string }[]; default?: string | number | boolean; min?: number; max?: number }
+interface FormField { name: string; label: string; description?: string; type: 'string' | 'number' | 'integer' | 'boolean' | 'enum'; required: boolean; format?: string; options?: { value: string; label: string }[]; default?: string | number | boolean; min?: number; max?: number }
 export interface Approval { title: string; detail: string; url?: string; fields?: FormField[]; options: ApprovalOption[]; status: 'pending' | 'resolved'; choice?: string; expired?: boolean }
 export interface Message {
   id: string
@@ -186,7 +186,7 @@ export interface Message {
 // A message the agent or the fast lane is still writing, as far as it has come.
 export interface Draft { kind: 'ack' | 'update' | 'conclusion'; text: string; lane?: 'fast'; modelInfo?: AgentConfig }
 export interface Attachment { name: string; dataUrl: string }
-export interface ModeInfo { id: string; label: string; detail: string; unsafe?: boolean }
+interface ModeInfo { id: string; label: string; detail: string; unsafe?: boolean }
 export interface ModelInfo { id: string; label: string; detail?: string; efforts?: string[]; ultracode?: boolean }
 export interface ProviderInfo {
   id: string
@@ -272,7 +272,7 @@ export function noticeOf(t: Thread): NoticeType | null {
   return t.notice?.type ?? (reason === 'new' ? (t.workflow ? 'run' : 'result') : null)
 }
 export interface Worktree { branch: string; path: string; ahead: number; dirty: boolean }
-export interface Change { path: string; additions: number | null; deletions: number | null }
+interface Change { path: string; additions: number | null; deletions: number | null }
 // One conversation of a fan-out, as the comparison shows it.
 export interface FanoutRun { thread: Thread; worktree: Worktree | null; changes: Change[]; merged: boolean; answer: string | null; workTiming: { startedAt: string; finishedAt: string } | null }
 export interface CommitFile { path: string; additions: number | null; deletions: number | null; patch: string }
@@ -371,7 +371,7 @@ export const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 export const initial = (name: string) => (name.trim()[0] ?? '?').toLowerCase()
 
 // Text on a project color: dark on light tints, white on the others.
-export function inkOn(tint: string) {
+function inkOn(tint: string) {
   const [r, g, b] = [1, 3, 5].map((i) => parseInt(tint.slice(i, i + 2), 16))
   return 0.299 * r + 0.587 * g + 0.114 * b > 170 ? '#1b1c1f' : '#fff'
 }

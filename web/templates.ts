@@ -5,7 +5,7 @@
 // other types are set up from the new-project form. Read at build time. Code is the plain project, the other types are what a project's type can be set to.
 const files = import.meta.glob('../templates/*.md', { query: '?raw', import: 'default', eager: true }) as Record<string, string>
 
-export interface Template { slug: string; title: string; blurb: string; creates: string; workflows: string[]; paused: boolean; role: string; setup: string; setupDe: string | null }
+interface Template { slug: string; title: string; blurb: string; creates: string; workflows: string[]; paused: boolean; role: string; setup: string; setupDe: string | null }
 
 const all: Template[] = Object.entries(files).map(([file, raw]) => {
   const m = raw.match(/^---\n([\s\S]*?)\n---\n([\s\S]*?)(?:\n?<!-- setup -->\n([\s\S]*))?$/)!
