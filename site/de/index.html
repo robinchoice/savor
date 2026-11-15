@@ -29,6 +29,7 @@
     <link rel="preload" href="../fonts/bricolage-grotesque-latin.woff2" as="font" type="font/woff2" crossorigin />
     <link rel="stylesheet" href="../style.css" />
     <script src="../main.js" defer></script>
+    <script src="../dock.js" type="module"></script>
   </head>
   <body id="top">
     <header class="wrap nav">
@@ -397,8 +398,14 @@ npm start</pre
         </nav>
       </div>
       <div class="absender">
-        <a href="https://pleasance.org">ein Werkzeug von <span class="wordmark" role="img" aria-label="Pleasance"></span></a>
-        <span class="band-mark" aria-hidden="true"><i></i></span>
+        <div class="sender">
+          <a href="https://pleasance.org"><span class="by">ein Werkzeug von</span><span class="wordmark" role="img" aria-label="Pleasance"></span></a>
+          <div class="dock">
+            <button type="button" aria-label="Werkzeuge von Pleasance" aria-expanded="false" aria-controls="pleasance-apps">
+              <span class="strip"><span class="marker"></span></span>
+            </button>
+          </div>
+        </div>
       </div>
       <p class="copy">© 2026 Savor contributors · Diese Seite lädt keine Tracker und nichts von Dritten.</p>
     </footer>
