@@ -15,7 +15,7 @@
 
 `npm run build && npm run typecheck && npm run lint && npm test`
 
-`lint` runs knip, which reports unused files, dependencies and exports (exports only the tests use count as used). Entry points knip doesn't find itself (the desktop shell, scripts, tests, the demo, the landing page's scripts) are `entry` in `knip.json`. Fix what it finds and solve false positives in its configuration, not with `ignore`; only tools outside npm (`flock`, `ffmpeg`, `busctl`) and `@capacitor/ios`, which `cap sync ios` uses, are listed as ignored.
+`lint` runs knip, which reports unused files, dependencies and exports (exports only the tests use count as used). It needs the desktop shell's packages too (`npm ci --prefix desktop --ignore-scripts`). Entry points knip doesn't find itself (the desktop shell, scripts, tests, the demo, the landing page's scripts) are `entry` in `knip.json`. Fix what it finds and solve false positives in its configuration, not with `ignore`; only tools outside npm (`flock`, `ffmpeg`, `busctl`) and `@capacitor/ios`, which `cap sync ios` uses, are listed as ignored.
 
 Comments state the rule, not its history, which is in git. `scripts/check-comments.sh` (first in `lint`) fails on what a reader of the repo can't resolve in comments of the source folders (tests excluded): issue and PR numbers (`#12`, link upstream issues by URL), paths on a developer machine (`/home/<name>/`, `/Users/<name>/`), `.md` files the repo doesn't have (except `ROLE.md`, `PROJECT.md` and `tasks.md`, which Savor reads and writes in the user's projects) and Savor, thread or session IDs. History narration ("previously", "no longer needed", „früher“) is only a warning. Solve false positives by rephrasing.
 
