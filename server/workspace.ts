@@ -266,7 +266,7 @@ const WORK_LANGS = {
     short: ['Einleitung', 'Hauptteil', 'Fazit'],
     thesis: ['Einleitung', 'Grundlagen', 'Methode', 'Ergebnisse', 'Diskussion', 'Fazit'],
     kinds: { 'term-paper': 'Hausarbeit', bachelor: 'Bachelorarbeit', master: 'Masterarbeit', article: 'Artikel', other: 'Anderes' } as Record<string, string>,
-    labels: ['Art der Arbeit', 'Forschungsfrage', 'Autor', 'Sprache', 'Zitierstil', 'Abgabe als', 'Umfang', 'Abgabetermin', 'Quellen'],
+    labels: ['Art der Arbeit', 'Forschungsfrage', 'Verfasst von', 'Sprache', 'Zitierstil', 'Abgabe als', 'Umfang', 'Abgabetermin', 'Quellen'],
     name: 'Deutsch',
     words: 'Wörter',
     sources: 'PDFs in sources/, Einträge in references.bib',

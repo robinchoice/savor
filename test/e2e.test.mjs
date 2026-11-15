@@ -3353,7 +3353,7 @@ test('a project type brings its role and workflows, and its folders from the ans
   assert.equal(fs.readFileSync(path.join(thesis.path, 'manuscript/01-einleitung.md'), 'utf8'), '# Einleitung\n')
   assert.ok(['sources', 'notes/ai-use.md', 'references.bib'].every((f) => fs.existsSync(path.join(thesis.path, f))))
   assert.equal(fs.readFileSync(path.join(thesis.path, '.gitignore'), 'utf8'), 'export/\n')
-  assert.equal(fs.readFileSync(path.join(thesis.path, 'PROJECT.md'), 'utf8'), '# Heat Pumps\n\n- Art der Arbeit: Masterarbeit\n- Autor: Ada Example\n- Sprache: Deutsch\n- Zitierstil: APA 7\n- Abgabe als: PDF (typst)\n- Umfang: 20000 Wörter\n- Quellen: PDFs in sources/, Einträge in references.bib\n')
+  assert.equal(fs.readFileSync(path.join(thesis.path, 'PROJECT.md'), 'utf8'), '# Heat Pumps\n\n- Art der Arbeit: Masterarbeit\n- Verfasst von: Ada Example\n- Sprache: Deutsch\n- Zitierstil: APA 7\n- Abgabe als: PDF (typst)\n- Umfang: 20000 Wörter\n- Quellen: PDFs in sources/, Einträge in references.bib\n')
   // The style comes from the CSL repository, so offline it is missing until the Export tab fetches it.
   const yaml = fs.readFileSync(path.join(thesis.path, 'pandoc.yaml'), 'utf8').replace('csl: styles/apa.csl\n', '')
   assert.equal(yaml, 'bibliography: references.bib\nciteproc: true\nto: typst\npdf-engine: typst\nmetadata:\n  title: "Heat Pumps"\n  author: "Ada Example"\n  lang: "de-DE"\n  reference-section-title: "Literaturverzeichnis"\n')
