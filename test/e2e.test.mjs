@@ -939,6 +939,18 @@ test('OpenCode runs through the Agent Client Protocol', async () => {
     { text: 'Test it', status: 'pending' },
   ])
   assert.ok(prompts().some((r) => r.prompt.input === 'todo: fix things' && r.prompt.reminder && !r.prompt.protocol))
+  // OpenCode's subagents show up in the plan through their task tool calls.
+  await until(async () => !(await api('GET', t)).body.busy)
+  await api('POST', `${t}/messages`, { text: 'subagents: look around' })
+  await until(async () => (await api('GET', t)).body.messages.some((m) => m.text === 'ACP subagents: look around'))
+  const subInput = (await api('GET', t)).body.messages.filter((m) => m.kind === 'user').at(-1)
+  assert.deepEqual(
+    (await api('GET', `${t}/plans`)).body[subInput.id].agents.map((a) => [a.id, a.name, a.type, a.status, a.kind]),
+    [
+      ['call7', 'Count files in folder', 'explore', 'failed', 'agent'],
+      ['call8', 'Read a.txt content', 'explore', 'done', 'agent'],
+    ],
+  )
   // The protocol in the system prompt outlasts a compaction: the next prompt still carries only the reminder.
   await until(async () => !(await api('GET', t)).body.busy)
   await api('POST', `${t}/messages`, { text: 'hello again' })

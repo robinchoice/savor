@@ -6,7 +6,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import readline from 'node:readline'
 import * as store from './store.js'
-import type { PlanStep, Thread } from './store.js'
+import type { PlanAgent, PlanStep, Thread } from './store.js'
 import { BIN, command, mcpUrl, VERSION } from './config.js'
 import { Rpc, RpcError } from './jsonrpc.js'
 import { configKey, forkOf, rememberSession, sessionIdOf, STOPPED, summarize, systemPrompt, type Host, type Session, type TurnInput } from './session.js'
@@ -33,6 +33,10 @@ export function todoSteps(rawInput: unknown): PlanStep[] | null {
 }
 
 const shellCommand = (rawInput: any): string | undefined => (typeof rawInput?.command === 'string' && rawInput.command) || undefined
+
+// OpenCode reports subagents through task tool calls in the parent session: each starts empty,
+// names the subagent once it runs (description, subagent_type) and ends with it.
+const AGENT_END: Record<string, PlanAgent['status']> = { completed: 'done', failed: 'failed', cancelled: 'stopped' }
 
 // OpenCode takes the protocol as an instructions file in its system prompt; every prompt carries a reminder.
 const REMINDER =
@@ -76,6 +80,8 @@ export class AcpSession implements Session {
   private readonly reviewer: boolean
   // The asks waiting for the plugin, by tool call.
   private reviews = new Map<string, () => void>()
+  // The task tool calls of running subagents.
+  private subagents = new Set<string>()
   // Fails the running prompt when OpenCode logs that the model's API stopped it at a usage limit.
   private stuck: (error: string) => void = () => {}
   // OpenCode's file with Savor's protocol for its system prompt, while its process runs.
@@ -182,6 +188,7 @@ export class AcpSession implements Session {
       activity.start(u.toolCallId, u.kind === 'execute' ? 'command' : u.kind === 'edit' ? 'edit' : 'note', shellCommand(u.rawInput) ?? u.title ?? summarize(u.rawInput))
       const steps = todoSteps(u.rawInput)
       if (steps) this.host.plan.steps(steps)
+      this.subagent(u)
       if (['completed', 'failed', 'cancelled'].includes(u.status)) activity.finish(u.toolCallId)
     } else if (kind === 'tool_call_update') {
       this.reviews.get(u.toolCallId)?.()
@@ -190,6 +197,7 @@ export class AcpSession implements Session {
       if (cmd) activity.relabel(u.toolCallId, cmd)
       const steps = todoSteps(u.rawInput)
       if (steps) this.host.plan.steps(steps)
+      this.subagent(u)
       if (['completed', 'failed', 'cancelled'].includes(u.status)) activity.finish(u.toolCallId)
     } else if (kind === 'usage_update') {
       if (u.used) this.host.context(u.used, u.size)
@@ -198,6 +206,16 @@ export class AcpSession implements Session {
     } else if (kind === 'plan') {
       this.host.plan.steps((u.entries ?? []).map((e: any) => ({ text: e.content, status: e.status === 'in_progress' ? 'active' : e.status === 'completed' ? 'done' : 'pending' })))
     }
+  }
+
+  private subagent(u: any) {
+    const input = u.rawInput
+    if (typeof input?.subagent_type === 'string') {
+      this.subagents.add(u.toolCallId)
+      this.host.plan.agent(u.toolCallId, { name: input.description || 'Subagent', type: input.subagent_type })
+    }
+    const status = AGENT_END[u.status]
+    if (status && this.subagents.delete(u.toolCallId)) this.host.plan.agent(u.toolCallId, { status })
   }
 
   private async onRequest(method: string, params: any): Promise<unknown> {

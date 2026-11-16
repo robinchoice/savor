@@ -4,6 +4,7 @@
 // - "approve: <anything>" → session/request_permission with Allow once / Reject, then "ACP permission: <optionId>"
 // - "reviewed: <anything>" → the same ask, but the tool call fails right after it, as when OpenCode's review plugin rejects it
 // - "todo: <anything>" → a todowrite tool call with the todo list as its raw JSON input and a compaction, then "ACP todo: <input>"
+// - "subagents: <anything>" → two subagents' task tool calls, one completed and one failed, then "ACP subagents: <input>"
 // - "stuck: <anything>" → on a model of the providers "fake" or "free", like OpenCode 1.x at its free limit: the error goes to the
 //   log on stderr and the prompt gets no answer; on other models "ACP echo: <input> (<model>)"
 // - "forget: <anything>" → acknowledges and ends the turn without a conclusion; asked for it, "ACP remembered: <input>"
@@ -107,6 +108,16 @@ async function prompt(params, reply) {
     notify('session/update', { sessionId, update: { sessionUpdate: 'tool_call_update', toolCallId: 'call6', title: cmd, kind: 'execute', status: 'in_progress', rawInput: { command: cmd }, content: [{ type: 'content', content: { type: 'text', text: 'output' } }] } })
     notify('session/update', { sessionId, update: { sessionUpdate: 'tool_call_update', toolCallId: 'call6', title: 'Runs the command', status: 'completed' } })
     answer = `ACP ran: ${cmd}`
+  } else if (input.startsWith('subagents:')) {
+    // OpenCode 1.19: a subagent's task tool call starts empty, names it once it runs and ends with it; its child
+    // session sends nothing over ACP.
+    for (const [id, description] of [['call7', 'Count files in folder'], ['call8', 'Read a.txt content']]) {
+      notify('session/update', { sessionId, update: { sessionUpdate: 'tool_call', toolCallId: id, title: 'task', kind: 'think', status: 'pending', locations: [], rawInput: {} } })
+      notify('session/update', { sessionId, update: { sessionUpdate: 'tool_call_update', toolCallId: id, status: 'in_progress', kind: 'think', title: description, locations: [], rawInput: { description, prompt: description, subagent_type: 'explore' } } })
+    }
+    notify('session/update', { sessionId, update: { sessionUpdate: 'tool_call_update', toolCallId: 'call8', status: 'completed', title: 'Read a.txt content', rawOutput: { output: '<task id="ses_child8" state="completed">hello</task>', metadata: { parentSessionId: sessionId, sessionId: 'ses_child8' } } } })
+    notify('session/update', { sessionId, update: { sessionUpdate: 'tool_call_update', toolCallId: 'call7', status: 'failed', title: 'Count files in folder' } })
+    answer = `ACP subagents: ${input.slice(10).trim()}`
   } else if (input.startsWith('todo:')) {
     // OpenCode 1.x: the whole todo list as the raw input of a todowrite tool call, as a JSON string, and a
     // compaction that drops the protocol from the history before the turn ends.
