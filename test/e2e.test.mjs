@@ -3576,7 +3576,9 @@ test('academic writing shows its sources, one chat and the work, and adds source
   await page.evaluate(() => { window.resizeManuscript = document.querySelector('.study-doc .rich-content') })
   for (const [width, height] of [[1024, 768], [390, 844], [844, 390], [1400, 900]]) {
     await page.setViewportSize({ width, height })
-    if (await page.locator('.study-tabs').isVisible()) await page.click('.study-tabs button:has-text("Manuscript")')
+    // The tabs come and go with the layout once the page has seen the new width (narrow up to 860 px).
+    if (width <= 860) await page.click('.study-tabs button:has-text("Manuscript")')
+    else await page.waitForSelector('.study-tabs', { state: 'detached' })
     await page.waitForTimeout(100)
     assert.equal(await page.evaluate(() => window.resizeManuscript === document.querySelector('.study-doc .rich-content')), true)
     assert.equal((await page.locator('.study-doc .rich-content').innerText()).trim(), 'Resize manuscript draft')
