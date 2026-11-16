@@ -437,15 +437,17 @@ function endTurn(p: Project, tid: string, result: { text?: string; error?: strin
     post(p, tid, { kind: 'error', text: result.error, modelInfo: agent })
     const thread = store.getThread(p, tid)
     const credit = thread.apiCredit
+    if (CREDENTIAL.test(result.error)) broken.set(poolOf(agent), Date.now())
     if (resumeAt) limits.set(poolOf(agent), result.resetsAt!)
     if (resumeAt && (unattended(thread) || chain())) void fallBack(p, tid, agent, result.resetsAt!, result.error)
     // Whatever stops Claude Code on API credit (no credit left, its budget, the key) hands the request on.
     else if (credit && unattended(thread) && result.error !== STOPPED && !request(p, tid).conclusion) void fallBack(p, tid, agent, credit.resetsAt, result.error)
-    else if (unattended(thread) && unusable(p, tid, result.error, startedAt)) void fallBack(p, tid, agent, null, result.error)
+    else if ((unattended(thread) || chain()) && unusable(p, tid, result.error, startedAt)) void fallBack(p, tid, agent, null, result.error)
     else if (resumeAt) notify(p, tid, 'error', result.error, 'Waits for a usage limit')
     else if (result.error !== STOPPED) notify(p, tid, 'error', result.error, 'Stopped with an error')
   } else {
     store.updateThread(p, tid, { error: null })
+    broken.delete(poolOf(agent))
     // Fallback for agents that ignore the message protocol: surface their final text. An agent that
     // acknowledged and ended its turn without a conclusion is waiting for background work, and so is one
     // whose own background work (subagents, shell commands) still runs: its text is no result yet.
@@ -752,7 +754,7 @@ function resumeAfterLimit(p: Project, tid: string) {
 }
 
 // Workflow runs and the conversations they start have no one who waits for a usage limit: they go on with
-// the next of these agents. Each runs in a mode that doesn't stop for approvals, or as the project sets it up.
+// the next of these agents, each in a mode that doesn't stop for approvals.
 // With the fallback on this computer (state.json `fallback`), every conversation goes on with the agents set there instead.
 const FALLBACK: [Provider, string][] = [['claude', 'auto'], ['codex', 'auto-review'], ['opencode', 'auto']]
 
@@ -772,6 +774,17 @@ const named = (a: AgentConfig) => (a.provider === 'opencode' && a.model ? `${STA
 // The usage limits turns of any conversation stopped at, by poolOf: when each resets (ms).
 const limits = new Map<string, number>()
 
+// The pools a broken credential keeps from working, by poolOf: when that was seen. A turn of such a
+// pool does not take a request over again by itself, not when a usage limit resets meanwhile: only a
+// turn of it that ends without an error clears the mark, or a day, so a key fixed outside Savor gets
+// a new chance.
+const broken = new Map<string, number>()
+const BROKEN_MS = 24 * 60 * 60_000
+const brokenCredential = (id: string) => {
+  const at = broken.get(id)
+  return !!at && at + BROKEN_MS > Date.now()
+}
+
 // A limit known to be reached: a turn stopped at it and it has not reset, or a window of the agent's usage is full.
 function atLimit(id: string) {
   const at = limits.get(id)
@@ -783,8 +796,9 @@ export async function fallbackSettings() {
   const [installed] = await Promise.all([listAgents(), listUsage()])
   const f = store.state().fallback
   const agents = f?.agents ?? FALLBACK.map(([provider, permissionMode]) => mergeAgent(store.defaultAgent(), { provider, permissionMode }))
-  // Agents of the chain that cannot run: not installed or signed out. The composer of a new conversation skips them.
-  const unavailable = [...new Set(agents.filter((a) => !installed.some((k) => k.id === a.provider && k.installed && k.signedIn)).map(poolOf))]
+  // Agents of the chain that cannot run: not installed, signed out, or with a credential broken. The composer
+  // of a new conversation skips them.
+  const unavailable = [...new Set(agents.filter((a) => !installed.some((k) => k.id === a.provider && k.installed && k.signedIn) || brokenCredential(poolOf(a))).map(poolOf))]
   return {
     on: !!f?.on,
     agents,
@@ -793,13 +807,15 @@ export async function fallbackSettings() {
   }
 }
 
-// With the fallback on, a request starts on an agent not known to be at a usage limit: on the one the conversation had
-// before a switch once its limit has reset, else on the first free one of the fallback.
+// With the fallback on, a request starts on an agent not known to be at a usage limit: on the one the
+// conversation had before a switch once its limit has reset and its credential works, else on the first
+// free one of the fallback. A conversation on an agent with a broken credential still starts there and
+// hands on when that fails.
 function avoidLimits(p: Project, t: Thread): Thread {
   const list = chain()
   if (!list) return t
   void listUsage()
-  const free = (a: AgentConfig) => !atLimit(poolOf(a)) && (knownAgents()?.some((k) => k.id === a.provider && k.installed && k.signedIn) ?? true)
+  const free = (a: AgentConfig) => !atLimit(poolOf(a)) && !brokenCredential(poolOf(a)) && (knownAgents()?.some((k) => k.id === a.provider && k.installed && k.signedIn) ?? true)
   if (t.preferred && free(t.preferred)) {
     post(p, t.id, { kind: 'update', text: `The usage limit of ${named(t.preferred)} has reset. It takes over again.`, modelInfo: t.preferred })
     return store.updateThread(p, t.id, { agent: t.preferred, preferred: null })
@@ -810,9 +826,12 @@ function avoidLimits(p: Project, t: Thread): Thread {
   return store.updateThread(p, t.id, { agent: next, preferred: t.preferred ?? t.agent })
 }
 
+// Errors that mean a broken sign-in or key. Such a provider does not take a request over again by
+// itself while its credential is broken, whatever usage limit resets meanwhile. Add classes here.
+const CREDENTIAL = /invalid credential|invalid (x-)?api[ -]key|unauthori[sz]ed|\b401\b|authentication|not (signed|logged) in|run \/login|sign in with/i
 // Errors that keep an agent from working at all: its sign-in or key, a process that would not start or ended.
 // A refusal, the user's Stop and failed tool calls (they don't end a turn) don't match. Add classes here.
-const UNUSABLE = /invalid credential|invalid (x-)?api[ -]key|unauthori[sz]ed|\b401\b|authentication|not (signed|logged) in|run \/login|sign in with|\bexited with\b|\bENOENT\b|\bEACCES\b|too old for Savor/i
+const UNUSABLE = new RegExp(`${CREDENTIAL.source}|\\bexited with\\b|\\bENOENT\\b|\\bEACCES\\b|too old for Savor`, 'i')
 
 // An agent that failed that way before it ran a command or edited a file hands the request on: another one
 // starting over risks no work done twice.
@@ -852,8 +871,10 @@ async function fallBack(p: Project, tid: string, from: AgentConfig, resetsAt: nu
   }
   if (credit) store.updateThread(p, tid, { apiCredit: null })
   const full = (a: AgentConfig) =>
-    limited.has(poolOf(a)) || atLimit(poolOf(a)) || !installed.some((k) => k.id === a.provider && k.installed && k.signedIn)
-  const list = chain() ?? FALLBACK.map(([to, permissionMode]) => (to === p.agent.provider ? p.agent : mergeAgent(thread.agent, { provider: to, permissionMode })))
+    limited.has(poolOf(a)) || atLimit(poolOf(a)) || brokenCredential(poolOf(a)) || !installed.some((k) => k.id === a.provider && k.installed && k.signedIn)
+  // The takeover runs in the mode the fallback sets for its agent, or Auto with the built-in chain, never in
+  // a mode that stops to ask: the request goes on without anyone waiting to answer.
+  const list = chain() ?? FALLBACK.map(([to, permissionMode]) => mergeAgent(to === p.agent.provider ? p.agent : thread.agent, { provider: to, permissionMode }))
   const i = list.findIndex((a) => poolOf(a) === poolOf(from))
   const agent = [...list.slice(i + 1), ...list.slice(0, i + 1)].find((a) => !full(a))
   if (!agent) {

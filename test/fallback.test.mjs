@@ -1,7 +1,8 @@
 // Unattended runs at a usage limit: a conversation a workflow run started goes on with the next agent, and
 // waits like the user's own conversations only when every agent is used up. With a key for API credit, Claude
 // Code goes on with that first. With the fallback set on this computer, the user's conversations switch too.
-// An unattended agent that can't work at all (its sign-in, its process) hands the request on as well.
+// An agent that can't work at all (its sign-in, its process) hands the request on as well, unattended and with
+// the fallback on; a credential that broke does not take a request over again until a turn of it works.
 import { test, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
@@ -46,8 +47,8 @@ async function until(fn, ms = 30_000) {
   }
 }
 
-// OpenCode is not installed, so Codex is the agent to go on with.
-async function startDaemon() {
+// OpenCode is left out by default, so Codex is the agent to go on with; `withOpenCode` installs the fake one.
+async function startDaemon(withOpenCode = false) {
   const entry = fs.existsSync(path.join(ROOT, 'dist/server/index.mjs')) ? 'dist/server/index.mjs' : 'bin/savor.js'
   server = spawn(process.execPath, [path.join(ROOT, entry)], {
     env: {
@@ -56,7 +57,7 @@ async function startDaemon() {
       SAVOR_PORT: String(port),
       SAVOR_CLAUDE_BIN: path.join(ROOT, 'test/fake-claude.mjs'),
       SAVOR_CODEX_BIN: path.join(ROOT, 'test/fake-codex.mjs'),
-      SAVOR_OPENCODE_BIN: path.join(TMP, 'no-such-opencode'),
+      SAVOR_OPENCODE_BIN: withOpenCode ? path.join(TMP, 'opencode') : path.join(TMP, 'no-such-opencode'),
       SAVOR_GH_BIN: path.join(ROOT, 'test/fake-gh.mjs'),
       FAKE_AGENT_LOG: AGENT_LOG,
       CLAUDE_CONFIG_DIR: path.join(TMP, 'claude'),
@@ -244,6 +245,8 @@ test('unattended conversations hand over when an agent fails before it worked, n
     const r = await fetch(`http://127.0.0.1:${port}/api${p}`, { method, headers: { cookie: `savor_token=${token}`, 'content-type': 'application/json' }, body: body && JSON.stringify(body) })
     return r.json()
   }
+  // The fallback is off: unattended runs go on with the built-in agents, each in a mode that doesn't ask.
+  await api('PUT', '/fallback', { ...(await api('GET', '/fallback')), on: false })
   const [project] = await api('GET', '/projects')
   const t = `/projects/${project.id}/threads`
   const read = (id) => api('GET', `${t}/${id}`)
@@ -268,14 +271,14 @@ test('unattended conversations hand over when an agent fails before it worked, n
     return read(id)
   }
 
-  // A sign-in that no longer works: the next agent of the fallback set in the last test takes over the same request.
+  // A sign-in that no longer works: the next agent takes over the same request, in Auto.
   const credential = await start('fail: Invalid credential')
   await until(async () => (await read(credential)).messages.some((m) => m.kind === 'conclusion'))
   await until(async () => !(await read(credential)).busy)
   let r = await read(credential)
   assert.equal(r.messages.find((m) => m.kind === 'conclusion').text, 'Codex echo: fail: Invalid credential (took over)')
   assert.deepEqual(updates(r), ['Claude Code stopped with an error: Invalid credential. Codex takes over.'])
-  assert.deepEqual([r.thread.agent.provider, r.thread.resumeAt, r.thread.error], ['codex', null, null])
+  assert.deepEqual([r.thread.agent.provider, r.thread.agent.permissionMode, r.thread.resumeAt, r.thread.error], ['codex', 'auto-review', null, null])
 
   // Each agent that fails is used up for the request: with none left, it ends with the last error instead of starting over.
   const everywhere = await start('fail: Invalid credential everywhere')
@@ -301,8 +304,70 @@ test('unattended conversations hand over when an agent fails before it worked, n
   r = await read(stopped)
   assert.deepEqual([updates(r), r.thread.agent.provider], [[], 'claude'])
 
-  // The user's own conversation keeps its error, even with the fallback on.
+  // The user's own conversation keeps its error while the fallback is off.
   const mine = (await api('POST', t, { text: 'fail: Invalid credential' })).id
   r = await failed(mine)
   assert.deepEqual([updates(r), r.thread.agent.provider, r.thread.error], [[], 'claude', 'Invalid credential'])
+})
+
+test('with the fallback on, every agent hands on to the next in all directions, and a broken credential takes nothing over again', { timeout: 120_000 }, async () => {
+  server.kill()
+  await new Promise((resolve) => server.on('exit', resolve))
+  fs.symlinkSync(path.join(ROOT, 'test/fake-acp.mjs'), path.join(TMP, 'opencode'))
+  await startDaemon(true)
+  const { token } = JSON.parse(fs.readFileSync(path.join(HOME, 'state.json'), 'utf8'))
+  const api = async (method, p, body) => {
+    const r = await fetch(`http://127.0.0.1:${port}/api${p}`, { method, headers: { cookie: `savor_token=${token}`, 'content-type': 'application/json' }, body: body && JSON.stringify(body) })
+    return r.json()
+  }
+  const [project] = await api('GET', '/projects')
+  const t = `/projects/${project.id}/threads`
+  const read = (id) => api('GET', `${t}/${id}`)
+  const updates = (r) => r.messages.filter((m) => m.kind === 'update').map((m) => m.text)
+  const settled = async (id, n = 1) => {
+    await until(async () => (await read(id)).messages.filter((m) => m.kind === 'conclusion').length >= n)
+    await until(async () => !(await read(id)).busy)
+    return read(id)
+  }
+  const [claude, codex] = (await api('GET', '/fallback')).agents
+  const opencode = { provider: 'opencode', model: 'fake/model', reasoning: 'high', fast: false, ultracode: false, permissionMode: 'auto' }
+  await api('PUT', '/fallback', { on: true, agents: [claude, codex, opencode] })
+  assert.deepEqual((await api('GET', '/fallback')).unavailable, [])
+
+  // Claude Code → Codex at a usage limit is the second test; Codex → OpenCode when Codex's sign-in fails.
+  const fromCodex = (await api('POST', t, { text: 'fail everywhere', agent: { provider: 'codex' } })).id
+  let r = await settled(fromCodex)
+  assert.equal(r.messages.find((m) => m.kind === 'conclusion').text, 'ACP echo: fail everywhere')
+  assert.deepEqual(updates(r), ['Codex stopped with an error: codex exited with 1: Invalid credential. OpenCode (fake/model) takes over.'])
+  assert.deepEqual([r.thread.agent.provider, r.thread.agent.permissionMode, r.thread.preferred.provider, r.thread.error], ['opencode', 'auto', 'codex', null])
+
+  // OpenCode → Claude Code, around the end of the list, when the model's API refuses OpenCode's key.
+  const fromOpenCode = (await api('POST', t, { text: 'invalid: key', agent: opencode })).id
+  r = await settled(fromOpenCode)
+  assert.match(r.messages.find((m) => m.kind === 'conclusion').text, /^Echo: invalid: key/)
+  assert.equal(updates(r).length, 1)
+  assert.match(updates(r)[0], /^OpenCode \(fake\/model\) stopped with an error: .*exited with 1.* Claude Code takes over\.$/)
+  assert.deepEqual([r.thread.agent.provider, r.thread.agent.permissionMode, r.thread.preferred.provider, r.thread.error], ['claude', 'auto', 'opencode', null])
+  assert.deepEqual((await api('GET', '/fallback')).unavailable.sort(), ['codex', 'opencode fake'])
+
+  // regression: an agent that failed on its credential does not take the conversation over again on the next request.
+  await api('POST', `${t}/${fromOpenCode}/messages`, { text: 'still here' })
+  r = await settled(fromOpenCode, 2)
+  assert.equal(r.messages.findLast((m) => m.kind === 'conclusion').text, 'Echo: still here')
+  assert.equal(updates(r).length, 1)
+  assert.deepEqual([r.thread.agent.provider, r.thread.preferred.provider], ['claude', 'opencode'])
+
+  // Nor at the next usage limit: with Codex and OpenCode broken, Claude Code's request waits for its reset.
+  const limited = (await api('POST', t, { text: 'limit-later: nobody left', agent: { provider: 'claude' } })).id
+  await until(async () => (await read(limited)).thread.resumeAt)
+  await new Promise((r) => setTimeout(r, 1000))
+  r = await read(limited)
+  assert.deepEqual([updates(r), r.thread.agent.provider], [[], 'claude'])
+  await api('POST', `${t}/${limited}/stop`)
+
+  // A turn of the broken agent that works, started by the user, makes it an agent to go on with again.
+  const fixed = (await api('POST', t, { text: 'works again', agent: opencode })).id
+  r = await settled(fixed)
+  assert.equal(r.messages.find((m) => m.kind === 'conclusion').text, 'ACP echo: works again')
+  assert.deepEqual((await api('GET', '/fallback')).unavailable, ['codex'])
 })

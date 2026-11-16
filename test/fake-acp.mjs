@@ -5,6 +5,8 @@
 // - "reviewed: <anything>" → the same ask, but the tool call fails right after it, as when OpenCode's review plugin rejects it
 // - "todo: <anything>" → a todowrite tool call with the todo list as its raw JSON input and a compaction, then "ACP todo: <input>"
 // - "subagents: <anything>" → two subagents' task tool calls, one completed and one failed, then "ACP subagents: <input>"
+// - "invalid: <anything>" → the model's API refuses its credential before any tool runs, like OpenCode 1.x with
+//   an expired key: the error goes to the log on stderr and the process exits with 1
 // - "stuck: <anything>" → on a model of the providers "fake" or "free", like OpenCode 1.x at its free limit: the error goes to the
 //   log on stderr and the prompt gets no answer; on other models "ACP echo: <input> (<model>)"
 // - "forget: <anything>" → acknowledges and ends the turn without a conclusion; asked for it, "ACP remembered: <input>"
@@ -66,6 +68,10 @@ async function prompt(params, reply) {
   // What the prompt carried of Savor's protocol: the full text on a session's first prompt and after a
   // compaction, the one-line reminder on every other one.
   if (input) log({ prompt: { input, protocol: text.startsWith('You are running inside Savor'), reminder: text.includes('Savor reminder') } })
+  if (input.startsWith('invalid:')) {
+    process.stderr.write(`timestamp=${new Date().toISOString()} level=ERROR run=1 message="stream error" providerID=fake modelID=${model || 'fake/model'} session.id=${params.sessionId} error.error="AI_APICallError: Invalid credential"\n`)
+    return process.exit(1)
+  }
   notify('session/update', { sessionId, update: { sessionUpdate: 'tool_call', toolCallId: 'call1', title: 'Reading files', kind: 'read', status: 'in_progress' } })
   notify('session/update', { sessionId, update: { sessionUpdate: 'tool_call_update', toolCallId: 'call1', status: 'completed' } })
   notify('session/update', { sessionId, update: { sessionUpdate: 'tool_call', toolCallId: 'call3', title: 'ls -la', kind: 'execute', rawInput: { command: 'ls -la' } } })
