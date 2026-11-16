@@ -98,6 +98,15 @@ async function prompt(params, reply) {
       ],
     })
     answer = `ACP permission: ${r.outcome.outcome === 'selected' ? r.outcome.optionId : 'cancelled'}`
+  } else if (input.startsWith('shell:')) {
+    // OpenCode 1.19: a shell call starts as "bash" without input, its command comes with the update that runs it,
+    // and the last update carries the description as its title.
+    const cmd = input.slice(6).trim()
+    notify('session/update', { sessionId, update: { sessionUpdate: 'tool_call', toolCallId: 'call6', title: 'bash', kind: 'execute', status: 'pending', rawInput: {} } })
+    notify('session/update', { sessionId, update: { sessionUpdate: 'tool_call_update', toolCallId: 'call6', title: cmd, kind: 'execute', status: 'in_progress', rawInput: { command: cmd } } })
+    notify('session/update', { sessionId, update: { sessionUpdate: 'tool_call_update', toolCallId: 'call6', title: cmd, kind: 'execute', status: 'in_progress', rawInput: { command: cmd }, content: [{ type: 'content', content: { type: 'text', text: 'output' } }] } })
+    notify('session/update', { sessionId, update: { sessionUpdate: 'tool_call_update', toolCallId: 'call6', title: 'Runs the command', status: 'completed' } })
+    answer = `ACP ran: ${cmd}`
   } else if (input.startsWith('todo:')) {
     // OpenCode 1.x: the whole todo list as the raw input of a todowrite tool call, as a JSON string, and a
     // compaction that drops the protocol from the history before the turn ends.

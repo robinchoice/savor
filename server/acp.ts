@@ -32,6 +32,8 @@ export function todoSteps(rawInput: unknown): PlanStep[] | null {
   return todos.map((t: any) => ({ text: t.content, status: t.status === 'in_progress' ? 'active' : t.status === 'completed' ? 'done' : 'pending' }))
 }
 
+const shellCommand = (rawInput: any): string | undefined => (typeof rawInput?.command === 'string' && rawInput.command) || undefined
+
 // OpenCode takes the protocol as an instructions file in its system prompt; every prompt carries a reminder.
 const REMINDER =
   'Savor reminder: the user sees only the savor MCP tools — acknowledge, then end the turn with send_conclusion_message (summary, text, questions, suggestions), and keep your todo list current.\n\n'
@@ -177,12 +179,15 @@ export class AcpSession implements Session {
       if (!this.thinking) activity.instant('thinking', 'Thinking')
       this.thinking = true
     } else if (kind === 'tool_call') {
-      activity.start(u.toolCallId, u.kind === 'execute' ? 'command' : u.kind === 'edit' ? 'edit' : 'note', u.title ?? summarize(u.rawInput))
+      activity.start(u.toolCallId, u.kind === 'execute' ? 'command' : u.kind === 'edit' ? 'edit' : 'note', shellCommand(u.rawInput) ?? u.title ?? summarize(u.rawInput))
       const steps = todoSteps(u.rawInput)
       if (steps) this.host.plan.steps(steps)
       if (['completed', 'failed', 'cancelled'].includes(u.status)) activity.finish(u.toolCallId)
     } else if (kind === 'tool_call_update') {
       this.reviews.get(u.toolCallId)?.()
+      // OpenCode announces a shell call as "bash" and sends its command once it runs.
+      const cmd = shellCommand(u.rawInput)
+      if (cmd) activity.relabel(u.toolCallId, cmd)
       const steps = todoSteps(u.rawInput)
       if (steps) this.host.plan.steps(steps)
       if (['completed', 'failed', 'cancelled'].includes(u.status)) activity.finish(u.toolCallId)

@@ -967,6 +967,16 @@ test('OpenCode runs through the Agent Client Protocol', async () => {
   await api('PATCH', `/projects/${project.id}`, { agent: project.agent })
 })
 
+test('regression: an OpenCode shell call shows its command in the activity, not "bash"', async () => {
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
+  const thread = (await api('POST', `/projects/${project.id}/threads`, { text: 'shell: tail -f /dev/null', agent: { provider: 'opencode', model: 'fake/model', reasoning: '', permissionMode: 'build' } })).body
+  const t = `/projects/${project.id}/threads/${thread.id}`
+  await until(async () => (await api('GET', t)).body.messages.some((m) => m.text === 'ACP ran: tail -f /dev/null'))
+  const shell = (await api('GET', `${t}/activity`)).body.filter((a) => a.type === 'command' && a.label !== 'ls -la')
+  assert.deepEqual(shell.map((a) => [a.label, !!a.finishedAt]), [['tail -f /dev/null', true]])
+  assert.equal(fs.readFileSync(path.join(PROJECT, '.savor', 'threads', thread.id, 'activity.jsonl'), 'utf8').split('"label":"tail -f /dev/null"').length, 2)
+})
+
 test("with the fallback on, OpenCode goes on with a model of another provider at its model's usage limit", async () => {
   const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
   const opencode = (model) => ({ provider: 'opencode', model, reasoning: '', fast: false, ultracode: false, permissionMode: 'build' })

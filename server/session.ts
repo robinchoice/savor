@@ -215,6 +215,7 @@ const counters = new Map<string, number>()
 
 export class Activity {
   private ids = new Map<string, number>()
+  private labels = new Map<string, string>()
   private last = store.now()
   // `live` is false once the session was replaced or its conversation deleted; what it logs then is dropped.
   constructor(private p: Project, private tid: string, private live: () => boolean) {}
@@ -229,7 +230,17 @@ export class Activity {
     if (!this.live()) return
     const id = this.nextId()
     this.ids.set(key, id)
+    this.labels.set(key, label.slice(0, 300))
     store.appendActivity(this.p, this.tid, { id, type, label: label.slice(0, 300), time: store.now() })
+    emit({ type: 'activity', projectId: this.p.id, threadId: this.tid })
+  }
+
+  // For an agent that announces a call before its input is known and names it once it runs.
+  relabel(key: string, label: string) {
+    const id = this.ids.get(key)
+    if (!id || !this.live() || this.labels.get(key) === label.slice(0, 300)) return
+    this.labels.set(key, label.slice(0, 300))
+    store.appendActivity(this.p, this.tid, { id, label: label.slice(0, 300) })
     emit({ type: 'activity', projectId: this.p.id, threadId: this.tid })
   }
 
@@ -237,6 +248,7 @@ export class Activity {
     const id = this.ids.get(key)
     if (!id || !this.live()) return
     this.ids.delete(key)
+    this.labels.delete(key)
     this.last = store.now()
     store.appendActivity(this.p, this.tid, { id, finishedAt: this.last })
     emit({ type: 'activity', projectId: this.p.id, threadId: this.tid })
