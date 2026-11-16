@@ -212,6 +212,16 @@ test('the desktop app switches between this computer and the paired one', async 
   assert.equal(computers.startId(shell.state), there.base, 'the app opens it again on its next start')
 })
 
+test('regression: showing another computer, the app tells its Savor version and still checks for its own updates', async () => {
+  await page.click('.account')
+  const head = page.locator('.account-dialog .row-item').first()
+  await head.waitFor()
+  assert.ok((await head.innerText()).includes(`Savor ${(await me()).version}`))
+  await head.locator('button:has-text("Check for updates")').click()
+  await head.locator('text=up to date').waitFor()
+  await page.click('.account-dialog button[title="Close"]')
+})
+
 test('a pairing declined on the other computer leads back to the computers of the app', async () => {
   await computerRows()
   const { url } = await there.call('POST', '/devices/pairing')

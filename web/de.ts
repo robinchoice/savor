@@ -117,6 +117,7 @@ const de: Record<string, string> = {
   'Install and restart': 'Installieren und neu starten',
   'Check for updates': 'Nach Updates suchen',
   'Remote device · connected to {host}': 'Entferntes Gerät · verbunden mit {host}',
+  'Updates this app, not {host}': 'Aktualisiert diese App, nicht {host}',
   'via relay': 'über Relay',
   'App settings': 'App-Einstellungen',
   'Keep this computer awake': 'Diesen Computer wach halten',

@@ -684,8 +684,15 @@ export function AccountDialog({ me, projects, toggleAwake, open, onClose }: { me
                   {t('Remote device · connected to {host}', { host: me.host })}
                   {loadProfile() ? ` ${t('via relay')}` : ''}
                   {me.expiresAt && ` · ${t('access until {time}', { time: new Date(me.expiresAt).toLocaleString() })}`}
+                  {` · Savor ${me.version}`}
+                  {update && ` · ${update}`}
                 </small>
               </div>
+              {desktop && (
+                <button class="ghost small" title={t('Updates this app, not {host}', { host: me.host })} onClick={available ? installUpdate : checkUpdate}>
+                  {available ? t('Install and restart') : t('Check for updates')}
+                </button>
+              )}
             </div>
           )}
           {desktop?.computers ? <DesktopComputers /> : !local && loadProfile() && <Computers />}
