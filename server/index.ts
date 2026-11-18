@@ -501,20 +501,22 @@ route('GET', '/projects/:pid/fanout/:id', (params) => {
   const threads = store.listThreads(p).filter((t) => t.fanout?.id === params.id)
   if (!threads.length) throw new store.NotFound('comparison')
   const worktrees = git.listWorktrees(p)
-  return threads
-    .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
-    .map((t) => {
-      const worktree = worktrees.find((w) => w.path === t.worktree?.path) ?? null
-      const conclusion = store.readMessages(p, t.id).filter((m) => m.kind === 'conclusion').at(-1)
-      return {
-        thread: { ...t, busy: agents.isBusy(t.id), waiting: agents.waiting(p, t) },
-        worktree,
-        changes: worktree ? git.changes(worktree.path, t.fanout!.base).map(({ patch, ...c }) => c) : [],
-        merged: !!worktree && git.isMerged(p, worktree.branch, t.fanout!.base),
-        answer: conclusion?.text ?? null,
-        workTiming: conclusion?.workTiming ?? null,
-      }
-    })
+  return Promise.all(
+    threads
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+      .map(async (t) => {
+        const worktree = worktrees.find((w) => w.path === t.worktree?.path) ?? null
+        const conclusion = store.readMessages(p, t.id).filter((m) => m.kind === 'conclusion').at(-1)
+        return {
+          thread: { ...t, busy: agents.isBusy(t.id), waiting: agents.waiting(p, t) },
+          worktree,
+          changes: worktree ? (await git.changes(worktree.path, t.fanout!.base)).map(({ patch, ...c }) => c) : [],
+          merged: !!worktree && git.isMerged(p, worktree.branch, t.fanout!.base),
+          answer: conclusion?.text ?? null,
+          workTiming: conclusion?.workTiming ?? null,
+        }
+      }),
+  )
 })
 // Seen on one device means seen everywhere: the pushes about it go away on the others.
 function markRead(p: store.Project, tid: string) {
@@ -815,7 +817,7 @@ const terminalAllowed = (ctx: Ctx) => {
 // Where a terminal can run: the project folder and its worktrees, each with the conversations in it.
 function terminalPlaces(p: store.Project) {
   const threads = store.listThreads(p)
-  return [{ path: p.path, branch: null as string | null }, ...git.listWorktrees(p).map((w) => ({ path: w.path, branch: w.branch }))].map((place) => ({
+  return [{ path: p.path, branch: null as string | null }, ...git.worktreesOf(p)].map((place) => ({
     ...place,
     threads: place.branch ? threads.filter((t) => t.worktree?.path === place.path).map((t) => t.id) : [],
   }))
@@ -823,7 +825,8 @@ function terminalPlaces(p: store.Project) {
 function terminalOf(params: Params, id: unknown) {
   const p = project(params)
   const t = terminal.get(p.id, id)
-  if (!t || !terminalPlaces(p).some((place) => place.path === t.cwd)) throw new store.NotFound('terminal')
+  // Asked with every keystroke: the project folder needs no look at git, a worktree one call.
+  if (!t || (t.cwd !== p.path && !git.worktreesOf(p).some((w) => w.path === t.cwd))) throw new store.NotFound('terminal')
   return t
 }
 route('GET', '/projects/:pid/terminal', (params, _, ctx) => {

@@ -1,5 +1,5 @@
 // Git for projects: worktrees per conversation, merging them back, and diffs of commits and changes.
-import { execFileSync, spawn, spawnSync } from 'node:child_process'
+import { execFile, execFileSync, spawn, spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import * as store from './store.js'
@@ -67,7 +67,8 @@ export interface Worktree { branch: string; path: string; ahead: number; dirty: 
 // status and its build tools never see them.
 const worktreesDir = (p: Project) => path.join(store.HOME, 'worktrees', p.id)
 
-export function listWorktrees(p: Project): Worktree[] {
+// The worktrees Savor made for the project, as git lists them: one git call, whatever their number.
+export function worktreesOf(p: Project): { branch: string; path: string }[] {
   let out: string
   try {
     out = git(p.path, 'worktree', 'list', '--porcelain')
@@ -75,29 +76,33 @@ export function listWorktrees(p: Project): Worktree[] {
     return []
   }
   const root = worktreesDir(p) + path.sep
-  const list: Worktree[] = []
-  for (const block of out.split('\n\n')) {
+  return out.split('\n\n').flatMap((block) => {
     // Git prints forward slashes on Windows too.
     const dir = path.normalize(block.match(/^worktree (.+)$/m)?.[1] ?? '')
     const branch = block.match(/^branch refs\/heads\/(.+)$/m)?.[1]
     // One removed by hand stays listed as prunable until `git worktree prune`.
-    if (!dir || !branch || !dir.startsWith(root) || !fs.existsSync(dir)) continue
+    return dir && branch && dir.startsWith(root) && fs.existsSync(dir) ? [{ branch, path: dir }] : []
+  })
+}
+
+// Each with how far it is ahead of the project and whether it has uncommitted changes, which takes two
+// more git calls per worktree: for the lists that show that, not for looking one up.
+export const listWorktrees = (p: Project): Worktree[] =>
+  worktreesOf(p).map((w) => {
     let ahead = 0
     let dirty = false
     try {
-      ahead = Number(git(p.path, 'rev-list', '--count', `HEAD..${branch}`))
-      dirty = git(dir, 'status', '--porcelain') !== ''
+      ahead = Number(git(p.path, 'rev-list', '--count', `HEAD..${w.branch}`))
+      dirty = git(w.path, 'status', '--porcelain') !== ''
     } catch {}
-    list.push({ branch, path: dir, ahead, dirty })
-  }
-  return list
-}
+    return { ...w, ahead, dirty }
+  })
 
 // A worktree for `branch`, created on demand. The branch is created from the project's HEAD when it
 // does not exist yet. Conversations can share a worktree.
 export function addWorktree(p: Project, branch: string): { branch: string; path: string } {
   git(p.path, 'check-ref-format', '--branch', branch)
-  const existing = listWorktrees(p).find((w) => w.branch === branch)
+  const existing = worktreesOf(p).find((w) => w.branch === branch)
   if (existing) return { branch, path: existing.path }
   const dir = path.join(worktreesDir(p), branch.replace(/[^\w.-]+/g, '-'))
   if (fs.existsSync(dir)) throw new GitError(`${dir} already exists.`)
@@ -226,15 +231,20 @@ export function showCommit(cwd: string, hash: string): Commit {
   return { hash: full, subject, body: (body ?? '').trim(), author, date, files: patchFiles(git(cwd, 'show', '--format=', '--no-color', '-p', hash)) }
 }
 
-// Everything in `cwd` that differs from `base`, committed or not, new files included.
-export function changes(cwd: string, base = 'HEAD'): CommitFile[] {
-  // `git diff --no-index` exits with 1 when the files differ, which a new file always does.
-  const added = git(cwd, 'ls-files', '--others', '--exclude-standard', '-z')
-    .split('\0')
-    .filter(Boolean)
-    .map((file) => spawnSync('git', ['diff', '--no-index', '--no-color', '--', '/dev/null', file], { cwd, maxBuffer: 32 * 1024 * 1024 }).stdout.toString().trim())
+// Everything in `cwd` that differs from `base`, committed or not, new files included. A new file needs a
+// git process of its own: those run beside the daemon's other work, a few at a time, so a turn that left
+// hundreds of new files doesn't hold up every conversation while they are read.
+export async function changes(cwd: string, base = 'HEAD'): Promise<CommitFile[]> {
+  const files = git(cwd, 'ls-files', '--others', '--exclude-standard', '-z').split('\0').filter(Boolean)
+  const added: string[] = []
+  for (let i = 0; i < files.length; i += NEW_FILES_AT_ONCE) added.push(...(await Promise.all(files.slice(i, i + NEW_FILES_AT_ONCE).map((file) => newFilePatch(cwd, file)))))
   return patchFiles([git(cwd, 'diff', '--no-color', base), ...added].join('\n'))
 }
+
+const NEW_FILES_AT_ONCE = 8
+// `git diff --no-index` exits with 1 when the files differ, which a new file always does.
+const newFilePatch = (cwd: string, file: string) =>
+  new Promise<string>((resolve) => execFile('git', ['diff', '--no-index', '--no-color', '--', '/dev/null', file], { cwd, maxBuffer: 32 * 1024 * 1024 }, (_, stdout) => resolve(stdout.trim())))
 
 // Where a worktree's branch left the project's current branch.
 export const baseOf = (p: Project, cwd: string) => git(cwd, 'merge-base', 'HEAD', git(p.path, 'rev-parse', 'HEAD'))
