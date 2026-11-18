@@ -302,18 +302,23 @@ function readJson<T>(file: string, fallback: T): T {
   }
 }
 
-// Synced before the rename, so a hard reset leaves the old file or the new one, not an empty one.
-function writeJson(file: string, data: unknown) {
-  fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 })
+// Synced before the rename, so a hard reset or a failed write leaves the old file or the new one, not
+// an empty or cut-off one.
+function writeAtomic(file: string, text: string) {
   const tmp = `${file}.${process.pid}.tmp`
   const fd = fs.openSync(tmp, 'w', 0o600)
   try {
-    fs.writeFileSync(fd, JSON.stringify(data, null, 2))
+    fs.writeFileSync(fd, text)
     fs.fsyncSync(fd)
   } finally {
     fs.closeSync(fd)
   }
   fs.renameSync(tmp, file)
+}
+
+function writeJson(file: string, data: unknown) {
+  fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 })
+  writeAtomic(file, JSON.stringify(data, null, 2))
 }
 
 // Append-only logs survive a hard reset with zeros, blank or cut-off lines in them: those lines are
@@ -580,8 +585,9 @@ export function appendMessage(p: Project, tid: string, m: Omit<Message, 'id' | '
   return msg
 }
 
+// A changed or removed message rewrites the whole conversation, so it is replaced in one step like the JSON files.
 export const writeMessages = (p: Project, tid: string, msgs: Message[]) =>
-  fs.writeFileSync(path.join(threadDir(p, tid), 'messages.jsonl'), msgs.map((m) => JSON.stringify(m) + '\n').join(''), { mode: 0o600 })
+  writeAtomic(path.join(threadDir(p, tid), 'messages.jsonl'), msgs.map((m) => JSON.stringify(m) + '\n').join(''))
 
 export function updateMessage(p: Project, tid: string, id: string, patch: Partial<Message>): Message {
   const msgs = readMessages(p, tid).map((m) => (m.id === id ? { ...m, ...patch } : m))
