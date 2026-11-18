@@ -93,6 +93,8 @@ export async function start(t: Term, cols: number, rows: number) {
   const cwd = fs.existsSync(t.cwd) ? fs.realpathSync(t.cwd) : t.cwd
   const p = pty.spawn(shell(), [], { name: 'xterm-256color', cwd, cols, rows, env: { ...environment(), TERM: 'xterm-256color', COLORTERM: 'truecolor' } })
   t.pty = p
+  // A restart draws on a new screen; the one of the shell before it is let go.
+  t.screen?.term.dispose()
   const s = (t.screen = screen(cols, rows))
   p.onData((o) => {
     s.term.write(o)
