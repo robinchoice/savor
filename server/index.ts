@@ -594,7 +594,7 @@ route('POST', '/projects/:pid/threads/:tid/fork', (params) => {
   const parent = store.getThread(p, params.tid)
   if (agents.isBusy(parent.id)) throw new BadRequest('The agent is still working. Fork the conversation when it has finished.')
   const provider = parent.agent.provider
-  const sessionId = (['claude', 'codex', 'opencode'].includes(provider) && parent.agentSessions.find((s) => s.provider === provider)?.sessionId) || null
+  const sessionId = parent.agentSessions.find((s) => s.provider === provider)?.sessionId || null
   const fork = { provider, sessionId, messages: store.readMessages(p, parent.id).length }
   const t = store.createThread(p, { title: `Fork of ${parent.title}`, agent: parent.agent, parentId: parent.id, fork, worktree: parent.worktree })
   emit({ type: 'thread', projectId: p.id, threadId: t.id })
