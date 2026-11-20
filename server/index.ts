@@ -429,17 +429,17 @@ route('DELETE', '/projects/:pid', (params, _, ctx) => {
 // ---- threads ----
 
 // What the conversation lists show beyond the thread: why it waits for the user and what it does while it works.
-function listed(p: store.Project, t: store.Thread) {
-  const messages = store.readMessages(p, t.id)
+function listed(p: store.Project, t: store.Thread, procs = store.listProcs(p)) {
+  // Only an open conversation waits for anything; a finished one is counted without reading its messages.
+  const messages = t.completed ? null : store.readMessages(p, t.id)
   const busy = agents.isBusy(t.id)
-  const waiting = agents.waiting(p, t)
+  const waiting = agents.waiting(p, t, procs)
   const startedAt = busy ? agents.startedAt(t.id) : undefined
-  return { ...t, busy, waiting, messageCount: messages.length, waitsFor: waitsFor(p, t, messages, busy || waiting), ...(startedAt && { startedAt, step: step(p, t, startedAt) }) }
+  return { ...t, busy, waiting, messageCount: messages?.length ?? store.countMessages(p, t.id), waitsFor: messages && waitsFor(p, t, messages, busy || waiting), ...(startedAt && { startedAt, step: step(p, t, startedAt) }) }
 }
 
 // A read result keeps waiting until a follow-up or Finish, except a workflow run's; `since` is when it started to wait.
 function waitsFor(p: store.Project, t: store.Thread, messages: store.Message[], working: boolean) {
-  if (t.completed) return null
   const since = messages.at(-1)?.ts ?? t.updatedAt
   if (t.needsYou) {
     const approval = messages.filter((m) => m.approval?.status === 'pending').at(-1)?.approval
@@ -467,7 +467,8 @@ function step(p: store.Project, t: store.Thread, startedAt: string) {
 
 route('GET', '/projects/:pid/threads', (params) => {
   const p = project(params)
-  return store.listThreads(p).map((t) => listed(p, t))
+  const procs = store.listProcs(p)
+  return store.listThreads(p).map((t) => listed(p, t, procs))
 })
 route('POST', '/projects/:pid/threads', (params, b, ctx) => {
   const p = project(params)
@@ -1081,7 +1082,8 @@ route('GET', '/overview', () => {
   const threads = [], workflows = []
   for (const p of store.listProjects()) {
     const list = store.listThreads(p)
-    threads.push(...list.map((t) => ({ ...listed(p, t), ...(t.needsYou && asks(p, t)), projectId: p.id })))
+    const procs = store.listProcs(p)
+    threads.push(...list.map((t) => ({ ...listed(p, t, procs), ...(t.needsYou && asks(p, t)), projectId: p.id })))
     workflows.push(...listWorkflows(p, list).map((wf) => ({ ...wf, projectId: p.id })))
   }
   return { threads, workflows }

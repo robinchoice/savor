@@ -348,6 +348,55 @@ function readJsonl<T>(file: string): T[] {
   return records
 }
 
+// ---- read cache ----
+
+// What the lists read on every request (conversations, their messages, decisions, processes) stays in memory, parsed,
+// for as long as the file has the mtime and size it was read with. Every read checks that with a stat, because tests
+// and a second daemon write into .savor too. A file changed in the last RACY_MS is read again each time: the next
+// write could leave the same mtime and size, on file systems that count in seconds.
+// What the cache holds is frozen, so a caller that changes it fails instead of changing what the next one reads. Over
+// CACHE_BYTES of files, those read longest ago go first.
+const CACHE_BYTES = 16 * 1024 * 1024
+const RACY_MS = 2000
+const cache = new Map<string, { mtimeMs: number; size: number; bytes: number; value: unknown }>()
+let cacheBytes = 0
+
+function freeze<T>(value: T): T {
+  if (Array.isArray(value)) value.forEach(freeze)
+  else if (value && typeof value === 'object' && Object.getPrototypeOf(value) === Object.prototype) Object.values(value).forEach(freeze)
+  else return value
+  return Object.freeze(value)
+}
+
+// `key` names what `load` makes of `file`; `bytes` is what it weighs when that is not the file's size.
+function cached<T>(key: string, file: string, load: () => T, bytes?: number): T {
+  const at = Date.now()
+  const stat = fs.statSync(file, { throwIfNoEntry: false })
+  const hit = cache.get(key)
+  if (hit) {
+    cache.delete(key)
+    cacheBytes -= hit.bytes
+    if (stat && hit.mtimeMs === stat.mtimeMs && hit.size === stat.size) {
+      cache.set(key, hit)
+      cacheBytes += hit.bytes
+      return hit.value as T
+    }
+  }
+  const value = freeze(load())
+  if (!stat || at - stat.mtimeMs < RACY_MS) return value
+  const entry = { mtimeMs: stat.mtimeMs, size: stat.size, bytes: Math.max(bytes ?? stat.size, 64), value }
+  cache.set(key, entry)
+  cacheBytes += entry.bytes
+  for (const [oldest, e] of cache) {
+    if (cacheBytes <= CACHE_BYTES) break
+    cache.delete(oldest)
+    cacheBytes -= e.bytes
+  }
+  return value
+}
+
+const cachedJson = <T>(file: string, fallback: T): T => cached(file, file, () => readJson(file, fallback))
+
 // ---- global state ----
 
 const stateFile = path.join(HOME, 'state.json')
@@ -411,7 +460,7 @@ export const upgradeAgent = (a: AgentConfig): AgentConfig =>
   : { ...a, ultracode: !!a.ultracode }
 
 function loadProject(ref: { path: string }): Project | null {
-  const p = readJson<(Partial<Project> & Pick<Project, 'id' | 'name'>) | null>(path.join(ref.path, '.savor', 'project.json'), null)
+  const p = cachedJson<(Partial<Project> & Pick<Project, 'id' | 'name'>) | null>(path.join(ref.path, '.savor', 'project.json'), null)
   return p && ({ tint: TINTS[0], verbosity: 'medium', paused: false, pinned: true, fixed: false, worktreeSetup: '', ...p, agent: upgradeAgent({ ...defaultAgent(), ...p.agent }), path: ref.path } as Project)
 }
 
@@ -511,14 +560,14 @@ export function listThreads(p: Project): Thread[] {
   if (!fs.existsSync(dir)) return []
   return fs
     .readdirSync(dir)
-    .map((tid) => readJson<Thread | null>(path.join(dir, tid, 'thread.json'), null))
+    .map((tid) => cachedJson<Thread | null>(path.join(dir, tid, 'thread.json'), null))
     .filter((t): t is Thread => !!t)
     .map((t) => ({ ...t, agent: upgradeAgent(t.agent), preferred: t.preferred && RETIRED_PROVIDERS.includes(t.preferred.provider) ? null : t.preferred }))
     .sort((a, b) => (b.inputAt ?? b.createdAt).localeCompare(a.inputAt ?? a.createdAt))
 }
 
 export function getThread(p: Project, tid: string): Thread {
-  const t = readJson<Thread | null>(path.join(threadDir(p, tid), 'thread.json'), null)
+  const t = cachedJson<Thread | null>(path.join(threadDir(p, tid), 'thread.json'), null)
   if (!t) throw new NotFound(`thread ${tid}`)
   return { ...t, agent: upgradeAgent(t.agent), preferred: t.preferred && RETIRED_PROVIDERS.includes(t.preferred.provider) ? null : t.preferred }
 }
@@ -577,17 +626,30 @@ export const savePlans = (p: Project, tid: string, plans: Record<string, Plan>) 
 export const readReview = (p: Project, tid: string): unknown[] => readJson(path.join(threadDir(p, tid), 'review.json'), [])
 export const saveReview = (p: Project, tid: string, comments: unknown[]) => writeJson(path.join(threadDir(p, tid), 'review.json'), comments)
 
-export const readMessages = (p: Project, tid: string) => readJsonl<Message>(path.join(threadDir(p, tid), 'messages.jsonl'))
+const messagesFile = (p: Project, tid: string) => path.join(threadDir(p, tid), 'messages.jsonl')
+
+// The list is the caller's; the messages in it are the cache's and can't be changed.
+export function readMessages(p: Project, tid: string): Message[] {
+  const file = messagesFile(p, tid)
+  return [...cached(file, file, () => readJsonl<Message>(file))]
+}
+
+// How many messages a conversation has, without keeping them in memory: the lists count every conversation
+// and read only the open ones.
+export function countMessages(p: Project, tid: string) {
+  const file = messagesFile(p, tid)
+  return cached(`${file}#count`, file, () => readJsonl(file).length, 64)
+}
 
 export function appendMessage(p: Project, tid: string, m: Omit<Message, 'id' | 'ts'>): Message {
   const msg = { id: newId(), ts: now(), ...m }
-  fs.appendFileSync(path.join(threadDir(p, tid), 'messages.jsonl'), JSON.stringify(msg) + '\n', { mode: 0o600 })
+  fs.appendFileSync(messagesFile(p, tid), JSON.stringify(msg) + '\n', { mode: 0o600 })
   return msg
 }
 
 // A changed or removed message rewrites the whole conversation, so it is replaced in one step like the JSON files.
 export const writeMessages = (p: Project, tid: string, msgs: Message[]) =>
-  writeAtomic(path.join(threadDir(p, tid), 'messages.jsonl'), msgs.map((m) => JSON.stringify(m) + '\n').join(''))
+  writeAtomic(messagesFile(p, tid), msgs.map((m) => JSON.stringify(m) + '\n').join(''))
 
 export function updateMessage(p: Project, tid: string, id: string, patch: Partial<Message>): Message {
   const msgs = readMessages(p, tid).map((m) => (m.id === id ? { ...m, ...patch } : m))
@@ -636,13 +698,23 @@ export function saveAttachment(p: Project, tid: string, file: { name: string; da
 
 const decisionsDir = (p: Project) => path.join(dataDir(p), 'decisions')
 
-export function listDecisions(p: Project, threadId?: string): Decision[] {
-  if (!fs.existsSync(decisionsDir(p))) return []
-  return fs
-    .readdirSync(decisionsDir(p))
-    .filter((f) => f.endsWith('.json'))
-    .map((f) => readJson<Decision>(path.join(decisionsDir(p), f), null as never))
-    .filter((d) => d && (!threadId || d.threadId === threadId))
+// A project keeps the decisions of all its conversations in one folder. Which files are a conversation's is
+// remembered until a file is added to the folder or removed from it, which changes the folder's mtime.
+export function listDecisions(p: Project, threadId: string): Decision[] {
+  const dir = decisionsDir(p)
+  const read = (f: string) => cachedJson<Decision | null>(path.join(dir, f), null)
+  const files = cached(dir, dir, () => {
+    const byThread = new Map<string, string[]>()
+    for (const f of fs.existsSync(dir) ? fs.readdirSync(dir) : []) {
+      const d = f.endsWith('.json') && read(f)
+      if (d) byThread.set(d.threadId, [...(byThread.get(d.threadId) ?? []), f])
+    }
+    return byThread
+  })
+  return (files.get(threadId) ?? [])
+    .flatMap((f) => read(f) ?? [])
+    .filter((d) => d.threadId === threadId)
+    .map((d) => ({ ...d }))
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))
 }
 
@@ -816,7 +888,7 @@ export function deleteWorkflow(p: Project, id: string) {
 
 const procFile = (p: Project) => path.join(dataDir(p), 'processes.json')
 
-export const listProcs = (p: Project): Proc[] => readJson(procFile(p), [])
+export const listProcs = (p: Project): Proc[] => [...cachedJson<Proc[]>(procFile(p), [])]
 export const saveProcs = (p: Project, procs: Proc[]) => writeJson(procFile(p), procs)
 
 export class NotFound extends Error {}

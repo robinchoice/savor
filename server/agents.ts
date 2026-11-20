@@ -56,8 +56,8 @@ export const isBusy = (tid: string) => busy.has(tid)
 export const anyBusy = () => busy.size > 0
 export const startedAt = (tid: string) => busy.get(tid)
 // An agent that acknowledged and ended its turn without a conclusion waits for the background processes its conversation owns.
-function awaitsBackground(p: Project, tid: string) {
-  if (busy.has(tid) || !store.listProcs(p).some((pr) => pr.threadId === tid)) return false
+function awaitsBackground(p: Project, tid: string, procs = store.listProcs(p)) {
+  if (busy.has(tid) || !procs.some((pr) => pr.threadId === tid)) return false
   const r = request(p, tid)
   return !!r.ack && !r.conclusion
 }
@@ -363,9 +363,10 @@ export function stopTask(tid: string, id: string) {
 
 // Between turns with a conclusion still owed: the agent waits for a process it registered, for
 // background work of its own, for CI or for a usage limit to reset. A stop or a failure ends that.
-export function waiting(p: Project, t: Thread) {
+// A list hands in the project's processes, which are the same for all its conversations.
+export function waiting(p: Project, t: Thread, procs?: store.Proc[]) {
   const r = requests.get(t.id)
-  return !!t.resumeAt || waitsForCi(p, t) || (!t.error && (awaitsBackground(p, t.id) || (!busy.has(t.id) && !!r?.ack && !r.conclusion && runsBackground(t.id))))
+  return !!t.resumeAt || waitsForCi(p, t) || (!t.error && (awaitsBackground(p, t.id, procs) || (!busy.has(t.id) && !!r?.ack && !r.conclusion && runsBackground(t.id))))
 }
 
 // A turn that waits for a usage limit to reset counts as working, not as failed.
