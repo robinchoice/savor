@@ -721,7 +721,8 @@ route('POST', '/threads/read', (_, b) => {
 })
 route('GET', '/projects/:pid/threads/:tid/attachments/:name', (params, _, ctx) => {
   const name = path.basename(params.name)
-  const file = path.join(store.attachmentDir(project(params), params.tid), name)
+  const p = project(params)
+  const file = kept(ctx, store.dataDir(p), path.join(store.attachmentDir(p, params.tid), name))
   if (!fs.existsSync(file)) throw new store.NotFound('attachment')
   // Only images are shown inline; everything else downloads, so an attached HTML file can't run as this origin.
   const image = store.isImage(name)
@@ -897,13 +898,25 @@ route('POST', '/projects/:pid/terminal/resize', (params, b, ctx) => {
 
 // ---- files & documents ----
 
-route('GET', '/projects/:pid/files', (params, _, ctx) => files.list(project(params), ctx.query.get('path') ?? ''))
+// A symlink can point anywhere on this computer, and an agent can make one. A paired device reads through it
+// only what stays in `base`, unless it may use the terminal too, which shows it those files anyway.
+function kept(ctx: Ctx, base: string, file: string) {
+  if (ctx.auth.origin !== 'local' && !ctx.auth.device?.terminal && files.elsewhere(base, file))
+    throw new Forbidden('This path leads elsewhere on your computer through a symlink. Allow the terminal for this device at your computer to open it from here.')
+  return file
+}
+function inProject(p: store.Project, ctx: Ctx) {
+  const rel = ctx.query.get('path') ?? ''
+  kept(ctx, p.path, path.resolve(p.path, rel || '.'))
+  return rel
+}
+route('GET', '/projects/:pid/files', (params, _, ctx) => files.list(project(params), inProject(project(params), ctx)))
 route('GET', '/projects/:pid/files/search', (params, _, ctx) => files.search(project(params), ctx.query.get('q') ?? ''))
 route('GET', '/projects/:pid/skills', (params, _, ctx) => listSkills(ctx.query.get('provider') ?? '', project(params).path))
-route('GET', '/projects/:pid/file', (params, _, ctx) => files.read(project(params), ctx.query.get('path') ?? ''))
+route('GET', '/projects/:pid/file', (params, _, ctx) => files.read(project(params), inProject(project(params), ctx)))
 // Only a PDF shows inline; everything else downloads, so an HTML file in the project can't run as this origin.
 route('GET', '/projects/:pid/file/raw', (params, _, ctx) => {
-  const file = files.raw(project(params), ctx.query.get('path') ?? '')
+  const file = files.raw(project(params), inProject(project(params), ctx))
   if (!file) throw new BadRequest('This file is larger than 16 MB, too large to preview.')
   const pdf = /\.pdf$/i.test(file)
   ctx.res.writeHead(200, {
@@ -948,7 +961,8 @@ route('POST', '/projects/:pid/export', (params, _, ctx) => {
   return asBadRequest(() => workspace.runExport(project(params)))
 })
 route('GET', '/projects/:pid/export/:name', (params, _, ctx) => {
-  const file = workspace.exportFile(project(params), params.name)
+  const p = project(params)
+  const file = kept(ctx, p.path, workspace.exportFile(p, params.name))
   ctx.res.writeHead(200, { 'content-type': 'application/octet-stream', 'content-disposition': `attachment; filename="${encodeURIComponent(path.basename(file))}"` })
   fs.createReadStream(file).pipe(ctx.res)
 })
@@ -1103,7 +1117,7 @@ route('GET', '/projects/:pid/processes/:ospid/log', (params, _, ctx) => {
   const p = project(params)
   const proc = store.listProcs(p).find((pr) => pr.pid === Number(params.ospid))
   if (!proc?.log) throw new store.NotFound('log')
-  const file = path.resolve(proc.cwd, proc.log)
+  const file = kept(ctx, proc.cwd, path.resolve(proc.cwd, proc.log))
   const size = fs.statSync(file).size
   const fd = fs.openSync(file, 'r')
   const buf = Buffer.alloc(Math.min(size, 20_000))

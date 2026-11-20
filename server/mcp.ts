@@ -371,6 +371,10 @@ function buildServer(p: Project, tid: string) {
   )
 
   // Both change what Savor knows about the computer's folders, so the user approves each call in this conversation.
+  // Like the routes for them, they are for this computer only: a paired device could ask for the call and approve it too.
+  const here = (what: string) => {
+    if (agents.originOf(p, tid) === 'remote') throw new Error(`Projects can only be ${what} from input on this computer.`)
+  }
   const approved = async (title: string, detail: string, allow: string) =>
     (await agents.askApproval(p, tid, { title, detail, options: [{ id: 'allow', label: allow, kind: 'allow' }, { id: 'deny', label: 'Cancel', kind: 'deny' }] })).choice === 'allow'
 
@@ -395,6 +399,7 @@ function buildServer(p: Project, tid: string) {
         emit({ type: 'projects' })
         return ok({ id: renamed.id, name: renamed.name, path: renamed.path })
       }
+      here('moved')
       const to = archive ? move.archivePath(target) : dir
       if (!to || !/^(~\/|\/)/.test(to)) throw new Error('Give `path` as an absolute path or one starting with ~/, `archive` or `name`.')
       const plan = move.planMove(target, to)
@@ -430,6 +435,7 @@ function buildServer(p: Project, tid: string) {
       inputSchema: { project: z.string().min(1).describe('Project id or absolute path, see list_projects') },
     },
     async ({ project }) => {
+      here('removed')
       const target = findProject(project)
       if (target.id === p.id) throw new Error('This conversation runs in that project. Remove it from another one.')
       if (!(await approved(`Remove ${target.name} from Savor?`, `${target.path} and its conversations stay on disk.`, 'Remove'))) return ok('The user kept the project.')

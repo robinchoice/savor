@@ -73,11 +73,22 @@ export function internal(p: Project, rel: string) {
 // commands, MCP servers and plugins.
 const RUNS = new Set(['.git', '.claude', '.codex', '.gemini', '.grok', '.opencode', '.mcp.json', 'opencode.json', 'opencode.jsonc'])
 
+const outside = (real: string | null) => real === null || real === '..' || real.startsWith('..' + path.sep) || path.isAbsolute(real)
+
+// Whether reading `file` shows something that is not in `base`, because a symlink on its way leads elsewhere.
+// A path that doesn't exist shows nothing.
+export function elsewhere(base: string, file: string) {
+  try {
+    return outside(path.relative(fs.realpathSync(base), fs.realpathSync(file)))
+  } catch {
+    return false
+  }
+}
+
 // Whether a write to `rel` could make something run, or lands outside the project through a symlink.
 export function runs(p: Project, rel: string) {
   const real = landing(p, rel)
-  if (real === null || real === '..' || real.startsWith('..' + path.sep) || path.isAbsolute(real)) return true
-  return real.split(path.sep).some((part) => RUNS.has(part.toLowerCase()))
+  return outside(real) || real!.split(path.sep).some((part) => RUNS.has(part.toLowerCase()))
 }
 
 // Name search for @-mentions; walks at most a few thousand entries.

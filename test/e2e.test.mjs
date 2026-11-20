@@ -1948,6 +1948,48 @@ test("a paired device without the terminal can't change what runs commands witho
   for (const file of ['git-link', 'outside', 'notes.md', '.mcp.json', '.claude']) fs.rmSync(path.join(PROJECT, file), { recursive: true })
 })
 
+test("regression: a paired device without the terminal can't read out of the project through a symlink", async () => {
+  const pid = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT).id
+  const get = (route, file, cookie) => api('GET', `/projects/${pid}/${route}?path=${encodeURIComponent(file)}`, undefined, cookie)
+  const device = await pairDevice('CI no-terminal reader')
+  fs.writeFileSync(path.join(TMP, 'outside.txt'), 'not in the project\n')
+  fs.symlinkSync(path.join(TMP, 'outside.txt'), path.join(PROJECT, 'file-link'))
+  fs.symlinkSync(TMP, path.join(PROJECT, 'outside'))
+  fs.symlinkSync('.git', path.join(PROJECT, 'git-link'))
+  for (const [route, file] of [['file', 'file-link'], ['file/raw', 'file-link'], ['file', 'outside/outside.txt'], ['files', 'outside']]) {
+    assert.equal((await get(route, file, device)).status, 403, `${route} ${file}`)
+  }
+  // The same holds where a route names the file itself: an export, an attachment, a process's log.
+  const [thread] = (await api('GET', `/projects/${pid}/threads`)).body
+  const attachments = path.join(PROJECT, '.savor/threads', thread.id, 'attachments')
+  const made = [path.join(PROJECT, 'export'), attachments, path.join(PROJECT, '.savor-logs')].map((dir) => fs.mkdirSync(dir, { recursive: true }))
+  const links = [path.join(PROJECT, 'export/link.txt'), path.join(attachments, 'link.txt'), path.join(PROJECT, '.savor-logs/link.log')]
+  for (const link of links) fs.symlinkSync(path.join(TMP, 'outside.txt'), link)
+  const procs = path.join(PROJECT, '.savor/processes.json')
+  const registered = () => (fs.existsSync(procs) ? JSON.parse(fs.readFileSync(procs, 'utf8')) : [])
+  fs.writeFileSync(procs, JSON.stringify([...registered(), { pid: process.pid, name: 'link', cwd: PROJECT, command: 'test', url: null, log: '.savor-logs/link.log', threadId: thread.id, startedAt: new Date().toISOString() }]))
+  const named = [`/projects/${pid}/export/link.txt`, `/projects/${pid}/threads/${thread.id}/attachments/link.txt`, `/projects/${pid}/processes/${process.pid}/log`]
+  for (const route of named) {
+    assert.equal((await api('GET', route, undefined, device)).status, 403, route)
+    assert.equal((await api('GET', route)).status, 200, route)
+  }
+  fs.writeFileSync(procs, JSON.stringify(registered().filter((pr) => pr.pid !== process.pid)))
+  for (const link of links) fs.rmSync(link)
+  for (const dir of made) if (dir) fs.rmSync(dir, { recursive: true })
+  // The list still names the links, and one that stays in the project reads like any file.
+  assert.ok((await get('files', '', device)).body.some((e) => e.name === 'file-link'))
+  assert.equal((await get('file', 'git-link/HEAD', device)).status, 200)
+
+  // This computer follows them, and so does a device with the terminal, which shows it those files anyway.
+  assert.equal((await get('file', 'file-link')).body.content, 'not in the project\n')
+  const trusted = await pairDevice('CI terminal reader')
+  const id = (await api('GET', '/devices')).body.find((d) => d.name === 'CI terminal reader').id
+  await api('PATCH', `/devices/${id}`, { terminal: true })
+  assert.equal((await get('file', 'outside/outside.txt', trusted)).body.content, 'not in the project\n')
+  for (const file of ['file-link', 'outside', 'git-link']) fs.rmSync(path.join(PROJECT, file))
+  fs.rmSync(path.join(TMP, 'outside.txt'))
+})
+
 test('agents can start conversations in a worktree', async () => {
   const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
   const [thread] = (await api('GET', `/projects/${project.id}/threads`)).body
@@ -2164,6 +2206,13 @@ test('agents add projects: a new folder gets a git repository, an existing proje
   assert.ok(refused.isError && !fs.existsSync(path.join(TMP, 'phone-made')), refused.text)
   const logged = fs.readFileSync(path.join(PROJECT, '.savor', 'actions.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l)).at(-1)
   assert.deepEqual([logged.tool, logged.threadId, logged.origin, logged.device, logged.error], ['create_project', remote.id, 'remote', 'CI project phone', 'Projects can only be added from input on this computer.'])
+  // Nor does it move or remove one: the device that asks could approve the call as well.
+  for (const [tool, args, done] of [['move_project', { project: made.id, path: path.join(TMP, 'phone-moved') }, 'moved'], ['remove_project', { project: made.id }, 'removed']]) {
+    const waits = new Promise((resolve) => setTimeout(() => resolve({ isError: false, text: 'the call waits for an approval' }), 5000))
+    const r = await Promise.race([call(remoteClient, tool, args), waits])
+    assert.ok(r.isError && r.text.includes(`Projects can only be ${done} from input on this computer.`), `${tool}: ${r.text}`)
+  }
+  assert.ok(!fs.existsSync(path.join(TMP, 'phone-moved')) && (await api('GET', '/projects')).body.some((p) => p.id === made.id))
 
   // What it writes is marked as remote, until a change on this computer.
   const doc = JSON.parse((await call(remoteClient, 'create_document', { title: 'Phone notes', content: 'from the phone' })).text)
