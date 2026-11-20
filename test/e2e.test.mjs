@@ -2348,6 +2348,32 @@ test('list_conversations filters by state, change time and count', async () => {
   await until(async () => !(await get(slow)).busy)
 })
 
+test('the agent gets the questions that are still open with its input, not the answered ones', async () => {
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
+  const { mcpToken } = JSON.parse(fs.readFileSync(path.join(HOME, 'state.json'), 'utf8'))
+  const sender = (await api('POST', `/projects/${project.id}/threads`, { text: 'someone to write' })).body
+  const thread = (await api('POST', `/projects/${project.id}/threads`, { text: 'ask: Ship it?' })).body
+  const t = `/projects/${project.id}/threads/${thread.id}`
+  const contexts = async () => (await api('GET', t)).body.messages.filter((m) => m.text?.startsWith('Context: ')).map((m) => JSON.parse(m.text.slice('Context: '.length)))
+  let decision
+  await until(async () => (decision = (await api('GET', t)).body.decisions.find((d) => !d.resolved)))
+
+  // Another agent's message leaves the question open.
+  const client = new Client({ name: 'e2e', version: '1' })
+  await client.connect(new StreamableHTTPClientTransport(new URL(`${base}/mcp?project=${project.id}&thread=${sender.id}`), { requestInit: { headers: { authorization: `Bearer ${mcpToken}` } } }))
+  await client.callTool({ name: 'send_to_conversation', arguments: { id: thread.id, text: 'context: while the question is open' } })
+  await client.close()
+  await until(async () => (await contexts()).length === 1)
+  assert.deepEqual((await contexts())[0].decisions.map((d) => [d.title, d.resolved]), [['Ship it?', false]])
+
+  // The answer arrives as input; the context of the input after it has no decision left.
+  await api('POST', `${t}/decisions`, { answers: [{ id: decision.id, selected: 0 }] })
+  await until(async () => (await api('GET', t)).body.messages.some((m) => m.text === 'Echo: Decision: Ship it?\nSelected: Yes'))
+  await api('POST', `${t}/messages`, { text: 'context: after the answer' })
+  await until(async () => (await contexts()).length === 2)
+  assert.deepEqual((await contexts())[1].decisions, [])
+})
+
 test('agents send messages to conversations in other projects, marked as theirs, and a message they set off sends none on', async () => {
   const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
   const other = (await api('POST', '/projects', { path: path.join(TMP, 'message-target'), name: 'Message Target', create: true })).body

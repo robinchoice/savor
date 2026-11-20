@@ -522,7 +522,8 @@ function turnInput(p: Project, thread: Thread, msg: Message, note = ''): TurnInp
     threadLabel: thread.label?.name ?? null,
     productPreview: thread.preview,
     backgroundProcesses: store.listProcs(p).filter((pr) => pr.threadId === thread.id),
-    decisions: store.listDecisions(p, thread.id).slice(-20),
+    // The questions the user has not answered yet. An answer reaches the agent as input, so it is not repeated here.
+    decisions: store.listDecisions(p, thread.id).filter((d) => !d.resolved).slice(-20),
     cwd: store.cwdOf(p, thread),
     worktree: thread.worktree?.branch ?? null,
     ...(thread.routedFrom && { inboxSource: { ...thread.routedFrom, url: appUrl(`/all/inbox/${thread.routedFrom.projectId}/${thread.routedFrom.threadId}`) } }),
