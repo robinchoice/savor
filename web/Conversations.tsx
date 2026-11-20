@@ -1,6 +1,6 @@
 import { Fragment, render, type JSX } from 'preact'
-import { createPortal } from 'preact/compat'
-import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks'
+import { createPortal, memo } from 'preact/compat'
+import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import {
@@ -452,13 +452,14 @@ const short = (ms: number) => {
   return s < 60 ? `${s}s` : s < 3600 ? `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s` : `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`
 }
 
-export function Elapsed({ since }: { since: string }) {
+// Counts by itself, so a second passing draws only this.
+export function Elapsed({ since, format = short }: { since: string; format?: (ms: number) => string }) {
   const [now, setNow] = useState(Date.now())
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(timer)
   }, [])
-  return <>{short(now - Date.parse(since))}</>
+  return <>{format(Math.max(0, now - Date.parse(since)))}</>
 }
 
 // Lists outside the project link elsewhere and name the project on each card.
@@ -841,27 +842,6 @@ export function ThreadView({ project, threadId, back, next, siblings, plain }: {
   }, [reload])
   const [activity] = useApi<ActivityEvent[]>(`${base}/activity`, (e) => e.threadId === threadId && (e.type === 'activity' || e.type === 'status'))
   const [plans] = useApi<Record<string, Plan>>(`${base}/plans`, (e) => e.threadId === threadId && (e.type === 'plan' || e.type === 'status'))
-  // What the agent and the fast lane are writing, by lane, as it grows. A finished draft stays until the conversation
-  // has reloaded with its message, so the answer doesn't blink away in between.
-  const [drafts, setDrafts] = useState<Record<string, Draft & { done?: boolean }>>({})
-  useEffect(() => {
-    setDrafts((local) => {
-      const next: Record<string, Draft> = {}
-      for (const d of data?.drafts ?? []) next[d.lane ?? 'agent'] = d
-      // A reload may have started before the latest growth arrived, or before the draft began.
-      for (const [lane, mine] of Object.entries(local)) {
-        const d = next[lane]
-        const writing = lane === 'fast' ? data?.answering : data?.busy
-        if (!mine.done && writing && (!d || (mine.kind === d.kind && mine.text.startsWith(d.text)))) next[lane] = mine
-      }
-      return next
-    })
-  }, [data])
-  useEvent((e) => {
-    if (e.type !== 'draft' || e.threadId !== threadId) return
-    const lane = e.lane ?? 'agent'
-    setDrafts((ds) => (e.draft ? { ...ds, [lane]: e.draft } : ds[lane] ? { ...ds, [lane]: { ...ds[lane], done: true } } : ds))
-  }, [threadId])
   const [links] = useApi<{ source: { project: { id: string; name: string; tint: string }; thread: Thread } | null; targets: { project: { id: string; name: string; tint: string }; thread: Thread }[] }>(data?.thread.inbox || data?.thread.routedFrom ? `${base}/links` : null, (e) => ['thread', 'status', 'projects'].includes(e.type))
   // Chat, browser or changes: the first preview of a conversation opens the browser, after that the last choice stands.
   const viewKey = `savor-view:${threadId}`
@@ -897,11 +877,11 @@ export function ThreadView({ project, threadId, back, next, siblings, plain }: {
   }, [])
   const narrow = useNarrow()
   // A suggestion taken up earlier must not come back when the view changes.
-  const setView = (v: 'chat' | 'browser' | 'changes') => {
+  const setView = useCallback((v: 'chat' | 'browser' | 'changes') => {
     localStorage.setItem(viewKey, v)
     setViewState(v)
     setDraft(undefined)
-  }
+  }, [viewKey])
   // On a phone the page takes the whole view, so finding leads back to the chat.
   const openFind = () => {
     if (narrow) setView('chat')
@@ -923,13 +903,6 @@ export function ThreadView({ project, threadId, back, next, siblings, plain }: {
   const listRef = useRef<HTMLDivElement>(null)
   const opened = useRef(false)
   const findRef = useRef<HTMLInputElement>(null)
-  const [clock, setClock] = useState(Date.now())
-  useEffect(() => {
-    if (!data?.busy) return
-    setClock(Date.now())
-    const timer = setInterval(() => setClock(Date.now()), 1000)
-    return () => clearInterval(timer)
-  }, [data?.busy])
 
   // A finished conversation is not what the project's tab opens again; reopened, it is.
   useEffect(() => {
@@ -960,11 +933,6 @@ export function ThreadView({ project, threadId, back, next, siblings, plain }: {
     })
     return () => cancelAnimationFrame(frame)
   }, [data?.messages.length, data?.busy, browserMode, activityOpen, Object.keys(plans ?? {}).length])
-  // A growing answer stays in view while the user reads along at the end.
-  useEffect(() => {
-    const el = listRef.current
-    if (el && el.scrollHeight - el.scrollTop - el.clientHeight < 160) el.scrollTop = el.scrollHeight
-  }, [drafts.agent?.text, drafts.fast?.text, data?.answering])
   // Ctrl/⌘F searches the conversation instead of the page.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -994,6 +962,26 @@ export function ThreadView({ project, threadId, back, next, siblings, plain }: {
   useShortcut('stop', () => keys.current.stop?.())
   useShortcut('finish', () => keys.current.finish?.())
   useShortcut('browser', () => setView(mode === 'browser' ? 'chat' : 'browser'))
+  // What a message is drawn from keeps its identity until the conversation loads again or an answer is picked, so
+  // whatever else changes here draws no message again.
+  const rows = useMemo(() => {
+    if (!data) return []
+    let agent = data.messages.find((m) => m.modelInfo)?.modelInfo ?? data.thread.agent
+    return data.messages.map((m) => {
+      agent = m.modelInfo ?? agent
+      const asked = m.decisionIds?.length ? data.decisions.filter((d) => m.decisionIds!.includes(d.id)) : NONE
+      return { m: { ...m, modelInfo: agent }, decisions: asked }
+    })
+  }, [data])
+  const attributedMessages = useMemo(() => rows.map((r) => r.m), [rows])
+  const startWorkflow = useMemo(() => (data?.thread.workflow ? { ...data.thread.workflow, href: `#/p/${project.id}/workflows/${data.thread.workflow.id}` } : undefined), [data?.thread.workflow, project.id])
+  const setAnswer = useCallback((id: string, a: Pick) => setAnswers((all) => ({ ...all, [id]: a })), [])
+  const submitAnswers = useCallback((next: boolean) => sendAnswers.current?.(next), [])
+  const showCommit = useCallback((hash: string) => {
+    setSource(hash)
+    setView('changes')
+  }, [setView])
+  const showBrowser = useCallback(() => setView('browser'), [setView])
 
   if (!data) return (
     <Panel id="main" title={t('Chat')}>
@@ -1008,12 +996,7 @@ export function ThreadView({ project, threadId, back, next, siblings, plain }: {
   const { thread, messages, decisions, busy, waiting } = data
   // An agent can be stopped while it works, waits, or still runs background work after its conclusion.
   const stoppable = busy || waiting || data.background
-  let messageAgent = messages.find((m) => m.modelInfo)?.modelInfo ?? thread.agent
-  const attributedMessages = messages.map((m) => {
-    messageAgent = m.modelInfo ?? messageAgent
-    return { ...m, modelInfo: messageAgent }
-  })
-  const elapsed = data.startedAt ? duration(Math.max(0, clock - Date.parse(data.startedAt))) : ''
+  const elapsed = data.startedAt && <Elapsed since={data.startedAt} format={duration} />
   const send = (text: string, attachments: Attachment[] = [], opts?: { fast: true }) => api('POST', `${base}/messages`, { text, attachments, ...opts })
   // Claude Code and Codex take input within a running turn; it is queued first, so it is not lost when the turn just ended.
   const steer = async (text: string, attachments: Attachment[]) => {
@@ -1169,7 +1152,7 @@ export function ThreadView({ project, threadId, back, next, siblings, plain }: {
                   )}
                   <Label label={thread.label} />
                   <span class={`status ${status.cls}`}>
-                    {status.icon} {status.text}{status.cls === 'working' && busy && elapsed ? ` · ${elapsed}` : ''}
+                    {status.icon} {status.text}{status.cls === 'working' && busy && elapsed ? <> · {elapsed}</> : ''}
                   </span>
                   {data.background && !busy && !waiting && <span class="status">{t('Background work running')}</span>}
                   {stoppable && <button class="status stop-work" onClick={stop}>{t('Stop')}</button>}
@@ -1286,27 +1269,24 @@ export function ThreadView({ project, threadId, back, next, siblings, plain }: {
                 )}
 
                 <div class="messages" ref={listRef}>
-                  {attributedMessages.map((m, i) => (
+                  {rows.map(({ m, decisions: asked }, i) => (
                     <Fragment key={m.id}>
                       {planAt.has(m.id) && planCard(planAt.get(m.id)!, false)}
                       <MessageItem
                         m={m}
-                        thread={thread}
-                        workflow={i === 0 && thread.workflow ? { ...thread.workflow, href: `#/p/${project.id}/workflows/${thread.workflow.id}` } : undefined}
-                        decisions={decisions.filter((d) => m.decisionIds?.includes(d.id))}
+                        provider={thread.agent.provider}
+                        workflow={i === 0 ? startWorkflow : undefined}
+                        decisions={asked}
                         active={i > lastUser || m.kind === 'question'}
-                        answers={answers}
-                        setAnswer={(id, a) => setAnswers({ ...answers, [id]: a })}
-                        send={(next) => sendAnswers.current?.(next)}
+                        answers={asked.length ? answers : NO_ANSWERS}
+                        setAnswer={setAnswer}
+                        send={submitAnswers}
                         base={base}
                         highlight={find.open ? find.q.trim() : ''}
                         match={matches.includes(m.id) ? (m.id === currentMatch ? 'current' : 'match') : ''}
-                        onCommit={(hash) => {
-                          setSource(hash)
-                          setView('changes')
-                        }}
+                        onCommit={showCommit}
                         preview={!browserMode && m.id === lastConclusion?.id && thread.preview}
-                        onPreview={() => setView('browser')}
+                        onPreview={showBrowser}
                       />
                       {m.compacted && (
                         <div class="compacted-row">
@@ -1316,15 +1296,7 @@ export function ThreadView({ project, threadId, back, next, siblings, plain }: {
                     </Fragment>
                   ))}
                   {openPlan && planCard(openPlan, busy || waiting)}
-                  {['agent', 'fast'].map((lane) => {
-                    const d = drafts[lane]
-                    return d && <MessageItem key={`draft-${lane}`} m={{ id: `draft-${lane}`, ts: new Date().toISOString(), kind: d.kind, text: d.text, modelInfo: d.modelInfo, lane: d.lane }} drafting thread={thread} decisions={[]} active={false} answers={answers} setAnswer={() => {}} send={() => {}} base={base} highlight="" match="" onCommit={() => {}} />
-                  })}
-                  {data.answering && !drafts.fast && (
-                    <div class="working-row fast">
-                      <span class="spinner" /> <Rabbit size={14} /> {t('The fast lane is answering…')}
-                    </div>
-                  )}
+                  <Drafts key={threadId} threadId={threadId} data={data} base={base} list={listRef} />
                   {(busy || waiting) && (
                     <button class="working-row" title={t('Show activity')} onClick={showActivity}>
                       <span class="spinner" /> {busy ? workingLabel : waitingFor(thread)}{elapsed && <span class="muted"> · {elapsed}</span>} <ChevronRight size={13} />
@@ -1434,6 +1406,52 @@ export function ThreadView({ project, threadId, back, next, siblings, plain }: {
   )
 }
 
+const NONE: Decision[] = []
+const NO_ANSWERS: Record<string, Pick> = {}
+const nothing = () => {}
+
+// What the agent and the fast lane are writing, by lane, as it grows; each growth draws only this. A finished draft
+// stays until the conversation has reloaded with its message, so the answer doesn't blink away in between.
+function Drafts({ threadId, data, base, list }: { threadId: string; data: ThreadData; base: string; list: { current: HTMLDivElement | null } }) {
+  const [drafts, setDrafts] = useState<Record<string, Draft & { done?: boolean }>>({})
+  useEffect(() => {
+    setDrafts((local) => {
+      const next: Record<string, Draft> = {}
+      for (const d of data.drafts) next[d.lane ?? 'agent'] = d
+      // A reload may have started before the latest growth arrived, or before the draft began.
+      for (const [lane, mine] of Object.entries(local)) {
+        const d = next[lane]
+        const writing = lane === 'fast' ? data.answering : data.busy
+        if (!mine.done && writing && (!d || (mine.kind === d.kind && mine.text.startsWith(d.text)))) next[lane] = mine
+      }
+      return next
+    })
+  }, [data])
+  useEvent((e) => {
+    if (e.type !== 'draft' || e.threadId !== threadId) return
+    const lane = e.lane ?? 'agent'
+    setDrafts((ds) => (e.draft ? { ...ds, [lane]: e.draft } : ds[lane] ? { ...ds, [lane]: { ...ds[lane], done: true } } : ds))
+  }, [threadId])
+  // A growing answer stays in view while the user reads along at the end.
+  useEffect(() => {
+    const el = list.current
+    if (el && el.scrollHeight - el.scrollTop - el.clientHeight < 160) el.scrollTop = el.scrollHeight
+  }, [drafts.agent?.text, drafts.fast?.text, data.answering])
+  return (
+    <>
+      {['agent', 'fast'].map((lane) => {
+        const d = drafts[lane]
+        return d && <MessageItem key={`draft-${lane}`} m={{ id: `draft-${lane}`, ts: new Date().toISOString(), kind: d.kind, text: d.text, modelInfo: d.modelInfo, lane: d.lane }} drafting provider={data.thread.agent.provider} decisions={NONE} active={false} answers={NO_ANSWERS} setAnswer={nothing} send={nothing} base={base} highlight="" match="" onCommit={nothing} />
+      })}
+      {data.answering && !drafts.fast && (
+        <div class="working-row fast">
+          <span class="spinner" /> <Rabbit size={14} /> {t('The fast lane is answering…')}
+        </div>
+      )}
+    </>
+  )
+}
+
 // The workflows an agent saved in this conversation, so they can be paused or deleted where they came up.
 function ThreadWorkflows({ project, threadId }: { project: Project; threadId: string }) {
   const base = `/projects/${project.id}/workflows`
@@ -1474,11 +1492,11 @@ function ThreadWorkflows({ project, threadId }: { project: Project; threadId: st
   )
 }
 
-function Avatar({ m, thread }: { m: Message; thread: Thread }) {
+function Avatar({ m, provider }: { m: Message; provider: string }) {
   if (m.kind === 'user') return <span class="msg-avatar user">{m.from ? <Bot size={14} /> : m.origin === 'remote' ? <Smartphone size={14} /> : <Monitor size={14} />}</span>
   return (
     <span class="msg-avatar">
-      <ProviderIcon provider={m.modelInfo?.provider ?? thread.agent.provider} />
+      <ProviderIcon provider={m.modelInfo?.provider ?? provider} />
     </span>
   )
 }
@@ -1558,7 +1576,8 @@ function ApprovalForm({ a, submit }: { a: Approval; submit: (choice: string, con
   )
 }
 
-function MessageItem({ m, thread, workflow, decisions, active, answers, setAnswer, send, base, highlight, match, onCommit, preview, onPreview, drafting }: { drafting?: boolean; m: Message; thread: Thread; workflow?: NonNullable<Thread['workflow']> & { href: string }; decisions: Decision[]; active: boolean; answers: Record<string, Pick>; setAnswer: (id: string, a: Pick) => void; send: (next: boolean) => void; base: string; highlight: string; match: string; onCommit: (hash: string) => void; preview?: string | false | null; onPreview?: () => void }) {
+// Drawn again only when one of its own props changes: `provider` is the conversation's agent, for messages that name none.
+const MessageItem = memo(function MessageItem({ m, provider, workflow, decisions, active, answers, setAnswer, send, base, highlight, match, onCommit, preview, onPreview, drafting }: { drafting?: boolean; m: Message; provider: string; workflow?: NonNullable<Thread['workflow']> & { href: string }; decisions: Decision[]; active: boolean; answers: Record<string, Pick>; setAnswer: (id: string, a: Pick) => void; send: (next: boolean) => void; base: string; highlight: string; match: string; onCommit: (hash: string) => void; preview?: string | false | null; onPreview?: () => void }) {
   const [copyState, setCopyState] = useState('')
   useEffect(() => {
     if (!copyState) return
@@ -1573,7 +1592,7 @@ function MessageItem({ m, thread, workflow, decisions, active, answers, setAnswe
       setCopyState(t('Could not copy'))
     }
   }
-  const who = m.kind === 'user' ? (m.origin === 'remote' ? `${t('You')} · ${m.device ?? t('remote device')}` : t('You')) : m.lane ? t('Fast lane') : (PROVIDER_NAMES[m.modelInfo?.provider ?? thread.agent.provider] ?? m.modelInfo?.provider ?? thread.agent.provider)
+  const who = m.kind === 'user' ? (m.origin === 'remote' ? `${t('You')} · ${m.device ?? t('remote device')}` : t('You')) : m.lane ? t('Fast lane') : (PROVIDER_NAMES[m.modelInfo?.provider ?? provider] ?? m.modelInfo?.provider ?? provider)
   const worked = m.workTiming && Date.parse(m.workTiming.finishedAt) - Date.parse(m.workTiming.startedAt)
   const queued = m.kind === 'user' && m.delivered === false
   const [open, setOpen] = useState(false)
@@ -1606,7 +1625,7 @@ function MessageItem({ m, thread, workflow, decisions, active, answers, setAnswe
     return (
       <div class={`msg ${match}`} id={`msg-${m.id}`}>
         <div class="msg-head">
-          <Avatar m={m} thread={thread} /> <b>{who}</b> <span class="muted">{formatTime(m.ts)}</span>
+          <Avatar m={m} provider={provider} /> <b>{who}</b> <span class="muted">{formatTime(m.ts)}</span>
         </div>
         <div class="msg-card approval">
           <div class="approval-title">
@@ -1639,7 +1658,7 @@ function MessageItem({ m, thread, workflow, decisions, active, answers, setAnswe
   return (
     <div class={`msg ${m.kind} ${m.from ? 'from-agent' : ''} ${queued ? 'queued' : ''} ${drafting ? 'drafting' : ''} ${m.lane ? 'fast-lane' : ''} ${match}`} id={`msg-${m.id}`} aria-busy={drafting || undefined}>
       <div class="msg-head">
-        <Avatar m={m} thread={thread} />{' '}
+        <Avatar m={m} provider={provider} />{' '}
         {m.from ? (
           <a class="from-agent-link" href={`#/p/${m.from.projectId}/t/${m.from.threadId}`} title={t('Open the conversation that sent this')}>
             <b>{t('Agent')} · {m.from.label}</b> ({m.from.project})
@@ -1703,7 +1722,7 @@ function MessageItem({ m, thread, workflow, decisions, active, answers, setAnswe
       {queued && (
         <div class="queued-row">
           <b>{t('Queued')}</b> <span>{t('Sent after the current turn')}</span>
-          {['claude', 'codex'].includes(thread.agent.provider) && <button onClick={() => api('POST', `${base}/messages/${m.id}/steer`)}>{t('Add to this turn')}</button>}
+          {['claude', 'codex'].includes(provider) && <button onClick={() => api('POST', `${base}/messages/${m.id}/steer`)}>{t('Add to this turn')}</button>}
           <button onClick={() => api('POST', `${base}/send-now`)}>{t('Stop work and send now')}</button>
           <button class="danger" onClick={() => api('DELETE', `${base}/messages/${m.id}`)}>
             {t('Remove')}
@@ -1713,7 +1732,7 @@ function MessageItem({ m, thread, workflow, decisions, active, answers, setAnswe
       {decisions.length > 0 && <Questions decisions={decisions} active={active} answers={answers} setAnswer={setAnswer} send={send} />}
     </div>
   )
-}
+})
 
 function AttachmentImage({ path }: { path: string }) {
   const [src, setSrc] = useState('')
