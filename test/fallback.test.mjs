@@ -73,13 +73,15 @@ async function startDaemon(withOpenCode = false) {
 test('unattended conversations switch agents at a usage limit, and wait when all are used up', { timeout: 120_000 }, async () => {
   port = await freePort()
   fs.writeFileSync(AGENT_LOG + '.full', '')
-  // Claude Code reports its limits on get_usage; the weekly window has reset since.
+  // Claude Code reports its limits on get_usage; the weekly window has reset since. Answered from its
+  // cached values, the raw `limits` array is missing.
   const later = new Date(Date.now() + 3_600_000).toISOString()
-  const limits = [
-    { group: 'session', percent: 40, resets_at: later },
-    { group: 'weekly', percent: 90, resets_at: new Date(Date.now() - 60_000).toISOString() },
-    { group: 'weekly', percent: 5, resets_at: later, scope: { model: { display_name: 'Fable' } } },
-  ]
+  const limits = {
+    five_hour: { utilization: 40, resets_at: later },
+    seven_day: { utilization: 90, resets_at: new Date(Date.now() - 60_000).toISOString() },
+    seven_day_opus: null,
+    model_scoped: [{ display_name: 'Fable', utilization: 5, resets_at: later }],
+  }
   fs.writeFileSync(AGENT_LOG + '.limits', JSON.stringify(limits))
   await startDaemon()
   const { token, mcpToken } = JSON.parse(fs.readFileSync(path.join(HOME, 'state.json'), 'utf8'))
@@ -370,4 +372,19 @@ test('with the fallback on, every agent hands on to the next in all directions, 
   r = await settled(fixed)
   assert.equal(r.messages.find((m) => m.kind === 'conclusion').text, 'ACP echo: works again')
   assert.deepEqual((await api('GET', '/fallback')).unavailable, ['codex'])
+})
+
+test('regression: Claude limits stay at 100 % left when get_usage answers without the raw limits array', { timeout: 60_000 }, async () => {
+  if (server) {
+    server.kill()
+    await new Promise((resolve) => server.on('exit', resolve))
+  }
+  port ??= await freePort()
+  const later = new Date(Date.now() + 3_600_000).toISOString()
+  fs.writeFileSync(AGENT_LOG + '.limits', JSON.stringify({ five_hour: { utilization: 63, resets_at: later }, seven_day: { utilization: 21, resets_at: later }, seven_day_sonnet: null }))
+  await startDaemon()
+  const { token } = JSON.parse(fs.readFileSync(path.join(HOME, 'state.json'), 'utf8'))
+  const usage = () => fetch(`http://127.0.0.1:${port}/api/usage`, { headers: { cookie: `savor_token=${token}` } }).then((r) => r.json())
+  const claude = await until(async () => (await usage()).find((u) => u.provider === 'claude' && !u.stale))
+  assert.deepEqual(claude.windows.map((w) => [w.label, w.percent]), [['5 hours', 63], ['Weekly', 21]])
 })

@@ -446,9 +446,16 @@ export function probeClaude(cwd?: string) {
 
 // The subscription limits, from a short run's answer to a get_usage request. No prompt is sent, and
 // skip_behaviors spares it the scan of the last week's transcripts. It runs on the login, not on a token
-// from `claude setup-token`: with that, get_usage reports no limits.
+// from `claude setup-token`: with that, get_usage reports no limits. Its documented windows are
+// five_hour, seven_day and model_scoped (utilization 0-100, resets_at ISO); the raw `limits` array
+// beside them is left out when Claude Code answers from its cached values.
+type Window = { utilization?: number | null; resets_at?: string | null; display_name?: string } | null | undefined
+type Limit = { group: 'session' | 'weekly'; percent: number; resets_at: string | null; model?: string }
+const limit = (group: Limit['group'], w: Window): Limit[] => (typeof w?.utilization === 'number' ? [{ group, percent: w.utilization, resets_at: w.resets_at ?? null, model: w.display_name }] : [])
+const limitsOf = (r: { five_hour?: Window; seven_day?: Window; model_scoped?: Window[] } | null | undefined): Limit[] =>
+  r ? [...limit('session', r.five_hour), ...limit('weekly', r.seven_day), ...(r.model_scoped ?? []).flatMap((w) => limit('weekly', w))] : []
+
 export function claudeUsage() {
-  type Limit = { group: string; percent: number; resets_at: string | null; scope?: { model?: { display_name?: string } } | null }
   return new Promise<Limit[]>((resolve) => {
     const child = spawn(...command(BIN.claude, ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--settings', JSON.stringify({ disableAllHooks: true })]), { env: { ...process.env, CLAUDE_CODE_OAUTH_TOKEN: undefined }, stdio: ['pipe', 'pipe', 'ignore'] })
     const done = (limits: Limit[] = []) => {
@@ -465,7 +472,7 @@ export function claudeUsage() {
       } catch {
         return
       }
-      if (ev.type === 'control_response') done(ev.response?.response?.rate_limits?.limits ?? [])
+      if (ev.type === 'control_response') done(limitsOf(ev.response?.response?.rate_limits))
     })
     child.stdin!.write(JSON.stringify({ type: 'control_request', request_id: crypto.randomUUID(), request: { subtype: 'get_usage', skip_behaviors: true } }) + '\n')
   })

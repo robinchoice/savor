@@ -275,12 +275,8 @@ let claudeRefresh: Promise<void> | null = null
 async function readClaudeUsage() {
   if (!claudeRefresh && Date.now() - claudeAskedAt >= USAGE_MS) {
     claudeAskedAt = Date.now()
-    claudeRefresh = claudeUsage().then((limits) => {
-      // A failed probe must not make retained values fresh again.
-      if (limits.length) {
-        claudeLimits = limits
-      }
-    }).finally(() => { claudeRefresh = null })
+    // A probe without an answer reports nothing, so listUsage keeps the last values and marks them stale.
+    claudeRefresh = claudeUsage().then((limits) => { claudeLimits = limits }).finally(() => { claudeRefresh = null })
   }
   if (claudeRefresh) await claudeRefresh
   return claudeLimits
@@ -292,9 +288,8 @@ const usageProbes: Partial<Record<Provider, () => Promise<UsageWindow[]>>> = {
     const limits = await readClaudeUsage()
     return limits.map((l) => {
       const resets = Date.parse(l.resets_at ?? '')
-      const model = l.scope?.model?.display_name
       return {
-        label: l.group === 'session' ? '5 hours' : model ? `Weekly · ${model}` : 'Weekly',
+        label: l.group === 'session' ? '5 hours' : l.model ? `Weekly · ${l.model}` : 'Weekly',
         percent: resets < Date.now() ? 0 : l.percent,
         resets: resets ? resetTime(resets / 1000) : null,
       }

@@ -108,7 +108,7 @@ if (!args.includes('--mcp-config')) {
     if (msg.request?.subtype === 'get_usage') {
       const file = process.env.FAKE_AGENT_LOG + '.limits'
       if (process.env.CLAUDE_CODE_OAUTH_TOKEN) return answer({ rate_limits: null })
-      return answer({ rate_limits: { limits: fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : [{ group: 'session', percent: 0, resets_at: new Date(Date.now() + 5 * 3600_000).toISOString() }] } })
+      return answer({ rate_limits: fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : { five_hour: { utilization: 0, resets_at: new Date(Date.now() + 5 * 3600_000).toISOString() } } })
     }
     if (msg.request?.subtype !== 'initialize') return
     const models = [

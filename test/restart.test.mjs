@@ -98,7 +98,7 @@ test('background work starts immediately and retired budget waits resume without
     assert.ok(r.ok)
     return r.json()
   }
-  fs.writeFileSync(AGENT_LOG + '.limits', JSON.stringify([{ group: 'session', percent: 80, resets_at: new Date(Date.now() + 4 * 3600_000).toISOString() }]))
+  fs.writeFileSync(AGENT_LOG + '.limits', JSON.stringify({ five_hour: { utilization: 80, resets_at: new Date(Date.now() + 4 * 3600_000).toISOString() } }))
   await start()
   const p = await api('POST', '/projects', { path: path.join(TMP, 'background'), create: true })
   const q = await api('POST', '/projects', { path: path.join(TMP, 'parallel'), create: true })
