@@ -47,10 +47,19 @@ sw.addEventListener('push', (e: any) => {
   e.waitUntil(p.dismiss ? dismiss(p.dismiss) : notice(p))
 })
 
-// The page's transport: through the relay tunnel when this device was paired through it, else directly.
+// The page's transport: through the relay tunnel when this device was paired through it, else directly. A tunnel
+// reconnects for as long as the service worker lives, so each computer gets one, whichever is open in the app.
+const tunnels = new Map<string, { devicePk: string; transport: ReturnType<typeof remote> }>()
 async function transport(): Promise<Transport> {
   const profile = await storedProfile().catch(() => undefined)
-  return profile ? remote(profile, () => {}) : direct
+  if (!profile) return direct
+  const key = `${profile.relay ?? ''} ${profile.daemonPk}`
+  const cached = tunnels.get(key)
+  if (!cached || cached.devicePk !== profile.devicePk) {
+    cached?.transport.close()
+    tunnels.set(key, { devicePk: profile.devicePk, transport: remote(profile, () => {}) })
+  }
+  return tunnels.get(key)!.transport
 }
 
 async function call(method: string, path: string, body?: object) {

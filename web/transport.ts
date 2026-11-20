@@ -133,7 +133,13 @@ export async function forgetProfile() {
 }
 
 // The service worker has no localStorage: it finds the profile beside the key, to answer from a notification.
-export const storedProfile = () => keyStore<RemoteProfile | undefined>('readonly', (s) => s.get('profile'))
+export const storedProfile = async () => {
+  const [profile, device] = await Promise.all([
+    keyStore<RemoteProfile | undefined>('readonly', (s) => s.get('profile')),
+    keyStore<StoredKey | undefined>('readonly', (s) => s.get('device')),
+  ])
+  return profile && { ...profile, devicePk: device ? t.b64.enc(device.pk) : '' }
+}
 
 const relaySocket = (daemonPk: Uint8Array, relay = location.origin) => new WebSocket(`${relay.replace(/^http/, 'ws')}/connect?id=${t.daemonId(daemonPk)}`)
 
@@ -200,7 +206,7 @@ type Pending = { resolve: (r: Response) => void; reject: (e: Error) => void; onD
 type Tunnel = { ws: WebSocket; channel: t.Channel }
 
 // One encrypted tunnel with request multiplexing. Reconnects on its own and resumes open streams.
-export function remote(profile: RemoteProfile, onState: (connected: boolean, error?: string) => void): Transport {
+export function remote(profile: RemoteProfile, onState: (connected: boolean, error?: string) => void): Transport & { close(): void } {
   const daemonPk = t.publicKey(profile.daemonPk)
   keyStore('readwrite', (s) => s.put(profile, 'profile')).catch(() => {})
   const device = keyStore<StoredKey | undefined>('readonly', (s) => s.get('device')).then((stored) => {
@@ -210,10 +216,13 @@ export function remote(profile: RemoteProfile, onState: (connected: boolean, err
   const pending = new Map<number, Pending>()
   let nextId = 1
   let ready: Promise<Tunnel> | null = null
+  let socket: WebSocket | undefined
+  let retry: ReturnType<typeof setTimeout> | undefined
+  let closed = false
 
   function connect() {
     const attempt: Promise<Tunnel> = (async () => {
-      const ws = relaySocket(daemonPk, profile.relay)
+      const ws = socket = relaySocket(daemonPk, profile.relay)
       const session = t.deviceSession(await device, daemonPk)
       const channel = await session.finish(await welcome(ws, session.hello))
       ws.onmessage = (m) => {
@@ -245,7 +254,7 @@ export function remote(profile: RemoteProfile, onState: (connected: boolean, err
           pending.delete(id)
           p.reject(new Error(tr('Connection lost')))
         }
-        setTimeout(resume, 2000)
+        if (!closed) retry = setTimeout(resume, 2000)
       }
       onState(true)
       // Every new socket requests the open streams again, whichever call opened it, so events keep flowing.
@@ -256,7 +265,7 @@ export function remote(profile: RemoteProfile, onState: (connected: boolean, err
     attempt.catch((e) => {
       onState(false, e.message)
       ready = null
-      setTimeout(resume, 5000)
+      if (!closed) retry = setTimeout(resume, 5000)
     })
     return attempt
   }
@@ -272,6 +281,13 @@ export function remote(profile: RemoteProfile, onState: (connected: boolean, err
   const resume = () => void tunnel().catch(() => {})
 
   return {
+    close() {
+      closed = true
+      clearTimeout(retry)
+      socket?.close()
+      for (const p of pending.values()) p.reject(new Error(tr('Connection lost')))
+      pending.clear()
+    },
     async request(method, path, body) {
       const { ws, channel } = await tunnel()
       const id = nextId++
