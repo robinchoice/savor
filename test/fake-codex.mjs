@@ -18,6 +18,7 @@
 // - "plan: <text>" → a plan update with one step done and one in progress and a subagent that finished, then "Codex echo: <input>"
 // - an input with "everywhere" in it → exits with "Invalid credential", like a Codex whose sign-in has expired
 // - anything else → "Codex echo: <input>", with " (took over)" when Savor said it takes over from an agent at its limit
+// While the test's hang file exists it never answers initialize, like an app-server that hangs at its start.
 import fs from 'node:fs'
 import readline from 'node:readline'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
@@ -179,6 +180,7 @@ rl.on('line', (line) => {
   if (/^thread\/goal\/(set|clear)$/.test(msg.method) && msg.params.origin !== 'user') return out({ jsonrpc: '2.0', id: msg.id, error: { code: -32600, message: 'goal edit without user origin' } })
   switch (msg.method) {
     case 'initialize':
+      if (fs.existsSync(process.env.FAKE_AGENT_LOG + '.hang')) return
       return reply({ userAgent: 'fake-codex', codexHome: '/tmp', platformFamily: 'unix', platformOs: 'linux' })
     case 'initialized':
       return

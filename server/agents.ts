@@ -837,9 +837,9 @@ function avoidLimits(p: Project, t: Thread): Thread {
 // Errors that mean a broken sign-in or key. Such a provider does not take a request over again by
 // itself while its credential is broken, whatever usage limit resets meanwhile. Add classes here.
 const CREDENTIAL = /invalid credential|invalid (x-)?api[ -]key|unauthori[sz]ed|\b401\b|authentication|not (signed|logged) in|run \/login|sign in with/i
-// Errors that keep an agent from working at all: its sign-in or key, a process that would not start or ended.
+// Errors that keep an agent from working at all: its sign-in or key, a process that would not start, hung at its start or ended.
 // A refusal, the user's Stop and failed tool calls (they don't end a turn) don't match. Add classes here.
-const UNUSABLE = new RegExp(`${CREDENTIAL.source}|\\bexited with\\b|\\bENOENT\\b|\\bEACCES\\b|too old for Savor`, 'i')
+const UNUSABLE = new RegExp(`${CREDENTIAL.source}|\\bexited with\\b|\\bENOENT\\b|\\bEACCES\\b|too old for Savor|did not answer \\S+ within`, 'i')
 
 // An agent that failed that way before it ran a command or edited a file hands the request on: another one
 // starting over risks no work done twice.

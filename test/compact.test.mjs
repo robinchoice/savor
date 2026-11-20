@@ -1,6 +1,8 @@
 // Idle compaction: Savor compacts an open Claude conversation with a large context before its prompt cache
 // expires, also when a restart came in between. Finished conversations and projects that turn it off in
 // Claude's settings are left alone, and input that arrives meanwhile waits.
+// The same daemon, with its short times, also shows what happens to input while an idle agent process exits and
+// to a turn whose agent hangs at its start.
 import { test, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
@@ -51,7 +53,8 @@ async function startDaemon() {
       SAVOR_HOME: HOME,
       SAVOR_PORT: String(port),
       SAVOR_CLAUDE_BIN: path.join(ROOT, 'test/fake-claude.mjs'),
-      SAVOR_CODEX_BIN: path.join(TMP, 'no-such-codex'),
+      SAVOR_CODEX_BIN: path.join(ROOT, 'test/fake-codex.mjs'),
+      SAVOR_AGENT_START_MS: '2000',
       SAVOR_OPENCODE_BIN: path.join(TMP, 'no-such-opencode'),
       SAVOR_GH_BIN: path.join(ROOT, 'test/fake-gh.mjs'),
       SAVOR_IDLE_CLOSE_MS: '100',
@@ -59,6 +62,7 @@ async function startDaemon() {
       CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS: '30000',
       FAKE_AGENT_LOG: AGENT_LOG,
       CLAUDE_CONFIG_DIR: path.join(TMP, 'claude'),
+      CODEX_HOME: path.join(TMP, 'codex'),
     },
     stdio: ['ignore', 'pipe', 'inherit'],
   })
@@ -148,4 +152,20 @@ test('regression: input that arrives while an idle agent process exits is not lo
   await api('POST', `/projects/${project.id}/threads/${id}/messages`, { text: 'second' })
   await until(async () => (await messages()).some((m) => m.text === 'Echo: second' || m.kind === 'error'))
   assert.deepEqual((await messages()).filter((m) => m.kind === 'error').map((m) => m.text), [])
+})
+
+test('regression: a turn whose agent hangs at its start fails instead of working forever', { timeout: 60_000 }, async () => {
+  const project = await api('POST', '/projects', { path: path.join(TMP, 'hang'), create: true })
+  fs.writeFileSync(AGENT_LOG + '.hang', '')
+  const { id } = await api('POST', `/projects/${project.id}/threads`, { text: 'first', agent: { provider: 'codex', permissionMode: 'default' } })
+  const read = () => api('GET', `/projects/${project.id}/threads/${id}`)
+  const failed = await until(async () => {
+    const r = await read()
+    return !r.busy && r.messages.some((m) => m.kind === 'error') && r
+  })
+  assert.match(failed.messages.at(-1).text, /did not answer initialize within 2 seconds/)
+  // The process that hung is gone, so the next input starts a new one.
+  fs.rmSync(AGENT_LOG + '.hang')
+  await api('POST', `/projects/${project.id}/threads/${id}/messages`, { text: 'second' })
+  await until(async () => (await read()).messages.some((m) => m.text === 'Codex echo: second'))
 })

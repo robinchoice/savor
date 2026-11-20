@@ -4,7 +4,7 @@ import { spawn } from 'node:child_process'
 import * as store from './store.js'
 import type { ApprovalOption, PlanAgent, Thread } from './store.js'
 import { BIN, command, mcpUrl, VERSION } from './config.js'
-import { Rpc } from './jsonrpc.js'
+import { Rpc, START_MS } from './jsonrpc.js'
 import { configKey, forkOf, formFields, OPEN_PAGE, rememberSession, STOPPED, SUBMIT_FORM, sessionIdOf, summarize, systemPrompt, webUrl, type Host, type Session, type TurnInput } from './session.js'
 import type { ModelInfo, SkillInfo } from './providers.js'
 
@@ -75,20 +75,23 @@ export class CodexSession implements Session {
     this.rpc = new Rpc(child, { notification: (m, params) => this.onNotification(m, params), request: (m, params) => this.onRequest(m, params) })
     this.rpc.exited.then(({ code, signal }) => host.closed(this.stopping || signal === 'SIGTERM' ? STOPPED : `codex exited with ${code}: ${this.rpc.stderrTail}`))
     this.ready = this.init()
+    // A process whose start failed or hangs goes, so the next input starts a new one.
+    this.ready.catch(() => this.kill())
   }
 
   private async init() {
     const { p, tid } = this.host
     const a = this.thread.agent
-    await this.rpc.request('initialize', { clientInfo: CLIENT, capabilities: CAPABILITIES })
+    const ask = (method: string, params: unknown) => this.rpc.request(method, params, START_MS)
+    await ask('initialize', { clientInfo: CLIENT, capabilities: CAPABILITIES })
     this.rpc.notify('initialized', {})
     const mode = MODES[a.permissionMode] ?? MODES.default
     const settings = { cwd: this.host.cwd, ...mode, model: a.model || null, developerInstructions: `${systemPrompt(p, this.thread)}\n${ANSWER}` }
     const sid = sessionIdOf(this.thread, 'codex')
     const fork = forkOf(p, this.thread, 'codex')
     const r = sid
-      ? await this.rpc.request('thread/resume', { threadId: sid, ...settings }).catch(() => this.rpc.request('thread/start', settings))
-      : await this.rpc.request(fork ? 'thread/fork' : 'thread/start', { ...(fork && { threadId: fork }), ...settings })
+      ? await ask('thread/resume', { threadId: sid, ...settings }).catch(() => ask('thread/start', settings))
+      : await ask(fork ? 'thread/fork' : 'thread/start', { ...(fork && { threadId: fork }), ...settings })
     this.threadId = r.thread.id
     if (r.model) this.host.model(r.model)
     rememberSession(p, tid, 'codex', this.threadId)

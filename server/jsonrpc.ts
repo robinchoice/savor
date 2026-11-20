@@ -8,6 +8,9 @@ export class RpcError extends Error {
   }
 }
 
+// How long an agent may take to answer the requests that start it. One that hangs there would keep its turn working forever.
+export const START_MS = Number(process.env.SAVOR_AGENT_START_MS ?? 120_000)
+
 interface Handlers {
   notification(method: string, params: any): void
   request(method: string, params: any): Promise<unknown>
@@ -34,14 +37,19 @@ export class Rpc {
     child.stderr?.on('data', (d) => (this.stderr = (this.stderr + d).slice(-4000)))
     // An agent that exits right away closes its stdin; the exit then rejects what is pending.
     child.stdin?.on('error', (e) => (this.stderr += e.message))
+    // A process that is gone answers nothing anymore, whether it exited or never started.
+    const fail = (how: string) => {
+      for (const p of this.pending.values()) p.reject(new RpcError(`agent ${how}: ${this.stderr.trim()}`))
+      this.pending.clear()
+    }
     this.exited = new Promise((resolve) => {
       child.on('exit', (code, signal) => {
-        for (const p of this.pending.values()) p.reject(new RpcError(`agent exited with ${signal ?? code}: ${this.stderr.trim()}`))
-        this.pending.clear()
+        fail(`exited with ${signal ?? code}`)
         resolve({ code, signal })
       })
       child.on('error', (e) => {
         this.stderr += e.message
+        fail('could not run')
         resolve({ code: null, signal: null })
       })
     })
@@ -61,12 +69,19 @@ export class Rpc {
     this.child.kill('SIGTERM')
   }
 
-  request(method: string, params: unknown): Promise<any> {
+  // With `timeout` (ms) the request fails when the agent has not answered by then.
+  request(method: string, params: unknown, timeout?: number): Promise<any> {
     const id = this.nextId++
-    return new Promise((resolve, reject) => {
+    const answer = new Promise<any>((resolve, reject) => {
       this.pending.set(id, { resolve, reject })
       this.write({ jsonrpc: '2.0', id, method, params })
     })
+    if (!timeout) return answer
+    const timer = setTimeout(() => {
+      this.pending.get(id)?.reject(new RpcError(`The agent did not answer ${method} within ${Math.round(timeout / 1000)} seconds. Send your message again to start it anew.`))
+      this.pending.delete(id)
+    }, timeout)
+    return answer.finally(() => clearTimeout(timer))
   }
 
   notify(method: string, params: unknown) {
