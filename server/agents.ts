@@ -21,7 +21,7 @@ import { knownAgents, knownUsage, listAgents, listUsage, mergeAgent, STATIC } fr
 const IDLE_CLOSE_MS = Number(process.env.SAVOR_IDLE_CLOSE_MS ?? 5 * 60_000)
 // A turn that stopped at a usage limit continues this long after the limit resets.
 const LIMIT_MARGIN_MS = 60_000
-const CI_POLL_MS = 20_000
+const CI_POLL_MS = Number(process.env.SAVOR_CI_POLL_MS ?? 20_000)
 // Runs show up seconds after a push. A commit without any after this has none to wait for.
 const CI_APPEAR_MS = 3 * 60_000
 

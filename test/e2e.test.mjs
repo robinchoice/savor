@@ -132,6 +132,11 @@ async function startDaemon() {
       SAVOR_TRANSCRIBE_MODULE: path.join(ROOT, 'test/fake-transcribe.mjs'),
       SAVOR_GH_BIN: path.join(ROOT, 'test/fake-gh.mjs'),
       SAVOR_HEALTH_RELAY_MS: '1500',
+      // Savor's own waits, cut short: between two looks at CI, and before a held answer reaches the agent.
+      SAVOR_CI_POLL_MS: '500',
+      SAVOR_CI_TICK_MS: '250',
+      SAVOR_CI_LIVE_POLL_MS: '1000',
+      SAVOR_HOLD_MS: '4000',
       SAVOR_PANDOC_BIN: path.join(ROOT, 'test/fake-pandoc.mjs'),
       SAVOR_FEEDBACK_URL: `http://127.0.0.1:${feedbackApi.address().port}/savor/feedback`,
       SAVOR_OPENALEX_URL: `http://127.0.0.1:${feedbackApi.address().port}/openalex`,
@@ -1864,7 +1869,7 @@ test('notices have a type, the inbox filters by it, marks several read and answe
   const decision = (await listed(asked.id)).decisions[0]
   assert.equal((await api('POST', `${threads}/${asked.id}/held`, { decision: decision.id, selected: 5 })).status, 400)
   const held = (await api('POST', `${threads}/${asked.id}/held`, { decision: decision.id, selected: 0 })).body
-  assert.equal(held.ms, 10_000)
+  assert.equal(held.ms, 4000)
   assert.equal((await listed(asked.id)).unread, false, 'answering counts as seen')
   assert.equal((await api('DELETE', `/held/${held.id}`)).status, 200)
   assert.equal((await api('DELETE', `/held/${held.id}`)).status, 400)
@@ -4248,7 +4253,7 @@ test('the status bar shows the running CI runs after a push, and a failed run un
   let n = 0
   await until(async () => {
     fs.writeFileSync(path.join(refs, `push-${n++}`), gitIn(PROJECT, 'rev-parse', 'HEAD'))
-    await new Promise((r) => setTimeout(r, 2000))
+    await new Promise((r) => setTimeout(r, 300))
     return (await api('GET', '/ci')).body.length > 0
   }, 40_000)
   const [run] = (await api('GET', '/ci')).body

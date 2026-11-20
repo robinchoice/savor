@@ -50,8 +50,8 @@ interface LiveRun {
 interface ListedRun { databaseId: number; number: number; workflowName: string; workflowDatabaseId: number; status: string; conclusion: string; url: string; createdAt: string; startedAt: string; updatedAt: string }
 interface Job { status: string; steps?: { status: string }[] }
 
-const TICK_MS = 5_000
-const LIVE_POLL_MS = 15_000
+const TICK_MS = Number(process.env.SAVOR_CI_TICK_MS ?? 5_000)
+const LIVE_POLL_MS = Number(process.env.SAVOR_CI_LIVE_POLL_MS ?? 15_000)
 // How long after a push or a watch_ci GitHub is asked for runs to show up.
 const APPEAR_MS = 2 * 60_000
 const RED = ['failure', 'timed_out', 'startup_failure']

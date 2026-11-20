@@ -670,7 +670,7 @@ route('POST', '/projects/:pid/threads/:tid/decisions', (params, b, ctx) => {
   return {}
 })
 // An answer from a notification or the inbox reaches the agent only after HOLD_MS, so it can still be taken back.
-const HOLD_MS = 10_000
+const HOLD_MS = Number(process.env.SAVOR_HOLD_MS ?? 10_000)
 const held = new Map<string, NodeJS.Timeout>()
 route('POST', '/projects/:pid/threads/:tid/held', (params, b, ctx) => {
   const p = project(params)
