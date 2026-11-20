@@ -2534,8 +2534,10 @@ test('the terminal starts with a shell per folder and worktree, opens and closes
   await page.evaluate(() => { window.resizeTerminal = document.querySelector('.terminal-screen .xterm') })
   const resizeTerms = (await api('GET', t)).body.terminals.map((term) => term.id)
   for (const [width, height] of [[860, 600], [390, 844], [844, 390], [1400, 900]]) {
+    const resized = page.waitForResponse(`${base}/api${t}/resize`)
     await page.setViewportSize({ width, height })
-    await page.waitForTimeout(100)
+    await resized
+    await page.waitForFunction(() => document.querySelector('.terminal-screen')?.textContent.includes('42-terminal'))
     // Says what happened when it fails now and then in CI: which terminal is shown and whether the old one is still on the page.
     const shown = await page.evaluate(() => ({ same: window.resizeTerminal === document.querySelector('.terminal-screen .xterm'), connected: window.resizeTerminal?.isConnected, screens: document.querySelectorAll('.terminal-screen').length, on: document.querySelector('.terminal-place.on')?.textContent }))
     assert.ok(shown.same, `the terminal was drawn anew at ${width}x${height}: ${JSON.stringify(shown)}`)

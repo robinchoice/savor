@@ -73,8 +73,9 @@ test('the sender links to pleasance.org, hovering the band pops up the apps', as
 
   // Like the Dock: the icon under the pointer grows
   const hub = dock.getByRole('link', { name: 'Music Hub' })
-  const before = (await hub.boundingBox()).width
-  await hub.hover()
+  const bounds = await hub.boundingBox()
+  const before = bounds.width
+  await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2)
   await page.waitForFunction(([name, width]) => document.querySelector(`a[href="${name}"]`).getBoundingClientRect().width > width * 1.4, ['https://hub.pleasance.org', before])
 
   await page.mouse.move(600, 100)
