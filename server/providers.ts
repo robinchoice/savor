@@ -254,7 +254,10 @@ export async function listSkills(provider: string, cwd: string): Promise<SkillIn
 interface UsageWindow { label: string; percent: number; resets: string | null; resetsAt?: number | null; limitId?: string | null }
 export interface Usage { provider: Provider; name: string; windows: UsageWindow[] }
 
+// The agents are asked every minute while one of them works, which is what uses the limits up, and every five
+// minutes otherwise: each time starts their CLIs.
 const USAGE_MS = 60_000
+const USAGE_IDLE_MS = 5 * 60_000
 // The last known usage is served right away; asking the agents takes several seconds. Values older
 // than two refresh intervals are marked stale while the new ones are being asked for.
 let usage: (Usage & { stale: boolean })[] = []
@@ -313,9 +316,10 @@ const usageProbes: Partial<Record<Provider, () => Promise<UsageWindow[]>>> = {
 
 export const knownUsage = () => usage
 
-// `fresh` waits for values asked for within the last minute.
-export function listUsage(fresh = false): Promise<(Usage & { stale: boolean })[]> {
-  if (!usageRefresh && Date.now() - usageAt >= USAGE_MS) {
+// `fresh` waits for values asked for within the last minute; `working` says that an agent works right now.
+export function listUsage(fresh = false, working = false): Promise<(Usage & { stale: boolean })[]> {
+  const every = fresh || working ? USAGE_MS : USAGE_IDLE_MS
+  if (!usageRefresh && Date.now() - usageAt >= every) {
     usageAt = Date.now()
     usageRefresh = listAgents()
       .then(async (agents) =>
@@ -335,6 +339,6 @@ export function listUsage(fresh = false): Promise<(Usage & { stale: boolean })[]
       .finally(() => ((usageRefresh = null), (usageDone = Date.now())))
   }
   if ((fresh || !usage.length) && usageRefresh) return usageRefresh
-  const stale = !!usageRefresh && Date.now() - usageDone > 2 * USAGE_MS
+  const stale = !!usageRefresh && Date.now() - usageDone > 2 * every
   return Promise.resolve(usage.map((u) => ({ ...u, stale: u.stale || stale })))
 }

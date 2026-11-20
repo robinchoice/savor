@@ -805,7 +805,7 @@ function atLimit(id: string) {
 
 // The fallback setting, and the agents at a usage limit now, for the settings and for the composer of a new conversation.
 export async function fallbackSettings() {
-  const [installed] = await Promise.all([listAgents(), listUsage()])
+  const [installed] = await Promise.all([listAgents(), listUsage(false, anyBusy())])
   const f = store.state().fallback
   const agents = f?.agents ?? FALLBACK.map(([provider, permissionMode]) => mergeAgent(store.defaultAgent(), { provider, permissionMode }))
   // Agents of the chain that cannot run: not installed, signed out, or with a credential broken. The composer
@@ -826,7 +826,7 @@ export async function fallbackSettings() {
 function avoidLimits(p: Project, t: Thread): Thread {
   const list = chain()
   if (!list) return t
-  void listUsage()
+  void listUsage(false, true)
   const free = (a: AgentConfig) => !atLimit(poolOf(a)) && !brokenCredential(poolOf(a)) && (knownAgents()?.some((k) => k.id === a.provider && k.installed && k.signedIn) ?? true)
   if (t.preferred && free(t.preferred)) {
     post(p, t.id, { kind: 'update', text: `The usage limit of ${named(t.preferred)} has reset. It takes over again.`, modelInfo: t.preferred })

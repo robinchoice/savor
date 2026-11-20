@@ -53,3 +53,32 @@ test('Codex reads all quota buckets, retains failed probes as stale, and stops b
   assert.equal(usage.stale, false)
   assert.deepEqual(usage.windows.map((w) => [w.label, w.percent]), [['5 hours', 25], ['Weekly', 2]])
 })
+
+test('the agents are asked for their usage every five minutes, and every minute while one of them works', async (t) => {
+  // Later than the clock of the test above, which the usage remembers.
+  const now = Date.now() + 3600_000
+  t.mock.timers.enable({ apis: ['Date'], now })
+  const used = (percent) => write({ rateLimits: { limitId: 'codex', primary: window(percent, 300, Math.floor(now / 1000) + 7200), secondary: null } })
+  const shown = async (working) => (await listUsage(false, working))[0].windows[0].percent
+  const shows = async (percent, working) => {
+    while ((await shown(working)) !== percent) await new Promise((r) => setTimeout(r, 50))
+  }
+  used(10)
+  assert.equal((await listUsage(true))[0].windows[0].percent, 10)
+
+  // Nobody works: a minute later Codex is not asked again.
+  used(20)
+  t.mock.timers.tick(61_000)
+  assert.equal(await shown(false), 10)
+  await new Promise((r) => setTimeout(r, 1500))
+  assert.equal(await shown(false), 10)
+  // An agent works: it is.
+  await shows(20, true)
+
+  // Nobody works again: after five minutes.
+  used(30)
+  t.mock.timers.tick(61_000)
+  assert.equal(await shown(false), 20)
+  t.mock.timers.tick(4 * 60_000)
+  await shows(30, false)
+})

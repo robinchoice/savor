@@ -204,7 +204,7 @@ route('POST', '/signin/:tool/code', (params, b, ctx) => {
 route('DELETE', '/signin/:tool', (params, _, ctx) => (localOnly(ctx), signin.cancel(toolOf(params)), signin.status(toolOf(params))))
 route('GET', '/github', (_, __, ctx) => (localOnly(ctx), signin.github()))
 route('GET', '/github/repos', (_, __, ctx) => (localOnly(ctx), signin.repos()))
-route('GET', '/usage', () => listUsage())
+route('GET', '/usage', () => listUsage(false, agents.anyBusy()))
 route('GET', '/ci', () => ci.liveRuns())
 route('POST', '/ci/dismiss', (_, b) => (ci.dismiss(b.ids.map(Number)), { ok: true }))
 // The agent new projects start with.
