@@ -1168,6 +1168,27 @@ test('new projects start with the default agent set on this computer', async () 
   await api('PUT', '/agent', { permissionMode: 'acceptEdits', reasoning: 'high' })
 })
 
+test('regression: switching the project provider clears the old provider speed options', async (t) => {
+  const project = (await api('POST', '/projects', { path: path.join(TMP, 'provider-options'), create: true })).body
+  const previous = page.url()
+  t.after(async () => {
+    await api('DELETE', `/projects/${project.id}`)
+    await page.goto(previous)
+  })
+  const configured = await api('PATCH', `/projects/${project.id}`, { agent: { provider: 'claude', fast: true, ultracode: true } })
+  assert.equal(configured.body.agent.fast, true)
+  assert.equal(configured.body.agent.ultracode, true)
+  await page.goto(`${base}/#/p/${project.id}/settings`)
+  await page.reload()
+  await page.getByLabel('Default agent').selectOption('codex')
+  await page.getByRole('button', { name: 'Save', exact: true }).click()
+  await page.getByText('Saved.', { exact: true }).waitFor()
+  const changed = (await api('GET', '/projects')).body.find((p) => p.id === project.id).agent
+  assert.equal(changed.provider, 'codex')
+  assert.equal(changed.fast, false)
+  assert.equal(changed.ultracode, false)
+})
+
 test('presets are saved globally and only from this computer', async () => {
   for (const provider of ['grok', 'antigravity']) assert.equal((await api('POST', '/presets', { name: 'Retired', agent: { provider } })).status, 400)
   const agent = { provider: 'codex', model: 'fake-model', reasoning: 'high', fast: false, permissionMode: 'read-only' }

@@ -88,7 +88,7 @@ export function Settings({ project }: { project: Project }) {
               value={draft.agent.provider}
               onChange={(e) => {
                 const info = agents?.find((a) => a.id === e.currentTarget.value)
-                set({ agent: { ...draft.agent, provider: e.currentTarget.value, model: '', reasoning: info?.defaultEffort ?? '', permissionMode: info?.defaultMode ?? 'default' } })
+                set({ agent: { provider: e.currentTarget.value, model: '', reasoning: info?.defaultEffort ?? '', permissionMode: info?.defaultMode ?? 'default', fast: false, ultracode: false } })
               }}
             >
               {Object.entries(PROVIDER_NAMES).map(([id, name]) => {
