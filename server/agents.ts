@@ -466,14 +466,17 @@ function endTurn(p: Project, tid: string, result: { text?: string; error?: strin
       notify(p, tid, 'result', result.text!, 'Finished')
     }
     if (!r.ack && !r.conclusion && !r.updates.size && result.text?.trim() && !runsBackground(tid)) surface()
-    // Agents without background work of their own (OpenCode) that acknowledged and stopped without a
-    // conclusion, a process or CI to wait for forgot it: Savor asks once, and after that shows their text.
+    // An agent that does not come back by itself (NUDGED) and acknowledged and stopped without a conclusion,
+    // a process, CI or a subagent to wait for forgot it: Savor asks once, and after that shows its text.
+    // Input that waits in the queue goes first instead: whoever sent it now does not wait for the old request.
     else if (
       NUDGED.includes(agent.provider) &&
       r.ack &&
       !r.conclusion &&
       !store.listProcs(p).some((pr) => pr.threadId === tid) &&
-      store.getThread(p, tid).ciWatch?.inputId !== r.inputId
+      store.getThread(p, tid).ciWatch?.inputId !== r.inputId &&
+      !store.readPlans(p, tid)[r.inputId]?.agents.some((a) => a.status === 'running') &&
+      !store.readMessages(p, tid).some((m) => m.kind === 'user' && m.delivered === false)
     ) {
       if (!r.nudged) nudge = r.nudged = true
       else if (result.text?.trim()) surface()
@@ -496,8 +499,9 @@ function endTurn(p: Project, tid: string, result: { text?: string; error?: strin
   pump(p, tid)
 }
 
-// The agents whose forgotten conclusion Savor asks for: none of them keeps working in the background after its turn.
-const NUDGED: Provider[] = ['opencode']
+// The agents whose forgotten conclusion Savor asks for: after a turn they start no other by themselves, except Codex
+// once a subagent it left running reports back. Claude Code does, when its background work ends (runsBackground).
+const NUDGED: Provider[] = ['opencode', 'codex']
 const NUDGE = `You acknowledged the input below and ended your turn without send_conclusion_message, so the user has not seen a result yet. If the work is done, send the conclusion now with what you did, and any questions. If it is not done, finish it first. This is still the same request: do not acknowledge it again.\n\n`
 
 // ---- prompts ----

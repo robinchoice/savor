@@ -16,6 +16,8 @@
 // - mcpServer/oauth/login → a sign-in page on auth.example, then a successful mcpServer/oauthLogin/completed
 // - account/rateLimits/read → a five-hour window 20 % used, 100 % while the test's full file exists
 // - "plan: <text>" → a plan update with one step done and one in progress and a subagent that finished, then "Codex echo: <input>"
+// - "forget: <text>" → acknowledges and ends the turn on plain text without a conclusion; asked for it, "Codex remembered: <input>".
+//   "forget: subagent …" leaves a subagent running first; "forget: slow …" waits after the acknowledgement until it is interrupted
 // - an input with "everywhere" in it → exits with "Invalid credential", like a Codex whose sign-in has expired
 // - anything else → "Codex echo: <input>", with " (took over)" when Savor said it takes over from an agent at its limit
 // While the test's hang file exists it never answers initialize, like an app-server that hangs at its start.
@@ -46,14 +48,14 @@ const serverRequest = (method, params) =>
   })
 
 let client = null
-async function conclude(text) {
+async function conclude(text, tool = 'send_conclusion_message') {
   if (!mcpUrl) return
   client ??= await (async () => {
     const c = new Client({ name: 'fake-codex', version: '1' })
     await c.connect(new StreamableHTTPClientTransport(new URL(mcpUrl), { requestInit: { headers: { authorization: `Bearer ${token}` } } }))
     return c
   })()
-  await client.callTool({ name: 'send_conclusion_message', arguments: { text } })
+  await client.callTool({ name: tool, arguments: { text, ...(tool === 'send_acknowledgement_message' && { summary: 'Work on the request.' }) } })
 }
 
 let threadId = 'fake-codex-thread'
@@ -79,6 +81,7 @@ async function runTurn(params) {
   notify('item/started', { threadId, turnId, item: { type: 'commandExecution', id: 'cmd1', command: 'echo hi', cwd: '.', status: 'inProgress' } })
   notify('item/completed', { threadId, turnId, item: { type: 'commandExecution', id: 'cmd1', command: 'echo hi', cwd: '.', status: 'completed' } })
   if (input.startsWith('answer:')) return answerTurn(turn, input)
+  if (input.startsWith('forget:') && !text.includes('without send_conclusion_message')) return forgetTurn(turn, input)
   const skill = params.input.find((i) => i.type === 'skill')
   let reply
   if (skill) {
@@ -111,7 +114,7 @@ async function runTurn(params) {
       notify('item/completed', { threadId, turnId, item: { ...spawn, id: 'wait1', tool: 'wait', prompt: null, agentsStates: { 'sub-1': { status: 'completed', message: 'All green.' } } } })
     }
     if (input.startsWith('slow:')) await released(input)
-    reply = input.includes('Question: ') ? `Codex aside in ${threadId}: ${input.slice(input.indexOf('Question: ') + 10)}` : `Codex echo: ${input}${text.includes('and you take over') ? ' (took over)' : ''}`
+    reply = input.startsWith('forget:') ? `Codex remembered: ${input}` : input.includes('Question: ') ? `Codex aside in ${threadId}: ${input.slice(input.indexOf('Question: ') + 10)}` : `Codex echo: ${input}${text.includes('and you take over') ? ' (took over)' : ''}`
   }
   if (turnId !== turn.id) return
   // Like the real app-server, calling an MCP tool first asks the client to approve it.
@@ -150,6 +153,17 @@ async function answerTurn(turn, input) {
   await released(input)
   notify('item/agentMessage/delta', { threadId, turnId, itemId: 'a1', delta: reply.slice(half) })
   message('a1', 'final_answer', reply)
+  notify('turn/completed', { threadId, turn: { ...turn, status: 'completed' } })
+  turnId = null
+}
+
+// An acknowledgement, then the end of the turn on plain text, without send_conclusion_message.
+async function forgetTurn(turn, input) {
+  await conclude(`Working on ${input}`, 'send_acknowledgement_message')
+  if (input.includes('subagent')) notify('item/completed', { threadId, turnId, item: { type: 'collabAgentToolCall', id: 'spawn2', tool: 'spawnAgent', status: 'completed', senderThreadId: threadId, receiverThreadIds: ['sub-2'], prompt: 'Look into it', model: 'fake-mini', agentsStates: { 'sub-2': { status: 'running', message: null } } } })
+  if (input.includes('slow')) await released(input)
+  if (turnId !== turn.id) return
+  notify('item/completed', { threadId, turnId, item: { type: 'agentMessage', id: 'f1', text: 'Done, I think.', phase: 'final_answer' } })
   notify('turn/completed', { threadId, turn: { ...turn, status: 'completed' } })
   turnId = null
 }

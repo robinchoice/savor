@@ -900,6 +900,36 @@ test('Codex runs through the app-server protocol with approvals and questions', 
   await api('PATCH', `/projects/${project.id}`, { agent: project.agent })
 })
 
+test('regression: Codex is asked for the conclusion it forgot, unless a subagent still runs or other input waits', async () => {
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
+  const threads = `/projects/${project.id}/threads`
+  const start = async (text) => (await api('POST', threads, { text, agent: { provider: 'codex' } })).body.id
+  const read = async (id) => (await api('GET', `${threads}/${id}`)).body
+  const texts = async (id) => (await read(id)).messages.map((m) => m.text)
+  const acknowledged = (id, idle) => until(async () => (({ busy, messages }) => messages.some((m) => m.kind === 'ack') && !(idle && busy))(await read(id)))
+
+  // Acknowledged and stopped on plain text: Savor asks once and gets the conclusion.
+  const forgot = await start('forget: the result')
+  await until(async () => (await texts(forgot)).includes('Codex remembered: forget: the result'))
+  assert.equal((await read(forgot)).messages.filter((m) => m.kind === 'ack').length, 1)
+
+  // A subagent that still runs may report back by itself: Codex is left alone.
+  const waits = await start('forget: subagent')
+  await acknowledged(waits, true)
+  await api('POST', `${threads}/${waits}/messages`, { text: 'after' })
+  await until(async () => (await texts(waits)).includes('Codex echo: after'))
+  assert.ok(!(await texts(waits)).some((t) => t?.startsWith('Codex remembered')))
+
+  // "Send now" interrupts the turn for the input that waits, and that input goes first.
+  const slow = await start('forget: slow')
+  await acknowledged(slow)
+  assert.equal((await api('POST', `${threads}/${slow}/messages`, { text: 'next' })).body.delivered, false)
+  await api('POST', `${threads}/${slow}/send-now`)
+  await until(async () => (await texts(slow)).includes('Codex echo: next'))
+  assert.ok(!(await texts(slow)).some((t) => t?.startsWith('Codex remembered')))
+  await api('PATCH', `/projects/${project.id}`, { agent: project.agent })
+})
+
 test('OpenCode runs through the Agent Client Protocol', async () => {
   const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
   const thread = (await api('POST', `/projects/${project.id}/threads`, { text: 'hello acp', agent: { provider: 'opencode', model: 'fake/model', reasoning: 'high', permissionMode: 'plan' } })).body
