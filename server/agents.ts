@@ -44,7 +44,8 @@ interface RequestState {
 const requests = new Map<string, RequestState>()
 const busy = new Map<string, string>() // threadId → turn start
 const turnConclusion = new Map<string, string>()
-const sessions = new Map<string, { session: Session; idleTimer?: NodeJS.Timeout }>()
+// `ending`: the idle timer asked the session to exit and its process has not gone yet.
+const sessions = new Map<string, { session: Session; idleTimer?: NodeJS.Timeout; ending?: boolean }>()
 const stopped = new Set<string>() // threads whose last turn the user stopped: don't pump the queue
 const approvals = new Map<string, (answer: { choice: string; content?: Record<string, unknown> }) => void>() // approval message id → resolver
 const questions = new Map<string, (answers: Answer[]) => void>() // decision group id → resolver
@@ -414,7 +415,11 @@ export function maybeClose(p: Project, tid: string) {
   if (!s || busy.has(tid)) return
   clearTimeout(s.idleTimer)
   const owns = store.listProcs(p).some((pr) => pr.threadId === tid)
-  if (!owns && !runsBackground(tid)) s.idleTimer = setTimeout(() => s.session.end(), IDLE_CLOSE_MS)
+  if (!owns && !runsBackground(tid))
+    s.idleTimer = setTimeout(() => {
+      s.ending = true
+      s.session.end()
+    }, IDLE_CLOSE_MS)
 }
 
 function beginTurn(p: Project, tid: string) {
@@ -540,8 +545,9 @@ function turnInput(p: Project, thread: Thread, msg: Message, note = ''): TurnInp
 function sessionFor(p: Project, thread: Thread): Session {
   const tid = thread.id
   let s = sessions.get(tid)
-  // New agent, model, effort or permission settings need a fresh process.
-  if (s && s.session.config !== configKey(thread.agent, !!thread.apiCredit)) {
+  // New agent, model, effort or permission settings need a fresh process, and so does input that arrives while
+  // an idle one exits: that one no longer reads what it is sent.
+  if (s && (s.ending || s.session.config !== configKey(thread.agent, !!thread.apiCredit))) {
     sessions.delete(tid)
     clearTimeout(s.idleTimer)
     s.session.end()

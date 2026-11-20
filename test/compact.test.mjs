@@ -75,14 +75,15 @@ async function startDaemon() {
   })
 }
 
+const api = async (method, p, body) => {
+  const { token } = JSON.parse(fs.readFileSync(path.join(HOME, 'state.json'), 'utf8'))
+  const r = await fetch(`http://127.0.0.1:${port}/api${p}`, { method, headers: { cookie: `savor_token=${token}`, 'content-type': 'application/json' }, body: body && JSON.stringify(body) })
+  return r.json()
+}
+
 test('open Claude conversations compact when left idle, as Claude settings allow', { timeout: 120_000 }, async () => {
   port = await freePort()
   await startDaemon()
-  const { token } = JSON.parse(fs.readFileSync(path.join(HOME, 'state.json'), 'utf8'))
-  const api = async (method, p, body) => {
-    const r = await fetch(`http://127.0.0.1:${port}/api${p}`, { method, headers: { cookie: `savor_token=${token}`, 'content-type': 'application/json' }, body: body && JSON.stringify(body) })
-    return r.json()
-  }
   const project = await api('POST', '/projects', { path: path.join(TMP, 'app'), create: true })
   const off = await api('POST', '/projects', { path: path.join(TMP, 'off'), create: true })
   fs.mkdirSync(path.join(TMP, 'off', '.claude'))
@@ -135,4 +136,16 @@ test('open Claude conversations compact when left idle, as Claude settings allow
     assert.ok(!(await read(p, id)).messages.some((m) => m.compacted))
     assert.ok(!compactions().includes(await sessionOf(p, id)))
   }
+})
+
+test('regression: input that arrives while an idle agent process exits is not lost', { timeout: 60_000 }, async () => {
+  const project = await api('POST', '/projects', { path: path.join(TMP, 'idle'), create: true })
+  const { id } = await api('POST', `/projects/${project.id}/threads`, { text: 'linger: first' })
+  const messages = async () => (await api('GET', `/projects/${project.id}/threads/${id}`)).messages
+  await until(async () => (await messages()).some((m) => m.text === 'Echo: linger: first'))
+  // Savor closes the agent's stdin 100 ms after the turn, and this agent takes 1.5 seconds to exit.
+  await new Promise((r) => setTimeout(r, 500))
+  await api('POST', `/projects/${project.id}/threads/${id}/messages`, { text: 'second' })
+  await until(async () => (await messages()).some((m) => m.text === 'Echo: second' || m.kind === 'error'))
+  assert.deepEqual((await messages()).filter((m) => m.kind === 'error').map((m) => m.text), [])
 })

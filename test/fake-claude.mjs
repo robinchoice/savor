@@ -31,6 +31,7 @@
 //   then compacts the context of 38,000 tokens to 4,000
 // - "model: <id>" → answers on that model with the context unchanged, like a model switch mid-session, then echoes
 // - "fail: <error>" → ends the turn with that error ("… after work …" runs a command first)
+// - "linger: <text>" → echoes, and from then on takes 1.5 seconds to exit once its stdin closes
 // - anything else → acknowledgement plus a conclusion echoing the input with one suggestion
 // While the test's outdated file exists it refuses to start, like a release that lacks an option.
 // `--version`, `auth status` and `-p /usage` answer like the real CLI, so Savor lists the fake as installed.
@@ -157,6 +158,7 @@ const released = async (input) => {
 
 let started = false
 let interrupted = false
+let linger = false
 // What the user added to the running turn, as Claude Code takes it in at its next step.
 let added = []
 // Each turn costs $0.30. A turn that goes past the budget ends the way Claude Code ends it there.
@@ -169,6 +171,7 @@ async function turn(text, command) {
   if (!started) out({ type: 'system', subtype: 'init', session_id: sessionId })
   started = true
   interrupted = false
+  linger ||= input.startsWith('linger:')
   // The context holds 38,000 of the 200,000 tokens the result names; what a subagent used is not part of it.
   out({ type: 'assistant', parent_tool_use_id: null, message: { model: 'fake-fable', usage: { input_tokens: 1200, cache_read_input_tokens: 30000, cache_creation_input_tokens: 6800 }, content: [{ type: 'text', text: 'working' }] } })
   out({ type: 'assistant', parent_tool_use_id: 'toolu_subagent', message: { model: 'fake-haiku', usage: { input_tokens: 150000 }, content: [] } })
@@ -352,4 +355,4 @@ rl.on('line', (line) => {
     turn(texts[0], texts.length > 1 && texts.at(-1).startsWith('/') ? texts.at(-1) : null)
   }
 })
-rl.on('close', () => client.close().then(() => process.exit(0)))
+rl.on('close', () => setTimeout(() => client.close().then(() => process.exit(0)), linger ? 1500 : 0))
