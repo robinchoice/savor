@@ -12,7 +12,9 @@ import { HOME } from './store.js'
 // preview survive restarts. Agent and user share the page: the agent drives it through MCP tools,
 // the UI shows its screencast and forwards the user's clicks and keystrokes.
 
-interface Session { page: Page; cdp: CDPSession; errors: string[]; frame: string | null }
+// `revision` is the hash of `frame`, made when a viewer first asks for it. `waiting` are the viewers that have the
+// frame and wait for the next one.
+interface Session { page: Page; cdp: CDPSession; errors: string[]; frame: string | null; revision: string | null; waiting: Set<() => void> }
 
 const profiles = new Map<string, Promise<BrowserContext>>()
 const sessions = new Map<string, Session>()
@@ -20,6 +22,8 @@ const VIEWPORT = { width: 1280, height: 800 }
 // The UI asks for the size of the space it has for the page, within these bounds.
 const SMALLEST = { width: 320, height: 240 }
 const LARGEST = { width: 3840, height: 2160 }
+// How long a viewer that has the latest frame waits for the next one before it is told there is none.
+const WAIT_MS = Number(process.env.SAVOR_PREVIEW_WAIT_MS) || 10_000
 
 function executable() {
   const candidates = [
@@ -100,12 +104,15 @@ export async function open(projectId: string, tid: string, url: string) {
   if (!s) {
     const page = await (await profile(projectId)).newPage()
     const cdp = await page.context().newCDPSession(page)
-    const created: Session = { page, cdp, errors: [], frame: null }
+    const created: Session = { page, cdp, errors: [], frame: null, revision: null, waiting: new Set() }
     page.on('console', (m) => m.type() === 'error' && created.errors.push(m.text()))
     page.on('pageerror', (e) => created.errors.push(e.message))
-    page.on('close', () => sessions.get(tid) === created && sessions.delete(tid))
+    page.on('close', () => {
+      if (sessions.get(tid) === created) sessions.delete(tid)
+      for (const wake of created.waiting) wake()
+    })
     cdp.on('Page.screencastFrame', ({ data, sessionId }) => {
-      created.frame = data
+      show(created, data)
       cdp.send('Page.screencastFrameAck', { sessionId }).catch(() => {})
     })
     await cdp.send('Page.startScreencast', { format: 'jpeg', quality: 70, maxWidth: LARGEST.width, maxHeight: LARGEST.height })
@@ -116,17 +123,36 @@ export async function open(projectId: string, tid: string, url: string) {
 
 export const has = (tid: string) => sessions.has(tid)
 
+function show(s: Session, data: string) {
+  s.frame = data
+  s.revision = null
+  for (const wake of s.waiting) wake()
+}
+
 // The last frame of the page as base64 JPEG.
 export async function frame(tid: string) {
   const s = session(tid)
-  return s.frame ?? (s.frame = (await s.page.screenshot({ type: 'jpeg', quality: 70 })).toString('base64'))
+  if (!s.frame) show(s, (await s.page.screenshot({ type: 'jpeg', quality: 70 })).toString('base64'))
+  return s.frame!
 }
 
-// Only the latest frame, and no image payload when the viewer already has it.
+// Only the latest frame. A viewer that already has it waits here for the next one, and gets no image when none
+// came in time.
 export async function snapshot(tid: string, after: string | null) {
-  const data = await frame(tid)
-  const revision = createHash('sha256').update(data).digest('hex')
-  return { revision, frame: revision === after ? null : data }
+  const s = session(tid)
+  await frame(tid)
+  const revision = () => (s.revision ??= createHash('sha256').update(s.frame!).digest('hex'))
+  if (revision() === after)
+    await new Promise<void>((resolve) => {
+      const wake = () => {
+        clearTimeout(timer)
+        s.waiting.delete(wake)
+        resolve()
+      }
+      const timer = setTimeout(wake, WAIT_MS)
+      s.waiting.add(wake)
+    })
+  return { revision: revision(), frame: revision() === after ? null : s.frame }
 }
 
 // Agent and user share the page, so the size the user's space gives it is the size the agent sees too.
@@ -134,7 +160,7 @@ export async function resize(tid: string, width: number, height: number) {
   const within = (n: number, min: number, max: number) => Math.round(Math.min(max, Math.max(min, Number(n) || min)))
   const s = session(tid)
   await s.page.setViewportSize({ width: within(width, SMALLEST.width, LARGEST.width), height: within(height, SMALLEST.height, LARGEST.height) })
-  s.frame = (await s.page.screenshot({ type: 'jpeg', quality: 70 })).toString('base64')
+  show(s, (await s.page.screenshot({ type: 'jpeg', quality: 70 })).toString('base64'))
 }
 export const screenshot = (tid: string) => session(tid).page.screenshot({ type: 'png' })
 

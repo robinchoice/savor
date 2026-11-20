@@ -44,7 +44,8 @@ export function Preview({ base, url, onPick, narrow, chatHidden, onToggleChat }:
     let stopped = false
     let timer: ReturnType<typeof setTimeout>
     let revision = ''
-    // Fetch and decode one frame at a time, so a slow connection never queues old frames.
+    // Fetch and decode one frame at a time, so a slow connection never queues old frames. The request for the frame
+    // after the one shown here waits on the computer until the page has changed.
     const next = async () => {
       let delay = 100
       try {

@@ -137,6 +137,7 @@ async function startDaemon() {
       SAVOR_CI_TICK_MS: '250',
       SAVOR_CI_LIVE_POLL_MS: '1000',
       SAVOR_HOLD_MS: '4000',
+      SAVOR_PREVIEW_WAIT_MS: '500',
       SAVOR_PANDOC_BIN: path.join(ROOT, 'test/fake-pandoc.mjs'),
       SAVOR_FEEDBACK_URL: `http://127.0.0.1:${feedbackApi.address().port}/savor/feedback`,
       SAVOR_OPENALEX_URL: `http://127.0.0.1:${feedbackApi.address().port}/openalex`,

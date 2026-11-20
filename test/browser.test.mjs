@@ -4,12 +4,15 @@ import { execFileSync } from 'node:child_process'
 import http from 'node:http'
 import os from 'node:os'
 import path from 'node:path'
-import { test } from 'node:test'
+import { after, test } from 'node:test'
 import { chromium } from 'playwright-core'
 
+const home = fs.mkdtempSync(path.join(os.tmpdir(), 'savor-browser-'))
+process.env.SAVOR_HOME = home
+process.env.SAVOR_PREVIEW_WAIT_MS = '300'
+after(() => fs.rmSync(home, { recursive: true, force: true }))
+
 test('the preview recreates closed profiles and preserves each project login', async (t) => {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'savor-browser-'))
-  process.env.SAVOR_HOME = home
   const preview = await import('../server/browser.ts')
   const contexts = []
   const launch = chromium.launchPersistentContext.bind(chromium)
@@ -24,7 +27,6 @@ test('the preview recreates closed profiles and preserves each project login', a
   t.after(async () => {
     await Promise.all(contexts.map((context) => context.close()))
     await new Promise((resolve) => site.close(resolve))
-    fs.rmSync(home, { recursive: true, force: true })
   })
 
   await preview.open('project-a', 'thread-a', url)
@@ -62,4 +64,40 @@ test('the preview recreates closed profiles and preserves each project login', a
     assert.deepEqual(await other.cookies(url), [])
     assert.equal(await other.pages().find((page) => page.url() === url).evaluate(() => localStorage.getItem('login')), null)
   }
+})
+
+test('a viewer that has the latest frame waits for the next one instead of asking again at once', async (t) => {
+  const preview = await import('../server/browser.ts')
+  const contexts = []
+  const launch = chromium.launchPersistentContext.bind(chromium)
+  t.mock.method(chromium, 'launchPersistentContext', async (...args) => {
+    const context = await launch(...args)
+    contexts.push(context)
+    return context
+  })
+  const site = http.createServer((req, res) => res.end('<h1>Still</h1>'))
+  await new Promise((resolve) => site.listen(0, '127.0.0.1', resolve))
+  const url = `http://127.0.0.1:${site.address().port}/`
+  t.after(async () => {
+    await Promise.all(contexts.map((context) => context.close()))
+    await new Promise((resolve) => site.close(resolve))
+  })
+
+  await preview.open('project-still', 'thread-still', url)
+  let shot = await preview.snapshot('thread-still', null)
+  assert.ok(shot.frame)
+  // A page that stands still answers a few times a second, without an image.
+  let asked = 0
+  for (const end = Date.now() + 1500; Date.now() < end; asked++) {
+    const next = await preview.snapshot('thread-still', shot.revision)
+    assert.equal(next.frame === null, next.revision === shot.revision)
+    shot = next
+  }
+  assert.ok(asked <= 15, `asked ${asked} times in 1.5 s`)
+  // A change in the page ends the wait with its frame.
+  const before = shot.revision
+  const waiting = preview.snapshot('thread-still', before)
+  await contexts[0].pages().find((page) => page.url() === url).evaluate(() => (document.body.style.background = 'red'))
+  for (shot = await waiting; !shot.frame; ) shot = await preview.snapshot('thread-still', before)
+  assert.notEqual(shot.revision, before)
 })
