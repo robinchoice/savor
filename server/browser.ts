@@ -6,7 +6,8 @@ import os from 'node:os'
 import path from 'node:path'
 import { chromium, type BrowserContext, type CDPSession, type Page } from 'playwright-core'
 import { emit } from './events.js'
-import { HOME } from './store.js'
+import { HOME, listProjects, listThreads } from './store.js'
+import { isBusy } from './agents.js'
 
 // One headless page per thread inside a persistent browser profile per project, so logins in the
 // preview survive restarts. Agent and user share the page: the agent drives it through MCP tools,
@@ -14,16 +15,28 @@ import { HOME } from './store.js'
 
 // `revision` is the hash of `frame`, made when a viewer first asks for it. `waiting` are the viewers that have the
 // frame and wait for the next one.
-interface Session { page: Page; cdp: CDPSession; errors: string[]; frame: string | null; revision: string | null; waiting: Set<() => void> }
+interface Session { projectId: string; page: Page; cdp: CDPSession; errors: string[]; frame: string | null; revision: string | null; waiting: Set<() => void> }
 
 const profiles = new Map<string, Promise<BrowserContext>>()
 const sessions = new Map<string, Session>()
+const opening = new Map<string, Promise<void>>()
 const VIEWPORT = { width: 1280, height: 800 }
 // The UI asks for the size of the space it has for the page, within these bounds.
 const SMALLEST = { width: 320, height: 240 }
 const LARGEST = { width: 3840, height: 2160 }
 // How long a viewer that has the latest frame waits for the next one before it is told there is none.
 const WAIT_MS = Number(process.env.SAVOR_PREVIEW_WAIT_MS) || 10_000
+const IDLE_MS = Number(process.env.SAVOR_PREVIEW_IDLE_MS) || 5 * 60_000
+const idle = new Map<string, ReturnType<typeof setTimeout>>()
+
+function touch(projectId: string) {
+  clearTimeout(idle.get(projectId))
+  idle.set(projectId, setTimeout(async () => {
+    const project = listProjects().find((p) => p.id === projectId)
+    if (project && listThreads(project).some((t) => isBusy(t.id))) return touch(projectId)
+    await profiles.get(projectId)?.then((c) => c.close()).catch(() => {})
+  }, IDLE_MS).unref())
+}
 
 function executable() {
   const candidates = [
@@ -40,17 +53,19 @@ function executable() {
 
 // Installers ship without a browser: download Playwright's Chromium on first use.
 let installFailed = false
+let installation: Promise<string> | undefined
 function installChromium() {
+  if (installation) return installation
   const cli = path.join(path.dirname(createRequire(import.meta.url).resolve('playwright-core/package.json')), 'cli.js')
-  const install = new Promise<string>((resolve, reject) => {
+  const install = installation = new Promise<string>((resolve, reject) => {
     const child = spawn(process.execPath, [cli, 'install', 'chromium'], { stdio: 'inherit', env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' } })
     child.on('error', reject)
     child.on('exit', (code) => (code === 0 ? resolve(chromium.executablePath()) : reject(new Error('Installing Chromium for the preview failed.'))))
   })
-  install.then(
-    () => (installFailed = false),
-    () => ((installFailed = true), emit({ type: 'health' })),
-  )
+  install.catch(() => {
+    installFailed = true
+    emit({ type: 'health' })
+  })
   return install
 }
 
@@ -77,7 +92,15 @@ function profile(projectId: string) {
     const launched = ctx
     // A crashed or closed browser launches again on the next open instead of failing for good.
     launched.then(
-      (c) => c.on('close', () => profiles.get(projectId) === launched && profiles.delete(projectId)),
+      (c) => {
+        touch(projectId)
+        c.on('close', () => {
+          if (profiles.get(projectId) !== launched) return
+          profiles.delete(projectId)
+          clearTimeout(idle.get(projectId))
+          idle.delete(projectId)
+        })
+      },
       () => profiles.delete(projectId),
     )
     profiles.set(projectId, ctx)
@@ -96,15 +119,30 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const)
 function session(tid: string) {
   const s = sessions.get(tid)
   if (!s) throw new Error('No preview open. Call open_browser first.')
+  touch(s.projectId)
   return s
 }
 
 export async function open(projectId: string, tid: string, url: string) {
+  const previous = opening.get(tid)
+  const next = (async () => {
+    await previous?.catch(() => {})
+    await openPage(projectId, tid, url)
+  })()
+  opening.set(tid, next)
+  try {
+    await next
+  } finally {
+    if (opening.get(tid) === next) opening.delete(tid)
+  }
+}
+
+async function openPage(projectId: string, tid: string, url: string) {
   let s = sessions.get(tid)
   if (!s) {
     const page = await (await profile(projectId)).newPage()
     const cdp = await page.context().newCDPSession(page)
-    const created: Session = { page, cdp, errors: [], frame: null, revision: null, waiting: new Set() }
+    const created: Session = { projectId, page, cdp, errors: [], frame: null, revision: null, waiting: new Set() }
     page.on('console', (m) => m.type() === 'error' && created.errors.push(m.text()))
     page.on('pageerror', (e) => created.errors.push(e.message))
     page.on('close', () => {
@@ -118,6 +156,7 @@ export async function open(projectId: string, tid: string, url: string) {
     await cdp.send('Page.startScreencast', { format: 'jpeg', quality: 70, maxWidth: LARGEST.width, maxHeight: LARGEST.height })
     sessions.set(tid, (s = created))
   }
+  touch(projectId)
   await s.page.goto(url, { waitUntil: 'domcontentloaded' })
 }
 
