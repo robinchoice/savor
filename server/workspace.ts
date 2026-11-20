@@ -46,7 +46,12 @@ const STYLES: Record<string, string> = {
 }
 
 const ext = (to: string) => (to === 'latex' || to === 'typst' ? 'pdf' : to.replace(/^markdown.*/, 'md'))
-const installed = (bin: string) => spawnSync(bin, ['--version'], { stdio: 'ignore' }).status === 0
+// A program that was found stays found, so only a missing one is looked for again with each check.
+const found = new Set<string>()
+function installed(bin: string) {
+  if (!found.has(bin) && spawnSync(bin, ['--version'], { stdio: 'ignore' }).status === 0) found.add(bin)
+  return found.has(bin)
+}
 const pandocBin = () => process.env.SAVOR_PANDOC_BIN ?? 'pandoc'
 
 export const chapters = (p: Project) => files(p, 'manuscript').filter((f) => f.name.endsWith('.md')).sort((a, b) => a.name.localeCompare(b.name))
