@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'preact/hooks'
-import qrcode from 'qrcode-generator'
 import { Download, Smartphone, Trash2, X } from 'lucide-preact'
 import { api, desktop, formatDay, go, PROVIDER_NAMES, useApi, useAgents, type ImportableSession, type Project, type Thread } from './api'
 import { loadProfiles, pairThroughRelay, probePairing, switchProfile } from './transport'
@@ -323,9 +322,20 @@ export interface Pairing { code: string; url: string; relayUrl: string | null; e
 
 export function PairingCode({ pairing }: { pairing: Pairing }) {
   const link = pairing.relayUrl ?? pairing.url
+  const [qr, setQr] = useState('')
+  useEffect(() => {
+    let current = true
+    import('qrcode-generator').then(({ default: qrcode }) => {
+      const q = qrcode(0, 'M')
+      q.addData(link)
+      q.make()
+      if (current) setQr(q.createSvgTag({ cellSize: 5, margin: 2, scalable: true }))
+    })
+    return () => void (current = false)
+  }, [link])
   return (
     <div class="pairing">
-      <div class="qr" dangerouslySetInnerHTML={{ __html: qr(link) }} />
+      <div class="qr" dangerouslySetInnerHTML={{ __html: qr }} />
       <div>
         <p>{t('Scan the code, or open this link on the device:')}</p>
         <p class="mono">{link}</p>
@@ -344,12 +354,6 @@ export interface RelayState { url: string | null; enabled: boolean; state: 'off'
 
 export const RELAY_LABEL = { off: t('Off'), connecting: t('Connecting…'), online: t('Connected'), error: t('Not connected') }
 
-function qr(text: string) {
-  const q = qrcode(0, 'M')
-  q.addData(text)
-  q.make()
-  return q.createSvgTag({ cellSize: 5, margin: 2, scalable: true })
-}
 
 export function Devices() {
   const [devices] = useApi<DeviceRow[]>('/devices', (e) => e.type === 'devices')

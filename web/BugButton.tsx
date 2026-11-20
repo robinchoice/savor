@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'preact/hooks'
-import { domToJpeg } from 'modern-screenshot'
 import { Bug, Send, X } from 'lucide-preact'
 import { api, readFileAsDataUrl, recentErrors, type Me } from './api'
 import { setPrefs, usePrefs } from './prefs'
@@ -24,7 +23,7 @@ const embedFonts = () =>
 
 // What is on screen right now, without anything marked data-feedback-ignore. JPEG keeps the report small.
 const takeScreenshot = async () =>
-  domToJpeg(document.documentElement, {
+  (await import('modern-screenshot')).domToJpeg(document.documentElement, {
     font: { cssText: await embedFonts() },
     quality: 0.85,
     width: innerWidth,

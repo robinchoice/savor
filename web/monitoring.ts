@@ -1,6 +1,5 @@
-import * as Sentry from '@sentry/browser'
-
-Sentry.init({
+// Sentry is only part of a build that names where its reports go, and loads beside the app.
+if (import.meta.env.VITE_SENTRY_DSN) void import('@sentry/browser').then((Sentry) => Sentry.init({
   dsn: import.meta.env.VITE_SENTRY_DSN,
   environment: import.meta.env.MODE,
   dataCollection: {
@@ -26,4 +25,4 @@ Sentry.init({
     delete event.user
     return event
   },
-})
+}))
