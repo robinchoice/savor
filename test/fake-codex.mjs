@@ -20,7 +20,8 @@
 //   "forget: subagent …" leaves a subagent running first; "forget: slow …" waits after the acknowledgement until it is interrupted
 // - an input with "everywhere" in it → exits with "Invalid credential", like a Codex whose sign-in has expired
 // - anything else → "Codex echo: <input>", with " (took over)" when Savor said it takes over from an agent at its limit
-// While the test's hang file exists it never answers initialize, like an app-server that hangs at its start.
+// While the test's hang file exists it never answers initialize, like an app-server that hangs at its start, and while
+// its hang-resume file exists it never answers thread/resume.
 import fs from 'node:fs'
 import readline from 'node:readline'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
@@ -218,6 +219,7 @@ rl.on('line', (line) => {
     case 'thread/start':
       return reply({ thread: { id: threadId }, model: msg.params.model ?? 'fake-model' })
     case 'thread/resume':
+      if (fs.existsSync(process.env.FAKE_AGENT_LOG + '.hang-resume')) return
       threadId = msg.params.threadId
       return reply({ thread: { id: threadId }, model: 'fake-model' })
     case 'thread/fork':

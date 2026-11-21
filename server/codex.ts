@@ -4,7 +4,7 @@ import { spawn } from 'node:child_process'
 import * as store from './store.js'
 import type { ApprovalOption, PlanAgent, Thread } from './store.js'
 import { BIN, command, mcpUrl, VERSION } from './config.js'
-import { Rpc, START_MS } from './jsonrpc.js'
+import { Rpc, RpcTimeout, START_MS } from './jsonrpc.js'
 import { configKey, forkOf, formFields, OPEN_PAGE, rememberSession, STOPPED, SUBMIT_FORM, sessionIdOf, summarize, systemPrompt, webUrl, type Host, type Session, type TurnInput } from './session.js'
 import type { ModelInfo, SkillInfo } from './providers.js'
 
@@ -90,7 +90,11 @@ export class CodexSession implements Session {
     const sid = sessionIdOf(this.thread, 'codex')
     const fork = forkOf(p, this.thread, 'codex')
     const r = sid
-      ? await ask('thread/resume', { threadId: sid, ...settings }).catch(() => ask('thread/start', settings))
+      ? await ask('thread/resume', { threadId: sid, ...settings }).catch((e) => {
+          // A hung agent keeps the conversation's thread for the next start instead of losing it to a new one.
+          if (e instanceof RpcTimeout) throw e
+          return ask('thread/start', settings)
+        })
       : await ask(fork ? 'thread/fork' : 'thread/start', { ...(fork && { threadId: fork }), ...settings })
     this.threadId = r.thread.id
     if (r.model) this.host.model(r.model)

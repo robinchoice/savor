@@ -8,6 +8,9 @@ export class RpcError extends Error {
   }
 }
 
+// The agent did not answer in time: it hangs, so asking it something else instead would hang too.
+export class RpcTimeout extends RpcError {}
+
 // How long an agent may take to answer the requests that start it. One that hangs there would keep its turn working forever.
 export const START_MS = Number(process.env.SAVOR_AGENT_START_MS ?? 120_000)
 
@@ -78,7 +81,7 @@ export class Rpc {
     })
     if (!timeout) return answer
     const timer = setTimeout(() => {
-      this.pending.get(id)?.reject(new RpcError(`The agent did not answer ${method} within ${Math.round(timeout / 1000)} seconds. Send your message again to start it anew.`))
+      this.pending.get(id)?.reject(new RpcTimeout(`The agent did not answer ${method} within ${Math.round(timeout / 1000)} seconds. Send your message again to start it anew.`))
       this.pending.delete(id)
     }, timeout)
     return answer.finally(() => clearTimeout(timer))

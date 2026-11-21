@@ -169,3 +169,23 @@ test('regression: a turn whose agent hangs at its start fails instead of working
   await api('POST', `/projects/${project.id}/threads/${id}/messages`, { text: 'second' })
   await until(async () => (await read()).messages.some((m) => m.text === 'Codex echo: second'))
 })
+
+test('regression: a resume that hangs keeps the conversation instead of starting a new one', { timeout: 60_000 }, async () => {
+  const project = await api('POST', '/projects', { path: path.join(TMP, 'hang-resume'), create: true })
+  const { id } = await api('POST', `/projects/${project.id}/threads`, { text: 'first', agent: { provider: 'codex', permissionMode: 'default' } })
+  const read = () => api('GET', `/projects/${project.id}/threads/${id}`)
+  await until(async () => (await read()).messages.some((m) => m.text === 'Codex echo: first'))
+  // The idle process closes 100 ms after the turn, so the next input resumes the conversation in a new one.
+  await new Promise((r) => setTimeout(r, 1000))
+  fs.writeFileSync(AGENT_LOG + '.hang-resume', '')
+  await api('POST', `/projects/${project.id}/threads/${id}/messages`, { text: 'second' })
+  const failed = await until(async () => {
+    const r = await read()
+    return !r.busy && r.messages.some((m) => m.kind === 'error' || m.text === 'Codex echo: second') && r
+  })
+  assert.ok(!failed.messages.some((m) => m.text === 'Codex echo: second'))
+  assert.match(failed.messages.at(-1).text, /did not answer thread\/resume within 2 seconds/)
+  fs.rmSync(AGENT_LOG + '.hang-resume')
+  await api('POST', `/projects/${project.id}/threads/${id}/messages`, { text: 'third' })
+  await until(async () => (await read()).messages.some((m) => m.text === 'Codex echo: third'))
+})

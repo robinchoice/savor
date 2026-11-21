@@ -8,7 +8,7 @@ import readline from 'node:readline'
 import * as store from './store.js'
 import type { PlanAgent, PlanStep, Thread } from './store.js'
 import { BIN, command, mcpUrl, VERSION } from './config.js'
-import { Rpc, RpcError, START_MS } from './jsonrpc.js'
+import { Rpc, RpcError, RpcTimeout, START_MS } from './jsonrpc.js'
 import { configKey, forkOf, rememberSession, sessionIdOf, STOPPED, summarize, systemPrompt, type Host, type Session, type TurnInput } from './session.js'
 import type { SkillInfo } from './providers.js'
 
@@ -123,14 +123,19 @@ export class AcpSession implements Session {
     const mcpServers = [{ type: 'http', name: 'savor', url: mcpUrl(p.id, tid), headers: [{ name: 'Authorization', value: `Bearer ${store.state().mcpToken}` }] }]
     const sid = sessionIdOf(store.getThread(p, tid), a.provider)
     const fork = forkOf(p, store.getThread(p, tid), a.provider)
+    // A hung agent keeps the conversation's session for the next start instead of losing it to a new one.
+    const unlessHung = (e: Error) => {
+      if (e instanceof RpcTimeout) throw e
+      return null
+    }
     let session: any = null
     if (sid && init.agentCapabilities?.loadSession) {
       this.loading = true
-      session = await ask('session/load', { sessionId: sid, cwd: this.host.cwd, mcpServers }).catch(() => null)
+      session = await ask('session/load', { sessionId: sid, cwd: this.host.cwd, mcpServers }).catch(unlessHung)
       this.loading = false
       if (session) session.sessionId = sid
     } else if (fork && init.agentCapabilities?.sessionCapabilities?.fork) {
-      session = await ask('session/fork', { sessionId: fork, cwd: this.host.cwd, mcpServers }).catch(() => null)
+      session = await ask('session/fork', { sessionId: fork, cwd: this.host.cwd, mcpServers }).catch(unlessHung)
     }
     if (!session) session = await ask('session/new', { cwd: this.host.cwd, mcpServers })
     this.sessionId = session.sessionId
