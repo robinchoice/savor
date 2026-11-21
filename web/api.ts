@@ -204,6 +204,7 @@ export interface ProviderInfo {
   ultracode: boolean
   signIn: string
 }
+export const agentFor = (provider: string, info?: ProviderInfo): AgentConfig => ({ provider, model: '', reasoning: info?.defaultEffort ?? '', fast: false, ultracode: false, permissionMode: info?.defaultMode ?? 'default' })
 export interface Skill { name: string; description: string }
 export interface Preset { id: string; name: string; agent: AgentConfig }
 // The agents every conversation goes on with at a usage limit, from the top, the agents at a usage limit now and

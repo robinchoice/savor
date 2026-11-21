@@ -906,18 +906,19 @@ function kept(ctx: Ctx, base: string, file: string) {
     throw new Forbidden('This path leads elsewhere on your computer through a symlink. Allow the terminal for this device at your computer to open it from here.')
   return file
 }
-function inProject(p: store.Project, ctx: Ctx) {
+function inProject(params: Params, ctx: Ctx) {
+  const p = project(params)
   const rel = ctx.query.get('path') ?? ''
   kept(ctx, p.path, path.resolve(p.path, rel || '.'))
-  return rel
+  return [p, rel] as const
 }
-route('GET', '/projects/:pid/files', (params, _, ctx) => files.list(project(params), inProject(project(params), ctx)))
+route('GET', '/projects/:pid/files', (params, _, ctx) => files.list(...inProject(params, ctx)))
 route('GET', '/projects/:pid/files/search', (params, _, ctx) => files.search(project(params), ctx.query.get('q') ?? ''))
 route('GET', '/projects/:pid/skills', (params, _, ctx) => listSkills(ctx.query.get('provider') ?? '', project(params).path))
-route('GET', '/projects/:pid/file', (params, _, ctx) => files.read(project(params), inProject(project(params), ctx)))
+route('GET', '/projects/:pid/file', (params, _, ctx) => files.read(...inProject(params, ctx)))
 // Only a PDF shows inline; everything else downloads, so an HTML file in the project can't run as this origin.
 route('GET', '/projects/:pid/file/raw', (params, _, ctx) => {
-  const file = files.raw(project(params), inProject(project(params), ctx))
+  const file = files.raw(...inProject(params, ctx))
   if (!file) throw new BadRequest('This file is larger than 16 MB, too large to preview.')
   const pdf = /\.pdf$/i.test(file)
   ctx.res.writeHead(200, {

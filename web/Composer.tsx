@@ -1,6 +1,6 @@
 import { useContext, useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks'
 import { ArrowRight, ArrowUp, AtSign, CornerDownRight, Bookmark, Check, ChevronDown, Download, FileText, FolderGit2, GitBranch, ListPlus, MessageSquare, Mic, Paperclip, Plus, RotateCw, ShieldAlert, Sparkles, Split, Square, Workflow as WorkflowIcon, X, Zap, Crosshair, BookOpen, Rabbit } from 'lucide-preact'
-import { api, returnSends, agentSummary, attachmentFromFile, describeModel, effortLabel, modelName, PROVIDER_NAMES, useAgents, useApi, type AgentConfig, type Attachment, type Doc, type Project, type ProviderInfo, type Preset, type Skill, type Workflow } from './api'
+import { agentFor, api, returnSends, agentSummary, attachmentFromFile, describeModel, effortLabel, modelName, PROVIDER_NAMES, useAgents, useApi, type AgentConfig, type Attachment, type Doc, type Project, type ProviderInfo, type Preset, type Skill, type Workflow } from './api'
 import { ProviderIcon } from './Conversations'
 import { useShortcut } from './Shortcuts'
 import { megabytes, ModelMissing, NothingHeard, record, type Recording, type VoiceModels } from './voice'
@@ -816,7 +816,7 @@ export function AgentMenu({ agent, agents, setAgent, close }: { agent: AgentConf
   const [error, setError] = useState('')
   const set = (patch: Partial<AgentConfig>) => setAgent({ ...agent, ...patch })
   const automaticMode = info?.modes.find((m) => m.id === 'auto' || m.id === 'auto-review')?.id ?? agent.permissionMode
-  const choose = (p: ProviderInfo) => set({ provider: p.id, model: '', reasoning: p.defaultEffort, fast: false, ultracode: false, permissionMode: p.defaultMode })
+  const choose = (p: ProviderInfo) => set(agentFor(p.id, p))
   const efforts = effortsOf(agent, info)
   const models = info?.models ?? []
   const listed = [...(models.some((m) => m.id === '') ? [] : [{ id: '', label: t('Default'), detail: t('{name}’s own default', { name: info?.name ?? t('The agent') }) }]), ...(agent.model && !models.some((m) => m.id === agent.model) ? [{ id: agent.model, label: agent.model }] : []), ...models]
@@ -1009,7 +1009,7 @@ function AddAgentMenu({ agents, onPick }: { agents: ProviderInfo[]; onPick: (a: 
       {agents
         .filter((a) => a.installed)
         .map((p) => (
-          <button key={p.id} onClick={() => onPick({ provider: p.id, model: '', reasoning: p.defaultEffort, fast: false, ultracode: false, permissionMode: p.defaultMode })}>
+          <button key={p.id} onClick={() => onPick(agentFor(p.id, p))}>
             <ProviderIcon provider={p.id} /> {p.name}
           </button>
         ))}

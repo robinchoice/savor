@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'preact/hooks'
 import { Download, Smartphone, Trash2, X } from 'lucide-preact'
-import { api, desktop, formatDay, go, PROVIDER_NAMES, useApi, useAgents, type ImportableSession, type Project, type Thread } from './api'
+import { agentFor, api, desktop, formatDay, go, PROVIDER_NAMES, useApi, useAgents, type ImportableSession, type Project, type Thread } from './api'
 import { loadProfiles, pairThroughRelay, probePairing, switchProfile } from './transport'
 import { parsePairingLink, scanQrCode } from './native'
 import { TEMPLATES } from './templates'
@@ -87,8 +87,8 @@ export function Settings({ project }: { project: Project }) {
             <select
               value={draft.agent.provider}
               onChange={(e) => {
-                const info = agents?.find((a) => a.id === e.currentTarget.value)
-                set({ agent: { provider: e.currentTarget.value, model: '', reasoning: info?.defaultEffort ?? '', permissionMode: info?.defaultMode ?? 'default', fast: false, ultracode: false } })
+                const id = e.currentTarget.value
+                set({ agent: agentFor(id, agents?.find((a) => a.id === id)) })
               }}
             >
               {Object.entries(PROVIDER_NAMES).map(([id, name]) => {

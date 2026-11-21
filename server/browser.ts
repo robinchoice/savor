@@ -1,12 +1,11 @@
 import fs from 'node:fs'
-import { createHash } from 'node:crypto'
 import { spawn } from 'node:child_process'
 import { createRequire } from 'node:module'
 import os from 'node:os'
 import path from 'node:path'
 import { chromium, type BrowserContext, type CDPSession, type Page } from 'playwright-core'
 import { emit } from './events.js'
-import { HOME, listProjects, listThreads } from './store.js'
+import { hash, HOME, listProjects, listThreads } from './store.js'
 import { isBusy } from './agents.js'
 
 // One headless page per thread inside a persistent browser profile per project, so logins in the
@@ -180,7 +179,7 @@ export async function frame(tid: string) {
 export async function snapshot(tid: string, after: string | null) {
   const s = session(tid)
   await frame(tid)
-  const revision = () => (s.revision ??= createHash('sha256').update(s.frame!).digest('hex'))
+  const revision = () => (s.revision ??= hash(s.frame!))
   if (revision() === after)
     await new Promise<void>((resolve) => {
       const wake = () => {

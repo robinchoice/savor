@@ -73,7 +73,7 @@ export function internal(p: Project, rel: string) {
 // commands, MCP servers and plugins.
 const RUNS = new Set(['.git', '.claude', '.codex', '.gemini', '.grok', '.opencode', '.mcp.json', 'opencode.json', 'opencode.jsonc'])
 
-const outside = (real: string | null) => real === null || real === '..' || real.startsWith('..' + path.sep) || path.isAbsolute(real)
+export const outside = (real: string | null) => real === null || real === '..' || real.startsWith('..' + path.sep) || path.isAbsolute(real)
 
 // Whether reading `file` shows something that is not in `base`, because a symlink on its way leads elsewhere.
 // A path that doesn't exist shows nothing.

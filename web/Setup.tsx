@@ -1,6 +1,6 @@
 import { useState } from 'preact/hooks'
 import { Archive, Check, Code, Copy, Folder, FolderGit2, GraduationCap, Plus, RefreshCw } from 'lucide-preact'
-import { api, describeModel, desktop, effortLabel, fetchAgents, go, modelName, useAgents, type AgentConfig, type Me, type Project, type ProviderInfo } from './api'
+import { agentFor, api, describeModel, desktop, effortLabel, fetchAgents, go, modelName, useAgents, type AgentConfig, type Me, type Project, type ProviderInfo } from './api'
 import { ProviderIcon } from './Conversations'
 import { effortsOf } from './Composer'
 import { recipe } from './recipes'
@@ -402,7 +402,7 @@ export function SetupWizard({ me, setMe }: { me: Me; setMe: (m: Me) => void }) {
   const installed = agents?.filter((a) => a.installed) ?? []
   // Until something is picked: the first signed-in agent, in its recommended mode.
   const first = installed.find((a) => a.signedIn) ?? (me.cloud ? undefined : (installed[0] ?? agents?.[0]))
-  const fresh = (a: ProviderInfo): AgentConfig => ({ provider: a.id, model: '', reasoning: a.defaultEffort, fast: false, ultracode: false, permissionMode: RECOMMENDED[a.id] ?? a.defaultMode })
+  const fresh = (a: ProviderInfo): AgentConfig => ({ ...agentFor(a.id, a), permissionMode: RECOMMENDED[a.id] ?? a.defaultMode })
   // In the cloud only a signed-in agent can be picked, also after going back to sign one out.
   const picked = draft && (!me.cloud || installed.some((a) => a.id === draft.provider && a.signedIn)) ? draft : null
   const agent = picked ?? (first && fresh(first))

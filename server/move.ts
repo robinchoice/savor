@@ -10,6 +10,7 @@ import { listWorktrees } from './git.js'
 import { claudeDir } from './import.js'
 import { tree } from './processes.js'
 import { emit } from './events.js'
+import { outside } from './files.js'
 
 export interface MovePlan {
   from: string
@@ -55,9 +56,8 @@ const projectIdIn = (dir: string) => {
 // such a folder only another `_` folder counts. A rename next to the old place stays.
 function leavesList(from: string, to: string) {
   const rel = path.relative(path.dirname(from), path.dirname(to))
-  const outside = rel === '..' || rel.startsWith('..' + path.sep) || path.isAbsolute(rel)
   const stored = path.basename(path.dirname(from)).startsWith('_')
-  return rel.split(path.sep).some((d) => d.startsWith('_')) || (outside && !stored)
+  return rel.split(path.sep).some((d) => d.startsWith('_')) || (outside(rel) && !stored)
 }
 
 // Where archiving puts a project: `_archive` next to its folder.
