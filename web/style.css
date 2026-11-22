@@ -73,6 +73,8 @@
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 14px/1.5 'Geist Variable', system-ui, -apple-system, 'Segoe UI', sans-serif; }
 a { color: inherit; text-decoration: none; }
+/* Focus is always visible: 2px in the accent with a 2px gap. Focusable elements keep 2px from the edge of a container with overflow, or it cuts the ring off. */
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 code, pre, .mono { font-family: 'Geist Mono Variable', ui-monospace, 'SF Mono', Menlo, monospace; }
 pre { white-space: pre-wrap; word-break: break-word; margin: 0; }
 /* Headings, the product name and big numbers are set narrow and heavy */
@@ -105,7 +107,13 @@ button.ghost.wide { width: 100%; justify-content: center; padding: 9px 12px; }
 .icon-btn:hover, .icon-btn.on { color: var(--text); background: var(--card); }
 
 input, textarea, select { font: inherit; color: inherit; background: var(--card); border: 1px solid transparent; border-radius: 9px; padding: 8px 10px; width: 100%; }
-input:focus, textarea:focus, select:focus { outline: none; border-color: var(--faint); }
+/* Text fields draw the focus ring inside */
+textarea:focus-visible, select:focus-visible, input:not([type='checkbox'], [type='radio']):focus-visible { outline-offset: -1px; }
+/* So do items flush with the edge of a container that scrolls or clips */
+.project-tab:focus-visible, .subbar :focus-visible, .project-chip:focus-visible, .swipe-row > .card:focus-visible { outline-offset: -2px; }
+/* A bare text field in a box leaves the ring to the box */
+.composer textarea:focus-visible, .board-add textarea:focus-visible { outline: none; }
+.composer:has(textarea:focus-visible), .board-add:has(textarea:focus-visible) { outline: 2px solid var(--accent); outline-offset: -2px; }
 input[type='checkbox'], input[type='radio'] { appearance: none; width: 14px; height: 14px; padding: 0; margin: 0; border: 1.5px solid var(--faint); background: none; flex: none; cursor: pointer; }
 input[type='checkbox'] { border-radius: 4px; }
 input[type='radio'] { border-radius: 50%; }
