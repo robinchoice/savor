@@ -1,5 +1,4 @@
 // WCAG contrast of the colour pairs in web/style.css, dark and light: text needs 4.5:1, the focus ring 3:1.
-// --faint is left out: it carries secondary text below 4.5:1.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
@@ -48,7 +47,7 @@ for (const [theme, colors] of Object.entries(themes)) {
       pairs.push(['--accent', bg, 3])
     }
     for (const bg of ['--bg', '--panel', '--card', '--code-bg']) {
-      for (const fg of ['--link', '--attn', '--needs', '--new', '--green', '--red']) pairs.push([fg, bg, 4.5])
+      for (const fg of ['--faint', '--link', '--attn', '--needs', '--new', '--green', '--red']) pairs.push([fg, bg, 4.5])
     }
     for (const bg of ['--attn-bg', '--needs-bg', '--new-bg']) pairs.push(['--attn-ink', bg, 4.5])
     pairs.push(['--accent-ink', '--accent', 4.5])
