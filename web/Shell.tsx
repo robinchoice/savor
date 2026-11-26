@@ -155,6 +155,28 @@ export default function Shell({ project, id, restart, host }: { project: Project
       }
     }
     const observer = new ResizeObserver(() => fit.fit())
+    // iOS keeps the page's height when the keyboard opens, so the keyboard covers the panel's lower part
+    // with the prompt. While the shell has the focus there, the panel takes the visible part of the page
+    // and shows the end of the output.
+    const viewport = touch ? window.visualViewport : null
+    const keyboard = () => {
+      const panel = ref.current?.closest<HTMLElement>('.terminal-panel')
+      if (!viewport || !panel) return
+      const typing = viewport.height < document.documentElement.clientHeight - 80 && ref.current!.contains(document.activeElement)
+      panel.style.setProperty('--viewport-top', `${viewport.offsetTop}px`)
+      panel.style.setProperty('--viewport-height', `${viewport.height}px`)
+      if (typing) panel.dataset.typing = ''
+      else delete panel.dataset.typing
+      requestAnimationFrame(() => {
+        if (closed) return
+        fit.fit()
+        if (typing) term.scrollToBottom()
+      })
+    }
+    viewport?.addEventListener('resize', keyboard)
+    viewport?.addEventListener('scroll', keyboard)
+    if (viewport) addEventListener('focusin', keyboard)
+    if (viewport) addEventListener('focusout', keyboard)
     let closed = false
     let stop = () => {}
     // The cell size is measured on open, so the font has to be there first.
@@ -182,6 +204,10 @@ export default function Shell({ project, id, restart, host }: { project: Project
       host.detach(run)
       stop()
       observer.disconnect()
+      viewport?.removeEventListener('resize', keyboard)
+      viewport?.removeEventListener('scroll', keyboard)
+      removeEventListener('focusin', keyboard)
+      removeEventListener('focusout', keyboard)
       clearTimeout(resizing)
       term.dispose()
     }

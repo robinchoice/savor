@@ -1396,6 +1396,8 @@ details.box[open] > summary .chev { transform: rotate(180deg); }
 .terminal-screen .xterm { padding: 6px 0 0 10px; }
 .terminal-locked { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 20px; color: var(--muted); text-align: center; }
 .terminal-locked p { margin: 0; max-width: 360px; font-size: 13px; }
+/* While typing on a phone, the panel covers the part of the page the keyboard leaves visible. */
+.terminal-panel[data-typing] { position: fixed; z-index: 50; left: 0; right: 0; top: var(--viewport-top); height: var(--viewport-height) !important; padding: max(0px, calc(env(safe-area-inset-top) - var(--viewport-top))) env(safe-area-inset-right) 0 env(safe-area-inset-left); }
 .terminal-keys { display: flex; gap: 5px; padding: 6px 8px; background: var(--bar); border-top: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; flex: none; }
 .terminal-keys button { flex: none; display: inline-flex; align-items: center; justify-content: center; min-width: 38px; height: 34px; padding: 0 9px; border-radius: 8px; background: var(--raised); color: var(--text); font: 12px 'Geist Mono Variable', ui-monospace, monospace; }
 .terminal-keys button.on { background: var(--accent); color: var(--accent-ink); }

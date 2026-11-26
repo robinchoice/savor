@@ -2713,6 +2713,21 @@ test('on a touch screen, the terminal pastes from the clipboard and shows its te
   await enter()
   await tab.waitForSelector('.terminal-screen >> text=63-typed')
 
+  // With the keyboard open, the panel takes the part of the page it leaves visible, down to the prompt.
+  await tab.focus('.terminal-screen textarea')
+  await tab.keyboard.type('seq 1 80\n')
+  await tab.waitForSelector('.terminal-screen >> text=80')
+  const keyboard = (height) => tab.evaluate((h) => {
+    if (h) Object.defineProperty(visualViewport, 'height', { configurable: true, get: () => h })
+    else delete visualViewport.height
+    visualViewport.dispatchEvent(new Event('resize'))
+  }, height)
+  await keyboard(400)
+  await tab.waitForFunction(() => document.querySelector('.terminal-panel[data-typing]')?.getBoundingClientRect().height === 400)
+  await until(async () => (await tab.locator('.terminal-screen .xterm-cursor').boundingBox())?.y < 400 - 50)
+  await keyboard(0)
+  await tab.waitForSelector('.terminal-panel[data-typing]', { state: 'detached' })
+
   // The copy key shows the whole buffer as selectable text, scrolled to its end, until it is tapped again.
   await tab.tap('.terminal-keys button[aria-label="Select text to copy"]')
   const shown = await tab.locator('.terminal-text').textContent()
