@@ -144,14 +144,20 @@ The setup signs Claude Code, Codex and gh in with buttons, since the server has 
 
 ## Warm standby
 
-[`cloud/standby.sh`](cloud/standby.sh) is a manual failover tool for two Linux hosts with distinct hostnames, synchronized clocks, and `savor.service` running as a systemd user service. It uses Bash, restic, jq, Git and flock. Both hosts need a dedicated encrypted restic repository. Supply its credentials from the operator's secret store and keep them outside agent sessions. Savor Cloud currently uses a system service, so it needs separate service and credential provisioning before using this tool.
+[`cloud/standby.sh`](cloud/standby.sh) keeps a second Savor ready to take over the work of the first, say a Savor Cloud server for a computer at home. Exactly one of them works at a time: the owner, recorded in an encrypted restic repository both reach (S3, for example). The owner backs up every 15 minutes what Savor writes about the work: each project's `.savor` folder (conversations, documents, backlog, workflows) and, from `state.json`, the project list, presets and default agents. Each instance keeps its relay key, paired devices, tokens and agent logins. Code comes from each project's git remote, so push what the other instance needs. Agent sessions and worktrees stay behind: a conversation goes on with a fresh session that gets its visible history.
 
-1. Run `standby.sh init` on the primary. On both hosts, configure Savor's unit with `ExecStartPre=/absolute/path/to/standby.sh may-start`. Restart the primary through that unit and run `standby.sh tick` from a user timer on both hosts every minute. The owner backs up every 15 minutes. It keeps the snapshots from the last two days and one snapshot per day for the last 30 days with backups.
-2. On the standby, run `standby.sh status` to see the owner and most recent backup. `standby.sh copy ~/standby` restores a separate copy into a new folder for inspection.
-3. To take over, confirm at the hypervisor or power control that the primary is off and keep it off until the return. A network outage or an old backup cannot establish this. From a shell outside Savor's service, run `standby.sh take --primary-powered-off` on the standby, then `systemctl --user start savor.service`.
-4. To return, run `standby.sh give` from the same shell. It stops the standby, backs up the shared projects and hands ownership back. Then boot the primary. Its startup guard restores that exact backup before the daemon starts. The standby can then start again with its own projects.
+Set up, as the user Savor runs as, on both instances:
 
-Project state travels with the chats, documents, backlog and workflows. Each host keeps its device pairing, relay identity and agent logins. Git restores code from the project's origin, so push any commit you need on the other host. Active agent sessions and worktrees stay on their original host. On failure, check `standby.sh status` and retry the interrupted command before starting either service.
+1. `standby.sh install` copies the script to `~/.local/bin/savor-standby`, fetches restic and runs `savor-standby tick` every minute: from a user timer where Savor is the systemd user unit `savor.service` (it also adds a start guard to that unit), else from cron (Savor Cloud, where Savor is a system unit).
+2. Put the repository's credentials into `~/.config/savor-standby/env` (mode 600) as `export RESTIC_REPOSITORY=…`, `RESTIC_PASSWORD`, `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`. Only restic reads them, but agents on that instance run as the same user and could too.
+3. On the primary, `savor-standby init` creates the repository and makes it the owner.
+
+Then:
+
+- `savor-standby status` shows the owner and the newest backup; `savor-standby copy <new folder>` restores the newest backup there to look at.
+- **Take over** on the standby with `savor-standby take`, from a conversation or the terminal in Savor itself. It refuses while the owner backed up less than 20 minutes ago (`--force` takes over anyway). It clones the repositories into `~/standby-projects`, puts the work there and becomes the owner; within a minute Savor restarts with it. The primary stops Savor within a minute too, and its start guard keeps it stopped while it isn't the owner.
+- **Give back** with `savor-standby give`: within a minute the standby restarts with its own projects, backs up the work and hands it to the primary, which starts and brings that backup in before Savor runs.
+- If the standby can't give back, `savor-standby claim` on the primary makes it the owner again with the standby's newest backup; the standby goes back to its own projects without backing up.
 
 ## Phone / remote access
 

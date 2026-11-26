@@ -1,6 +1,6 @@
-// Warm standby (cloud/standby.sh): a primary backs up its work, a standby takes it over while the primary is
-// fenced, and gives it back. Each instance keeps its own identity and devices. restic runs against a local
-// repository, systemctl is a stand-in that records what the script asks of it.
+// Warm standby (cloud/standby.sh): a primary with a systemd user unit backs up its work, a standby with a
+// system unit (Savor Cloud) takes it over while the primary is fenced, and gives it back. Each instance keeps
+// its own identity and devices. restic runs against a local repository, systemctl is a stand-in.
 import { test, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFile, execFileSync, spawn } from 'node:child_process'
@@ -23,24 +23,29 @@ after(() => {
 
 const BIN = path.join(TMP, 'bin')
 fs.mkdirSync(BIN)
+// $FAKE_SYSTEMD/user: savor.service is a user unit; active: it runs; pid: the MainPID of the system unit.
 fs.writeFileSync(path.join(BIN, 'systemctl'), `#!/bin/bash
-[ "$1" = --user ] && shift
+[ "$1" = --user ] && { shift; [ -f "$FAKE_SYSTEMD/user" ] || exit 1; }
 case $1 in
+  cat|reset-failed) exit 0 ;;
   is-active) [ -f "$FAKE_SYSTEMD/active" ] ;;
+  is-failed) exit 1 ;;
   stop) rm -f "$FAKE_SYSTEMD/active" ;;
+  start) touch "$FAKE_SYSTEMD/active" ;;
+  show) cat "$FAKE_SYSTEMD/pid" 2>/dev/null || echo 0 ;;
 esac
 `, { mode: 0o755 })
 
-function instance(name) {
+function instance(name, { user }) {
   const home = path.join(TMP, name)
   const systemd = path.join(home, 'systemd')
   fs.mkdirSync(systemd, { recursive: true })
+  if (user) fs.writeFileSync(path.join(systemd, 'user'), '')
   fs.mkdirSync(path.join(home, '.savor'))
   fs.writeFileSync(path.join(systemd, 'active'), '')
-  const env = { ...process.env, HOME: home, SAVOR_HOME: path.join(home, '.savor'), SAVOR_STANDBY_NAME: name, FAKE_SYSTEMD: systemd, PATH: `${BIN}:${process.env.PATH}`,
+  const env = { ...process.env, HOME: home, SAVOR_HOME: path.join(home, '.savor'), SAVOR_STANDBY_NAME: name, SAVOR_STANDBY_SETTLE: '0', FAKE_SYSTEMD: systemd, PATH: `${BIN}:${process.env.PATH}`,
     RESTIC_REPOSITORY: path.join(TMP, 'repo'), RESTIC_PASSWORD: 'test', RESTIC_CACHE_DIR: path.join(TMP, `cache-${name}`) }
   const run = async (...args) => {
-    // The script puts ~/.local/bin first; restic and the stand-ins come through the inherited PATH.
     const r = await promisify(execFile)('bash', [SCRIPT, ...args], { env }).catch((e) => e)
     return { code: r.code ?? 0, out: `${r.stdout}${r.stderr}` }
   }
@@ -92,7 +97,7 @@ test('the standby takes the work over and gives it back, and only one instance w
   execFileSync('git', ['-C', seed, 'commit', '-q', '--allow-empty', '-m', 'start'])
   execFileSync('git', ['clone', '-q', '--bare', seed, remote])
 
-  const agent = instance('agent')
+  const agent = instance('agent', { user: true })
   const project = path.join(agent.home, 'dev/shop')
   execFileSync('git', ['clone', '-q', remote, project])
   fs.mkdirSync(path.join(project, '.savor/threads/t1'), { recursive: true })
@@ -102,7 +107,7 @@ test('the standby takes the work over and gives it back, and only one instance w
   fs.writeFileSync(path.join(project, '.savor/processes.json'), JSON.stringify([{ pid: 1 }]))
   fs.writeFileSync(path.join(agent.savor, 'state.json'), JSON.stringify({ token: 'agent-token', identity: 'agent-key', relayToken: 'a', devices: [{ id: 'phone-at-agent' }], projects: [{ id: 'p1', path: project }], presets: [{ id: 'x', name: 'Opus', agent: thread('').agent }], relay: { url: null, enabled: false } }))
 
-  const kunde0 = instance('kunde0')
+  const kunde0 = instance('kunde0', { user: false })
   const own = path.join(kunde0.home, 'dev/own')
   fs.mkdirSync(path.join(own, '.savor'), { recursive: true })
   fs.writeFileSync(path.join(own, '.savor/project.json'), JSON.stringify({ id: 'p0', name: 'own', path: own }))
@@ -130,17 +135,17 @@ test('the standby takes the work over and gives it back, and only one instance w
   assert.match(r.out, /overlaps or links to machine state/)
   fs.writeFileSync(path.join(agent.savor, 'state.json'), JSON.stringify(agentState))
 
-  // Taking over requires the operator to have powered off the primary.
+  // A backup minutes old means the primary still works: no takeover without --force.
   r = await kunde0.run('take')
   assert.equal(r.code, 1)
-  assert.match(r.out, /power off the primary/)
-  assert.equal(agent.active(), true)
-  fs.rmSync(path.join(agent.systemd, 'active'))
-  r = await kunde0.run('take', '--primary-powered-off')
+  assert.match(r.out, /seems to be working/)
+  // take only prepares; the next tick, outside Savor's service, ends Savor's process and systemd starts it again.
+  await takeOver(kunde0)
+
+  // The primary is fenced: it stops and doesn't start again.
+  r = await agent.run('tick')
   assert.equal(r.code, 0, r.out)
-  assert.equal(kunde0.active(), false)
-  r = await kunde0.run('may-start')
-  assert.equal(r.code, 0, r.out)
+  assert.equal(agent.active(), false)
 
   // The standby has the work in a clone of the repository, with its own identity and devices.
   const taken = kunde0.state()
@@ -159,19 +164,27 @@ test('the standby takes the work over and gives it back, and only one instance w
   r = await agent.run('may-start')
   assert.equal(r.code, 1)
   assert.match(r.out, /owner is kunde0/)
+  assert.equal(fs.existsSync(path.join(kunde0.savor, 'standby/pending.json')), false)
 
   await checkDaemon(kunde0, 'kunde0-token', shop)
 
   // The standby works and backs up, then gives the work back and returns to its own projects.
   fs.appendFileSync(path.join(shop, '.savor/threads/t1/messages.jsonl'), JSON.stringify({ id: 'm2', ts: '2026-11-27T10:00:00.000Z', kind: 'user', text: 'on kunde0' }) + '\n')
+  r = await kunde0.run('tick')
+  assert.equal(r.code, 0, r.out)
   r = await kunde0.run('give')
   assert.equal(r.code, 0, r.out)
-  assert.equal(kunde0.active(), false)
+  assert.equal(kunde0.state().projects[0].id, 'p1', 'give waits for the tick')
+  r = await kunde0.run('tick')
+  assert.equal(r.code, 0, r.out)
   assert.deepEqual(kunde0.state().projects, [{ id: 'p0', path: own }])
   assert.equal(kunde0.state().identity, 'kunde0-key')
   assert.match((await kunde0.run('status')).out, /owner: agent/)
 
   // The primary starts again and brings in what the standby did, in its own folder.
+  r = await agent.run('tick')
+  assert.equal(r.code, 0, r.out)
+  assert.equal(agent.active(), true)
   r = await agent.run('may-start')
   assert.equal(r.code, 0, r.out)
   assert.deepEqual(agent.state().projects, [{ id: 'p1', path: project }])
@@ -183,4 +196,30 @@ test('the standby takes the work over and gives it back, and only one instance w
   r = await agent.run('may-start')
   assert.equal(r.code, 0, r.out)
   assert.deepEqual(messages(project), ['on agent', 'on kunde0', 'back home'])
+
+  // When the standby can't give the work back, the primary claims it, and the standby goes back to its own.
+  r = await agent.run('tick')
+  assert.equal(r.code, 0, r.out)
+  fs.rmSync(path.join(agent.savor, 'standby/backed-up'))
+  await takeOver(kunde0)
+  r = await agent.run('tick')
+  assert.equal(agent.active(), false)
+  r = await agent.run('claim')
+  assert.equal(r.code, 0, r.out)
+  r = await kunde0.run('tick')
+  assert.equal(r.code, 0, r.out)
+  assert.deepEqual(kunde0.state().projects, [{ id: 'p0', path: own }])
+  assert.equal(agent.active(), true)
 })
+
+async function takeOver(standby) {
+  const daemon = spawn('sleep', ['600'])
+  fs.writeFileSync(path.join(standby.systemd, 'pid'), String(daemon.pid))
+  const ended = new Promise((resolve) => daemon.on('exit', resolve))
+  let r = await standby.run('take', '--force')
+  assert.equal(r.code, 0, r.out)
+  assert.equal(standby.state().projects[0].id, 'p0', 'take waits for the tick')
+  r = await standby.run('tick')
+  assert.equal(r.code, 0, r.out)
+  await ended
+}
