@@ -142,6 +142,17 @@ sudo journalctl -u savor | grep token=   # on the server; open the link in your 
 
 The setup signs Claude Code, Codex and gh in with buttons, since the server has no browser of its own, and starts with a new project or a repository cloned from GitHub. Pair your phone under **Devices & remote access** (below). Without a relay, a VPN such as Tailscale works too: set `SAVOR_HOST` and `SAVOR_PUBLIC_URL` with `sudo systemctl edit savor` and open the port for the VPN in `ufw`. Every night `savor-update` builds the newest release tag signed with Robin's key, updates the agents' CLIs, and Savor restarts once working agents are done, after five minutes at most. A tag in `/home/savor/savor/pin` keeps Savor on that release.
 
+## Warm standby
+
+[`cloud/standby.sh`](cloud/standby.sh) is a manual failover tool for two Linux hosts with distinct hostnames, synchronized clocks, and `savor.service` running as a systemd user service. It uses Bash, restic, jq, Git and flock. Both hosts need a dedicated encrypted restic repository. Supply its credentials from the operator's secret store and keep them outside agent sessions. Savor Cloud currently uses a system service, so it needs separate service and credential provisioning before using this tool.
+
+1. Run `standby.sh init` on the primary. On both hosts, configure Savor's unit with `ExecStartPre=/absolute/path/to/standby.sh may-start`. Restart the primary through that unit and run `standby.sh tick` from a user timer on both hosts every minute. The owner backs up every 15 minutes. It keeps the snapshots from the last two days and one snapshot per day for the last 30 days with backups.
+2. On the standby, run `standby.sh status` to see the owner and most recent backup. `standby.sh copy ~/standby` restores a separate copy into a new folder for inspection.
+3. To take over, confirm at the hypervisor or power control that the primary is off and keep it off until the return. A network outage or an old backup cannot establish this. From a shell outside Savor's service, run `standby.sh take --primary-powered-off` on the standby, then `systemctl --user start savor.service`.
+4. To return, run `standby.sh give` from the same shell. It stops the standby, backs up the shared projects and hands ownership back. Then boot the primary. Its startup guard restores that exact backup before the daemon starts. The standby can then start again with its own projects.
+
+Project state travels with the chats, documents, backlog and workflows. Each host keeps its device pairing, relay identity and agent logins. Git restores code from the project's origin, so push any commit you need on the other host. Active agent sessions and worktrees stay on their original host. On failure, check `standby.sh status` and retry the interrupted command before starting either service.
+
 ## Phone / remote access
 
 Open **Devices & remote access** from the avatar menu. Your desktop has to stay awake while you're away, which the coffee-cup toggle takes care of. There are two ways in:
