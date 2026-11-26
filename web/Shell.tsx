@@ -5,9 +5,11 @@ import { WebglAddon } from '@xterm/addon-webgl'
 import { Unicode11Addon } from '@xterm/addon-unicode11'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { ClipboardAddon } from '@xterm/addon-clipboard'
+import { ClipboardPaste, Copy, X } from 'lucide-preact'
 import { api, type Project } from './api'
 import { transport } from './transport'
 import type { ShellHost } from './Terminal'
+import { t } from './i18n'
 
 const THEME = { background: '#0a0a0c', foreground: '#d7d7dc', cursor: '#d7d7dc', selectionBackground: '#3a3a42' }
 const FONT = "'Geist Mono Variable', ui-monospace, 'SF Mono', Menlo, monospace"
@@ -27,6 +29,19 @@ const KEYS: [string, string][] = [
   ['-', '-'],
 ]
 
+// The buffer as plain text, with wrapped rows joined into their lines and without the empty rows below the output.
+function bufferText(term: XTerm) {
+  const buffer = term.buffer.active
+  const lines: string[] = []
+  for (let i = 0; i < buffer.length; i++) {
+    const line = buffer.getLine(i)!
+    const text = line.translateToString(!buffer.getLine(i + 1)?.isWrapped)
+    if (line.isWrapped && lines.length) lines[lines.length - 1] += text
+    else lines.push(text)
+  }
+  return lines.join('\n').trimEnd()
+}
+
 // One shell of a project's terminal panel, which is the `host`.
 export default function Shell({ project, id, restart, host }: { project: Project; id: string; restart: { current: () => void }; host: ShellHost }) {
   const ref = useRef<HTMLDivElement>(null)
@@ -36,10 +51,18 @@ export default function Shell({ project, id, restart, host }: { project: Project
   const ctrlRef = useRef(false)
   ctrlRef.current = ctrl
   const send = useRef<(data: string) => void>(() => {})
+  // xterm.js selects with a mouse only, so touch screens copy from the buffer as page text, where the
+  // system's own selection works.
+  const [text, setText] = useState<string | null>(null)
+  const termRef = useRef<XTerm>()
+  const textRef = useRef<HTMLPreElement>(null)
+  const showing = text !== null
+  useEffect(() => void (showing && textRef.current!.scrollTo(0, textRef.current!.scrollHeight)), [showing])
 
   useEffect(() => {
     const base = `/projects/${project.id}/terminal`
     const term = new XTerm({ fontFamily: FONT, fontSize: 13, cursorBlink: true, scrollback: 5000, theme: THEME, allowProposedApi: true, linkHandler: { activate: openLink } })
+    termRef.current = term
     const fit = new FitAddon()
     term.loadAddon(fit)
     // Emoji and other wide characters take the width the shell's programs expect, as on the server.
@@ -164,11 +187,36 @@ export default function Shell({ project, id, restart, host }: { project: Project
     }
   }, [project.id, id])
 
+  // The clipboard is read within the tap, which Safari requires. Where it can't be read, the
+  // system's paste goes into a dialog.
+  const paste = () => {
+    const into = (text: string | null) => void (text && termRef.current?.paste(text))
+    ;(navigator.clipboard?.readText() ?? Promise.reject()).then(into, () => into(prompt(t('Paste into the terminal'))))
+  }
+
   return (
     <>
-      <div class="terminal-screen" ref={ref} />
+      <div class="terminal-body">
+        <div class="terminal-screen" ref={ref} />
+        {text !== null && (
+          <pre class="terminal-text" ref={textRef}>
+            {text}
+          </pre>
+        )}
+      </div>
       {touch && (
         <div class="terminal-keys">
+          <button title={t('Paste')} aria-label={t('Paste')} onClick={paste}>
+            <ClipboardPaste size={15} />
+          </button>
+          <button
+            class={text !== null ? 'on' : ''}
+            title={text !== null ? t('Back to the terminal') : t('Select text to copy')}
+            aria-label={text !== null ? t('Back to the terminal') : t('Select text to copy')}
+            onClick={() => setText(text !== null || !termRef.current ? null : bufferText(termRef.current))}
+          >
+            {text !== null ? <X size={15} /> : <Copy size={15} />}
+          </button>
           <button class={ctrl ? 'on' : ''} onClick={() => setCtrl(!ctrl)}>
             ctrl
           </button>

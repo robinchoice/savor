@@ -1389,13 +1389,15 @@ details.box[open] > summary .chev { transform: rotate(180deg); }
 .terminal-place i { width: 6px; height: 6px; border-radius: 50%; background: var(--faint); }
 .terminal-place i.running, .terminal-running { background: var(--green); }
 .terminal-running { position: absolute; top: 5px; right: 5px; width: 7px; height: 7px; border-radius: 50%; }
+.terminal-body { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .terminal-screen { flex: 1; min-height: 0; }
+.terminal-text { position: absolute; inset: 0; margin: 0; padding: 6px 10px; overflow: auto; background: #0a0a0c; color: #d7d7dc; font: 13px/1.35 'Geist Mono Variable', ui-monospace, 'SF Mono', Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; -webkit-user-select: text; -webkit-touch-callout: default; }
 /* On the xterm element, so the fit addon leaves room for it. */
 .terminal-screen .xterm { padding: 6px 0 0 10px; }
 .terminal-locked { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 20px; color: var(--muted); text-align: center; }
 .terminal-locked p { margin: 0; max-width: 360px; font-size: 13px; }
 .terminal-keys { display: flex; gap: 5px; padding: 6px 8px; background: var(--bar); border-top: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; flex: none; }
-.terminal-keys button { flex: none; min-width: 38px; height: 34px; padding: 0 9px; border-radius: 8px; background: var(--raised); color: var(--text); font: 12px 'Geist Mono Variable', ui-monospace, monospace; }
+.terminal-keys button { flex: none; display: inline-flex; align-items: center; justify-content: center; min-width: 38px; height: 34px; padding: 0 9px; border-radius: 8px; background: var(--raised); color: var(--text); font: 12px 'Geist Mono Variable', ui-monospace, monospace; }
 .terminal-keys button.on { background: var(--accent); color: var(--accent-ink); }
 @media (max-width: 860px) {
   .terminal-panel { height: 55dvh !important; }

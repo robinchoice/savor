@@ -2686,6 +2686,43 @@ test('in the inbox, the context menu and the run button reach the project of the
   await api('PATCH', `/projects/${project.id}/threads/${thread.id}`, { completed: true })
 })
 
+test('on a touch screen, the terminal pastes from the clipboard and shows its text for copying', async (t) => {
+  const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, locale: 'en-US' })
+  t.after(() => context.close())
+  await context.addCookies(await page.context().cookies())
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: base })
+  await context.addInitScript(() => localStorage.setItem('savor-prefs', JSON.stringify({ terminalOpen: true })))
+  const tab = await context.newPage()
+  await tab.goto(`${base}/#/p/${project.id}`)
+  await tab.waitForFunction(() => document.querySelector('.terminal-screen .xterm-rows')?.textContent.trim())
+  const enter = () => tab.focus('.terminal-screen textarea').then(() => tab.keyboard.press('Enter'))
+
+  // The paste key reads the clipboard within the tap.
+  await tab.evaluate(() => navigator.clipboard.writeText('echo $((6*9))-pasted'))
+  await tab.tap('.terminal-keys button[aria-label="Paste"]')
+  await tab.waitForSelector('.terminal-screen >> text=echo $((6*9))-pasted')
+  await enter()
+  await tab.waitForSelector('.terminal-screen >> text=54-pasted')
+
+  // Where the clipboard can't be read, the text goes in through a dialog.
+  await tab.evaluate(() => (navigator.clipboard.readText = () => Promise.reject(new Error('denied'))))
+  tab.once('dialog', (d) => d.accept('echo $((7*9))-typed'))
+  await tab.tap('.terminal-keys button[aria-label="Paste"]')
+  await tab.waitForSelector('.terminal-screen >> text=echo $((7*9))-typed')
+  await enter()
+  await tab.waitForSelector('.terminal-screen >> text=63-typed')
+
+  // The copy key shows the whole buffer as selectable text, scrolled to its end, until it is tapped again.
+  await tab.tap('.terminal-keys button[aria-label="Select text to copy"]')
+  const shown = await tab.locator('.terminal-text').textContent()
+  assert.match(shown, /54-pasted[\s\S]*63-typed/)
+  assert.equal(await tab.locator('.terminal-text').evaluate((el) => getComputedStyle(el).userSelect), 'text')
+  await tab.tap('.terminal-keys button[aria-label="Back to the terminal"]')
+  await tab.waitForSelector('.terminal-text', { state: 'detached' })
+  await tab.click('.terminal-bar button[title="Close"]')
+})
+
 test('text from the context menu runs in a new or an open conversation of another project', async (t) => {
   const project = (await api('GET', '/projects')).body.find((p) => p.path === PROJECT)
   const other = (await api('POST', '/projects', { path: path.join(TMP, 'elsewhere-target'), name: 'Elsewhere Target', create: true })).body
