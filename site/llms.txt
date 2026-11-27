@@ -23,4 +23,4 @@ Deutsch: Savor ist ein freier Open-Source-Arbeitsplatz für die Coding-Agenten C
 
 - [Source code](https://github.com/robinchoice/savor): GitHub repository / Quellcode
 - [Issues](https://github.com/robinchoice/savor/issues): Report a problem / Problem melden
-- [Imprint / Impressum](https://pleasance.org/impressum.html), [Privacy / Datenschutz](https://pleasance.org/datenschutz.html), [Contact / Kontakt](https://pleasance.org/kontakt.html)
+- [Imprint / Impressum](https://pleasance.org/impressum.html), [Privacy / Datenschutz](https://pleasance.org/datenschutz.html), [Contact / Kontakt](mailto:hello@pleasance.org)
